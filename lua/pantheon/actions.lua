@@ -183,7 +183,7 @@ local function detail(event)
       and first_line:match("^Merge pull request #(%d+)")
     if pr_number then
       local body = message:gsub("^[^\r\n]+[\r\n]*", "")
-      local title = body:match("[^\r\n]+")
+      local title = preview_text(body:match("[^\r\n]+"))
       if title then
         return ("PR #%s · %s"):format(pr_number, quoted(title))
       end
