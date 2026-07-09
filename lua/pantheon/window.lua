@@ -233,7 +233,10 @@ local function preview_line(item, width)
   if not detail then
     return nil
   end
-  return pad_cell(trim_to_width(detail, width), width)
+  local indent = "     "
+  local content_width = math.max(1, width - vim.fn.strdisplaywidth(indent) - 1)
+  return indent .. pad_cell(trim_to_width(detail, content_width), content_width)
+    .. " "
 end
 
 local function render_preview_panel(items)
