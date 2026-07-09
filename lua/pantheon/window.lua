@@ -163,13 +163,8 @@ local function activity_time(timestamp)
   local offset = os.difftime(os.time(), os.time(os.date("!*t")))
   local local_time = then_time - offset
   local event_date = os.date("*t", local_time)
-  local event_day = os.date("%Y-%m-%d", local_time)
-  local today = os.date("%Y-%m-%d")
   local time = os.date("%I:%M %p", local_time):gsub("^0", "")
 
-  if event_day == today then
-    return time
-  end
   local date = ("%d/%d/%02d"):format(
     event_date.month,
     event_date.day,
@@ -225,7 +220,7 @@ local function activity_item_line(item, timestamp, width)
     1,
     width - timestamp_width - vim.fn.strdisplaywidth(gap)
   )
-  local prefix = ("   %s    "):format(item.icon)
+  local prefix = ("  %s  "):format(item.icon)
   local text_width = math.max(1, content_width - vim.fn.strdisplaywidth(prefix))
   local content = prefix .. event_text(item, text_width)
   return pad_cell(content, content_width)
