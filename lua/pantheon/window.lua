@@ -351,7 +351,7 @@ local function queue_preview(contributor)
           or nil
         render_preview_panel(preview_items(contributor, filtered, err, cached))
         if filtered then
-          github.enrich_pushes(filtered, M.state.opts, function(enriched)
+          github.enrich_pull_requests(filtered, M.state.opts, function(with_prs)
             if
               request_id ~= M.state.preview_request_id
               or M.state.view ~= "contributors"
@@ -359,8 +359,19 @@ local function queue_preview(contributor)
               return
             end
             render_preview_panel(
-              preview_items(contributor, enriched, nil, cached)
+              preview_items(contributor, with_prs, nil, cached)
             )
+            github.enrich_pushes(with_prs, M.state.opts, function(enriched)
+              if
+                request_id ~= M.state.preview_request_id
+                or M.state.view ~= "contributors"
+              then
+                return
+              end
+              render_preview_panel(
+                preview_items(contributor, enriched, nil, cached)
+              )
+            end)
           end)
         end
       end
@@ -806,11 +817,17 @@ local function load_activity(contributor, force)
         M.state.opts.results_limit or 20
       )
       render_activity(results, cached, notice)
-      github.enrich_pushes(results, request_opts, function(enriched)
+      github.enrich_pull_requests(results, request_opts, function(with_prs)
         if request_id ~= M.state.request_id or M.state.view ~= "activity" then
           return
         end
-        render_activity(enriched, cached, notice)
+        render_activity(with_prs, cached, notice)
+        github.enrich_pushes(with_prs, request_opts, function(enriched)
+          if request_id ~= M.state.request_id or M.state.view ~= "activity" then
+            return
+          end
+          render_activity(enriched, cached, notice)
+        end)
       end)
     end
   end

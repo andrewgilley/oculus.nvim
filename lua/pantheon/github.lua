@@ -2,6 +2,7 @@ local M = {}
 
 local cache = {}
 local push_cache = {}
+local pull_request_cache = {}
 
 local function decode_response(stdout)
   local body, status = stdout:match("^(.*)\n(%d%d%d)%s*$")
@@ -122,6 +123,91 @@ function M.apply_push_comparison(event, comparison)
     commits = commits,
   })
   return event
+end
+
+local function pull_request_key(event)
+  if
+    event.type ~= "PullRequestEvent"
+    and event.type ~= "PullRequestReviewEvent"
+  then
+    return nil
+  end
+
+  local repo = event.repo and event.repo.name
+  local payload = event.payload or {}
+  local pull_request = payload.pull_request or {}
+  local number = pull_request.number or payload.number
+  if not repo or not number or pull_request.title then
+    return nil
+  end
+  return ("%s#%s"):format(repo, number), repo, number
+end
+
+local function apply_pull_request_details(event, details)
+  event.payload = event.payload or {}
+  event.payload.pull_request = event.payload.pull_request or {}
+  event.payload.pull_request.title = details.title
+  event.payload.pull_request.number = event.payload.pull_request.number
+    or details.number
+  event.payload.pull_request.html_url = event.payload.pull_request.html_url
+    or details.html_url
+end
+
+function M.apply_pull_request(event, pull_request)
+  apply_pull_request_details(event, {
+    number = pull_request.number,
+    title = pull_request.title,
+    html_url = pull_request.html_url,
+  })
+  return event
+end
+
+function M.enrich_pull_requests(events, opts, callback)
+  opts = opts or {}
+  local pending = 0
+
+  local function complete()
+    pending = pending - 1
+    if pending == 0 then
+      callback(events)
+    end
+  end
+
+  for _, event in ipairs(events) do
+    local key, repo, number = pull_request_key(event)
+    if key then
+      local cached = pull_request_cache[key]
+      if type(cached) == "table" then
+        apply_pull_request_details(event, cached)
+      elseif cached == nil then
+        pending = pending + 1
+        local url = ("https://api.github.com/repos/%s/pulls/%s"):format(
+          repo,
+          number
+        )
+        request_json(url, opts, function(pull_request)
+          if pull_request and pull_request.title then
+            local details = {
+              number = pull_request.number or number,
+              title = pull_request.title,
+              html_url = pull_request.html_url,
+            }
+            pull_request_cache[key] = details
+            apply_pull_request_details(event, details)
+          else
+            pull_request_cache[key] = false
+          end
+          complete()
+        end)
+      end
+    end
+  end
+
+  if pending == 0 then
+    vim.schedule(function()
+      callback(events)
+    end)
+  end
 end
 
 function M.enrich_pushes(events, opts, callback)
