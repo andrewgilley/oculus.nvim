@@ -197,6 +197,11 @@ local defaults = {
       username = "nikomatsakis",
       description = "Rust language designer and compiler team leader",
     },
+    {
+      name = "Andrew Gilley",
+      username = "andrewgilley",
+      description = "Creator of Pantheon and Reliquary Neovim plugins",
+    },
   },
 }
 
