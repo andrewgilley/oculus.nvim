@@ -727,10 +727,12 @@ local function render_activity(events, cached, notice)
   lines[#lines + 1] = ""
 
   local first_event_line
+  local activity_line_kinds = {}
   for _, event in ipairs(events) do
     local item = actions.describe(event)
     local event_line = #lines + 1
     first_event_line = first_event_line or event_line
+    activity_line_kinds[event_line] = "main"
     local item_width = width - 2
     if item.detail then
       lines[event_line] = activity_item_line(
@@ -742,6 +744,7 @@ local function render_activity(events, cached, notice)
       if detail_line then
         lines[#lines + 1] = detail_line
         M.state.line_targets[#lines] = item.url
+        activity_line_kinds[#lines] = "preview"
         lines[#lines + 1] = pad_cell("", item_width)
       end
     else
@@ -771,6 +774,23 @@ local function render_activity(events, cached, notice)
   highlight(3, 2, -1, "Comment")
   if notice then
     highlight(4, 2, -1, "DiagnosticWarn")
+  end
+  for line, kind in pairs(activity_line_kinds) do
+    local text = lines[line]
+    if text then
+      if kind == "preview" then
+        highlight(line, 0, -1, "Comment")
+      elseif kind == "main" then
+        highlight(line, 0, 5, "Comment")
+        local timestamp_start = text:find("%d%d/%d%d/%d%d%s+—")
+        highlight(
+          line,
+          5,
+          timestamp_start and (timestamp_start - 1) or -1,
+          "Function"
+        )
+      end
+    end
   end
   highlight(#lines - 2, 2, -1, "WinSeparator")
   highlight(#lines - 1, 2, -1, "Comment")
