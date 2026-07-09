@@ -132,11 +132,15 @@ local function sentence(event)
   if kind == "IssuesEvent" then
     local number = value(payload, "issue", "number")
     local title = value(payload, "issue", "title")
+    local title_suffix = payload.action ~= "assigned"
+      and title
+      and (" · " .. title)
+      or ""
     return ("%s issue%s in %s%s"):format(
       payload.action or "Updated",
       number and (" #" .. number) or "",
       repo,
-      title and (" · " .. title) or ""
+      title_suffix
     )
   end
 
@@ -201,6 +205,13 @@ local function detail(event)
   end
   if event.type == "PullRequestReviewEvent" then
     local title = preview_text(value(event, "payload", "pull_request", "title"))
+    return title and quoted(title) or nil
+  end
+  if
+    event.type == "IssuesEvent"
+    and value(event, "payload", "action") == "assigned"
+  then
+    local title = preview_text(value(event, "payload", "issue", "title"))
     return title and quoted(title) or nil
   end
   if

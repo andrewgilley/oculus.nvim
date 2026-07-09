@@ -196,6 +196,7 @@ local function preserves_text_when_truncated(item)
   return item.type == "IssueCommentEvent"
     or item.type == "PullRequestReviewCommentEvent"
     or item.type == "CommitCommentEvent"
+    or item.type == "IssuesEvent"
 end
 
 local function event_text(item, width)
