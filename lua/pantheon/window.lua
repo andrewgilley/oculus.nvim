@@ -15,6 +15,8 @@ local autocmd_group = vim.api.nvim_create_augroup(
 M.state = {
   buf = nil,
   win = nil,
+  footer_buf = nil,
+  footer_win = nil,
   view = "contributors",
   contributor = nil,
   events = nil,
@@ -78,6 +80,88 @@ local function make_buf()
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "pantheon"
   return buf
+end
+
+local function close_activity_footer()
+  if is_valid_win(M.state.footer_win) then
+    vim.api.nvim_win_close(M.state.footer_win, true)
+  end
+  if is_valid_buf(M.state.footer_buf) then
+    vim.api.nvim_buf_delete(M.state.footer_buf, { force = true })
+  end
+  M.state.footer_buf = nil
+  M.state.footer_win = nil
+end
+
+local function make_footer_buf()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "pantheon"
+  return buf
+end
+
+local function footer_win_config()
+  if not is_valid_win(M.state.win) then
+    return nil
+  end
+  local config = vim.api.nvim_win_get_config(M.state.win)
+  local row = tonumber(config.row) or 0
+  local col = tonumber(config.col) or 0
+  local width = vim.api.nvim_win_get_width(M.state.win)
+  local height = vim.api.nvim_win_get_height(M.state.win)
+  return {
+    relative = "editor",
+    width = width,
+    height = 2,
+    row = row + height - 1,
+    col = col + 1,
+    style = "minimal",
+    focusable = false,
+    zindex = 60,
+  }
+end
+
+local function render_activity_footer()
+  local config = footer_win_config()
+  if not config then
+    return
+  end
+
+  local buf = M.state.footer_buf
+  if not is_valid_buf(buf) then
+    buf = make_footer_buf()
+    M.state.footer_buf = buf
+  end
+
+  local width = config.width
+  local lines = {
+    "  " .. string.rep("─", math.max(1, width - 4)),
+    "  i/k move   l/↵/→ open   f/F filters   "
+      .. "r refresh   j/← back   q close",
+  }
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "WinSeparator", 0, 2, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 1, 2, -1)
+
+  if is_valid_win(M.state.footer_win) then
+    vim.api.nvim_win_set_config(M.state.footer_win, config)
+  else
+    M.state.footer_win = vim.api.nvim_open_win(buf, false, config)
+  end
+  vim.wo[M.state.footer_win].wrap = false
+  vim.wo[M.state.footer_win].cursorline = false
+  vim.wo[M.state.footer_win].winhighlight = table.concat({
+    "Normal:PantheonNormal",
+    "NormalFloat:PantheonNormal",
+  }, ",")
+  vim.wo[M.state.footer_win].number = false
+  vim.wo[M.state.footer_win].relativenumber = false
+  vim.wo[M.state.footer_win].signcolumn = "no"
 end
 
 local function set_lines(lines)
@@ -449,6 +533,7 @@ local function highlight_contributor_selection()
 end
 
 local function render_contributors()
+  close_activity_footer()
   M.state.view = "contributors"
   M.state.contributor = nil
   M.state.events = nil
@@ -620,6 +705,7 @@ local function save_filter_type_set(scope, enabled)
 end
 
 local function render_filters(scope, selected_type)
+  close_activity_footer()
   M.state.view = "filters"
   M.state.filter_scope = scope
   M.state.line_targets = {}
@@ -705,6 +791,7 @@ local function set_all_filter_types(value)
 end
 
 local function render_loading(contributor)
+  close_activity_footer()
   M.state.activity_loaded = false
   local lines = {
     "",
@@ -722,6 +809,7 @@ local function render_loading(contributor)
 end
 
 local function render_error(message)
+  close_activity_footer()
   M.state.activity_loaded = false
   local contributor = M.state.contributor
   local lines = {
@@ -800,19 +888,10 @@ local function render_activity(events, cached, notice)
   if #events == 0 then
     lines[#lines + 1] = "  No recent public activity was returned."
   end
-  local footer_height = 3
-  local target_content_rows = math.max(
-    #lines,
-    vim.api.nvim_win_get_height(M.state.win) - footer_height
-  )
-  while #lines < target_content_rows do
-    lines[#lines + 1] = ""
-  end
-  lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-  lines[#lines + 1] = "  i/k move   l/↵/→ open   f/F filters   "
-    .. "r refresh   j/← back   q close"
+  lines[#lines + 1] = ""
   lines[#lines + 1] = ""
   set_lines(lines)
+  render_activity_footer()
   vim.wo[M.state.win].cursorline = true
   vim.wo[M.state.win].scrolloff = 1
 
@@ -831,8 +910,6 @@ local function render_activity(events, cached, notice)
       end
     end
   end
-  highlight(#lines - 2, 2, -1, "WinSeparator")
-  highlight(#lines - 1, 2, -1, "Comment")
   if first_event_line then
     M.state.activity_cursor_min_line = first_event_line
     vim.api.nvim_win_set_cursor(M.state.win, { first_event_line, 0 })
@@ -1113,6 +1190,7 @@ function M.close()
   M.state.request_id = M.state.request_id + 1
   M.state.preview_request_id = M.state.preview_request_id + 1
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
+  close_activity_footer()
   if is_valid_win(M.state.win) then
     M.state.restore_cursor = vim.api.nvim_win_get_cursor(M.state.win)
     vim.api.nvim_win_close(M.state.win, true)
@@ -1200,6 +1278,8 @@ function M.open(opts)
         vim.api.nvim_win_set_config(M.state.win, make_win_config(M.state.opts))
         if M.state.view == "contributors" and M.state.preview_items then
           render_preview_panel(M.state.preview_items)
+        elseif M.state.view == "activity" then
+          render_activity_footer()
         end
       end
     end,
