@@ -1,7 +1,6 @@
 # pantheon.nvim
 
-Pantheon is a small Neovim browser for the recent public GitHub activity of
-people whose work is worth following.
+Pantheon is a small Neovim browser for viewing public GitHub activity of community members.
 
 <img width="1902" height="1027" alt="pantheon" src="https://github.com/user-attachments/assets/c6de957e-f9ba-4c7f-870f-8fc46754b673" />
 
