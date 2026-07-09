@@ -187,7 +187,9 @@ Inside Pantheon:
 - `<Left>` goes back and `<Right>` selects or opens the highlighted item.
 - `f` opens the activity-type checklist for the selected contributor.
 - `F` opens the global activity-type checklist.
-- In a checklist, `<Space>`, `l`, or `<CR>` toggles a checkbox; `a` enables all and `n` disables all.
+- `d` resets all activity category filters to default on the startup user list.
+- In a checklist, `<Space>`, `l`, or `<CR>` toggles a checkbox.
+- In a checklist, `a` enables all and `n` disables all.
 - `<CR>` selects a contributor or opens an activity item.
 - `o` opens the selected profile or activity item in your browser.
 - `r` bypasses the five-minute cache and refreshes activity.
@@ -232,7 +234,8 @@ activity window.
 
 Checkbox changes are saved to `stdpath("state")/pantheon.json` and restored on
 the next `setup()` call. Set `persist_filters = false` to keep changes for the
-current session only, or set `state_file` to use another location.
+current session only, or set `state_file` to use another location. Press `d` on
+the startup user list to reset all category filters to default.
 
 Common values are `PushEvent`, `PullRequestEvent`, `PullRequestReviewEvent`,
 `PullRequestReviewCommentEvent`, `IssuesEvent`, `IssueCommentEvent`,

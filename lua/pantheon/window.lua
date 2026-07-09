@@ -642,7 +642,7 @@ local function render_contributors()
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = "  i/k move  l/→ open  f/F filters  q quit"
+  lines[#lines + 1] = "  i/k move  l/→ open  f/F filters  d default  q quit"
   local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
@@ -711,6 +711,21 @@ local function filter_type_set(scope)
   return enabled
 end
 
+local function persist_filter_config()
+  if M.state.opts.persist_filters then
+    local ok, err = require("pantheon.storage").save(
+      M.state.opts.state_file,
+      M.state.opts
+    )
+    if not ok then
+      vim.notify(
+        "Pantheon could not save activity filters: " .. tostring(err),
+        vim.log.levels.ERROR
+      )
+    end
+  end
+end
+
 local function save_filter_type_set(scope, enabled)
   local types = {}
   for _, event_type in ipairs(actions.event_types) do
@@ -726,18 +741,7 @@ local function save_filter_type_set(scope, enabled)
     M.state.opts.user_activity_types[scope.username] = types
   end
 
-  if M.state.opts.persist_filters then
-    local ok, err = require("pantheon.storage").save(
-      M.state.opts.state_file,
-      M.state.opts
-    )
-    if not ok then
-      vim.notify(
-        "Pantheon could not save activity filters: " .. tostring(err),
-        vim.log.levels.ERROR
-      )
-    end
-  end
+  persist_filter_config()
 end
 
 local function render_filters(scope, selected_type)
@@ -824,6 +828,16 @@ local function set_all_filter_types(value)
   end
   save_filter_type_set(M.state.filter_scope, enabled)
   render_filters(M.state.filter_scope, target and target.event_type or nil)
+end
+
+local function reset_filter_types_to_default()
+  if M.state.view ~= "contributors" then
+    return
+  end
+  M.state.opts.activity_types = nil
+  M.state.opts.user_activity_types = {}
+  persist_filter_config()
+  render_contributors()
 end
 
 local function render_loading(contributor)
@@ -1202,6 +1216,7 @@ local function map_keys(buf)
   map("n", function()
     set_all_filter_types(false)
   end, "Disable all Pantheon activity types")
+  map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
   map("i", function()
     move_cursor(-1)
   end, "Move up in Pantheon")
