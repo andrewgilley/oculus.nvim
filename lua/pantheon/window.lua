@@ -164,6 +164,18 @@ local function render_activity_footer()
   vim.wo[M.state.footer_win].signcolumn = "no"
 end
 
+local function update_activity_cursorline()
+  if M.state.view ~= "activity" or not is_valid_win(M.state.win) then
+    return
+  end
+  if vim.api.nvim_get_current_win() ~= M.state.win then
+    return
+  end
+  local footer_height = is_valid_win(M.state.footer_win) and 2 or 0
+  local visible_rows = vim.api.nvim_win_get_height(M.state.win) - footer_height
+  vim.wo[M.state.win].cursorline = vim.fn.winline() <= visible_rows
+end
+
 local function set_lines(lines)
   if not is_valid_buf(M.state.buf) then
     return
@@ -892,7 +904,6 @@ local function render_activity(events, cached, notice)
   lines[#lines + 1] = ""
   set_lines(lines)
   render_activity_footer()
-  vim.wo[M.state.win].cursorline = true
   vim.wo[M.state.win].scrolloff = 1
 
   highlight(2, 2, -1, "Function")
@@ -916,6 +927,7 @@ local function render_activity(events, cached, notice)
   else
     M.state.activity_cursor_min_line = 2
   end
+  update_activity_cursorline()
 end
 
 local function restore_cursor()
@@ -1081,6 +1093,7 @@ local function move_cursor(direction)
     if line < min_line then
       vim.api.nvim_win_set_cursor(M.state.win, { min_line, 0 })
     end
+    update_activity_cursorline()
     return
   end
 
@@ -1208,6 +1221,7 @@ function M.open(opts)
   M.state.opts = opts or {}
   if is_valid_win(M.state.win) then
     vim.api.nvim_set_current_win(M.state.win)
+    update_activity_cursorline()
     return
   end
 
@@ -1280,6 +1294,7 @@ function M.open(opts)
           render_preview_panel(M.state.preview_items)
         elseif M.state.view == "activity" then
           render_activity_footer()
+          update_activity_cursorline()
         end
       end
     end,
@@ -1289,7 +1304,14 @@ function M.open(opts)
     group = autocmd_group,
     buffer = buf,
     callback = function()
-      if M.state.view ~= "contributors" or not is_valid_win(M.state.win) then
+      if not is_valid_win(M.state.win) then
+        return
+      end
+      if M.state.view == "activity" then
+        update_activity_cursorline()
+        return
+      end
+      if M.state.view ~= "contributors" then
         return
       end
       local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
@@ -1306,7 +1328,11 @@ function M.open(opts)
     group = autocmd_group,
     callback = function()
       local entered = vim.api.nvim_get_current_win()
-      if not is_valid_win(M.state.win) or entered == M.state.win then
+      if not is_valid_win(M.state.win) then
+        return
+      end
+      if entered == M.state.win then
+        update_activity_cursorline()
         return
       end
       if vim.api.nvim_win_get_config(entered).relative ~= "" then
