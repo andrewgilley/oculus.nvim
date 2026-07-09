@@ -198,7 +198,7 @@ end
 local function event_text(item, width)
   local detail = event_detail(item)
   if detail then
-    local separator = "  ·  "
+    local separator = " · "
     if width then
       local separator_width = vim.fn.strdisplaywidth(separator)
       local text_width = vim.fn.strdisplaywidth(item.text)
@@ -779,9 +779,9 @@ local function render_activity(events, cached, notice)
     local text = lines[line]
     if text then
       if kind == "preview" then
-        highlight(line, 0, -1, "Comment")
+        highlight(line, 0, -1, "PantheonActivityPreview")
       elseif kind == "main" then
-        highlight(line, 0, 5, "Comment")
+        highlight(line, 0, 5, "PantheonActivityIcon")
         local timestamp_start = text:find("%d%d/%d%d/%d%d%s+—")
         highlight(
           line,
@@ -1103,6 +1103,14 @@ function M.open(opts)
     fg = "#ffffff",
     bg = "NONE",
     bold = true,
+  })
+  vim.api.nvim_set_hl(0, "PantheonActivityIcon", {
+    fg = "#f6ad55",
+    bg = "NONE",
+  })
+  vim.api.nvim_set_hl(0, "PantheonActivityPreview", {
+    fg = "#68d391",
+    bg = "NONE",
   })
   vim.wo[win].winhighlight = table.concat({
     "Normal:PantheonNormal",
