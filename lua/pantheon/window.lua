@@ -191,7 +191,9 @@ end
 local function event_detail(item)
   if item.detail then
     local detail = item.detail
-    if not detail:find('"', 1, true) then
+    local has_wrapped_preview = detail:match('^".*"$')
+      or detail:match('^PR #%d+ · ".*"$')
+    if not has_wrapped_preview then
       detail = '"' .. detail .. '"'
     end
     return detail
