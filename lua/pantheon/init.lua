@@ -101,7 +101,7 @@ local defaults = {
     {
       name = "Tim Culverhouse",
       username = "rockorager",
-      description = "Creator of libvaxis and modern Zig terminal tooling",
+      description = "Creator of libvaxis and modern Zig tooling",
     },
 
     {
@@ -119,7 +119,7 @@ local defaults = {
     {
       name = "Charlie Marsh",
       username = "charliermarsh",
-      description = "Builder of Ruff, uv, ty, and fast Python tooling",
+      description = "Builder of uv, ruff, and fast Python tooling",
     },
 
     {
@@ -179,7 +179,7 @@ local defaults = {
     {
       name = "Alex Crichton",
       username = "alexcrichton",
-      description = "WebAssembly, Wasmtime, wasm-bindgen, and Rust engineer",
+      description = "WebAssembly, Wasmtime, and Rust engineer",
     },
 
     {
