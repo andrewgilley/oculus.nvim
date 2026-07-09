@@ -271,6 +271,10 @@ local function summary(event)
     local title = preview_text(value(event, "payload", "issue", "title"))
     return title and quoted(title) or nil
   end
+  if event.type == "PullRequestReviewCommentEvent" then
+    local title = preview_text(value(event, "payload", "pull_request", "title"))
+    return title and quoted(title) or nil
+  end
   return nil
 end
 

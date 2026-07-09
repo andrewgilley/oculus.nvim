@@ -172,8 +172,18 @@ local function update_activity_cursorline()
     return
   end
   local footer_height = is_valid_win(M.state.footer_win) and 2 or 0
-  local visible_rows = vim.api.nvim_win_get_height(M.state.win) - footer_height
-  vim.wo[M.state.win].cursorline = vim.fn.winline() <= visible_rows
+  local visible_rows = math.max(
+    1,
+    vim.api.nvim_win_get_height(M.state.win) - footer_height
+  )
+  local cursor_row = vim.fn.winline()
+  if cursor_row > visible_rows then
+    local view = vim.fn.winsaveview()
+    view.topline = view.topline + cursor_row - visible_rows
+    vim.fn.winrestview(view)
+    cursor_row = vim.fn.winline()
+  end
+  vim.wo[M.state.win].cursorline = cursor_row <= visible_rows
 end
 
 local function set_lines(lines)
@@ -904,7 +914,7 @@ local function render_activity(events, cached, notice)
   lines[#lines + 1] = ""
   set_lines(lines)
   render_activity_footer()
-  vim.wo[M.state.win].scrolloff = 1
+  vim.wo[M.state.win].scrolloff = 3
 
   highlight(2, 2, -1, "Function")
   highlight(3, 2, -1, "Comment")
