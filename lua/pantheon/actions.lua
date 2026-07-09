@@ -120,12 +120,10 @@ local function sentence(event)
 
   if kind == "IssueCommentEvent" then
     local number = value(payload, "issue", "number")
-    local title = value(payload, "issue", "title")
-    return ("Commented on %s%s in %s%s"):format(
+    return ("Commented on %s%s in %s"):format(
       value(payload, "issue", "pull_request") and "pull request" or "issue",
       number and (" #" .. number) or "",
-      repo,
-      title and (" · " .. title) or ""
+      repo
     )
   end
 
