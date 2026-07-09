@@ -170,8 +170,8 @@ local function quoted(text)
   return '"' .. text .. '"'
 end
 
-local function capitalize_first(text)
-  return text:gsub("^%l", string.upper)
+local function lowercase_first(text)
+  return text:gsub("^%u", string.lower)
 end
 
 local function detail(event)
@@ -275,7 +275,7 @@ function M.describe(event)
   return {
     type = event.type,
     icon = icons[event.type] or "●",
-    text = capitalize_first(sentence(event)),
+    text = lowercase_first(sentence(event)),
     detail = detail(event),
     url = event_url(event),
   }
