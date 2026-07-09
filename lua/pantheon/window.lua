@@ -869,13 +869,6 @@ local function target_on_cursor()
   if M.state.line_targets[line] then
     return M.state.line_targets[line]
   end
-  for distance = 1, 2 do
-    if M.state.line_targets[line - distance] then
-      return M.state.line_targets[line - distance]
-    elseif M.state.line_targets[line + distance] then
-      return M.state.line_targets[line + distance]
-    end
-  end
 end
 
 local function open_url(url)
@@ -952,6 +945,11 @@ local function move_cursor(direction)
       #M.state.contributors) + 1
     M.state.selected_username = M.state.contributors[next_index].username
     render_contributors()
+    return
+  end
+
+  if M.state.view == "activity" then
+    vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
     return
   end
 
