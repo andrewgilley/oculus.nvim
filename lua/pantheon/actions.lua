@@ -199,6 +199,19 @@ end
 local function detail(event)
   if event.type == "PushEvent" then
     local commits = value(event, "payload", "commits") or {}
+    if #commits > 1 then
+      local messages = {}
+      for _, commit in ipairs(commits) do
+        local message = preview_text(commit.message)
+        if message then
+          messages[#messages + 1] = message
+        end
+      end
+      if #messages > 0 then
+        return messages
+      end
+    end
+
     local message = commits[#commits] and commits[#commits].message
     if not message then
       return nil

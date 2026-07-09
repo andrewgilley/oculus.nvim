@@ -186,6 +186,9 @@ end
 
 local function event_detail(item)
   if item.detail then
+    if type(item.detail) == "table" then
+      return item.detail
+    end
     local detail = item.detail
     local has_wrapped_preview = detail:match('^".*"$')
       or detail:match('^PR #%d+ · ".*"$')
@@ -194,6 +197,15 @@ local function event_detail(item)
     end
     return detail
   end
+end
+
+local function quoted_detail_line(text)
+  local has_wrapped_preview = text:match('^".*"$')
+    or text:match('^PR #%d+ · ".*"$')
+  if has_wrapped_preview then
+    return text
+  end
+  return '"' .. text .. '"'
 end
 
 local function event_summary(item)
@@ -210,6 +222,9 @@ end
 
 local function event_text(item, width)
   local detail = event_summary(item) or event_detail(item)
+  if type(detail) == "table" then
+    detail = nil
+  end
   if detail then
     local separator = " · "
     if width then
@@ -249,18 +264,21 @@ local function preview_lines(item, width)
   local indent = "     "
   local content_width = math.max(1, width - vim.fn.strdisplaywidth(indent) - 1)
   local lines = {}
-  local remaining = detail
-  for _ = 1, 3 do
-    if remaining == "" then
-      break
+  local details = type(detail) == "table" and detail or { detail }
+  for _, detail_item in ipairs(details) do
+    local remaining = quoted_detail_line(detail_item)
+    for _ = 1, 3 do
+      if remaining == "" then
+        break
+      end
+      local text = trim_to_width(remaining, content_width)
+      lines[#lines + 1] = indent .. pad_cell(text, content_width) .. " "
+      if vim.fn.strdisplaywidth(remaining) <= content_width then
+        break
+      end
+      local consumed = math.max(1, vim.fn.strchars(text) - 1)
+      remaining = vim.fn.strcharpart(remaining, consumed)
     end
-    local text = trim_to_width(remaining, content_width)
-    lines[#lines + 1] = indent .. pad_cell(text, content_width) .. " "
-    if vim.fn.strdisplaywidth(remaining) <= content_width then
-      break
-    end
-    local consumed = math.max(1, vim.fn.strchars(text) - 1)
-    remaining = vim.fn.strcharpart(remaining, consumed)
   end
   return lines
 end
@@ -795,6 +813,14 @@ local function render_activity(events, cached, notice)
 
   if #events == 0 then
     lines[#lines + 1] = "  No recent public activity was returned."
+  end
+  local footer_height = 3
+  local target_content_rows = math.max(
+    #lines,
+    vim.api.nvim_win_get_height(M.state.win) - footer_height
+  )
+  while #lines < target_content_rows do
+    lines[#lines + 1] = ""
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
   lines[#lines + 1] = "  i/k move   l/↵/→ open   f/F filters   "
