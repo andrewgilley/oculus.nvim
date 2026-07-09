@@ -229,15 +229,28 @@ local function activity_item_line(item, timestamp, width)
     .. left_pad_cell(timestamp, timestamp_width)
 end
 
-local function preview_line(item, width)
+local function preview_lines(item, width)
   local detail = event_detail(item)
   if not detail then
     return nil
   end
   local indent = "     "
   local content_width = math.max(1, width - vim.fn.strdisplaywidth(indent) - 1)
-  return indent .. pad_cell(trim_to_width(detail, content_width), content_width)
-    .. " "
+  local lines = {}
+  local remaining = detail
+  for _ = 1, 3 do
+    if remaining == "" then
+      break
+    end
+    local text = trim_to_width(remaining, content_width)
+    lines[#lines + 1] = indent .. pad_cell(text, content_width) .. " "
+    if vim.fn.strdisplaywidth(remaining) <= content_width then
+      break
+    end
+    local consumed = math.max(1, vim.fn.strchars(text) - 1)
+    remaining = vim.fn.strcharpart(remaining, consumed)
+  end
+  return lines
 end
 
 local function without_detail(item)
@@ -747,11 +760,13 @@ local function render_activity(events, cached, notice)
         activity_time(event.created_at),
         item_width
       )
-      local detail_line = preview_line(item, item_width)
-      if detail_line then
-        lines[#lines + 1] = detail_line
-        M.state.line_targets[#lines] = item.url
-        activity_line_kinds[#lines] = "preview"
+      local detail_lines = preview_lines(item, item_width)
+      if detail_lines then
+        for _, detail_line in ipairs(detail_lines) do
+          lines[#lines + 1] = detail_line
+          M.state.line_targets[#lines] = item.url
+          activity_line_kinds[#lines] = "preview"
+        end
         lines[#lines + 1] = pad_cell("", item_width)
       end
     else
