@@ -749,6 +749,8 @@ local function render_activity(events, cached, notice)
         activity_time(event.created_at),
         item_width
       )
+      lines[#lines + 1] = pad_cell("", item_width)
+      M.state.line_targets[#lines] = item.url
     end
     M.state.line_targets[event_line] = item.url
   end
@@ -770,13 +772,7 @@ local function render_activity(events, cached, notice)
     highlight(4, 2, -1, "DiagnosticWarn")
   end
   for line, _ in pairs(M.state.line_targets) do
-    local gap = lines[line]:find("    ", 4, true)
-    if gap then
-      highlight(line, 3, gap - 1, "Special")
-      highlight(line, gap + 3, -1, "Function")
-    else
-      highlight(line, 5, -1, "Comment")
-    end
+    highlight(line, 0, -1, "Function")
   end
   highlight(#lines - 2, 2, -1, "WinSeparator")
   highlight(#lines - 1, 2, -1, "Comment")
