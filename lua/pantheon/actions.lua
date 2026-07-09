@@ -103,25 +103,35 @@ local function sentence(event)
     if action == "closed" and value(payload, "pull_request", "merged") then
       action = "Merged"
     end
-    return ("%s pull request%s in %s"):format(
+    return ("%s pull request%s"):format(
       action,
-      number and (" #" .. number) or "",
-      repo
+      number and (" #" .. number) or ""
     )
   end
 
   if kind == "PullRequestReviewEvent" then
     local number = value(payload, "pull_request", "number")
-    return ("Reviewed pull request%s in %s"):format(
-      number and (" #" .. number) or "",
-      repo
+    return ("Reviewed pull request%s"):format(number and (" #" .. number) or "")
+  end
+
+  if kind == "PullRequestReviewCommentEvent" then
+    local number = value(payload, "pull_request", "number")
+    return ("Commented on pull request review%s"):format(
+      number and (" #" .. number) or ""
     )
   end
 
   if kind == "IssueCommentEvent" then
     local number = value(payload, "issue", "number")
-    return ("Commented on %s%s in %s"):format(
-      value(payload, "issue", "pull_request") and "pull request" or "issue",
+    local target = value(payload, "issue", "pull_request")
+      and "pull request"
+      or "issue"
+    if target == "pull request" then
+      return ("Commented on pull request%s"):format(
+        number and (" #" .. number) or ""
+      )
+    end
+    return ("Commented on issue%s in %s"):format(
       number and (" #" .. number) or "",
       repo
     )
@@ -202,7 +212,8 @@ local function detail(event)
     return title and quoted(title) or nil
   end
   if event.type == "PullRequestReviewEvent" then
-    local title = preview_text(value(event, "payload", "pull_request", "title"))
+    local title = preview_text(value(event, "payload", "review", "body"))
+      or preview_text(value(event, "payload", "pull_request", "title"))
     return title and quoted(title) or nil
   end
   if
@@ -214,10 +225,14 @@ local function detail(event)
   end
   if
     event.type == "IssueCommentEvent"
-    or event.type == "PullRequestReviewCommentEvent"
     or event.type == "CommitCommentEvent"
   then
     return preview_text(value(event, "payload", "comment", "body"))
+  end
+  if event.type == "PullRequestReviewCommentEvent" then
+    local text = preview_text(value(event, "payload", "comment", "body"))
+      or preview_text(value(event, "payload", "pull_request", "title"))
+    return text and quoted(text) or nil
   end
   return nil
 end
