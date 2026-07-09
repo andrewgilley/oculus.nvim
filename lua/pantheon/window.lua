@@ -197,7 +197,7 @@ local function update_activity_cursorline()
     vim.fn.winrestview(view)
     cursor_row = vim.fn.winline()
   end
-  vim.wo[M.state.win].cursorline = false
+  vim.wo[M.state.win].cursorline = cursor_row <= visible_rows
 end
 
 local function set_lines(lines)
@@ -1306,10 +1306,13 @@ function M.open(opts)
     fg = "#9ae6b4",
     bg = "NONE",
   })
+  vim.api.nvim_set_hl(0, "PantheonCursorLine", {
+    bg = "#3a3a3a",
+  })
   vim.wo[win].winhighlight = table.concat({
     "Normal:PantheonNormal",
     "NormalFloat:PantheonNormal",
-    "CursorLine:PmenuSel",
+    "CursorLine:PantheonCursorLine",
     "FloatBorder:PantheonBorder",
     "FloatTitle:PantheonBorder",
   }, ",")
