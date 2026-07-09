@@ -191,7 +191,11 @@ end
 
 local function event_text(item)
   if item.detail then
-    return item.text .. "  ·  “" .. item.detail .. "”"
+    local detail = item.detail
+    if not detail:find('"', 1, true) then
+      detail = '"' .. detail .. '"'
+    end
+    return item.text .. "  ·  " .. detail
   end
   return item.text
 end
@@ -431,7 +435,7 @@ local function render_contributors()
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = "  i/k move  l/→ open  f/F types  q quit"
+  lines[#lines + 1] = "  i/k move  l/→ open  f/F filters  q quit"
   local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
@@ -623,7 +627,7 @@ local function render_loading(contributor)
     "",
     "  Loading recent GitHub activity…",
   }
-  footer(lines, "j/b/← back   q/<C-c> close")
+  footer(lines, "j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -642,7 +646,7 @@ local function render_error(message)
     "  Could not load activity",
     "  " .. message,
   }
-  footer(lines, "r retry   j/b/← back   o open profile   q/<C-c> close")
+  footer(lines, "r retry   j/← back   o open profile   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -662,9 +666,8 @@ local function render_activity(events, cached, notice)
   local lines = {
     "",
     "  " .. (contributor.name or contributor.username),
-    ("  %s · %d recent public events%s"):format(
+    ("  %s%s"):format(
       "@" .. contributor.username,
-      #events,
       cached and " · cached" or ""
     ),
   }
@@ -691,8 +694,8 @@ local function render_activity(events, cached, notice)
     lines[#lines + 1] = "  No recent public activity was returned."
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-  lines[#lines + 1] = "  i/k move   l/↵/→ open   f types   "
-    .. "F global   r refresh   j/b/← back   q/<C-c> close"
+  lines[#lines + 1] = "  i/k move   l/↵/→ open   f/F filters   "
+    .. "r refresh   j/← back   q close"
   lines[#lines + 1] = ""
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
@@ -970,7 +973,6 @@ local function map_keys(buf)
   map("<ScrollWheelUp>", function()
     move_cursor(-1)
   end, "Scroll Pantheon contributors up")
-  map("b", go_back, "Return to Pantheon contributors")
   map("r", function()
     if M.state.view == "activity" and M.state.contributor then
       github.clear(M.state.contributor.username)

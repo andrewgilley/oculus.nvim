@@ -99,12 +99,22 @@ local function sentence(event)
 
   if kind == "PullRequestEvent" then
     local number = value(payload, "pull_request", "number") or payload.number
-    local title = value(payload, "pull_request", "title")
-    return ("%s pull request%s in %s%s"):format(
-      payload.action or "Updated",
+    local action = payload.action or "Updated"
+    if action == "closed" and value(payload, "pull_request", "merged") then
+      action = "Merged"
+    end
+    return ("%s pull request%s in %s"):format(
+      action,
       number and (" #" .. number) or "",
-      repo,
-      title and (" · " .. title) or ""
+      repo
+    )
+  end
+
+  if kind == "PullRequestReviewEvent" then
+    local number = value(payload, "pull_request", "number")
+    return ("Reviewed pull request%s in %s"):format(
+      number and (" #" .. number) or "",
+      repo
     )
   end
 
@@ -132,7 +142,7 @@ local function sentence(event)
 
   if kind == "CreateEvent" or kind == "DeleteEvent" then
     local target = payload.ref_type or "item"
-    local ref = payload.ref and (" " .. payload.ref) or ""
+    local ref = payload.ref and (' "' .. payload.ref .. '"') or ""
     return ("%s %s%s in %s"):format(labels[kind], target, ref, repo)
   end
 
@@ -156,6 +166,10 @@ local function preview_text(text, limit)
   return vim.fn.strcharpart(preview, 0, limit or 80)
 end
 
+local function quoted(text)
+  return '"' .. text .. '"'
+end
+
 local function detail(event)
   if event.type == "PushEvent" then
     local commits = value(event, "payload", "commits") or {}
@@ -171,11 +185,19 @@ local function detail(event)
       local body = message:gsub("^[^\r\n]+[\r\n]*", "")
       local title = body:match("[^\r\n]+")
       if title then
-        return ("PR #%s · %s"):format(pr_number, title)
+        return ("PR #%s · %s"):format(pr_number, quoted(title))
       end
     end
 
     return first_line
+  end
+  if event.type == "PullRequestEvent" then
+    local title = preview_text(value(event, "payload", "pull_request", "title"))
+    return title and quoted(title) or nil
+  end
+  if event.type == "PullRequestReviewEvent" then
+    local title = preview_text(value(event, "payload", "pull_request", "title"))
+    return title and quoted(title) or nil
   end
   if
     event.type == "IssueCommentEvent"
@@ -183,9 +205,6 @@ local function detail(event)
     or event.type == "CommitCommentEvent"
   then
     return preview_text(value(event, "payload", "comment", "body"))
-  end
-  if event.type == "PullRequestReviewEvent" then
-    return preview_text(value(event, "payload", "review", "body"))
   end
   return nil
 end
