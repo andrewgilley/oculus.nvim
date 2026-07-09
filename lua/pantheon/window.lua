@@ -33,6 +33,7 @@ M.state = {
   activity_notice = nil,
   activity_loaded = false,
   activity_cursor_min_line = 1,
+  activity_scroll_limit_line = nil,
   restore_cursor = nil,
   opts = {},
 }
@@ -176,6 +177,19 @@ local function update_activity_cursorline()
     1,
     vim.api.nvim_win_get_height(M.state.win) - footer_height
   )
+  local limit_line = M.state.activity_scroll_limit_line
+  if limit_line then
+    local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+    if cursor[1] > limit_line then
+      vim.api.nvim_win_set_cursor(M.state.win, { limit_line, cursor[2] })
+    end
+    local max_topline = math.max(1, limit_line - visible_rows + 1)
+    local view = vim.fn.winsaveview()
+    if view.topline > max_topline then
+      view.topline = max_topline
+      vim.fn.winrestview(view)
+    end
+  end
   local cursor_row = vim.fn.winline()
   if cursor_row > visible_rows then
     local view = vim.fn.winsaveview()
@@ -858,6 +872,7 @@ local function render_activity(events, cached, notice)
   M.state.activity_notice = notice
   M.state.activity_loaded = true
   M.state.line_targets = {}
+  M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
   local lines = {
     "",
@@ -873,6 +888,7 @@ local function render_activity(events, cached, notice)
   lines[#lines + 1] = ""
 
   local first_event_line
+  local scroll_limit_line
   local activity_line_kinds = {}
   for _, event in ipairs(events) do
     local item = actions.describe(event)
@@ -893,8 +909,9 @@ local function render_activity(events, cached, notice)
           M.state.line_targets[#lines] = item.url
           activity_line_kinds[#lines] = "preview"
         end
-        lines[#lines + 1] = pad_cell("", item_width)
       end
+      lines[#lines + 1] = pad_cell("", item_width)
+      scroll_limit_line = #lines
     else
       lines[event_line] = activity_item_line(
         item,
@@ -903,13 +920,17 @@ local function render_activity(events, cached, notice)
       )
       lines[#lines + 1] = pad_cell("", item_width)
       M.state.line_targets[#lines] = item.url
+      scroll_limit_line = #lines
     end
     M.state.line_targets[event_line] = item.url
   end
 
   if #events == 0 then
     lines[#lines + 1] = "  No recent public activity was returned."
+    lines[#lines + 1] = ""
+    scroll_limit_line = #lines
   end
+  M.state.activity_scroll_limit_line = scroll_limit_line
   lines[#lines + 1] = ""
   lines[#lines + 1] = ""
   set_lines(lines)
@@ -1330,6 +1351,18 @@ function M.open(opts)
       if type(contributor) == "table" then
         M.state.selected_username = contributor.username
         queue_preview(contributor)
+      end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("WinScrolled", {
+    group = autocmd_group,
+    callback = function(args)
+      if
+        M.state.view == "activity"
+        and tonumber(args.match) == M.state.win
+      then
+        update_activity_cursorline()
       end
     end,
   })
