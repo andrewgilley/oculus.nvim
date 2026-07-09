@@ -163,9 +163,9 @@ local function activity_time(timestamp)
   local offset = os.difftime(os.time(), os.time(os.date("!*t")))
   local local_time = then_time - offset
   local event_date = os.date("*t", local_time)
-  local time = os.date("%I:%M %p", local_time):gsub("^0", "")
+  local time = os.date("%I:%M %p", local_time):gsub("^0", " ")
 
-  local date = ("%d/%d/%02d"):format(
+  local date = ("%02d/%02d/%02d"):format(
     event_date.month,
     event_date.day,
     event_date.year % 100
