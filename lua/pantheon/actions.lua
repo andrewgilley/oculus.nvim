@@ -201,14 +201,20 @@ local function detail(event)
     local commits = value(event, "payload", "commits") or {}
     if #commits > 1 then
       local messages = {}
+      local omitted = false
       for _, commit in ipairs(commits) do
-        if #messages >= 5 then
-          break
-        end
         local message = preview_text(commit.message)
         if message then
-          messages[#messages + 1] = message
+          if #messages < 3 then
+            messages[#messages + 1] = message
+          else
+            omitted = true
+            break
+          end
         end
+      end
+      if omitted then
+        messages[#messages + 1] = "etc"
       end
       if #messages > 0 then
         return messages
