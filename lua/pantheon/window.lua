@@ -631,7 +631,7 @@ local function render_contributors()
     lines[#lines + 1] = ""
   end
   set_lines(lines)
-  vim.wo[M.state.win].cursorline = true
+  vim.wo[M.state.win].cursorline = false
 
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
