@@ -206,12 +206,35 @@ local defaults = {
 }
 
 M.config = vim.deepcopy(defaults)
+local randomized_default_contributors
+
+local function shuffle_contributors(contributors)
+  local result = vim.deepcopy(contributors)
+  math.randomseed(os.time() + vim.uv.hrtime())
+  for index = #result, 2, -1 do
+    local swap_index = math.random(index)
+    result[index], result[swap_index] = result[swap_index], result[index]
+  end
+  return result
+end
+
+local function default_contributors()
+  if not randomized_default_contributors then
+    randomized_default_contributors = shuffle_contributors(
+      defaults.contributors
+    )
+  end
+  return vim.deepcopy(randomized_default_contributors)
+end
 
 function M.setup(opts)
-  M.config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
+  opts = opts or {}
+  M.config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts)
 
-  if opts and opts.contributors then
+  if opts.contributors then
     M.config.contributors = vim.deepcopy(opts.contributors)
+  else
+    M.config.contributors = default_contributors()
   end
 
   if M.config.persist_filters then

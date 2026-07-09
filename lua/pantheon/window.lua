@@ -124,21 +124,7 @@ local function left_pad_cell(text, width)
 end
 
 local function display_contributors(contributors)
-  local result = vim.list_extend({}, contributors or {})
-  table.sort(result, function(left, right)
-    local left_name = left.name or left.username
-    local right_name = right.name or right.username
-    local left_surname = (left_name:match("(%S+)$") or left_name):lower()
-    local right_surname = (right_name:match("(%S+)$") or right_name):lower()
-    if left_surname ~= right_surname then
-      return left_surname < right_surname
-    end
-    if left_name:lower() ~= right_name:lower() then
-      return left_name:lower() < right_name:lower()
-    end
-    return left.username:lower() < right.username:lower()
-  end)
-  return result
+  return vim.list_extend({}, contributors or {})
 end
 
 local function activity_time(timestamp)
@@ -491,7 +477,7 @@ local function render_contributors()
   name_width = math.min(name_width, math.max(10, available_name_width))
 
   lines[#lines + 1] = ("  %s  %s"):format(
-    pad_cell("CONTRIBUTOR", name_width),
+    pad_cell("USER", name_width),
     pad_cell("GITHUB", username_width)
   )
 
