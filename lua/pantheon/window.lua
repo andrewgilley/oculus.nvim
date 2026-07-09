@@ -247,6 +247,20 @@ local function display_contributors(contributors)
   return vim.list_extend({}, contributors or {})
 end
 
+local function utc_time(year, month, day, hour, minute, second)
+  year = month <= 2 and year - 1 or year
+  local era = math.floor(year / 400)
+  local year_of_era = year - era * 400
+  local month_index = month > 2 and month - 3 or month + 9
+  local day_of_year = math.floor((153 * month_index + 2) / 5) + day - 1
+  local day_of_era = year_of_era * 365
+    + math.floor(year_of_era / 4)
+    - math.floor(year_of_era / 100)
+    + day_of_year
+  local days = era * 146097 + day_of_era - 719468
+  return days * 86400 + hour * 3600 + minute * 60 + second
+end
+
 local function activity_time(timestamp)
   if not timestamp then
     return "unknown time"
@@ -258,17 +272,14 @@ local function activity_time(timestamp)
     return timestamp
   end
 
-  local then_time = os.time({
-    year = tonumber(year),
-    month = tonumber(month),
-    day = tonumber(day),
-    hour = tonumber(hour),
-    min = tonumber(minute),
-    sec = tonumber(second),
-    isdst = false,
-  })
-  local offset = os.difftime(os.time(), os.time(os.date("!*t")))
-  local local_time = then_time - offset
+  local local_time = utc_time(
+    tonumber(year),
+    tonumber(month),
+    tonumber(day),
+    tonumber(hour),
+    tonumber(minute),
+    tonumber(second)
+  )
   local event_date = os.date("*t", local_time)
   local time = os.date("%I:%M %p", local_time):gsub("^0", " ")
 
