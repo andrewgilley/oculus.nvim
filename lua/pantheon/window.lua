@@ -116,13 +116,6 @@ local function pad_cell(text, width)
   return value .. string.rep(" ", padding)
 end
 
-local function activity_line(icon, title, timestamp, width)
-  local suffix = "  ·  " .. timestamp
-  local title_width = math.max(1, width - vim.fn.strdisplaywidth(suffix))
-  local prefix = trim_to_width(("   %s    %s"):format(icon, title), title_width)
-  return prefix .. suffix
-end
-
 local function display_contributors(contributors)
   local result = vim.list_extend({}, contributors or {})
   table.sort(result, function(left, right)
@@ -189,15 +182,40 @@ local function preview_left_width(window_width)
   return math.max(30, math.min(preferred, window_width - 22))
 end
 
-local function event_text(item)
+local function event_detail(item)
   if item.detail then
     local detail = item.detail
     if not detail:find('"', 1, true) then
       detail = '"' .. detail .. '"'
     end
-    return item.text .. "  ·  " .. detail
+    return detail
+  end
+end
+
+local function event_text(item, width)
+  local detail = event_detail(item)
+  if detail then
+    local separator = "  ·  "
+    if width then
+      local separator_width = vim.fn.strdisplaywidth(separator)
+      local detail_width = vim.fn.strdisplaywidth(detail)
+      if detail_width + separator_width >= width then
+        return trim_to_width(detail, width)
+      end
+      local text_width = math.max(1, width - separator_width - detail_width)
+      return trim_to_width(item.text, text_width) .. separator .. detail
+    end
+    return item.text .. separator .. detail
   end
   return item.text
+end
+
+local function activity_item_line(item, timestamp, width)
+  local suffix = "  ·  " .. timestamp
+  local title_width = math.max(1, width - vim.fn.strdisplaywidth(suffix))
+  local prefix = ("   %s    "):format(item.icon)
+  local text_width = math.max(1, title_width - vim.fn.strdisplaywidth(prefix))
+  return prefix .. event_text(item, text_width) .. suffix
 end
 
 local function render_preview_panel(items)
@@ -681,9 +699,8 @@ local function render_activity(events, cached, notice)
     local item = actions.describe(event)
     local event_line = #lines + 1
     first_event_line = first_event_line or event_line
-    lines[event_line] = activity_line(
-      item.icon,
-      event_text(item),
+    lines[event_line] = activity_item_line(
+      item,
       activity_time(event.created_at),
       width - 2
     )

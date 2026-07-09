@@ -269,6 +269,7 @@ end
 
 function M.describe(event)
   return {
+    type = event.type,
     icon = icons[event.type] or "●",
     text = sentence(event),
     detail = detail(event),
