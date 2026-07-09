@@ -240,6 +240,12 @@ local function preview_line(item, width)
     .. " "
 end
 
+local function without_detail(item)
+  local result = vim.tbl_extend("force", {}, item)
+  result.detail = nil
+  return result
+end
+
 local function render_preview_panel(items)
   if
     M.state.view ~= "contributors"
@@ -737,7 +743,7 @@ local function render_activity(events, cached, notice)
     local item_width = width - 2
     if item.detail then
       lines[event_line] = activity_item_line(
-        vim.tbl_extend("force", item, { detail = nil }),
+        without_detail(item),
         activity_time(event.created_at),
         item_width
       )
