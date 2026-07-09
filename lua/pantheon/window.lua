@@ -685,7 +685,7 @@ local function render_error(message)
     "  Could not load activity",
     "  " .. message,
   }
-  footer(lines, "r retry   j/← back   o open profile   q close")
+  footer(lines, "r refresh   j/← back   o open profile   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
