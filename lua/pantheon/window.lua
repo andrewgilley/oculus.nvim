@@ -197,7 +197,7 @@ local function update_activity_cursorline()
     vim.fn.winrestview(view)
     cursor_row = vim.fn.winline()
   end
-  vim.wo[M.state.win].cursorline = cursor_row <= visible_rows
+  vim.wo[M.state.win].cursorline = false
 end
 
 local function set_lines(lines)
