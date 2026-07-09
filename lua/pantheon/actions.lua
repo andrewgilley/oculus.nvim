@@ -170,6 +170,10 @@ local function quoted(text)
   return '"' .. text .. '"'
 end
 
+local function capitalize_first(text)
+  return text:gsub("^%l", string.upper)
+end
+
 local function detail(event)
   if event.type == "PushEvent" then
     local commits = value(event, "payload", "commits") or {}
@@ -271,7 +275,7 @@ function M.describe(event)
   return {
     type = event.type,
     icon = icons[event.type] or "●",
-    text = sentence(event),
+    text = capitalize_first(sentence(event)),
     detail = detail(event),
     url = event_url(event),
   }
