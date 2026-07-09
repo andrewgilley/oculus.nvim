@@ -202,6 +202,9 @@ local function detail(event)
     if #commits > 1 then
       local messages = {}
       for _, commit in ipairs(commits) do
+        if #messages >= 5 then
+          break
+        end
         local message = preview_text(commit.message)
         if message then
           messages[#messages + 1] = message

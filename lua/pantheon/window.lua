@@ -157,7 +157,7 @@ local function activity_time(timestamp)
     event_date.day,
     event_date.year % 100
   )
-  return date .. " —" .. time
+  return date .. " — " .. time
 end
 
 local function footer(lines, text)
