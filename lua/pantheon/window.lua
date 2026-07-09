@@ -299,8 +299,10 @@ local function preview_items(contributor, events, err, cached)
   for index = 1, math.min(8, #events) do
     local event = events[index]
     local item = actions.describe(event)
-    items[line] = { item.icon .. "  " .. event_text(item), "NormalFloat" }
-    items[line + 1] = { activity_time(event.created_at), "Comment" }
+    items[line] = { item.icon .. "  " .. item.text, "NormalFloat" }
+    items[line + 1] = item.detail
+      and { event_detail(item), "PantheonActivityPreview" }
+      or { activity_time(event.created_at), "Comment" }
     line = line + 2
   end
   return items
@@ -426,7 +428,6 @@ local function render_contributors()
   }
 
   local contributors = M.state.contributors
-  local index_width = #tostring(math.max(#contributors, 1))
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
   local name_width = 4
   local username_width = 6
@@ -436,11 +437,12 @@ local function render_contributors()
     username_width = math.max(username_width, #(contributor.username) + 1)
   end
   username_width = math.min(username_width, 14)
-  local available_name_width = left_width - index_width - username_width - 8
+  local available_name_width = left_width - username_width - 5
   name_width = math.min(name_width, math.max(10, available_name_width))
 
-  lines[#lines + 1] = ("  %" .. index_width .. "s  %s  %s"):format(
-    "#", pad_cell("CONTRIBUTOR", name_width), pad_cell("GITHUB", username_width)
+  lines[#lines + 1] = ("  %s  %s"):format(
+    pad_cell("CONTRIBUTOR", name_width),
+    pad_cell("GITHUB", username_width)
   )
 
   local selected_index = 1
@@ -469,10 +471,8 @@ local function render_contributors()
   for index = offset, math.min(#contributors, offset + list_limit - 1) do
     local contributor = contributors[index]
     local line = #lines + 1
-    local index_label = tostring(index)
     local handle = "@" .. contributor.username
-    local prefix = ("  %" .. index_width .. "s  %s  %s"):format(
-      index_label,
+    local prefix = ("  %s  %s"):format(
       pad_cell(contributor.name or contributor.username, name_width),
       pad_cell(handle, username_width)
     )
@@ -680,7 +680,7 @@ local function render_loading(contributor)
   footer(lines, "j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
-  highlight(2, 2, -1, "Title")
+  highlight(2, 2, -1, "Function")
   highlight(3, 2, -1, "Comment")
   highlight(5, 2, -1, "DiagnosticInfo")
 end
@@ -770,7 +770,7 @@ local function render_activity(events, cached, notice)
   vim.wo[M.state.win].cursorline = true
   vim.wo[M.state.win].scrolloff = 1
 
-  highlight(2, 2, -1, "Title")
+  highlight(2, 2, -1, "Function")
   highlight(3, 2, -1, "Comment")
   if notice then
     highlight(4, 2, -1, "DiagnosticWarn")
@@ -950,6 +950,10 @@ local function move_cursor(direction)
 
   if M.state.view == "activity" then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
+    local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+    if line < 2 then
+      vim.api.nvim_win_set_cursor(M.state.win, { 2, 0 })
+    end
     return
   end
 

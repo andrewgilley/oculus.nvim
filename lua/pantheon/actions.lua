@@ -103,6 +103,13 @@ local function sentence(event)
     if action == "closed" and value(payload, "pull_request", "merged") then
       action = "Merged"
     end
+    if action == "opened" then
+      return ("%s pull request%s in %s"):format(
+        action,
+        number and (" #" .. number) or "",
+        repo
+      )
+    end
     return ("%s pull request%s"):format(
       action,
       number and (" #" .. number) or ""
@@ -111,7 +118,10 @@ local function sentence(event)
 
   if kind == "PullRequestReviewEvent" then
     local number = value(payload, "pull_request", "number")
-    return ("Reviewed pull request%s"):format(number and (" #" .. number) or "")
+    return ("Reviewed pull request%s in %s"):format(
+      number and (" #" .. number) or "",
+      repo
+    )
   end
 
   if kind == "PullRequestReviewCommentEvent" then
