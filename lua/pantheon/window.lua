@@ -840,7 +840,7 @@ local function load_activity(contributor, force)
       local results = vim.list_slice(
         filtered,
         1,
-        M.state.opts.results_limit or 20
+        M.state.opts.results_limit or 8
       )
       render_activity(results, cached, notice)
       github.enrich_pull_requests(results, request_opts, function(with_prs)
