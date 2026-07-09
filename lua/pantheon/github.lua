@@ -76,10 +76,9 @@ function M.events(username, opts, callback)
     return
   end
 
-  local url = ("https://api.github.com/users/%s/events/public?per_page=%d"):format(
-    username,
-    opts.per_page or 30
-  )
+  local url = (
+    "https://api.github.com/users/%s/events/public?per_page=%d"
+  ):format(username, opts.per_page or 30)
   request_json(url, opts, function(events, err)
     if not events then
       callback(nil, err)
@@ -93,7 +92,12 @@ end
 local function push_key(event)
   local payload = event.payload or {}
   local repo = event.repo and event.repo.name
-  if not repo or not payload.before or not payload.head or payload.before:match("^0+$") then
+  if
+    not repo
+    or not payload.before
+    or not payload.head
+    or payload.before:match("^0+$")
+  then
     return nil
   end
   return ("%s:%s:%s"):format(repo, payload.before, payload.head)
@@ -137,7 +141,10 @@ function M.enrich_pushes(events, opts, callback)
     if selected >= limit then
       break
     end
-    if event.type == "PushEvent" and not (event.payload and event.payload.commits) then
+    if
+      event.type == "PushEvent"
+      and not (event.payload and event.payload.commits)
+    then
       local key = push_key(event)
       if key then
         selected = selected + 1
@@ -148,11 +155,9 @@ function M.enrich_pushes(events, opts, callback)
           pending = pending + 1
           local repo = event.repo.name
           local payload = event.payload
-          local url = ("https://api.github.com/repos/%s/compare/%s...%s"):format(
-            repo,
-            payload.before,
-            payload.head
-          )
+          local url = (
+            "https://api.github.com/repos/%s/compare/%s...%s"
+          ):format(repo, payload.before, payload.head)
           request_json(url, opts, function(comparison)
             if comparison then
               M.apply_push_comparison(event, comparison)

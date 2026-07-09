@@ -1,7 +1,8 @@
 local M = {}
 
 local function windows_edge()
-  for _, variable in ipairs({ "PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA" }) do
+  local variables = { "PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA" }
+  for _, variable in ipairs(variables) do
     local root = vim.env[variable]
     if root then
       local candidate = root .. "\\Microsoft\\Edge\\Application\\msedge.exe"

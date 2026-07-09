@@ -19,7 +19,10 @@ end
 
 function M.save(path, config)
   local directory = vim.fn.fnamemodify(path, ":h")
-  if vim.fn.mkdir(directory, "p") == 0 and vim.fn.isdirectory(directory) ~= 1 then
+  if
+    vim.fn.mkdir(directory, "p") == 0
+    and vim.fn.isdirectory(directory) ~= 1
+  then
     return false, "could not create " .. directory
   end
 

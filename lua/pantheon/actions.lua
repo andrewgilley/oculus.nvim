@@ -90,12 +90,11 @@ local function sentence(event)
 
   if kind == "PushEvent" then
     local count = payload.size or #(payload.commits or {})
-    local branch = (payload.ref or ""):match("([^/]+)$")
     if count == 0 then
-      return ("Pushed to %s%s"):format(repo, branch and (" · " .. branch) or "")
+      return ("Pushed to %s"):format(repo)
     end
     local noun = count == 1 and "commit" or "commits"
-    return ("Pushed %d %s to %s%s"):format(count, noun, repo, branch and (" · " .. branch) or "")
+    return ("Pushed %d %s to %s"):format(count, noun, repo)
   end
 
   if kind == "PullRequestEvent" then
@@ -145,11 +144,48 @@ local function sentence(event)
   return ("%s %s"):format(labels[kind] or kind:gsub("Event$", ""), repo)
 end
 
+local function preview_text(text, limit)
+  if type(text) ~= "string" then
+    return nil
+  end
+
+  local preview = text:gsub("[%c%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if preview == "" then
+    return nil
+  end
+  return vim.fn.strcharpart(preview, 0, limit or 80)
+end
+
 local function detail(event)
   if event.type == "PushEvent" then
     local commits = value(event, "payload", "commits") or {}
     local message = commits[#commits] and commits[#commits].message
-    return message and message:match("[^\r\n]+") or nil
+    if not message then
+      return nil
+    end
+
+    local first_line = message:match("[^\r\n]+")
+    local pr_number = first_line
+      and first_line:match("^Merge pull request #(%d+)")
+    if pr_number then
+      local body = message:gsub("^[^\r\n]+[\r\n]*", "")
+      local title = body:match("[^\r\n]+")
+      if title then
+        return ("PR #%s · %s"):format(pr_number, title)
+      end
+    end
+
+    return first_line
+  end
+  if
+    event.type == "IssueCommentEvent"
+    or event.type == "PullRequestReviewCommentEvent"
+    or event.type == "CommitCommentEvent"
+  then
+    return preview_text(value(event, "payload", "comment", "body"))
+  end
+  if event.type == "PullRequestReviewEvent" then
+    return preview_text(value(event, "payload", "review", "body"))
   end
   return nil
 end
@@ -164,16 +200,17 @@ local function comment_url(comment, fallback)
     return url
   end
 
-  local target = body:gsub("[%c%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-  target = vim.fn.strcharpart(target, 0, 60)
-  if target == "" then
+  local target = preview_text(body, 60)
+  if not target or target == "" then
     return url
   end
 
   local fragment, base_url = url:match("#(.+)$"), url:gsub("#.*$", "")
   local anchor = fragment and (fragment .. ":~:text=") or ":~:text="
   local author = value(comment, "user", "login")
-  local text_fragment = author and (vim.uri_encode(author) .. "," .. vim.uri_encode(target)) or vim.uri_encode(target)
+  local text_fragment = author
+    and (vim.uri_encode(author) .. "," .. vim.uri_encode(target))
+    or vim.uri_encode(target)
   return base_url .. "#" .. anchor .. text_fragment
 end
 
@@ -191,9 +228,12 @@ local function event_url(event)
   elseif event.type == "IssueCommentEvent" then
     return comment_url(payload.comment, base)
   elseif event.type == "PullRequestReviewEvent" then
-    return value(payload, "review", "html_url") or value(payload, "pull_request", "html_url") or base
+    return value(payload, "review", "html_url")
+      or value(payload, "pull_request", "html_url")
+      or base
   elseif event.type == "PullRequestReviewCommentEvent" then
-    return comment_url(payload.comment, value(payload, "pull_request", "html_url") or base)
+    local fallback = value(payload, "pull_request", "html_url") or base
+    return comment_url(payload.comment, fallback)
   elseif event.type == "CommitCommentEvent" then
     return comment_url(payload.comment, base)
   elseif event.type == "IssuesEvent" then

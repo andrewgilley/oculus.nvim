@@ -7,7 +7,10 @@ local github = require("pantheon.github")
 local ns = vim.api.nvim_create_namespace("pantheon")
 local preview_ns = vim.api.nvim_create_namespace("pantheon_preview")
 local selection_ns = vim.api.nvim_create_namespace("pantheon_selection")
-local autocmd_group = vim.api.nvim_create_augroup("PantheonWindow", { clear = true })
+local autocmd_group = vim.api.nvim_create_augroup(
+  "PantheonWindow",
+  { clear = true }
+)
 
 M.state = {
   buf = nil,
@@ -24,6 +27,10 @@ M.state = {
   selected_username = nil,
   contributor_offset = 1,
   filter_scope = nil,
+  activity_cached = nil,
+  activity_notice = nil,
+  activity_loaded = false,
+  restore_cursor = nil,
   opts = {},
 }
 
@@ -86,7 +93,14 @@ local function set_lines(lines)
 end
 
 local function highlight(line, start_col, end_col, group)
-  vim.api.nvim_buf_add_highlight(M.state.buf, ns, group, line - 1, start_col, end_col)
+  vim.api.nvim_buf_add_highlight(
+    M.state.buf,
+    ns,
+    group,
+    line - 1,
+    start_col,
+    end_col
+  )
 end
 
 local function trim_to_width(text, width)
@@ -98,7 +112,8 @@ end
 
 local function pad_cell(text, width)
   local value = trim_to_width(text, width)
-  return value .. string.rep(" ", math.max(0, width - vim.fn.strdisplaywidth(value)))
+  local padding = math.max(0, width - vim.fn.strdisplaywidth(value))
+  return value .. string.rep(" ", padding)
 end
 
 local function activity_line(icon, title, timestamp, width)
@@ -126,7 +141,7 @@ local function display_contributors(contributors)
   return result
 end
 
-local function relative_time(timestamp)
+local function activity_time(timestamp)
   if not timestamp then
     return "unknown time"
   end
@@ -147,22 +162,21 @@ local function relative_time(timestamp)
     isdst = false,
   })
   local offset = os.difftime(os.time(), os.time(os.date("!*t")))
-  local seconds = math.max(0, os.difftime(os.time(), then_time - offset))
+  local local_time = then_time - offset
+  local event_date = os.date("*t", local_time)
+  local event_day = os.date("%Y-%m-%d", local_time)
+  local today = os.date("%Y-%m-%d")
+  local time = os.date("%I:%M %p", local_time):gsub("^0", "")
 
-  if seconds < 60 then
-    local count = math.floor(seconds)
-    return count .. (count == 1 and " second ago" or " seconds ago")
-  elseif seconds < 3600 then
-    local count = math.floor(seconds / 60)
-    return count .. (count == 1 and " minute ago" or " minutes ago")
-  elseif seconds < 86400 then
-    local count = math.floor(seconds / 3600)
-    return count .. (count == 1 and " hour ago" or " hours ago")
-  elseif seconds < 604800 then
-    local count = math.floor(seconds / 86400)
-    return count .. (count == 1 and " day ago" or " days ago")
+  if event_day == today then
+    return time
   end
-  return os.date("%b %d, %Y", then_time - offset)
+  local date = ("%d/%d/%02d"):format(
+    event_date.month,
+    event_date.day,
+    event_date.year % 100
+  )
+  return date .. " · " .. time
 end
 
 local function footer(lines, text)
@@ -171,11 +185,23 @@ local function footer(lines, text)
 end
 
 local function preview_left_width(window_width)
-  return math.max(30, math.min(math.max(40, math.floor(window_width * 0.46)), window_width - 22))
+  local preferred = math.max(40, math.floor(window_width * 0.46))
+  return math.max(30, math.min(preferred, window_width - 22))
+end
+
+local function event_text(item)
+  if item.detail then
+    return item.text .. "  ·  “" .. item.detail .. "”"
+  end
+  return item.text
 end
 
 local function render_preview_panel(items)
-  if M.state.view ~= "contributors" or not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
+  if
+    M.state.view ~= "contributors"
+    or not is_valid_buf(M.state.buf)
+    or not is_valid_win(M.state.win)
+  then
     return
   end
 
@@ -230,9 +256,8 @@ local function preview_items(contributor, events, err, cached)
   for index = 1, math.min(8, #events) do
     local event = events[index]
     local item = actions.describe(event)
-    local text = item.detail and (item.text .. "  ·  “" .. item.detail .. "”") or item.text
-    items[line] = { item.icon .. "  " .. text, "NormalFloat" }
-    items[line + 1] = { relative_time(event.created_at), "Comment" }
+    items[line] = { item.icon .. "  " .. event_text(item), "NormalFloat" }
+    items[line + 1] = { activity_time(event.created_at), "Comment" }
     line = line + 2
   end
   return items
@@ -267,24 +292,41 @@ local function queue_preview(contributor)
   render_preview_panel(preview_items(contributor))
 
   vim.defer_fn(function()
-    if request_id ~= M.state.preview_request_id or M.state.view ~= "contributors" then
+    if
+      request_id ~= M.state.preview_request_id
+      or M.state.view ~= "contributors"
+    then
       return
     end
-    github.events(contributor.username, M.state.opts, function(events, err, cached)
-      if request_id ~= M.state.preview_request_id or M.state.view ~= "contributors" then
-        return
+    github.events(
+      contributor.username,
+      M.state.opts,
+      function(events, err, cached)
+        if
+          request_id ~= M.state.preview_request_id
+          or M.state.view ~= "contributors"
+        then
+          return
+        end
+        local filtered = events
+          and actions.filter(events, activity_types_for(contributor))
+          or nil
+        render_preview_panel(preview_items(contributor, filtered, err, cached))
+        if filtered then
+          github.enrich_pushes(filtered, M.state.opts, function(enriched)
+            if
+              request_id ~= M.state.preview_request_id
+              or M.state.view ~= "contributors"
+            then
+              return
+            end
+            render_preview_panel(
+              preview_items(contributor, enriched, nil, cached)
+            )
+          end)
+        end
       end
-      local filtered = events and actions.filter(events, activity_types_for(contributor)) or nil
-      render_preview_panel(preview_items(contributor, filtered, err, cached))
-      if filtered then
-        github.enrich_pushes(filtered, M.state.opts, function(enriched)
-          if request_id ~= M.state.preview_request_id or M.state.view ~= "contributors" then
-            return
-          end
-          render_preview_panel(preview_items(contributor, enriched, nil, cached))
-        end)
-      end
-    end)
+    )
   end, 150)
 end
 
@@ -301,7 +343,12 @@ local function highlight_contributor_selection()
   if type(M.state.line_targets[line]) ~= "table" then
     return
   end
-  local text = vim.api.nvim_buf_get_lines(M.state.buf, line - 1, line, false)[1] or ""
+  local text = vim.api.nvim_buf_get_lines(
+    M.state.buf,
+    line - 1,
+    line,
+    false
+  )[1] or ""
   local item_text = text:gsub("%s+$", "")
   vim.api.nvim_buf_set_extmark(M.state.buf, selection_ns, line - 1, 2, {
     end_col = #item_text,
@@ -330,11 +377,13 @@ local function render_contributors()
   local name_width = 4
   local username_width = 6
   for _, contributor in ipairs(contributors) do
-    name_width = math.max(name_width, #(contributor.name or contributor.username))
+    local contributor_name = contributor.name or contributor.username
+    name_width = math.max(name_width, #contributor_name)
     username_width = math.max(username_width, #(contributor.username) + 1)
   end
   username_width = math.min(username_width, 14)
-  name_width = math.min(name_width, math.max(10, left_width - index_width - username_width - 8))
+  local available_name_width = left_width - index_width - username_width - 8
+  name_width = math.min(name_width, math.max(10, available_name_width))
 
   lines[#lines + 1] = ("  %" .. index_width .. "s  %s  %s"):format(
     "#", pad_cell("CONTRIBUTOR", name_width), pad_cell("GITHUB", username_width)
@@ -347,9 +396,15 @@ local function render_contributors()
       break
     end
   end
-  local list_limit = math.max(1, math.floor(tonumber(M.state.opts.contributor_list_limit) or 20))
+  local list_limit = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.contributor_list_limit) or 20)
+  )
   local max_offset = math.max(1, #contributors - list_limit + 1)
-  local offset = math.min(math.max(1, M.state.contributor_offset or 1), max_offset)
+  local offset = math.min(
+    math.max(1, M.state.contributor_offset or 1),
+    max_offset
+  )
   if selected_index < offset then
     offset = selected_index
   elseif selected_index >= offset + list_limit then
@@ -389,9 +444,19 @@ local function render_contributors()
   highlight(5, 2, -1, "Comment")
   for line, _ in pairs(M.state.line_targets) do
     local username_start = lines[line]:find("@", 1, true)
-    highlight(line, 2, username_start and (username_start - 2) or -1, "Function")
+    highlight(
+      line,
+      2,
+      username_start and (username_start - 2) or -1,
+      "Function"
+    )
     if username_start then
-      highlight(line, username_start - 1, username_start + username_width, "Identifier")
+      highlight(
+        line,
+        username_start - 1,
+        username_start + username_width,
+        "Identifier"
+      )
     end
   end
   highlight(separator_line, 2, -1, "WinSeparator")
@@ -451,9 +516,15 @@ local function save_filter_type_set(scope, enabled)
   end
 
   if M.state.opts.persist_filters then
-    local ok, err = require("pantheon.storage").save(M.state.opts.state_file, M.state.opts)
+    local ok, err = require("pantheon.storage").save(
+      M.state.opts.state_file,
+      M.state.opts
+    )
     if not ok then
-      vim.notify("Pantheon could not save activity filters: " .. tostring(err), vim.log.levels.ERROR)
+      vim.notify(
+        "Pantheon could not save activity filters: " .. tostring(err),
+        vim.log.levels.ERROR
+      )
     end
   end
 end
@@ -464,7 +535,8 @@ local function render_filters(scope, selected_type)
   M.state.line_targets = {}
   M.state.preview_request_id = M.state.preview_request_id + 1
 
-  local scope_name = scope.global and "All contributors" or ((scope.name or scope.username) .. " · @" .. scope.username)
+  local scope_name = scope.global and "All contributors"
+    or ((scope.name or scope.username) .. " · @" .. scope.username)
   local enabled = filter_type_set(scope)
   local lines = {
     "",
@@ -478,7 +550,11 @@ local function render_filters(scope, selected_type)
   for _, event_type in ipairs(actions.event_types) do
     local line = #lines + 1
     local checkbox = enabled[event_type] and "[x]" or "[ ]"
-    lines[line] = ("  %s  %-28s %s"):format(checkbox, actions.type_label(event_type), event_type)
+    lines[line] = ("  %s  %-28s %s"):format(
+      checkbox,
+      actions.type_label(event_type),
+      event_type
+    )
     M.state.line_targets[line] = { event_type = event_type }
     if event_type == selected_type then
       selected_line = line
@@ -494,7 +570,12 @@ local function render_filters(scope, selected_type)
   highlight(3, 2, -1, "Identifier")
   highlight(4, 2, -1, "Comment")
   for line, target in pairs(M.state.line_targets) do
-    highlight(line, 2, 5, enabled[target.event_type] and "DiagnosticOk" or "Comment")
+    highlight(
+      line,
+      2,
+      5,
+      enabled[target.event_type] and "DiagnosticOk" or "Comment"
+    )
     highlight(line, 7, 35, "Function")
     highlight(line, 36, -1, "Comment")
   end
@@ -534,6 +615,7 @@ local function set_all_filter_types(value)
 end
 
 local function render_loading(contributor)
+  M.state.activity_loaded = false
   local lines = {
     "",
     "  " .. (contributor.name or contributor.username),
@@ -550,6 +632,7 @@ local function render_loading(contributor)
 end
 
 local function render_error(message)
+  M.state.activity_loaded = false
   local contributor = M.state.contributor
   local lines = {
     "",
@@ -571,6 +654,9 @@ end
 local function render_activity(events, cached, notice)
   local contributor = M.state.contributor
   M.state.events = events
+  M.state.activity_cached = cached
+  M.state.activity_notice = notice
+  M.state.activity_loaded = true
   M.state.line_targets = {}
   local width = vim.api.nvim_win_get_width(M.state.win)
   local lines = {
@@ -592,8 +678,12 @@ local function render_activity(events, cached, notice)
     local item = actions.describe(event)
     local event_line = #lines + 1
     first_event_line = first_event_line or event_line
-    local text = item.detail and (item.text .. "  ·  “" .. item.detail .. "”") or item.text
-    lines[event_line] = activity_line(item.icon, text, relative_time(event.created_at), width - 2)
+    lines[event_line] = activity_line(
+      item.icon,
+      event_text(item),
+      activity_time(event.created_at),
+      width - 2
+    )
     M.state.line_targets[event_line] = item.url
   end
 
@@ -601,7 +691,8 @@ local function render_activity(events, cached, notice)
     lines[#lines + 1] = "  No recent public activity was returned."
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-  lines[#lines + 1] = "  i/k move   l/↵/→ open   f types   F global   r refresh   j/b/← back   q/<C-c> close"
+  lines[#lines + 1] = "  i/k move   l/↵/→ open   f types   "
+    .. "F global   r refresh   j/b/← back   q/<C-c> close"
   lines[#lines + 1] = ""
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
@@ -628,6 +719,31 @@ local function render_activity(events, cached, notice)
   end
 end
 
+local function restore_cursor()
+  local cursor = M.state.restore_cursor
+  if not cursor or not is_valid_win(M.state.win) then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(M.state.buf)
+  local line = math.min(math.max(cursor[1] or 1, 1), line_count)
+  local column = math.max(cursor[2] or 0, 0)
+  vim.api.nvim_win_set_cursor(M.state.win, { line, column })
+  M.state.restore_cursor = nil
+end
+
+local function contributor_by_username(username)
+  if not username then
+    return nil
+  end
+  for _, contributor in ipairs(M.state.contributors) do
+    if contributor.username == username then
+      return contributor
+    end
+  end
+  return nil
+end
+
 local function load_activity(contributor, force)
   M.state.view = "activity"
   M.state.contributor = contributor
@@ -635,7 +751,11 @@ local function load_activity(contributor, force)
   local request_id = M.state.request_id
   render_loading(contributor)
 
-  local request_opts = vim.tbl_extend("force", M.state.opts, { force = force or false })
+  local request_opts = vim.tbl_extend(
+    "force",
+    M.state.opts,
+    { force = force or false }
+  )
   local callback = function(events, err, cached, notice)
     if request_id ~= M.state.request_id or not is_valid_win(M.state.win) then
       return
@@ -644,7 +764,11 @@ local function load_activity(contributor, force)
       render_error(err)
     else
       local filtered = actions.filter(events, activity_types_for(contributor))
-      local results = vim.list_slice(filtered, 1, M.state.opts.results_limit or 20)
+      local results = vim.list_slice(
+        filtered,
+        1,
+        M.state.opts.results_limit or 20
+      )
       render_activity(results, cached, notice)
       github.enrich_pushes(results, request_opts, function(enriched)
         if request_id ~= M.state.request_id or M.state.view ~= "activity" then
@@ -725,14 +849,19 @@ local function open_current()
 end
 
 local function move_cursor(direction)
-  if M.state.view ~= "contributors" and M.state.view ~= "filters" and M.state.view ~= "activity" then
+  if
+    M.state.view ~= "contributors"
+    and M.state.view ~= "filters"
+    and M.state.view ~= "activity"
+  then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
     return
   end
 
   if M.state.view == "contributors" and #M.state.contributors > 0 then
     local target = target_on_cursor()
-    local username = type(target) == "table" and target.username or M.state.selected_username
+    local username = type(target) == "table" and target.username
+      or M.state.selected_username
     local current_index = 1
     for index, contributor in ipairs(M.state.contributors) do
       if contributor.username == username then
@@ -740,7 +869,8 @@ local function move_cursor(direction)
         break
       end
     end
-    local next_index = ((current_index - 1 + direction) % #M.state.contributors) + 1
+    local next_index = ((current_index - 1 + direction) %
+      #M.state.contributors) + 1
     M.state.selected_username = M.state.contributors[next_index].username
     render_contributors()
     return
@@ -748,8 +878,10 @@ local function move_cursor(direction)
 
   local selectable = {}
   for line, target in pairs(M.state.line_targets) do
-    local contributor_target = M.state.view ~= "activity" and type(target) == "table"
-    local activity_target = M.state.view == "activity" and type(target) == "string"
+    local contributor_target = M.state.view ~= "activity"
+      and type(target) == "table"
+    local activity_target = M.state.view == "activity"
+      and type(target) == "string"
     if contributor_target or activity_target then
       selectable[#selectable + 1] = line
     end
@@ -791,7 +923,12 @@ end
 
 local function map_keys(buf)
   local map = function(lhs, rhs, desc)
-    vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true, desc = desc })
+    vim.keymap.set("n", lhs, rhs, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = desc,
+    })
   end
   map("<C-c>", M.close, "Close Pantheon")
   map("q", M.close, "Close Pantheon")
@@ -847,12 +984,11 @@ function M.close()
   M.state.preview_request_id = M.state.preview_request_id + 1
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
   if is_valid_win(M.state.win) then
+    M.state.restore_cursor = vim.api.nvim_win_get_cursor(M.state.win)
     vim.api.nvim_win_close(M.state.win, true)
   end
   M.state.buf = nil
   M.state.win = nil
-  M.state.contributor = nil
-  M.state.events = nil
   M.state.line_targets = {}
   M.state.preview_key = nil
   M.state.preview_items = nil
@@ -878,7 +1014,11 @@ function M.open(opts)
   vim.wo[win].cursorlineopt = "line"
   vim.api.nvim_set_hl(0, "PantheonNormal", { bg = "NONE" })
   vim.api.nvim_set_hl(0, "PantheonBorder", { fg = "#ffffff", bg = "NONE" })
-  vim.api.nvim_set_hl(0, "PantheonSelection", { fg = "#ffffff", bg = "NONE", bold = true })
+  vim.api.nvim_set_hl(0, "PantheonSelection", {
+    fg = "#ffffff",
+    bg = "NONE",
+    bold = true,
+  })
   vim.wo[win].winhighlight = table.concat({
     "Normal:PantheonNormal",
     "NormalFloat:PantheonNormal",
@@ -892,7 +1032,26 @@ function M.open(opts)
   vim.wo[win].winfixbuf = true
 
   map_keys(buf)
-  render_contributors()
+  if
+    M.state.view == "activity"
+    and M.state.contributor
+    and M.state.events
+    and M.state.activity_loaded
+  then
+    local contributor = contributor_by_username(M.state.contributor.username)
+      or M.state.contributor
+    M.state.contributor = contributor
+    M.state.selected_username = contributor.username
+    render_activity(
+      M.state.events,
+      M.state.activity_cached,
+      M.state.activity_notice
+    )
+    restore_cursor()
+  else
+    render_contributors()
+    restore_cursor()
+  end
 
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
   vim.api.nvim_create_autocmd("VimResized", {
