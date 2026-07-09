@@ -116,6 +116,12 @@ local function pad_cell(text, width)
   return value .. string.rep(" ", padding)
 end
 
+local function left_pad_cell(text, width)
+  local value = trim_to_width(text, width)
+  local padding = math.max(0, width - vim.fn.strdisplaywidth(value))
+  return string.rep(" ", padding) .. value
+end
+
 local function display_contributors(contributors)
   local result = vim.list_extend({}, contributors or {})
   table.sort(result, function(left, right)
@@ -211,11 +217,18 @@ local function event_text(item, width)
 end
 
 local function activity_item_line(item, timestamp, width)
-  local suffix = "  ·  " .. timestamp
-  local title_width = math.max(1, width - vim.fn.strdisplaywidth(suffix))
+  local timestamp_width = 19
+  local gap = "  "
+  local content_width = math.max(
+    1,
+    width - timestamp_width - vim.fn.strdisplaywidth(gap)
+  )
   local prefix = ("   %s    "):format(item.icon)
-  local text_width = math.max(1, title_width - vim.fn.strdisplaywidth(prefix))
-  return prefix .. event_text(item, text_width) .. suffix
+  local text_width = math.max(1, content_width - vim.fn.strdisplaywidth(prefix))
+  local content = prefix .. event_text(item, text_width)
+  return pad_cell(content, content_width)
+    .. gap
+    .. left_pad_cell(timestamp, timestamp_width)
 end
 
 local function render_preview_panel(items)
