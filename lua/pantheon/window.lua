@@ -30,6 +30,7 @@ M.state = {
   activity_cached = nil,
   activity_notice = nil,
   activity_loaded = false,
+  activity_cursor_min_line = 1,
   restore_cursor = nil,
   opts = {},
 }
@@ -788,7 +789,10 @@ local function render_activity(events, cached, notice)
   highlight(#lines - 2, 2, -1, "WinSeparator")
   highlight(#lines - 1, 2, -1, "Comment")
   if first_event_line then
+    M.state.activity_cursor_min_line = first_event_line
     vim.api.nvim_win_set_cursor(M.state.win, { first_event_line, 0 })
+  else
+    M.state.activity_cursor_min_line = 2
   end
 end
 
@@ -951,8 +955,9 @@ local function move_cursor(direction)
   if M.state.view == "activity" then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
     local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
-    if line < 2 then
-      vim.api.nvim_win_set_cursor(M.state.win, { 2, 0 })
+    local min_line = M.state.activity_cursor_min_line or 2
+    if line < min_line then
+      vim.api.nvim_win_set_cursor(M.state.win, { min_line, 0 })
     end
     return
   end
