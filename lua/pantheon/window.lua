@@ -782,13 +782,6 @@ local function render_activity(events, cached, notice)
         highlight(line, 0, -1, "PantheonActivityPreview")
       elseif kind == "main" then
         highlight(line, 0, 5, "PantheonActivityIcon")
-        local timestamp_start = text:find("%d%d/%d%d/%d%d%s+—")
-        highlight(
-          line,
-          5,
-          timestamp_start and (timestamp_start - 1) or -1,
-          "Function"
-        )
       end
     end
   end
@@ -1105,11 +1098,11 @@ function M.open(opts)
     bold = true,
   })
   vim.api.nvim_set_hl(0, "PantheonActivityIcon", {
-    fg = "#f6ad55",
+    fg = "#fbd38d",
     bg = "NONE",
   })
   vim.api.nvim_set_hl(0, "PantheonActivityPreview", {
-    fg = "#68d391",
+    fg = "#9ae6b4",
     bg = "NONE",
   })
   vim.wo[win].winhighlight = table.concat({
