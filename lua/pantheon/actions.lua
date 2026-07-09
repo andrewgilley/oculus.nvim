@@ -247,6 +247,17 @@ local function detail(event)
   return nil
 end
 
+local function summary(event)
+  if
+    event.type == "IssueCommentEvent"
+    and value(event, "payload", "issue", "pull_request")
+  then
+    local title = preview_text(value(event, "payload", "issue", "title"))
+    return title and quoted(title) or nil
+  end
+  return nil
+end
+
 local function comment_url(comment, fallback)
   if type(comment) ~= "table" then
     return fallback
@@ -310,6 +321,7 @@ function M.describe(event)
     type = event.type,
     icon = icons[event.type] or "●",
     text = lowercase_first(sentence(event)),
+    summary = summary(event),
     detail = detail(event),
     url = event_url(event),
   }

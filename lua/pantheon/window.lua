@@ -171,7 +171,7 @@ local function activity_time(timestamp)
     event_date.day,
     event_date.year % 100
   )
-  return date .. " — " .. time
+  return date .. " —" .. time
 end
 
 local function footer(lines, text)
@@ -196,8 +196,20 @@ local function event_detail(item)
   end
 end
 
+local function event_summary(item)
+  if item.summary then
+    local summary = item.summary
+    local has_wrapped_preview = summary:match('^".*"$')
+      or summary:match('^PR #%d+ · ".*"$')
+    if not has_wrapped_preview then
+      summary = '"' .. summary .. '"'
+    end
+    return summary
+  end
+end
+
 local function event_text(item, width)
-  local detail = event_detail(item)
+  local detail = event_summary(item) or event_detail(item)
   if detail then
     local separator = " · "
     if width then
