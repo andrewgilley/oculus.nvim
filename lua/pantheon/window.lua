@@ -6,7 +6,6 @@ local github = require("pantheon.github")
 
 local ns = vim.api.nvim_create_namespace("pantheon")
 local preview_ns = vim.api.nvim_create_namespace("pantheon_preview")
-local selection_ns = vim.api.nvim_create_namespace("pantheon_selection")
 local autocmd_group = vim.api.nvim_create_augroup(
   "PantheonWindow",
   { clear = true }
@@ -209,7 +208,6 @@ local function set_lines(lines)
   vim.bo[M.state.buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(M.state.buf, ns, 0, -1)
   vim.api.nvim_buf_clear_namespace(M.state.buf, preview_ns, 0, -1)
-  vim.api.nvim_buf_clear_namespace(M.state.buf, selection_ns, 0, -1)
   M.state.preview_items = nil
 end
 
@@ -553,32 +551,6 @@ local function queue_preview(contributor)
   end, 150)
 end
 
-local function highlight_contributor_selection()
-  if not is_valid_buf(M.state.buf) then
-    return
-  end
-  vim.api.nvim_buf_clear_namespace(M.state.buf, selection_ns, 0, -1)
-  if M.state.view ~= "contributors" or not is_valid_win(M.state.win) then
-    return
-  end
-
-  local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
-  if type(M.state.line_targets[line]) ~= "table" then
-    return
-  end
-  local text = vim.api.nvim_buf_get_lines(
-    M.state.buf,
-    line - 1,
-    line,
-    false
-  )[1] or ""
-  local item_text = text:gsub("%s+$", "")
-  vim.api.nvim_buf_set_extmark(M.state.buf, selection_ns, line - 1, 2, {
-    end_col = #item_text,
-    hl_group = "PantheonSelection",
-  })
-end
-
 local function render_contributors()
   close_activity_footer()
   M.state.view = "contributors"
@@ -659,7 +631,7 @@ local function render_contributors()
     lines[#lines + 1] = ""
   end
   set_lines(lines)
-  vim.wo[M.state.win].cursorline = false
+  vim.wo[M.state.win].cursorline = true
 
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
@@ -696,7 +668,6 @@ local function render_contributors()
     local contributor = M.state.line_targets[selected_line]
     M.state.selected_username = contributor.username
     vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
-    highlight_contributor_selection()
     queue_preview(contributor)
   end
 end
@@ -1187,7 +1158,6 @@ local function move_cursor(direction)
   if M.state.view == "contributors" and type(target) == "table" then
     M.state.selected_username = target.username
   end
-  highlight_contributor_selection()
   queue_preview(target)
 end
 
@@ -1293,11 +1263,6 @@ function M.open(opts)
   vim.wo[win].cursorlineopt = "line"
   vim.api.nvim_set_hl(0, "PantheonNormal", { bg = "NONE" })
   vim.api.nvim_set_hl(0, "PantheonBorder", { fg = "#ffffff", bg = "NONE" })
-  vim.api.nvim_set_hl(0, "PantheonSelection", {
-    fg = "#ffffff",
-    bg = "NONE",
-    bold = true,
-  })
   vim.api.nvim_set_hl(0, "PantheonActivityIcon", {
     fg = "#fbd38d",
     bg = "NONE",
@@ -1376,7 +1341,6 @@ function M.open(opts)
       end
       local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
       local contributor = M.state.line_targets[line]
-      highlight_contributor_selection()
       if type(contributor) == "table" then
         M.state.selected_username = contributor.username
         queue_preview(contributor)
