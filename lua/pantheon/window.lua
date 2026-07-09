@@ -170,7 +170,7 @@ local function activity_time(timestamp)
     event_date.day,
     event_date.year % 100
   )
-  return date .. " · " .. time
+  return date .. " — " .. time
 end
 
 local function footer(lines, text)
@@ -193,6 +193,12 @@ local function event_detail(item)
     end
     return detail
   end
+end
+
+local function is_comment_item(item)
+  return item.type == "IssueCommentEvent"
+    or item.type == "PullRequestReviewCommentEvent"
+    or item.type == "CommitCommentEvent"
 end
 
 local function event_text(item, width)
@@ -226,6 +232,16 @@ local function activity_item_line(item, timestamp, width)
   return pad_cell(content, content_width)
     .. gap
     .. left_pad_cell(timestamp, timestamp_width)
+end
+
+local function comment_preview_line(item, width)
+  local detail = event_detail(item)
+  if not detail then
+    return nil
+  end
+  local indent = "       "
+  local detail_width = math.max(1, width - vim.fn.strdisplaywidth(indent))
+  return pad_cell(indent .. trim_to_width(detail, detail_width), width)
 end
 
 local function render_preview_panel(items)
@@ -720,11 +736,25 @@ local function render_activity(events, cached, notice)
     local item = actions.describe(event)
     local event_line = #lines + 1
     first_event_line = first_event_line or event_line
-    lines[event_line] = activity_item_line(
-      item,
-      activity_time(event.created_at),
-      width - 2
-    )
+    local item_width = width - 2
+    if is_comment_item(item) and item.detail then
+      lines[event_line] = activity_item_line(
+        vim.tbl_extend("force", item, { detail = nil }),
+        activity_time(event.created_at),
+        item_width
+      )
+      local preview_line = comment_preview_line(item, item_width)
+      if preview_line then
+        lines[#lines + 1] = preview_line
+        M.state.line_targets[#lines] = item.url
+      end
+    else
+      lines[event_line] = activity_item_line(
+        item,
+        activity_time(event.created_at),
+        item_width
+      )
+    end
     M.state.line_targets[event_line] = item.url
   end
 
