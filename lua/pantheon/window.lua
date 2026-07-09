@@ -192,35 +192,18 @@ local function event_detail(item)
   end
 end
 
-local function preserves_text_when_truncated(item)
-  return item.type == "IssueCommentEvent"
-    or item.type == "PullRequestReviewCommentEvent"
-    or item.type == "CommitCommentEvent"
-    or item.type == "IssuesEvent"
-end
-
 local function event_text(item, width)
   local detail = event_detail(item)
   if detail then
     local separator = "  ·  "
     if width then
       local separator_width = vim.fn.strdisplaywidth(separator)
-      local detail_width = vim.fn.strdisplaywidth(detail)
-      if preserves_text_when_truncated(item) then
-        local text_width = vim.fn.strdisplaywidth(item.text)
-        local available_detail_width = width - text_width - separator_width
-        if available_detail_width < 1 then
-          return trim_to_width(item.text, width)
-        end
+      local text_width = vim.fn.strdisplaywidth(item.text)
+      local detail_width = width - text_width - separator_width
+      if detail_width < 1 then
         return item.text
-          .. separator
-          .. trim_to_width(detail, available_detail_width)
       end
-      if detail_width + separator_width >= width then
-        return trim_to_width(detail, width)
-      end
-      local text_width = math.max(1, width - separator_width - detail_width)
-      return trim_to_width(item.text, text_width) .. separator .. detail
+      return item.text .. separator .. trim_to_width(detail, detail_width)
     end
     return item.text .. separator .. detail
   end
