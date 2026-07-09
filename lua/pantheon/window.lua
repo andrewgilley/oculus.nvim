@@ -742,6 +742,7 @@ local function render_activity(events, cached, notice)
       if detail_line then
         lines[#lines + 1] = detail_line
         M.state.line_targets[#lines] = item.url
+        lines[#lines + 1] = pad_cell("", item_width)
       end
     else
       lines[event_line] = activity_item_line(
@@ -770,9 +771,6 @@ local function render_activity(events, cached, notice)
   highlight(3, 2, -1, "Comment")
   if notice then
     highlight(4, 2, -1, "DiagnosticWarn")
-  end
-  for line, _ in pairs(M.state.line_targets) do
-    highlight(line, 0, -1, "Function")
   end
   highlight(#lines - 2, 2, -1, "WinSeparator")
   highlight(#lines - 1, 2, -1, "Comment")
