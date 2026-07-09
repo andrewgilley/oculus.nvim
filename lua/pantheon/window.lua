@@ -195,12 +195,6 @@ local function event_detail(item)
   end
 end
 
-local function is_comment_item(item)
-  return item.type == "IssueCommentEvent"
-    or item.type == "PullRequestReviewCommentEvent"
-    or item.type == "CommitCommentEvent"
-end
-
 local function event_text(item, width)
   local detail = event_detail(item)
   if detail then
@@ -234,14 +228,12 @@ local function activity_item_line(item, timestamp, width)
     .. left_pad_cell(timestamp, timestamp_width)
 end
 
-local function comment_preview_line(item, width)
+local function preview_line(item, width)
   local detail = event_detail(item)
   if not detail then
     return nil
   end
-  local indent = "       "
-  local detail_width = math.max(1, width - vim.fn.strdisplaywidth(indent))
-  return pad_cell(indent .. trim_to_width(detail, detail_width), width)
+  return pad_cell(trim_to_width(detail, width), width)
 end
 
 local function render_preview_panel(items)
@@ -737,15 +729,15 @@ local function render_activity(events, cached, notice)
     local event_line = #lines + 1
     first_event_line = first_event_line or event_line
     local item_width = width - 2
-    if is_comment_item(item) and item.detail then
+    if item.detail then
       lines[event_line] = activity_item_line(
         vim.tbl_extend("force", item, { detail = nil }),
         activity_time(event.created_at),
         item_width
       )
-      local preview_line = comment_preview_line(item, item_width)
-      if preview_line then
-        lines[#lines + 1] = preview_line
+      local detail_line = preview_line(item, item_width)
+      if detail_line then
+        lines[#lines + 1] = detail_line
         M.state.line_targets[#lines] = item.url
       end
     else
