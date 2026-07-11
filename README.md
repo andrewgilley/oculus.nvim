@@ -175,6 +175,11 @@ require("pantheon").setup({
       username = "andrewgilley",
       description = "Creator of Pantheon and Reliquary Neovim plugins",
     },
+    {
+      name = "Wenquan Xing",
+      username = "wxing1292",
+      description = "Contributor to Temporal, the agent durability framework",
+    },
   },
 })
 ```
