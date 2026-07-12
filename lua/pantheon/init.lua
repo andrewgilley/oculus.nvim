@@ -153,12 +153,6 @@ local defaults = {
     },
 
     {
-      name = "Roberto Ierusalimschy",
-      username = "roberto-ieru",
-      description = "Principal designer and maintainer of the Lua language",
-    },
-
-    {
       name = "Peter Steinberger",
       username = "steipete",
       description = "Creator of OpenClaw and founder of PSPDFKit",
@@ -201,11 +195,6 @@ local defaults = {
       name = "Andrew Gilley",
       username = "andrewgilley",
       description = "Creator of Pantheon and Reliquary Neovim plugins",
-    },
-    {
-      name = "Wenquan Xing",
-      username = "wxing1292",
-      description = "Contributor to Temporal, the agent durability framework",
     },
   },
 }
