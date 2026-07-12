@@ -170,7 +170,7 @@ local function sentence(event)
   return ("%s %s"):format(labels[kind] or kind:gsub("Event$", ""), repo)
 end
 
-local function preview_text(text, limit)
+local function preview_text(text, limit, add_ellipsis)
   if type(text) ~= "string" then
     return nil
   end
@@ -179,7 +179,11 @@ local function preview_text(text, limit)
   if preview == "" then
     return nil
   end
-  return vim.fn.strcharpart(preview, 0, limit or 80)
+  local max_chars = limit or 80
+  if add_ellipsis and vim.fn.strchars(preview) > max_chars then
+    return vim.fn.strcharpart(preview, 0, math.max(0, max_chars - 1)) .. "…"
+  end
+  return vim.fn.strcharpart(preview, 0, max_chars)
 end
 
 local function quoted(text)
@@ -199,7 +203,7 @@ local function detail(event)
         if #messages >= 3 then
           break
         end
-        local message = preview_text(commit.message)
+        local message = preview_text(commit.message, nil, true)
         if message then
           messages[#messages + 1] = message
         end
@@ -219,7 +223,7 @@ local function detail(event)
       and first_line:match("^Merge pull request #(%d+)")
     if pr_number then
       local body = message:gsub("^[^\r\n]+[\r\n]*", "")
-      local title = preview_text(body:match("[^\r\n]+"))
+      local title = preview_text(body:match("[^\r\n]+"), nil, true)
       if title then
         return ("PR #%s · %s"):format(pr_number, quoted(title))
       end
