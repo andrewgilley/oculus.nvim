@@ -226,6 +226,9 @@ local function trim_to_width(text, width)
   if vim.fn.strdisplaywidth(text) <= width then
     return text
   end
+  if text:sub(-1) == '"' and width >= 2 then
+    return vim.fn.strcharpart(text, 0, math.max(0, width - 2)) .. '…"'
+  end
   return vim.fn.strcharpart(text, 0, math.max(1, width - 1)) .. "…"
 end
 
@@ -391,7 +394,8 @@ local function preview_lines(item, width)
       if vim.fn.strdisplaywidth(remaining) <= content_width then
         break
       end
-      local consumed = math.max(1, vim.fn.strchars(text) - 1)
+      local suffix_width = text:sub(-4) == '…"' and 2 or 1
+      local consumed = math.max(1, vim.fn.strchars(text) - suffix_width)
       remaining = vim.fn.strcharpart(remaining, consumed)
     end
   end
