@@ -156,6 +156,11 @@ require("pantheon").setup({
       description = "React core engineer and co-creator of Redux",
     },
     {
+      name = "Matt Pocock",
+      username = "mattpocock",
+      description = "TypeScript educator and creator of Total TypeScript",
+    },
+    {
       name = "Benno Lossin",
       username = "BennoLossin",
       description = "Rust-for-Linux maintainer and Rust contributor",
