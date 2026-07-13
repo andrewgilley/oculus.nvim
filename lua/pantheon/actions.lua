@@ -131,8 +131,9 @@ local function sentence(event)
       and "pull request"
       or "issue"
     if target == "pull request" then
-      return ("Commented on pull request%s"):format(
-        number and (" #" .. number) or ""
+      return ("Commented on pull request%s in %s"):format(
+        number and (" #" .. number) or "",
+        repo
       )
     end
     return ("Commented on issue%s in %s"):format(
@@ -251,10 +252,14 @@ local function detail(event)
     event.type == "IssueCommentEvent"
     or event.type == "CommitCommentEvent"
   then
-    return preview_text(value(event, "payload", "comment", "body"))
+    return preview_text(value(event, "payload", "comment", "body"), nil, true)
   end
   if event.type == "PullRequestReviewCommentEvent" then
-    local text = preview_text(value(event, "payload", "comment", "body"))
+    local text = preview_text(
+      value(event, "payload", "comment", "body"),
+      nil,
+      true
+    )
       or preview_text(value(event, "payload", "pull_request", "title"))
     return text and quoted(text) or nil
   end
