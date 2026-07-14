@@ -126,6 +126,11 @@ require("pantheon").setup({
       description = "Creator of llama.cpp, whisper.cpp, and local AI tools",
     },
     {
+      name = "Andrey Vasnetsov",
+      username = "generall",
+      description = "Creator and CTO of the Qdrant vector database",
+    },
+    {
       name = "David Tolnay",
       username = "dtolnay",
       description = "Maintainer of foundational Rust libraries and macros",
