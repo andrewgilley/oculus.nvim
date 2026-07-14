@@ -165,6 +165,12 @@ local defaults = {
     },
 
     {
+      name = "Björn Linse",
+      username = "bfredl",
+      description = "Neovim core maintainer and editor infrastructure engineer",
+    },
+
+    {
       name = "Peter Steinberger",
       username = "steipete",
       description = "Creator of OpenClaw and founder of PSPDFKit",
