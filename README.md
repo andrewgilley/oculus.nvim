@@ -116,6 +116,11 @@ require("pantheon").setup({
       description = "Rust asynchronous systems engineer and creator of Tokio",
     },
     {
+      name = "David Pedersen",
+      username = "davidpdrsn",
+      description = "Creator and maintainer of the axum web framework",
+    },
+    {
       name = "Georgi Gerganov",
       username = "ggerganov",
       description = "Creator of llama.cpp, whisper.cpp, and local AI tools",
@@ -139,6 +144,11 @@ require("pantheon").setup({
       name = "Russ Cox",
       username = "rsc",
       description = "Go engineer, writer, and open-source maintainer",
+    },
+    {
+      name = "Brad Fitzpatrick",
+      username = "bradfitz",
+      description = "Go contributor and open-source infrastructure engineer",
     },
     {
       name = "David Heinemeier Hansson",
