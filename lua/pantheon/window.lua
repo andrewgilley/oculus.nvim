@@ -646,7 +646,7 @@ local function render_contributors()
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = "  ? shortcuts  s issue scout  q quit"
+  lines[#lines + 1] = "  ?: shortcuts  s: scout  q: quit"
   local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
