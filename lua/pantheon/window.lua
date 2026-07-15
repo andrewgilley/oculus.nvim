@@ -645,8 +645,10 @@ local function render_contributors()
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = "  i/k move  l/→ open  f/F filters  q quit"
-  local commands_line = #lines
+  lines[#lines + 1] = "  i/k move  l/→ open  f/F filters"
+  local commands_start_line = #lines
+  lines[#lines + 1] = "  s issue scout  q quit"
+  local commands_end_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
   end
@@ -674,7 +676,9 @@ local function render_contributors()
     end
   end
   highlight(separator_line, 2, -1, "WinSeparator")
-  highlight(commands_line, 2, -1, "Comment")
+  for line = commands_start_line, commands_end_line do
+    highlight(line, 2, -1, "Comment")
+  end
 
   local selected_line
   for line, contributor in pairs(M.state.line_targets) do
@@ -1188,6 +1192,16 @@ local function go_back()
   end
 end
 
+local function open_issue_scout()
+  if M.state.view ~= "contributors" then
+    return
+  end
+
+  local opts = M.state.opts
+  M.close()
+  require("pantheon.issues").open(opts, "", false)
+end
+
 local function map_keys(buf)
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, {
@@ -1205,6 +1219,7 @@ local function map_keys(buf)
   map("<Right>", select_current, "Move right in Pantheon")
   map("<Space>", toggle_filter_type, "Toggle Pantheon activity type")
   map("o", open_current, "Open Pantheon item in browser")
+  map("s", open_issue_scout, "Open Pantheon issue scout")
   map("f", function()
     open_filters(false)
   end, "Edit contributor activity types")

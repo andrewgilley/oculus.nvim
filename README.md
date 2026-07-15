@@ -225,6 +225,7 @@ Inside Pantheon:
 - `<Left>` goes back and `<Right>` selects or opens the highlighted item.
 - `f` opens the activity-type checklist for the selected contributor.
 - `F` opens the global activity-type checklist.
+- `s` opens Issue Scout from the startup user list.
 - `d` resets all activity category filters to default on the startup user list.
 - In a checklist, `<Space>`, `l`, or `<CR>` toggles a checkbox.
 - In a checklist, `a` enables all and `n` disables all.
@@ -262,7 +263,8 @@ requested JSON array to standard output. Put `{prompt}` in an argument to
 substitute the prompt there instead. `issue_command` can also be a function
 that receives the prompt and returns an argv table.
 
-Run `:PantheonIssues` for the default ranking, or add preferences:
+Press `s` from Pantheon's startup user list or run `:PantheonIssues` for the
+default ranking. You can add preferences when using the command:
 
 ```vim
 :PantheonIssues Rust compiler performance, about 10 hours per week

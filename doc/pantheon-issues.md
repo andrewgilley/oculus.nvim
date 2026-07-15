@@ -14,7 +14,7 @@ require("pantheon").setup({
 
 The command must write only the JSON array requested by Pantheon's bundled issue-scout skill to standard output. Diagnostic output should go to standard error.
 
-Run `:PantheonIssues` to use the default career-signal ranking. Add free-form preferences after the command, for example:
+Press `s` from Pantheon's startup user list or run `:PantheonIssues` to use the default career-signal ranking. Add free-form preferences after the command, for example:
 
 ```vim
 :PantheonIssues Rust compiler performance, about 10 hours per week
@@ -40,4 +40,3 @@ require("pantheon").setup({
 ```
 
 `issue_command` may also be a function receiving the fully constructed prompt and returning an argv table. `issue_prompt` may be a replacement prompt string or a function receiving the command-line preferences and returning a prompt string.
-
