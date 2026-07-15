@@ -30,10 +30,12 @@ M.state = {
   filter_scope = nil,
   activity_cached = nil,
   activity_notice = nil,
+  activity_error = nil,
   activity_loaded = false,
   activity_cursor_min_line = 1,
   activity_scroll_limit_line = nil,
   restore_cursor = nil,
+  shortcut_return = nil,
   opts = {},
 }
 
@@ -138,8 +140,7 @@ local function render_activity_footer()
   local width = config.width
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  i/k move   l/↵/→ open   f/F filters   "
-      .. "r refresh   j/← back   q close",
+    "  ? shortcuts   j/← back   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -645,10 +646,8 @@ local function render_contributors()
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = "  i/k move  l/→ open  f/F filters"
-  local commands_start_line = #lines
-  lines[#lines + 1] = "  s issue scout  q quit"
-  local commands_end_line = #lines
+  lines[#lines + 1] = "  ? shortcuts  s issue scout  q quit"
+  local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
   end
@@ -676,9 +675,7 @@ local function render_contributors()
     end
   end
   highlight(separator_line, 2, -1, "WinSeparator")
-  for line = commands_start_line, commands_end_line do
-    highlight(line, 2, -1, "Comment")
-  end
+  highlight(commands_line, 2, -1, "Comment")
 
   local selected_line
   for line, contributor in pairs(M.state.line_targets) do
@@ -784,7 +781,7 @@ local function render_filters(scope, selected_type)
   end
   local width = vim.api.nvim_win_get_width(M.state.win)
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-  footer(lines, "i/k move   space/l/→ toggle   a all   n none   j/← back")
+  footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
 
@@ -848,7 +845,9 @@ end
 
 local function render_loading(contributor)
   close_activity_footer()
+  M.state.view = "activity"
   M.state.activity_loaded = false
+  M.state.activity_error = nil
   local lines = {
     "",
     "  " .. (contributor.name or contributor.username),
@@ -856,7 +855,7 @@ local function render_loading(contributor)
     "",
     "  Loading recent GitHub activity…",
   }
-  footer(lines, "j/← back   q close")
+  footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Function")
@@ -866,7 +865,9 @@ end
 
 local function render_error(message)
   close_activity_footer()
+  M.state.view = "activity"
   M.state.activity_loaded = false
+  M.state.activity_error = message
   local contributor = M.state.contributor
   local lines = {
     "",
@@ -876,7 +877,7 @@ local function render_error(message)
     "  Could not load activity",
     "  " .. message,
   }
-  footer(lines, "r refresh   j/← back   o open profile   q close")
+  footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -886,11 +887,13 @@ local function render_error(message)
 end
 
 local function render_activity(events, cached, notice)
+  M.state.view = "activity"
   local contributor = M.state.contributor
   M.state.events = events
   M.state.activity_cached = cached
   M.state.activity_notice = notice
   M.state.activity_loaded = true
+  M.state.activity_error = nil
   M.state.line_targets = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
@@ -979,6 +982,74 @@ local function render_activity(events, cached, notice)
     M.state.activity_cursor_min_line = 2
   end
   update_activity_cursorline()
+end
+
+local function render_shortcuts()
+  close_activity_footer()
+  M.state.view = "shortcuts"
+  M.state.line_targets = {}
+  M.state.preview_request_id = M.state.preview_request_id + 1
+
+  local lines = {
+    "",
+    "  KEYBOARD SHORTCUTS",
+    "  Commands available throughout Pantheon",
+  }
+  local headings = { 2 }
+
+  local function section(title, entries)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "  " .. title
+    headings[#headings + 1] = #lines
+    for _, entry in ipairs(entries) do
+      lines[#lines + 1] = ("  %-22s %s"):format(entry[1], entry[2])
+    end
+  end
+
+  section("NAVIGATION", {
+    { "i / <Up>", "Select the previous item" },
+    { "k / <Down>", "Select the next item" },
+    { "l / <Right> / <CR>", "Select or open the current item" },
+    { "j / <Left>", "Return to the previous page" },
+  })
+  section("STARTUP USER LIST", {
+    { "s", "Open Issue Scout" },
+    { "f", "Edit filters for the selected contributor" },
+    { "F", "Edit global activity filters" },
+    { "d", "Reset activity filters to defaults" },
+    { "o", "Open the selected GitHub profile" },
+  })
+  section("ACTIVITY", {
+    { "o", "Open the selected activity on GitHub" },
+    { "r", "Refresh activity without using the cache" },
+  })
+  section("FILTER CHECKLIST", {
+    { "<Space> / l / <CR>", "Toggle the selected activity type" },
+    { "a", "Enable every activity type" },
+    { "n", "Disable every activity type" },
+  })
+  section("ISSUE SCOUT", {
+    { "i / k", "Select the previous or next issue" },
+    { "l / <Right> / <CR>", "Show issue details" },
+    { "o", "Open the issue on GitHub" },
+    { "r", "Restart the issue search" },
+  })
+  section("GENERAL", {
+    { "?", "Open or close this shortcut page" },
+    { "q / <Esc> / <C-c>", "Close Pantheon" },
+  })
+
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "  ? or j/← back   q close"
+  set_lines(lines)
+  vim.wo[M.state.win].cursorline = false
+
+  for _, line in ipairs(headings) do
+    highlight(line, 2, -1, line == 2 and "Title" or "Special")
+  end
+  highlight(3, 2, -1, "Comment")
+  highlight(#lines, 2, -1, "Comment")
+  vim.api.nvim_win_set_cursor(M.state.win, { 2, 0 })
 end
 
 local function restore_cursor()
@@ -1186,10 +1257,61 @@ local function move_cursor(direction)
 end
 
 local function go_back()
-  if M.state.view == "activity" or M.state.view == "filters" then
+  if M.state.view == "shortcuts" and M.state.shortcut_return then
+    local return_state = M.state.shortcut_return
+    M.state.shortcut_return = nil
+    if return_state.view == "activity" and M.state.contributor then
+      if M.state.activity_error then
+        render_error(M.state.activity_error)
+      elseif M.state.activity_loaded and M.state.events then
+        render_activity(
+          M.state.events,
+          M.state.activity_cached,
+          M.state.activity_notice
+        )
+      else
+        load_activity(M.state.contributor, false)
+      end
+    elseif return_state.view == "filters" and M.state.filter_scope then
+      render_filters(M.state.filter_scope, return_state.selected_type)
+    else
+      render_contributors()
+    end
+    if return_state.cursor and is_valid_win(M.state.win) then
+      local line_count = vim.api.nvim_buf_line_count(M.state.buf)
+      vim.api.nvim_win_set_cursor(M.state.win, {
+        math.min(return_state.cursor[1], line_count),
+        return_state.cursor[2],
+      })
+    end
+  elseif M.state.view == "activity" or M.state.view == "filters" then
     M.state.request_id = M.state.request_id + 1
     render_contributors()
   end
+end
+
+local function toggle_shortcuts()
+  if M.state.view == "shortcuts" then
+    go_back()
+    return
+  end
+
+  local selected_type
+  if M.state.view == "filters" then
+    local target = target_on_cursor()
+    selected_type = target and target.event_type or nil
+  end
+  M.state.shortcut_return = {
+    view = M.state.view,
+    cursor = is_valid_win(M.state.win)
+        and vim.api.nvim_win_get_cursor(M.state.win)
+      or nil,
+    selected_type = selected_type,
+  }
+  if M.state.view == "activity" then
+    M.state.request_id = M.state.request_id + 1
+  end
+  render_shortcuts()
 end
 
 local function open_issue_scout()
@@ -1214,6 +1336,7 @@ local function map_keys(buf)
   map("<C-c>", M.close, "Close Pantheon")
   map("q", M.close, "Close Pantheon")
   map("<Esc>", M.close, "Close Pantheon")
+  map("?", toggle_shortcuts, "Show Pantheon keyboard shortcuts")
   map("<CR>", select_current, "Select Pantheon item")
   map("l", select_current, "Move right in Pantheon")
   map("<Right>", select_current, "Move right in Pantheon")
@@ -1277,6 +1400,7 @@ function M.close()
   M.state.preview_items = nil
   M.state.contributors = {}
   M.state.filter_scope = nil
+  M.state.shortcut_return = nil
 end
 
 function M.open(opts)

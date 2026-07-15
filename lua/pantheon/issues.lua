@@ -401,33 +401,59 @@ local function open_url(item)
   end
 end
 
-local function run()
-  M.state.request_id = M.state.request_id + 1
-  local request_id = M.state.request_id
-  local prompt = prompt_for(M.state.opts, M.state.preferences)
-  local command, stdin, err = command_for(M.state.opts, prompt)
-  if not command then
-    render_message("Issue scout is not configured", err)
-    return
+local function stop_process()
+  if M.state.process then
+    pcall(function()
+      M.state.process:kill(15)
+    end)
   end
+  M.state.process = nil
+end
 
-  render_message("Searching GitHub issues", "The configured command is running. Results will appear here when it finishes.")
+local function command_name(command)
+  return command[1]:gsub("\\", "/"):match("([^/]+)$"):lower()
+end
+
+local function is_codex_command(command)
+  local name = command_name(command)
+  return name == "codex" or name == "codex.cmd" or name == "codex.exe"
+end
+
+local function result_error(result, fallback)
+  local detail = clean_text(result.stderr)
+  if detail == "" then
+    detail = clean_text(result.stdout)
+  end
+  if detail == "" then
+    if result.signal and result.signal ~= 0 then
+      detail = ("%s (signal %d)"):format(fallback, result.signal)
+    else
+      detail = ("%s (status %d)"):format(fallback, result.code or -1)
+    end
+  end
+  return detail
+end
+
+local function execute_command(request_id, command, stdin)
+  render_message(
+    "Searching GitHub issues",
+    "Codex is researching current issues. This may take several minutes; press q to cancel or r to restart."
+  )
   local ok, process = pcall(vim.system, command, {
     text = true,
     stdin = stdin,
-    timeout = M.state.opts.issue_timeout or 180000,
+    timeout = M.state.opts.issue_timeout or 600000,
   }, function(result)
     vim.schedule(function()
       if request_id ~= M.state.request_id or not is_valid_win(M.state.win) then
         return
       end
       M.state.process = nil
-      if result.code ~= 0 then
-        local detail = clean_text(result.stderr)
-        if detail == "" then
-          detail = ("command exited with status %d"):format(result.code)
-        end
-        render_message("Issue scout failed", detail)
+      if result.code ~= 0 or (result.signal and result.signal ~= 0) then
+        render_message(
+          "Issue scout failed",
+          result_error(result, "command was terminated")
+        )
         return
       end
 
@@ -449,6 +475,61 @@ local function run()
     return
   end
   M.state.process = process
+end
+
+local function check_codex_login(request_id, command, stdin)
+  render_message(
+    "Checking Codex authentication",
+    "Pantheon is verifying that the Codex CLI can run non-interactively."
+  )
+  local ok, process = pcall(vim.system, {
+    command[1],
+    "login",
+    "status",
+  }, {
+    text = true,
+    timeout = 5000,
+  }, function(result)
+    vim.schedule(function()
+      if request_id ~= M.state.request_id or not is_valid_win(M.state.win) then
+        return
+      end
+      M.state.process = nil
+      if result.code ~= 0 or (result.signal and result.signal ~= 0) then
+        render_message(
+          "Codex is not authenticated",
+          result_error(result, "authentication check failed")
+            .. ". Run `codex login` in a terminal, then press r to retry."
+        )
+        return
+      end
+      execute_command(request_id, command, stdin)
+    end)
+  end)
+
+  if not ok then
+    render_message("Codex authentication check failed", clean_text(process))
+    return
+  end
+  M.state.process = process
+end
+
+local function run()
+  stop_process()
+  M.state.request_id = M.state.request_id + 1
+  local request_id = M.state.request_id
+  local prompt = prompt_for(M.state.opts, M.state.preferences)
+  local command, stdin, err = command_for(M.state.opts, prompt)
+  if not command then
+    render_message("Issue scout is not configured", err)
+    return
+  end
+
+  if is_codex_command(command) then
+    check_codex_login(request_id, command, stdin)
+  else
+    execute_command(request_id, command, stdin)
+  end
 end
 
 local function move_cursor(direction)
@@ -536,12 +617,7 @@ end
 
 function M.close()
   M.state.request_id = M.state.request_id + 1
-  if M.state.process then
-    pcall(function()
-      M.state.process:kill(15)
-    end)
-  end
-  M.state.process = nil
+  stop_process()
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
   if is_valid_win(M.state.win) then
     vim.api.nvim_win_close(M.state.win, true)

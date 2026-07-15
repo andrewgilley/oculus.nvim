@@ -4,10 +4,12 @@ Pantheon can run an external AI command and display its recommended GitHub issue
 
 No configuration is required for Codex. To use another program, configure `issue_command` with an argv table. Pantheon sends the issue-scout prompt to the command on standard input. When any argument contains `{prompt}`, Pantheon substitutes the prompt into that argument instead and does not use standard input.
 
+Run `codex login` once before using the Scout. Pantheon performs a non-interactive authentication check before starting Codex and shows an actionable error when the CLI is logged out.
+
 ```lua
 require("pantheon").setup({
   issue_command = { "your-ai-command", "--json" },
-  issue_timeout = 180000,
+  issue_timeout = 600000,
   issue_results_limit = 12,
 })
 ```
@@ -30,7 +32,7 @@ The following optional settings are supported:
 require("pantheon").setup({
   issue_command = { "your-ai-command" },
   issue_prompt = nil,
-  issue_timeout = 180000,
+  issue_timeout = 600000,
   issue_results_limit = 12,
   issue_width = 0.90,
   issue_height = 0.82,

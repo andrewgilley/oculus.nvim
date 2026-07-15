@@ -26,7 +26,7 @@ require("pantheon").setup({
   browser_command = nil,
   issue_command = nil,
   issue_prompt = nil,
-  issue_timeout = 180000,
+  issue_timeout = 600000,
   issue_results_limit = 12,
   issue_width = 0.90,
   issue_height = 0.82,
@@ -221,6 +221,8 @@ Run `:PantheonOpen`, `:PantheonClose`, or `:PantheonToggle`.
 
 Inside Pantheon:
 
+- `?` opens a dedicated keyboard-shortcut reference page; press `?`, `j`, or
+  `<Left>` to return to the previous page.
 - `i`, `k`, `j`, and `l` move up, down, left/back, and right/select.
 - `<Left>` goes back and `<Right>` selects or opens the highlighted item.
 - `f` opens the activity-type checklist for the selected contributor.
@@ -253,6 +255,8 @@ Pantheon can send its bundled issue-scout prompt to an external AI command and
 show the recommended GitHub issues in a navigable list. When the `codex`
 executable is available in Neovim's `PATH`, Pantheon uses `codex exec` with
 live web search automatically; no `issue_command` setting is required.
+Run `codex login` once in a terminal before using the Scout. Pantheon checks
+authentication before each run and reports a missing login immediately.
 
 To use a different AI command, configure it explicitly:
 
