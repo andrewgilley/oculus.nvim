@@ -326,6 +326,21 @@ local function quoted_detail_line(text)
   return '"' .. text .. '"'
 end
 
+local function compact_event_detail(item)
+  local detail = event_detail(item)
+  if type(detail) ~= "table" then
+    return detail
+  end
+
+  local parts = {}
+  for _, value in ipairs(detail) do
+    if type(value) == "string" and value ~= "" then
+      parts[#parts + 1] = quoted_detail_line(value)
+    end
+  end
+  return #parts > 0 and table.concat(parts, " · ") or nil
+end
+
 local function event_summary(item)
   if item.summary then
     local summary = item.summary
@@ -468,9 +483,10 @@ local function preview_items(contributor, events, err, cached)
   for index = 1, math.min(8, #events) do
     local event = events[index]
     local item = actions.describe(event)
+    local detail = compact_event_detail(item)
     items[line] = { item.icon .. "  " .. item.text, "NormalFloat" }
-    items[line + 1] = item.detail
-      and { event_detail(item), "PantheonActivityPreview" }
+    items[line + 1] = detail
+      and { detail, "PantheonActivityPreview" }
       or { activity_time(event.created_at), "Comment" }
     line = line + 2
   end
