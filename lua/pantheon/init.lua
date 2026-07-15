@@ -18,6 +18,14 @@ local defaults = {
   state_file = vim.fn.stdpath("state") .. "/pantheon.json",
   browser_command = nil,
   token = nil,
+  issue_command = nil,
+  issue_prompt = nil,
+  issue_timeout = 180000,
+  issue_results_limit = 12,
+  issue_width = 0.90,
+  issue_height = 0.82,
+  issue_row = 1,
+  issue_title = " Pantheon Issues ",
 
   contributors = {
     {

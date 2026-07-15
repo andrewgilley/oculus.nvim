@@ -24,6 +24,14 @@ require("pantheon").setup({
   user_activity_types = {},
   persist_filters = true,
   browser_command = nil,
+  issue_command = nil,
+  issue_prompt = nil,
+  issue_timeout = 180000,
+  issue_results_limit = 12,
+  issue_width = 0.90,
+  issue_height = 0.82,
+  issue_row = 1,
+  issue_title = " Pantheon Issues ",
   contributors = {
     {
       name = "Mitchell Hashimoto",
@@ -237,6 +245,33 @@ GitHub no longer includes commit metadata in push events. Pantheon enriches up
 to `push_detail_limit` pushes with cached compare requests so push items show a
 commit count and latest commit message. A `GITHUB_TOKEN` is recommended if you
 preview many contributors because unauthenticated API limits are lower.
+
+## Issue scout
+
+Pantheon can send its bundled issue-scout prompt to an external AI command and
+show the recommended GitHub issues in a navigable list:
+
+```lua
+require("pantheon").setup({
+  issue_command = { "your-ai-command", "--json" },
+})
+```
+
+The command receives the prompt on standard input and must write only the
+requested JSON array to standard output. Put `{prompt}` in an argument to
+substitute the prompt there instead. `issue_command` can also be a function
+that receives the prompt and returns an argv table.
+
+Run `:PantheonIssues` for the default ranking, or add preferences:
+
+```vim
+:PantheonIssues Rust compiler performance, about 10 hours per week
+```
+
+Use `:PantheonIssues!` to bypass cached in-memory results. Inside the issue
+list, `i` and `k` move, `l` or `<CR>` shows details, `j` goes back,
+`o` opens the issue, `r` refreshes, and `q` closes the window. See
+`doc/pantheon-issues.md` for all settings and command details.
 
 ## Activity filters
 
