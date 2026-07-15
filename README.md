@@ -99,6 +99,11 @@ require("pantheon").setup({
       description = "Creator of lazy.nvim, LazyVim, and Neovim tooling",
     },
     {
+      name = "Liam Dyer",
+      username = "saghen",
+      description = "Creator of blink.cmp and performant Neovim tooling",
+    },
+    {
       name = "Tim Culverhouse",
       username = "rockorager",
       description = "Creator of libvaxis and modern Zig terminal tooling",

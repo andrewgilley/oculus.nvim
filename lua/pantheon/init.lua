@@ -113,6 +113,12 @@ local defaults = {
     },
 
     {
+      name = "Liam Dyer",
+      username = "saghen",
+      description = "Creator of blink.cmp and performant Neovim tooling",
+    },
+
+    {
       name = "Tim Culverhouse",
       username = "rockorager",
       description = "Creator of libvaxis and modern Zig tooling",
