@@ -87,6 +87,12 @@ local defaults = {
     },
 
     {
+      name = "Zhiyuan Li",
+      username = "zhiyuan1i",
+      description = "AI systems engineer and Flash Linear Attention contributor",
+    },
+
+    {
       name = "Jake Fitzgerald",
       username = "earthtojake",
       description = "Creator of Text-to-CAD and source-controlled CAD tooling",
@@ -108,12 +114,6 @@ local defaults = {
       name = "Simon Willison",
       username = "simonw",
       description = "Creator of Datasette and practical LLM tooling",
-    },
-
-    {
-      name = "Steven Arcangeli",
-      username = "stevearc",
-      description = "Creator of Neovim plugins and developer tooling",
     },
 
     {
@@ -153,6 +153,12 @@ local defaults = {
     },
 
     {
+      name = "Michael Paquier",
+      username = "michaelpq",
+      description = "PostgreSQL committer and database systems engineer",
+    },
+
+    {
       name = "David Tolnay",
       username = "dtolnay",
       description = "Maintainer of foundational Rust libraries and macros",
@@ -168,6 +174,12 @@ local defaults = {
       name = "Björn Linse",
       username = "bfredl",
       description = "Neovim core maintainer and editor infrastructure engineer",
+    },
+
+    {
+      name = "Christian Clason",
+      username = "clason",
+      description = "Neovim maintainer and release manager",
     },
 
     {
