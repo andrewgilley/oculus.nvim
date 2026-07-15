@@ -1,8 +1,8 @@
 # Pantheon issue scout
 
-Pantheon can run an external AI command and display its recommended GitHub issues as a navigable list.
+Pantheon can run an external AI command and display its recommended GitHub issues as a navigable list. If `codex` is available in Neovim's `PATH`, Pantheon automatically runs `codex --search exec` in ephemeral, read-only mode.
 
-Configure `issue_command` with an argv table. Pantheon sends the issue-scout prompt to the command on standard input. When any argument contains `{prompt}`, Pantheon substitutes the prompt into that argument instead and does not use standard input.
+No configuration is required for Codex. To use another program, configure `issue_command` with an argv table. Pantheon sends the issue-scout prompt to the command on standard input. When any argument contains `{prompt}`, Pantheon substitutes the prompt into that argument instead and does not use standard input.
 
 ```lua
 require("pantheon").setup({
@@ -39,4 +39,4 @@ require("pantheon").setup({
 })
 ```
 
-`issue_command` may also be a function receiving the fully constructed prompt and returning an argv table. `issue_prompt` may be a replacement prompt string or a function receiving the command-line preferences and returning a prompt string.
+`issue_command` may also be a function receiving the fully constructed prompt and returning an argv table. Set it to `false` to disable automatic Codex detection. `issue_prompt` may be a replacement prompt string or a function receiving the command-line preferences and returning a prompt string.

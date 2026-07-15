@@ -250,7 +250,11 @@ preview many contributors because unauthenticated API limits are lower.
 ## Issue scout
 
 Pantheon can send its bundled issue-scout prompt to an external AI command and
-show the recommended GitHub issues in a navigable list:
+show the recommended GitHub issues in a navigable list. When the `codex`
+executable is available in Neovim's `PATH`, Pantheon uses `codex exec` with
+live web search automatically; no `issue_command` setting is required.
+
+To use a different AI command, configure it explicitly:
 
 ```lua
 require("pantheon").setup({
@@ -261,7 +265,8 @@ require("pantheon").setup({
 The command receives the prompt on standard input and must write only the
 requested JSON array to standard output. Put `{prompt}` in an argument to
 substitute the prompt there instead. `issue_command` can also be a function
-that receives the prompt and returns an argv table.
+that receives the prompt and returns an argv table. Set `issue_command = false`
+to disable automatic Codex detection.
 
 Press `s` from Pantheon's startup user list or run `:PantheonIssues` for the
 default ranking. You can add preferences when using the command:

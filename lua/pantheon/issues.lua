@@ -236,13 +236,38 @@ local function prompt_for(opts, preferences)
   return skill.build(preferences)
 end
 
+local function default_codex_command()
+  if vim.fn.executable("codex") ~= 1 then
+    return nil
+  end
+  return {
+    "codex",
+    "--search",
+    "exec",
+    "--ephemeral",
+    "--skip-git-repo-check",
+    "--sandbox",
+    "read-only",
+    "--color",
+    "never",
+    "-",
+  }
+end
+
 local function command_for(opts, prompt)
   local configured = opts.issue_command
+  if configured == nil then
+    configured = default_codex_command()
+  end
   if type(configured) == "function" then
     configured = configured(prompt)
   end
   if type(configured) ~= "table" or #configured == 0 then
-    return nil, nil, "issue_command must be a non-empty argv table or a function returning one"
+    return nil, nil, table.concat({
+      "No issue scout command is available.",
+      "Install Codex so it is visible in Neovim's PATH, or configure",
+      "issue_command as a non-empty argv table or function.",
+    }, " ")
   end
 
   local command = {}
