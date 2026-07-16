@@ -21,7 +21,6 @@ M.state = {
   events = nil,
   line_targets = {},
   request_id = 0,
-  preview_request_id = 0,
   preview_key = nil,
   preview_items = nil,
   contributors = {},
@@ -327,21 +326,6 @@ local function quoted_detail_line(text)
   return '"' .. text .. '"'
 end
 
-local function compact_event_detail(item)
-  local detail = event_detail(item)
-  if type(detail) ~= "table" then
-    return detail
-  end
-
-  local parts = {}
-  for _, value in ipairs(detail) do
-    if type(value) == "string" and value ~= "" then
-      parts[#parts + 1] = quoted_detail_line(value)
-    end
-  end
-  return #parts > 0 and table.concat(parts, " · ") or nil
-end
-
 local function event_summary(item)
   if item.summary then
     local summary = item.summary
@@ -455,43 +439,18 @@ local function render_preview_panel(items)
   end
 end
 
-local function preview_items(contributor, events, err, cached)
-  local items = {
+local function preview_items(contributor)
+  return {
     [2] = { "PREVIEW", "Title" },
     [4] = { contributor.name or contributor.username, "Function" },
     [5] = { "@" .. contributor.username, "Identifier" },
     [7] = { contributor.description or "GitHub contributor", "Comment" },
+    [9] = { "ACTIVITY", "Special" },
+    [10] = {
+      "Press l, Right, or Enter to load recent activity.",
+      "Comment",
+    },
   }
-
-  if err then
-    items[9] = { "PREVIEW UNAVAILABLE", "DiagnosticError" }
-    items[10] = { err, "Comment" }
-    return items
-  end
-
-  if not events then
-    items[9] = { "Loading recent activity…", "DiagnosticInfo" }
-    return items
-  end
-
-  items[9] = { "RECENT ACTIVITY" .. (cached and " · CACHED" or ""), "Special" }
-  if #events == 0 then
-    items[10] = { "No recent public events.", "Comment" }
-    return items
-  end
-
-  local line = 10
-  for index = 1, math.min(8, #events) do
-    local event = events[index]
-    local item = actions.describe(event)
-    local detail = compact_event_detail(item)
-    items[line] = { item.icon .. "  " .. item.text, "NormalFloat" }
-    items[line + 1] = detail
-      and { detail, "PantheonActivityPreview" }
-      or { activity_time(event.created_at), "Comment" }
-    line = line + 2
-  end
-  return items
 end
 
 local function activity_types_for(contributor)
@@ -517,59 +476,7 @@ local function queue_preview(contributor)
     return
   end
   M.state.preview_key = key
-  M.state.preview_request_id = M.state.preview_request_id + 1
-  local request_id = M.state.preview_request_id
-
   render_preview_panel(preview_items(contributor))
-
-  vim.defer_fn(function()
-    if
-      request_id ~= M.state.preview_request_id
-      or M.state.view ~= "contributors"
-    then
-      return
-    end
-    github.events(
-      contributor.username,
-      M.state.opts,
-      function(events, err, cached)
-        if
-          request_id ~= M.state.preview_request_id
-          or M.state.view ~= "contributors"
-        then
-          return
-        end
-        local filtered = events
-          and actions.filter(events, activity_types_for(contributor))
-          or nil
-        render_preview_panel(preview_items(contributor, filtered, err, cached))
-        if filtered then
-          github.enrich_pull_requests(filtered, M.state.opts, function(with_prs)
-            if
-              request_id ~= M.state.preview_request_id
-              or M.state.view ~= "contributors"
-            then
-              return
-            end
-            render_preview_panel(
-              preview_items(contributor, with_prs, nil, cached)
-            )
-            github.enrich_pushes(with_prs, M.state.opts, function(enriched)
-              if
-                request_id ~= M.state.preview_request_id
-                or M.state.view ~= "contributors"
-              then
-                return
-              end
-              render_preview_panel(
-                preview_items(contributor, enriched, nil, cached)
-              )
-            end)
-          end)
-        end
-      end
-    )
-  end, 150)
 end
 
 local function render_contributors()
@@ -579,7 +486,6 @@ local function render_contributors()
   M.state.events = nil
   M.state.line_targets = {}
   M.state.preview_key = nil
-  M.state.preview_request_id = M.state.preview_request_id + 1
 
   local lines = {
     "",
@@ -752,7 +658,6 @@ local function render_filters(scope, selected_type)
   M.state.view = "filters"
   M.state.filter_scope = scope
   M.state.line_targets = {}
-  M.state.preview_request_id = M.state.preview_request_id + 1
 
   local scope_name = scope.global and "All contributors"
     or ((scope.name or scope.username) .. " · @" .. scope.username)
@@ -988,7 +893,6 @@ local function render_shortcuts()
   close_activity_footer()
   M.state.view = "shortcuts"
   M.state.line_targets = {}
-  M.state.preview_request_id = M.state.preview_request_id + 1
 
   local lines = {
     "",
@@ -1368,7 +1272,6 @@ end
 
 function M.close()
   M.state.request_id = M.state.request_id + 1
-  M.state.preview_request_id = M.state.preview_request_id + 1
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
   close_activity_footer()
   if is_valid_win(M.state.win) then

@@ -238,7 +238,8 @@ You may instead pass `token` to `setup`, though environment variables are safer
 than storing credentials in your Neovim configuration.
 
 GitHub public events are not real-time and can be delayed. Only public activity
-is shown.
+is shown. The startup user list does not request activity; Pantheon loads a
+contributor's events only after you select that contributor.
 
 GitHub no longer includes commit metadata in push events. Pantheon enriches up
 to `push_detail_limit` pushes with cached compare requests so push items show a
