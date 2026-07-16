@@ -646,7 +646,7 @@ local function render_contributors()
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = "  ?: shortcuts  s: scout  q: quit"
+  lines[#lines + 1] = "  ?: shortcuts  q: quit"
   local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
@@ -1013,7 +1013,6 @@ local function render_shortcuts()
     { "j / <Left>", "Return to the previous page" },
   })
   section("STARTUP USER LIST", {
-    { "s", "Open Issue Scout" },
     { "f", "Edit filters for the selected contributor" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
@@ -1027,12 +1026,6 @@ local function render_shortcuts()
     { "<Space> / l / <CR>", "Toggle the selected activity type" },
     { "a", "Enable every activity type" },
     { "n", "Disable every activity type" },
-  })
-  section("ISSUE SCOUT", {
-    { "i / k", "Select the previous or next issue" },
-    { "l / <Right> / <CR>", "Show issue details" },
-    { "o", "Open the issue on GitHub" },
-    { "r", "Restart the issue search" },
   })
   section("GENERAL", {
     { "?", "Open or close this shortcut page" },
@@ -1314,16 +1307,6 @@ local function toggle_shortcuts()
   render_shortcuts()
 end
 
-local function open_issue_scout()
-  if M.state.view ~= "contributors" then
-    return
-  end
-
-  local opts = M.state.opts
-  M.close()
-  require("pantheon.issues").open(opts, "", false)
-end
-
 local function map_keys(buf)
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, {
@@ -1342,7 +1325,6 @@ local function map_keys(buf)
   map("<Right>", select_current, "Move right in Pantheon")
   map("<Space>", toggle_filter_type, "Toggle Pantheon activity type")
   map("o", open_current, "Open Pantheon item in browser")
-  map("s", open_issue_scout, "Open Pantheon issue scout")
   map("f", function()
     open_filters(false)
   end, "Edit contributor activity types")
