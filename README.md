@@ -36,6 +36,11 @@ require("pantheon").setup({
       description = "WebAssembly and JavaScript engine engineer",
     },
     {
+      name = "Robin Freyler",
+      username = "Robbepop",
+      description = "Rust, WebAssembly, virtual machines, and compiler engineer",
+    },
+    {
       name = "Alex Kladov",
       username = "matklad",
       description = "Rust Analyzer co-creator and TigerBeetle engineer",
