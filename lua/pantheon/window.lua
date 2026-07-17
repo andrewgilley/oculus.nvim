@@ -445,9 +445,9 @@ local function preview_items(contributor)
     [4] = { contributor.name or contributor.username, "Function" },
     [5] = { "@" .. contributor.username, "Identifier" },
     [7] = { contributor.description or "GitHub contributor", "Comment" },
-    [9] = { "ACTIVITY", "Special" },
+    [9] = { "", "Special" },
     [10] = {
-      "Press l, Right, or Enter to load recent activity.",
+      "",
       "Comment",
     },
   }
