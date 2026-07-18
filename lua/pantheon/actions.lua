@@ -120,8 +120,9 @@ local function sentence(event)
 
   if kind == "PullRequestReviewCommentEvent" then
     local number = value(payload, "pull_request", "number")
-    return ("Commented on pull request review%s"):format(
-      number and (" #" .. number) or ""
+    return ("Commented on pull request review%s in %s"):format(
+      number and (" #" .. number) or "",
+      repo
     )
   end
 
