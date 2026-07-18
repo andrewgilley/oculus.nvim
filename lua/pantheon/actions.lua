@@ -194,6 +194,10 @@ local function quoted(text)
   return '"' .. text .. '"'
 end
 
+local function bulleted(text)
+  return "• " .. text
+end
+
 local function lowercase_first(text)
   return text:gsub("^%u", string.lower)
 end
@@ -278,11 +282,11 @@ local function summary(event)
     and value(event, "payload", "issue", "pull_request")
   then
     local title = preview_text(value(event, "payload", "issue", "title"))
-    return title and quoted(title) or nil
+    return title and bulleted(title) or nil
   end
   if event.type == "PullRequestReviewCommentEvent" then
     local title = preview_text(value(event, "payload", "pull_request", "title"))
-    return title and quoted(title) or nil
+    return title and bulleted(title) or nil
   end
   return nil
 end

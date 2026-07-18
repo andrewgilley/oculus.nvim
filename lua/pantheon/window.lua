@@ -317,15 +317,19 @@ local function preview_left_width(window_width)
   return math.max(30, math.min(preferred, window_width - 22))
 end
 
+local function is_formatted_preview(text)
+  return text:match('^".*"$')
+    or text:match('^PR #%d+ · ".*"$')
+    or text:match("^• ")
+end
+
 local function event_detail(item)
   if item.detail then
     if type(item.detail) == "table" then
       return item.detail
     end
     local detail = item.detail
-    local has_wrapped_preview = detail:match('^".*"$')
-      or detail:match('^PR #%d+ · ".*"$')
-    if not has_wrapped_preview then
+    if not is_formatted_preview(detail) then
       detail = '"' .. detail .. '"'
     end
     return detail
@@ -336,9 +340,7 @@ local function quoted_detail_line(text)
   if text == "..." then
     return text
   end
-  local has_wrapped_preview = text:match('^".*"$')
-    or text:match('^PR #%d+ · ".*"$')
-  if has_wrapped_preview then
+  if is_formatted_preview(text) then
     return text
   end
   return '"' .. text .. '"'
@@ -347,9 +349,7 @@ end
 local function event_summary(item)
   if item.summary then
     local summary = item.summary
-    local has_wrapped_preview = summary:match('^".*"$')
-      or summary:match('^PR #%d+ · ".*"$')
-    if not has_wrapped_preview then
+    if not is_formatted_preview(summary) then
       summary = '"' .. summary .. '"'
     end
     return summary
