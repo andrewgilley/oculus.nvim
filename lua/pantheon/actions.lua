@@ -210,6 +210,9 @@ local function detail(event)
         end
       end
       if #messages > 0 then
+        if #commits > 3 then
+          messages[#messages + 1] = "..."
+        end
         return messages
       end
     end

@@ -327,6 +327,9 @@ local function event_detail(item)
 end
 
 local function quoted_detail_line(text)
+  if text == "..." then
+    return text
+  end
   local has_wrapped_preview = text:match('^".*"$')
     or text:match('^PR #%d+ · ".*"$')
   if has_wrapped_preview then
