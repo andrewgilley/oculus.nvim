@@ -237,6 +237,21 @@ local function highlight(line, start_col, end_col, group)
   )
 end
 
+local function highlight_text(line, text, group)
+  local first = text:find("%S")
+  local trailing = text:find("%s*$")
+  if not first or not trailing or trailing <= first then
+    return
+  end
+  vim.api.nvim_buf_set_extmark(M.state.buf, ns, line - 1, first - 1, {
+    end_row = line - 1,
+    end_col = trailing - 1,
+    hl_group = group,
+    hl_mode = "replace",
+    priority = 10000,
+  })
+end
+
 local function trim_to_width(text, width)
   if vim.fn.strdisplaywidth(text) <= width then
     return text
@@ -401,23 +416,27 @@ local function preview_lines(item, width)
   local indent = "     "
   local content_width = math.max(1, width - vim.fn.strdisplaywidth(indent) - 1)
   local lines = {}
+  local kinds = {}
   local details = {}
   if summary then
-    details[#details + 1] = summary
+    details[#details + 1] = { text = summary, kind = "summary" }
   end
   if type(detail) == "table" then
-    vim.list_extend(details, detail)
+    for _, detail_item in ipairs(detail) do
+      details[#details + 1] = { text = detail_item, kind = "detail" }
+    end
   elseif detail and detail ~= summary then
-    details[#details + 1] = detail
+    details[#details + 1] = { text = detail, kind = "detail" }
   end
-  for _, detail_item in ipairs(details) do
-    local remaining = quoted_detail_line(detail_item)
+  for _, entry in ipairs(details) do
+    local remaining = quoted_detail_line(entry.text)
     for _ = 1, 3 do
       if remaining == "" then
         break
       end
       local text = trim_to_width(remaining, content_width)
       lines[#lines + 1] = indent .. pad_cell(text, content_width) .. " "
+      kinds[#lines] = entry.kind
       if vim.fn.strdisplaywidth(remaining) <= content_width then
         break
       end
@@ -426,7 +445,7 @@ local function preview_lines(item, width)
       remaining = vim.fn.strcharpart(remaining, consumed)
     end
   end
-  return lines
+  return lines, kinds
 end
 
 local function without_preview(item)
@@ -901,14 +920,21 @@ local function render_activity(events, cached, notice)
         activity_time(event.created_at),
         item_width
       )
-      local detail_lines = preview_lines(item, item_width)
+      local detail_lines, detail_kinds = preview_lines(item, item_width)
       if detail_lines then
-        for _, detail_line in ipairs(detail_lines) do
+        for index, detail_line in ipairs(detail_lines) do
           lines[#lines + 1] = detail_line
           M.state.line_targets[#lines] = vim.trim(detail_line) == "..."
               and (item.group_url or item.url)
             or item.url
-          activity_line_kinds[#lines] = "preview"
+          local is_pr_title = detail_kinds[index] == "summary"
+            and (
+              item.type == "IssueCommentEvent"
+              or item.type == "PullRequestReviewCommentEvent"
+            )
+          activity_line_kinds[#lines] = is_pr_title
+              and "pr_title_preview"
+            or "preview"
         end
       end
       lines[#lines + 1] = pad_cell("", item_width)
@@ -946,8 +972,11 @@ local function render_activity(events, cached, notice)
   for line, kind in pairs(activity_line_kinds) do
     local text = lines[line]
     if text then
-      if kind == "preview" then
+      if kind == "preview" or kind == "pr_title_preview" then
         highlight(line, 0, -1, "PantheonActivityPreview")
+        if kind == "pr_title_preview" then
+          highlight_text(line, text, "Function")
+        end
       elseif kind == "main" then
         highlight(line, 0, 5, "PantheonActivityIcon")
       end
