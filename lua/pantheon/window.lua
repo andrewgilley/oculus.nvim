@@ -6,6 +6,9 @@ local github = require("pantheon.github")
 
 local ns = vim.api.nvim_create_namespace("pantheon")
 local preview_ns = vim.api.nvim_create_namespace("pantheon_preview")
+local contributor_selection_ns = vim.api.nvim_create_namespace(
+  "pantheon_contributor_selection"
+)
 local autocmd_group = vim.api.nvim_create_augroup(
   "PantheonWindow",
   { clear = true }
@@ -208,6 +211,12 @@ local function set_lines(lines)
   vim.bo[M.state.buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(M.state.buf, ns, 0, -1)
   vim.api.nvim_buf_clear_namespace(M.state.buf, preview_ns, 0, -1)
+  vim.api.nvim_buf_clear_namespace(
+    M.state.buf,
+    contributor_selection_ns,
+    0,
+    -1
+  )
   M.state.preview_items = nil
 end
 
@@ -479,6 +488,43 @@ local function queue_preview(contributor)
   render_preview_panel(preview_items(contributor))
 end
 
+local function update_contributor_selection()
+  if not is_valid_buf(M.state.buf) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(
+    M.state.buf,
+    contributor_selection_ns,
+    0,
+    -1
+  )
+  if M.state.view ~= "contributors" or not is_valid_win(M.state.win) then
+    return
+  end
+
+  local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  if type(M.state.line_targets[line]) ~= "table" then
+    return
+  end
+  local text = vim.api.nvim_buf_get_lines(
+    M.state.buf,
+    line - 1,
+    line,
+    false
+  )[1] or ""
+  local visible_text = text:gsub("%s+$", "")
+  if #visible_text > 2 then
+    vim.api.nvim_buf_add_highlight(
+      M.state.buf,
+      contributor_selection_ns,
+      "Visual",
+      line - 1,
+      2,
+      #visible_text
+    )
+  end
+end
+
 local function render_contributors()
   close_activity_footer()
   M.state.view = "contributors"
@@ -596,6 +642,7 @@ local function render_contributors()
     M.state.selected_username = contributor.username
     vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
     queue_preview(contributor)
+    update_contributor_selection()
   end
 end
 
@@ -1389,6 +1436,7 @@ function M.open(opts)
         M.state.selected_username = contributor.username
         queue_preview(contributor)
       end
+      update_contributor_selection()
     end,
   })
 

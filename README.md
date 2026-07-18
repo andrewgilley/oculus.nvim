@@ -141,6 +141,16 @@ require("pantheon").setup({
       description = "Creator and CTO of the Qdrant vector database",
     },
     {
+      name = "Glauber Costa",
+      username = "glommer",
+      description = "Founder of Turso; Linux, ScyllaDB, and database engineer",
+    },
+    {
+      name = "Pekka Enberg",
+      username = "penberg",
+      description = "Turso founder and CTO; ScyllaDB and Linux engineer",
+    },
+    {
       name = "Michael Paquier",
       username = "michaelpq",
       description = "PostgreSQL committer and database systems engineer",
