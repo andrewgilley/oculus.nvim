@@ -517,7 +517,7 @@ local function update_contributor_selection()
     vim.api.nvim_buf_add_highlight(
       M.state.buf,
       contributor_selection_ns,
-      "Visual",
+      "Function",
       line - 1,
       2,
       #visible_text
