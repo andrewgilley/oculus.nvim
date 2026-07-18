@@ -514,13 +514,17 @@ local function update_contributor_selection()
   )[1] or ""
   local visible_text = text:gsub("%s+$", "")
   if #visible_text > 2 then
-    vim.api.nvim_buf_add_highlight(
+    vim.api.nvim_buf_set_extmark(
       M.state.buf,
       contributor_selection_ns,
-      "PantheonContributorSelected",
       line - 1,
       2,
-      #visible_text
+      {
+        end_row = line - 1,
+        end_col = #visible_text,
+        hl_group = "PantheonContributorSelected",
+        priority = 200,
+      }
     )
   end
 end
