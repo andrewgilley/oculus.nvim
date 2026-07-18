@@ -517,7 +517,7 @@ local function update_contributor_selection()
     vim.api.nvim_buf_add_highlight(
       M.state.buf,
       contributor_selection_ns,
-      "Normal",
+      "PantheonContributorSelected",
       line - 1,
       2,
       #visible_text
@@ -1361,6 +1361,9 @@ function M.open(opts)
   vim.api.nvim_set_hl(0, "PantheonActivityPreview", {
     fg = "#9ae6b4",
     bg = "NONE",
+  })
+  vim.api.nvim_set_hl(0, "PantheonContributorSelected", {
+    fg = "#ffffff",
   })
   vim.api.nvim_set_hl(0, "PantheonCursorLine", {
     bg = "#3a3a3a",
