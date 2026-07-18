@@ -523,7 +523,8 @@ local function update_contributor_selection()
         end_row = line - 1,
         end_col = #visible_text,
         hl_group = "PantheonContributorSelected",
-        priority = 200,
+        hl_mode = "replace",
+        priority = 10000,
       }
     )
   end
