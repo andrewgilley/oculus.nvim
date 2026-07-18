@@ -179,11 +179,17 @@ local function update_activity_cursorline()
     1,
     vim.api.nvim_win_get_height(M.state.win) - footer_height
   )
+  local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+  local min_line = M.state.activity_cursor_min_line or 1
+  if cursor[1] < min_line then
+    cursor = { min_line, 0 }
+    vim.api.nvim_win_set_cursor(M.state.win, cursor)
+  end
   local limit_line = M.state.activity_scroll_limit_line
   if limit_line then
-    local cursor = vim.api.nvim_win_get_cursor(M.state.win)
     if cursor[1] > limit_line then
-      vim.api.nvim_win_set_cursor(M.state.win, { limit_line, cursor[2] })
+      cursor = { limit_line, 0 }
+      vim.api.nvim_win_set_cursor(M.state.win, cursor)
     end
     local max_topline = math.max(1, limit_line - visible_rows + 1)
     local view = vim.fn.winsaveview()
@@ -387,14 +393,23 @@ local function activity_item_line(item, timestamp, width)
 end
 
 local function preview_lines(item, width)
+  local summary = event_summary(item)
   local detail = event_detail(item)
-  if not detail then
+  if not summary and not detail then
     return nil
   end
   local indent = "     "
   local content_width = math.max(1, width - vim.fn.strdisplaywidth(indent) - 1)
   local lines = {}
-  local details = type(detail) == "table" and detail or { detail }
+  local details = {}
+  if summary then
+    details[#details + 1] = summary
+  end
+  if type(detail) == "table" then
+    vim.list_extend(details, detail)
+  elseif detail and detail ~= summary then
+    details[#details + 1] = detail
+  end
   for _, detail_item in ipairs(details) do
     local remaining = quoted_detail_line(detail_item)
     for _ = 1, 3 do
@@ -414,9 +429,10 @@ local function preview_lines(item, width)
   return lines
 end
 
-local function without_detail(item)
+local function without_preview(item)
   local result = vim.tbl_extend("force", {}, item)
   result.detail = nil
+  result.summary = nil
   return result
 end
 
@@ -879,9 +895,9 @@ local function render_activity(events, cached, notice)
     first_event_line = first_event_line or event_line
     activity_line_kinds[event_line] = "main"
     local item_width = width - 2
-    if item.detail then
+    if item.detail or item.summary then
       lines[event_line] = activity_item_line(
-        without_detail(item),
+        without_preview(item),
         activity_time(event.created_at),
         item_width
       )

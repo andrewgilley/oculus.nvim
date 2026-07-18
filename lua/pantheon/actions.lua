@@ -145,7 +145,9 @@ local function sentence(event)
   if kind == "IssuesEvent" then
     local number = value(payload, "issue", "number")
     local title = value(payload, "issue", "title")
-    local title_suffix = payload.action ~= "assigned"
+    local title_in_preview = payload.action == "assigned"
+      or payload.action == "closed"
+    local title_suffix = not title_in_preview
       and title
       and (" · " .. title)
       or ""
@@ -244,12 +246,12 @@ local function detail(event)
       or preview_text(value(event, "payload", "pull_request", "title"))
     return title and quoted(title) or nil
   end
-  if
-    event.type == "IssuesEvent"
-    and value(event, "payload", "action") == "assigned"
-  then
-    local title = preview_text(value(event, "payload", "issue", "title"))
-    return title and quoted(title) or nil
+  if event.type == "IssuesEvent" then
+    local action = value(event, "payload", "action")
+    if action == "assigned" or action == "closed" then
+      local title = preview_text(value(event, "payload", "issue", "title"))
+      return title and quoted(title) or nil
+    end
   end
   if
     event.type == "IssueCommentEvent"
