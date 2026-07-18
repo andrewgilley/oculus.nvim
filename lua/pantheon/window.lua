@@ -975,7 +975,7 @@ local function render_activity(events, cached, notice)
       if kind == "preview" or kind == "pr_title_preview" then
         highlight(line, 0, -1, "PantheonActivityPreview")
         if kind == "pr_title_preview" then
-          highlight_text(line, text, "Function")
+          highlight_text(line, text, "PantheonActivityIcon")
         end
       elseif kind == "main" then
         highlight(line, 0, 5, "PantheonActivityIcon")
