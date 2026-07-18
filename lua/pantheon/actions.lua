@@ -211,7 +211,7 @@ local function detail(event)
       end
       if #messages > 0 then
         if #commits > 3 then
-          messages[#messages + 1] = "..."
+          messages[#messages + 1] = "…"
         end
         return messages
       end
@@ -342,6 +342,27 @@ local function event_url(event)
   return base
 end
 
+local function push_group_url(event)
+  if event.type ~= "PushEvent" then
+    return nil
+  end
+  local repo = value(event, "repo", "name")
+  local payload = event.payload or {}
+  if
+    not repo
+    or not payload.before
+    or not payload.head
+    or payload.before:match("^0+$")
+  then
+    return nil
+  end
+  return ("https://github.com/%s/compare/%s...%s"):format(
+    repo,
+    payload.before,
+    payload.head
+  )
+end
+
 function M.describe(event)
   return {
     type = event.type,
@@ -350,6 +371,7 @@ function M.describe(event)
     summary = summary(event),
     detail = detail(event),
     url = event_url(event),
+    group_url = push_group_url(event),
   }
 end
 

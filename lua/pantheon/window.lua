@@ -327,7 +327,7 @@ local function event_detail(item)
 end
 
 local function quoted_detail_line(text)
-  if text == "..." then
+  if text == "…" then
     return text
   end
   local has_wrapped_preview = text:match('^".*"$')
@@ -889,7 +889,9 @@ local function render_activity(events, cached, notice)
       if detail_lines then
         for _, detail_line in ipairs(detail_lines) do
           lines[#lines + 1] = detail_line
-          M.state.line_targets[#lines] = item.url
+          M.state.line_targets[#lines] = vim.trim(detail_line) == "…"
+              and (item.group_url or item.url)
+            or item.url
           activity_line_kinds[#lines] = "preview"
         end
       end
