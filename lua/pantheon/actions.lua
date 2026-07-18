@@ -350,19 +350,19 @@ local function push_group_url(event)
   end
   local repo = value(event, "repo", "name")
   local payload = event.payload or {}
-  if
-    not repo
-    or not payload.before
-    or not payload.head
-    or payload.before:match("^0+$")
-  then
+  if not repo then
     return nil
   end
-  return ("https://github.com/%s/compare/%s...%s"):format(
-    repo,
-    payload.before,
-    payload.head
-  )
+
+  local branch = type(payload.ref) == "string"
+      and payload.ref:match("^refs/heads/(.+)$")
+    or nil
+  local target = branch or payload.head
+  if not target or target == "" then
+    return nil
+  end
+
+  return ("https://github.com/%s/commits/%s"):format(repo, target)
 end
 
 function M.describe(event)
