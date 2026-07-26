@@ -220,6 +220,13 @@ require("pantheon").setup({
       username = "nikomatsakis",
       description = "Rust language designer and compiler team leader",
     },
+    -- AGENT_CHANGE_BEGIN patrick-ohly-20260726 2 Document Patrick Ohly in setup example
+    {
+      name = "Patrick Ohly",
+      username = "pohly",
+      description = "Kubernetes developer and cloud-native systems engineer",
+    },
+    -- AGENT_CHANGE_END patrick-ohly-20260726 2
     {
       name = "Andrew Gilley",
       username = "andrewgilley",
