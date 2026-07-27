@@ -266,6 +266,14 @@ local defaults = {
       description = "Kubernetes developer and cloud-native systems engineer",
     },
 
+    -- AGENT_CHANGE_BEGIN fil-c-creator-20260726 1 Add Filip Pizlo to default contributors
+    {
+      name = "Filip Pizlo",
+      username = "pizlonator",
+      description = "Creator of Fil-C and programming-language systems engineer",
+    },
+    -- AGENT_CHANGE_END fil-c-creator-20260726 1
+
     {
       name = "Andrew Gilley",
       username = "andrewgilley",
