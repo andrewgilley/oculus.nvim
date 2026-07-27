@@ -274,6 +274,14 @@ local defaults = {
     },
     -- AGENT_CHANGE_END fil-c-creator-20260726 1
 
+    -- AGENT_CHANGE_BEGIN sun-yi-name-20260726 1 Set Sun Yi display name
+    {
+      name = "Sun Yi",
+      username = "sunyi0505",
+      description = "Flash Linear Attention contributor and AI systems developer",
+    },
+    -- AGENT_CHANGE_END sun-yi-name-20260726 1
+
     {
       name = "Andrew Gilley",
       username = "andrewgilley",
