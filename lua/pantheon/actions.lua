@@ -84,6 +84,12 @@ local function value(root, ...)
 end
 
 local function sentence(event)
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 3 Support provider-normalized activity text
+  if type(event.pantheon_text) == "string" then
+    return event.pantheon_text
+  end
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 3
+
   local payload = event.payload or {}
   local repo = value(event, "repo", "name") or "an unknown repository"
   local kind = event.type or "ActivityEvent"
@@ -203,6 +209,12 @@ local function lowercase_first(text)
 end
 
 local function detail(event)
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 4 Support provider-normalized activity details
+  if event.pantheon_detail ~= nil then
+    return event.pantheon_detail
+  end
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 4
+
   if event.type == "PushEvent" then
     local commits = value(event, "payload", "commits") or {}
     if #commits > 1 then
@@ -316,6 +328,12 @@ local function comment_url(comment, fallback)
 end
 
 local function event_url(event)
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 5 Preserve provider-specific activity URLs
+  if type(event.url) == "string" and event.url ~= "" then
+    return event.url
+  end
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 5
+
   local repo = value(event, "repo", "name")
   if not repo then
     return "https://github.com"
@@ -350,6 +368,12 @@ local function event_url(event)
 end
 
 local function push_group_url(event)
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 6 Preserve provider-specific push group URLs
+  if type(event.group_url) == "string" and event.group_url ~= "" then
+    return event.group_url
+  end
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 6
+
   if event.type ~= "PushEvent" then
     return nil
   end

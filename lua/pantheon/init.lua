@@ -68,6 +68,15 @@ local defaults = {
       description = "Creator of the Odin programming language",
     },
 
+    -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 1 Add Andrew Kelley as a Codeberg contributor
+    {
+      name = "Andrew Kelley",
+      username = "andrewrk",
+      provider = "codeberg",
+      description = "Creator of Zig and president of the Zig Software Foundation",
+    },
+    -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 1
+
     {
       name = "Jon Gjengset",
       username = "jonhoo",
