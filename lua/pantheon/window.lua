@@ -606,7 +606,7 @@ local function render_contributors()
   local lines = {
     "",
     "  COMMUNITY FIGURES",
-    "  Public GitHub and Codeberg activity",
+    "  Public developer activity",
     "",
   }
 
