@@ -4,6 +4,30 @@ local actions = require("pantheon.actions")
 local browser = require("pantheon.browser")
 local github = require("pantheon.github")
 
+-- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 7 Add contributor activity-provider helpers
+local codeberg = require("pantheon.codeberg")
+
+local function activity_provider(contributor)
+  if contributor and contributor.provider == "codeberg" then
+    return codeberg
+  end
+  return github
+end
+
+local function provider_name(contributor)
+  return contributor and contributor.provider == "codeberg"
+      and "Codeberg"
+    or "GitHub"
+end
+
+local function contributor_profile_url(contributor)
+  local host = contributor and contributor.provider == "codeberg"
+      and "https://codeberg.org/"
+    or "https://github.com/"
+  return host .. vim.uri_encode(contributor.username)
+end
+-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 7
+
 local ns = vim.api.nvim_create_namespace("pantheon")
 local preview_ns = vim.api.nvim_create_namespace("pantheon_preview")
 local contributor_selection_ns = vim.api.nvim_create_namespace(
@@ -277,13 +301,20 @@ local function utc_time(year, month, day, hour, minute, second)
   return days * 86400 + hour * 3600 + minute * 60 + second
 end
 
+-- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 8 Parse activity timestamps with UTC offsets
 local function activity_time(timestamp)
   if not timestamp then
     return "unknown time"
   end
-  local year, month, day, hour, minute, second = timestamp:match(
-    "^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)Z$"
-  )
+  local year, month, day, hour, minute, second, offset_sign, offset_hour, offset_minute =
+    timestamp:match(
+      "^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)([+-])(%d%d):(%d%d)$"
+    )
+  if not year then
+    year, month, day, hour, minute, second = timestamp:match(
+      "^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)Z$"
+    )
+  end
   if not year then
     return timestamp
   end
@@ -296,6 +327,11 @@ local function activity_time(timestamp)
     tonumber(minute),
     tonumber(second)
   )
+  if offset_sign then
+    local offset = tonumber(offset_hour) * 3600 + tonumber(offset_minute) * 60
+    local_time = local_time + (offset_sign == "+" and -offset or offset)
+  end
+
   local event_date = os.date("*t", local_time)
   local time = os.date("%I:%M %p", local_time):gsub("^0", " ")
 
@@ -306,6 +342,7 @@ local function activity_time(timestamp)
   )
   return date .. " — " .. time
 end
+-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 8
 
 local function footer(lines, text)
   -- lines[#lines + 1] = ""
@@ -467,12 +504,19 @@ local function render_preview_panel(items)
   end
 end
 
+-- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 9 Show each contributor's forge in previews
 local function preview_items(contributor)
   return {
     [2] = { "PREVIEW", "Title" },
     [4] = { contributor.name or contributor.username, "Function" },
-    [5] = { "@" .. contributor.username, "Identifier" },
-    [7] = { contributor.description or "GitHub contributor", "Comment" },
+    [5] = {
+      "@" .. contributor.username .. " · " .. provider_name(contributor),
+      "Identifier",
+    },
+    [7] = {
+      contributor.description or (provider_name(contributor) .. " contributor"),
+      "Comment",
+    },
     [9] = { "", "Special" },
     [10] = {
       "",
@@ -480,6 +524,7 @@ local function preview_items(contributor)
     },
   }
 end
+-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 9
 
 local function activity_types_for(contributor)
   local overrides = M.state.opts.user_activity_types or {}
@@ -557,10 +602,11 @@ local function render_contributors()
   M.state.line_targets = {}
   M.state.preview_key = nil
 
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 10 Generalize the contributor list for multiple forges
   local lines = {
     "",
     "  COMMUNITY FIGURES",
-    "  Public GitHub activity",
+    "  Public GitHub and Codeberg activity",
     "",
   }
 
@@ -579,7 +625,7 @@ local function render_contributors()
 
   lines[#lines + 1] = ("  %s  %s"):format(
     pad_cell("USER", name_width),
-    pad_cell("GITHUB", username_width)
+    pad_cell("HANDLE", username_width)
   )
 
   local selected_index = 1
@@ -616,6 +662,7 @@ local function render_contributors()
     lines[line] = pad_cell(prefix, left_width)
     M.state.line_targets[line] = contributor
   end
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 10
 
   if #contributors == 0 then
     lines[#lines + 1] = "  No contributors configured."
@@ -819,6 +866,7 @@ local function reset_filter_types_to_default()
   render_contributors()
 end
 
+-- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 11 Show the selected forge while activity loads
 local function render_loading(contributor)
   close_activity_footer()
   M.state.view = "activity"
@@ -829,7 +877,7 @@ local function render_loading(contributor)
     "  " .. (contributor.name or contributor.username),
     "  @" .. contributor.username,
     "",
-    "  Loading recent GitHub activity…",
+    "  Loading recent " .. provider_name(contributor) .. " activity…",
   }
   footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
@@ -838,6 +886,7 @@ local function render_loading(contributor)
   highlight(3, 2, -1, "Comment")
   highlight(5, 2, -1, "DiagnosticInfo")
 end
+-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 11
 
 local function render_error(message)
   close_activity_footer()
@@ -873,14 +922,17 @@ local function render_activity(events, cached, notice)
   M.state.line_targets = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 12 Label activity feeds with their forge
   local lines = {
     "",
     "  " .. (contributor.name or contributor.username),
-    ("  %s%s"):format(
+    ("  %s · %s%s"):format(
       "@" .. contributor.username,
+      provider_name(contributor),
       cached and " · cached" or ""
     ),
   }
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 12
   if notice then
     lines[#lines + 1] = "  " .. notice
   end
@@ -989,16 +1041,18 @@ local function render_shortcuts()
     { "l / <Right> / <CR>", "Select or open the current item" },
     { "j / <Left>", "Return to the previous page" },
   })
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
   section("STARTUP USER LIST", {
     { "f", "Edit filters for the selected contributor" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
-    { "o", "Open the selected GitHub profile" },
+    { "o", "Open the selected contributor profile" },
   })
   section("ACTIVITY", {
-    { "o", "Open the selected activity on GitHub" },
+    { "o", "Open the selected activity" },
     { "r", "Refresh activity without using the cache" },
   })
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
     { "<Space> / l / <CR>", "Toggle the selected activity type" },
     { "a", "Enable every activity type" },
@@ -1054,6 +1108,8 @@ local function load_activity(contributor, force)
   local request_id = M.state.request_id
   render_loading(contributor)
 
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 14 Load and enrich activity through the contributor's provider
+  local provider = activity_provider(contributor)
   local request_opts = vim.tbl_extend(
     "force",
     M.state.opts,
@@ -1073,12 +1129,12 @@ local function load_activity(contributor, force)
         M.state.opts.results_limit or 8
       )
       render_activity(results, cached, notice)
-      github.enrich_pull_requests(results, request_opts, function(with_prs)
+      provider.enrich_pull_requests(results, request_opts, function(with_prs)
         if request_id ~= M.state.request_id or M.state.view ~= "activity" then
           return
         end
         render_activity(with_prs, cached, notice)
-        github.enrich_pushes(with_prs, request_opts, function(enriched)
+        provider.enrich_pushes(with_prs, request_opts, function(enriched)
           if request_id ~= M.state.request_id or M.state.view ~= "activity" then
             return
           end
@@ -1088,7 +1144,8 @@ local function load_activity(contributor, force)
     end
   end
 
-  github.events(contributor.username, request_opts, callback)
+  provider.events(contributor.username, request_opts, callback)
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 14
 end
 
 local function target_on_cursor()
@@ -1139,15 +1196,17 @@ end
 
 local function open_current()
   local target = target_on_cursor()
+  -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 16 Open profiles on the contributor's forge
   if M.state.view == "contributors" and type(target) == "table" then
-    open_url("https://github.com/" .. target.username)
+    open_url(contributor_profile_url(target))
   elseif M.state.view == "activity" then
     if type(target) == "string" then
       open_url(target)
     elseif M.state.contributor then
-      open_url("https://github.com/" .. M.state.contributor.username)
+      open_url(contributor_profile_url(M.state.contributor))
     end
   end
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 16
 end
 
 local function move_cursor(direction)
@@ -1336,10 +1395,14 @@ local function map_keys(buf)
     move_cursor(-1)
   end, "Scroll Pantheon contributors up")
   map("r", function()
+    -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 17 Clear the selected provider cache on refresh
     if M.state.view == "activity" and M.state.contributor then
-      github.clear(M.state.contributor.username)
+      activity_provider(M.state.contributor).clear(
+        M.state.contributor.username
+      )
       load_activity(M.state.contributor, true)
     end
+    -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 17
   end, "Refresh Pantheon activity")
 end
 
