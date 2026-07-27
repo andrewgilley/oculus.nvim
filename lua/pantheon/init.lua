@@ -278,7 +278,7 @@ local defaults = {
     {
       name = "Sun Yi",
       username = "sunyi0505",
-      description = "Flash Linear Attention contributor and AI systems developer",
+      description = "Flash Linear Attention contributor and AI developer",
     },
     -- AGENT_CHANGE_END sun-yi-name-20260726 1
 
