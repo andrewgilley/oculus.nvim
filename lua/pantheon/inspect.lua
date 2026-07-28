@@ -9,7 +9,6 @@ local loading_ns = vim.api.nvim_create_namespace("pantheon_inspect_loading")
 local oil_ns = vim.api.nvim_create_namespace("pantheon_inspect_oil")
 local sessions = {}
 local next_session = 0
-local next_loading = 0
 local syncing = false
 
 local function git_error(result, fallback)
@@ -1100,6 +1099,60 @@ local function map_change_jumps(endpoint, session)
   map("<C-Right>", 1, "Next Pantheon change")
 end
 
+local function select_endpoint(endpoint)
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  vim.api.nvim_set_current_tabpage(endpoint.tab)
+  vim.api.nvim_set_current_win(endpoint.win)
+end
+
+local function next_file_session(group, current)
+  local current_index
+  for index, session in ipairs(group) do
+    if session == current then
+      current_index = index
+      break
+    end
+  end
+  if not current_index then
+    return
+  end
+  for offset = 1, #group do
+    local index = ((current_index + offset - 1) % #group) + 1
+    local candidate = group[index]
+    if valid_endpoint(candidate.parent)
+      and valid_endpoint(candidate.change)
+    then
+      return candidate
+    end
+  end
+end
+
+local function map_file_navigation(endpoint, session, group, role)
+  vim.keymap.set("n", "<Tab>", function()
+    select_endpoint(
+      role == "parent" and session.change or session.parent
+    )
+  end, {
+    buffer = endpoint.buf,
+    nowait = true,
+    silent = true,
+    desc = "Toggle Pantheon file version",
+  })
+  vim.keymap.set("n", "<C-n>", function()
+    local target = next_file_session(group, session)
+    if target then
+      select_endpoint(target[role])
+    end
+  end, {
+    buffer = endpoint.buf,
+    nowait = true,
+    silent = true,
+    desc = "Next Pantheon changed file",
+  })
+end
+
 local spinner_frames = {
   "⠋",
   "⠙",
@@ -1113,16 +1166,10 @@ local spinner_frames = {
   "⠏",
 }
 
-local function update_loading_buffer(loading, endpoint, frame)
+local function update_loading_buffer(endpoint, frame)
   if not vim.api.nvim_buf_is_valid(endpoint.buf) then
     return
   end
-  local name = ("[Pantheon %d] %s %s"):format(
-    loading.id,
-    endpoint.label,
-    frame
-  )
-  pcall(vim.api.nvim_buf_set_name, endpoint.buf, name)
   vim.bo[endpoint.buf].modifiable = true
   vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, {
     "",
@@ -1153,12 +1200,10 @@ local function stop_loading(loading)
   end
 end
 
-local function make_loading_tab(loading, role, label, description)
+local function make_loading_tab(role, description)
   vim.cmd("tabnew")
   local endpoint = {
-    loading_id = loading.id,
     role = role,
-    label = label,
     description = description,
     tab = vim.api.nvim_get_current_tabpage(),
     win = vim.api.nvim_get_current_win(),
@@ -1167,12 +1212,11 @@ local function make_loading_tab(loading, role, label, description)
   vim.bo[endpoint.buf].buftype = "nofile"
   vim.bo[endpoint.buf].bufhidden = "wipe"
   vim.bo[endpoint.buf].swapfile = false
-  vim.bo[endpoint.buf].filetype = "pantheon-inspect"
   vim.t.pantheon_inspect = {
     role = role,
     loading = true,
   }
-  update_loading_buffer(loading, endpoint, spinner_frames[1])
+  update_loading_buffer(endpoint, spinner_frames[1])
   return endpoint
 end
 
@@ -1196,18 +1240,14 @@ local function loading_pair_labels(info, inspection, index)
     or ("File %d"):format(file_index)
   local suffix = file and (" (" .. file .. ")") or ""
   return {
-    parent_label = prefix .. " Old",
     parent_description = prefix:lower() .. " old version" .. suffix,
-    change_label = prefix .. " New",
     change_description = prefix:lower() .. " new version" .. suffix,
   }
 end
 
 local function configure_loading_pair(loading, info, pair, inspection, index)
   local labels = loading_pair_labels(info, inspection, index)
-  pair.parent.label = labels.parent_label
   pair.parent.description = labels.parent_description
-  pair.change.label = labels.change_label
   pair.change.description = labels.change_description
   for _, endpoint in ipairs({ pair.parent, pair.change }) do
     if vim.api.nvim_tabpage_is_valid(endpoint.tab) then
@@ -1223,7 +1263,6 @@ local function configure_loading_pair(loading, info, pair, inspection, index)
       })
     end
     update_loading_buffer(
-      loading,
       endpoint,
       spinner_frames[loading.frame] or spinner_frames[1]
     )
@@ -1233,15 +1272,11 @@ end
 local function add_loading_pair(loading, info, index, inspection)
   local pair = {
     parent = make_loading_tab(
-      loading,
       info.kind == "pull_request" and "old" or "parent",
-      "Old",
       "old file version"
     ),
     change = make_loading_tab(
-      loading,
       "change",
-      "New",
       "new file version"
     ),
   }
@@ -1269,9 +1304,7 @@ end
 
 local function start_loading_tabs(info)
   require("pantheon.window").close()
-  next_loading = next_loading + 1
   local loading = {
-    id = next_loading,
     frame = 1,
     stopped = false,
     pairs = {},
@@ -1295,7 +1328,7 @@ local function start_loading_tabs(info)
     loading.frame = (loading.frame % #spinner_frames) + 1
     local frame = spinner_frames[loading.frame]
     for _, endpoint in ipairs(endpoints) do
-      update_loading_buffer(loading, endpoint, frame)
+      update_loading_buffer(endpoint, frame)
     end
     vim.cmd.redrawtabline()
   end))
@@ -1306,12 +1339,6 @@ local function show_loading_error(loading, message)
   stop_loading(loading)
   for _, endpoint in ipairs(loading_endpoints(loading)) do
     if vim.api.nvim_buf_is_valid(endpoint.buf) then
-      pcall(
-        vim.api.nvim_buf_set_name,
-        endpoint.buf,
-        ("[Pantheon %d] Inspect failed"):format(loading.id)
-          .. " " .. endpoint.label
-      )
       vim.bo[endpoint.buf].modifiable = true
       local error_lines = {
         "",
@@ -1376,28 +1403,6 @@ local function load_tab(
       and inspection.change_lines
     or inspection.parent_lines
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines or { "" })
-  local display_file = file or "[missing]"
-  local tab_prefix = inspection.kind == "pull_request"
-      and ("C%d F%d"):format(
-        inspection.commit_index,
-        inspection.file_index
-      )
-    or ("F%d"):format(inspection.file_index)
-  local role_label = role == "change" and "New" or "Old"
-  local tab_label = ("%s %s · %s"):format(
-    tab_prefix,
-    role_label,
-    vim.fs.basename(display_file)
-  )
-  vim.api.nvim_buf_set_name(
-    buf,
-    ("pantheon-inspect://%d/%d/%s/%s"):format(
-      endpoint.loading_id,
-      pair_index,
-      tab_label,
-      display_file
-    )
-  )
   local filetype = file and vim.filetype.match({ filename = file }) or nil
   if filetype then
     vim.bo[buf].filetype = filetype
@@ -1449,6 +1454,7 @@ local function open_tabs(inspections, loading, done)
     if #loading.pairs ~= #inspections then
       error("loading tab count does not match inspection file count")
     end
+    local inspection_sessions = {}
     for index, paths in ipairs(inspections) do
       local loading_pair = loading.pairs[index]
       local parent = load_tab(
@@ -1477,10 +1483,23 @@ local function open_tabs(inspections, loading, done)
         hunks = paths.hunks,
         change_lines = change_lines(paths.hunks),
       }
+      inspection_sessions[#inspection_sessions + 1] = session
       sessions[next_session] = session
       apply_change_signs(parent.buf, change.buf, paths.hunks)
       map_change_jumps(parent, session)
       map_change_jumps(change, session)
+      map_file_navigation(
+        parent,
+        session,
+        inspection_sessions,
+        "parent"
+      )
+      map_file_navigation(
+        change,
+        session,
+        inspection_sessions,
+        "change"
+      )
       if session.change_lines[1] then
         set_change_cursor(change.win, session.change_lines[1])
       else

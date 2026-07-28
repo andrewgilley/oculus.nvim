@@ -22,7 +22,9 @@ appear with animated loading indicators and are replaced in place when their
 files are ready. Cursor positions and scroll views remain linked within each
 pair, and `-`/`+` signs mark the old and new lines. The cursor starts at the
 first changed hunk; use `<C-Left>` and `<C-Right>` to jump to the previous and
-next hunks. Required revisions are resolved or fetched through the project's
+next hunks. `<Tab>` toggles only between the old and new tabs for the current
+file. `<C-n>` advances to the next changed file while keeping the current
+old/new side. Required revisions are resolved or fetched through the project's
 own `.git` directory. Inspect does not create a separate Pantheon repository,
 object cache, or worktree, and it does not alter the working checkout.
 
