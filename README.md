@@ -9,8 +9,10 @@ activity items and move directly to the first item on that page.
 
 From the startup user list, press `/` to fuzzy-search contributor names and
 handles. Results and the contributor preview update as you type. Use
-`<Up>`/`<Down>` (or `<C-p>`/`<C-n>`) to preview another match, `<CR>` to open
-it, and `<Esc>` to cancel the search.
+`<C-i>` to move up or `<C-k>` to move down (`<Up>`/`<Down>` and
+`<C-p>`/`<C-n>` also work), `<CR>` to open a match, and `<Esc>` to cancel the
+search. Main-list and search-result navigation use a short configurable delay
+(`navigation_delay`, 80 ms by default) to keep held keys from skipping items.
 
 On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
