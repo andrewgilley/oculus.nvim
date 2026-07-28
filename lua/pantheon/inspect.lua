@@ -168,6 +168,40 @@ local function parse_hunks(patch)
   return hunks
 end
 
+local function change_lines(hunks)
+  local lines = {}
+  local seen = {}
+  for _, hunk in ipairs(hunks or {}) do
+    local line = math.max(1, hunk.new_start)
+    if not seen[line] then
+      seen[line] = true
+      lines[#lines + 1] = line
+    end
+  end
+  table.sort(lines)
+  return lines
+end
+
+local function next_change_line(lines, current, direction)
+  if #lines == 0 then
+    return nil
+  end
+  if direction > 0 then
+    for _, line in ipairs(lines) do
+      if line > current then
+        return line
+      end
+    end
+    return lines[1]
+  end
+  for index = #lines, 1, -1 do
+    if lines[index] < current then
+      return lines[index]
+    end
+  end
+  return lines[#lines]
+end
+
 local function directory(path)
   local stat = vim.uv.fs_stat(path)
   return stat and stat.type == "directory"
@@ -899,6 +933,48 @@ local function apply_change_signs(parent_buf, change_buf, hunks)
   end
 end
 
+local function set_change_cursor(win, line)
+  if not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  line = math.min(math.max(1, line), line_count)
+  vim.api.nvim_win_set_cursor(win, { line, 0 })
+  vim.api.nvim_win_call(win, function()
+    vim.cmd("normal! zz")
+  end)
+  sync_window(win)
+end
+
+local function jump_change(session, direction)
+  local win = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(win)
+  local line = next_change_line(
+    session.change_lines,
+    cursor[1],
+    direction
+  )
+  if line then
+    set_change_cursor(win, line)
+  end
+end
+
+local function map_change_jumps(endpoint, session)
+  local function map(lhs, direction, description)
+    vim.keymap.set("n", lhs, function()
+      jump_change(session, direction)
+    end, {
+      buffer = endpoint.buf,
+      nowait = true,
+      silent = true,
+      desc = description,
+    })
+  end
+  map("<C-1>", -1, "Previous Pantheon change")
+  map("<C-3>", 1, "Next Pantheon change")
+end
+
 local spinner_frames = {
   "⠋",
   "⠙",
@@ -1103,15 +1179,24 @@ local function open_tabs(paths, loading, done)
       paths.commit
     )
     next_session = next_session + 1
-    sessions[next_session] = {
+    local session = {
       parent = parent,
       change = change,
       parent_worktree = paths.parent_worktree,
       change_worktree = paths.change_worktree,
       changes = paths.changes,
+      hunks = paths.hunks,
+      change_lines = change_lines(paths.hunks),
     }
+    sessions[next_session] = session
     apply_change_signs(parent.buf, change.buf, paths.hunks)
-    sync_window(change.win)
+    map_change_jumps(parent, session)
+    map_change_jumps(change, session)
+    if session.change_lines[1] then
+      set_change_cursor(change.win, session.change_lines[1])
+    else
+      sync_window(change.win)
+    end
   end)
   if not ok then
     done(nil, "could not open inspection tabs: " .. tostring(err))
@@ -1359,5 +1444,7 @@ M._parse_changed_files = parse_changed_files
 M._github_repository = github_repository
 M._parse_hunks = parse_hunks
 M._oil_entry_status = oil_entry_status
+M._change_lines = change_lines
+M._next_change_line = next_change_line
 
 return M

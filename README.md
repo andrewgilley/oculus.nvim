@@ -11,9 +11,11 @@ in the current Neovim instance. Those tabs appear immediately with animated
 loading indicators and are replaced in place when their files are ready. The
 first changed file is opened in each tab when one is available. Cursor
 positions and scroll views remain linked between the tabs, and `-`/`+` signs
-mark the base/parent and changed lines. Inspection repositories and worktrees
-are cached under Neovim's cache directory; set `inspect_root` in
-`require("pantheon").setup()` to use a different location.
+mark the base/parent and changed lines. The cursor starts at the first changed
+hunk; use `<C-1>` and `<C-3>` to jump to the previous and next hunks.
+Inspection repositories and worktrees are cached under Neovim's cache
+directory; set `inspect_root` in `require("pantheon").setup()` to use a
+different location.
 
 When an inspection worktree is opened with
 [oil.nvim](https://github.com/stevearc/oil.nvim), Oil entries are annotated as
