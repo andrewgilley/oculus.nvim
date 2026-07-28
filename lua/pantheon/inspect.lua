@@ -1286,25 +1286,11 @@ end
 
 local function sidebar_file(file)
   local normalized = file:gsub("\\", "/"):gsub("/+$", "")
-  local name = normalized:match("([^/]+)$") or normalized
-  local parent_path =
-    normalized:sub(1, math.max(0, #normalized - #name - 1))
-  local parent = parent_path:match("([^/]+)$")
-  return parent and (parent .. "/" .. name) or name
+  return normalized:match("([^/]+)$") or normalized
 end
 
-local function sidebar_row(
-  file,
-  width,
-  chunk_text,
-  chunk_width
-)
-  chunk_text = chunk_text or "0"
-  chunk_width = chunk_width or #chunk_text
-  local suffix = ("%s(%s) P C"):format(
-    string.rep(" ", math.max(0, chunk_width - #chunk_text)),
-    chunk_text
-  )
+local function sidebar_row(file, width)
+  local suffix = "P C"
   local path_width = math.max(
     1,
     width
@@ -1320,12 +1306,8 @@ local function sidebar_row(
       - vim.fn.strdisplaywidth(suffix)
   )
   local line = body .. string.rep(" ", padding) .. suffix
-  local chunk_column = #line - #suffix
   return {
     line = line,
-    chunk_column = chunk_column,
-    chunk_end_column = chunk_column + chunk_width + 2,
-    chunk_width = chunk_width + 2,
     parent_column = #line - 3,
     change_column = #line - 1,
   }
@@ -1333,7 +1315,7 @@ end
 
 local function sidebar_chunk_row(hunk, last)
   local branch = last and "└─" or "├─"
-  return ("  %s • -%d +%d"):format(
+  return ("  %s• -%d +%d"):format(
     branch,
     hunk.old_start,
     hunk.new_start
@@ -1394,33 +1376,6 @@ refresh_sidebar = function(group, tab)
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   for index, _ in ipairs(group) do
     local row = group.sidebar_rows[index]
-    if index == active_index and active_chunk then
-      local chunk_text = ("%d/%d"):format(
-        active_chunk,
-        #(group[index].hunks or {})
-      )
-      chunk_text = string.rep(
-        " ",
-        math.max(0, row.chunk_width - #chunk_text - 2)
-      )
-        .. "("
-        .. chunk_text
-        .. ")"
-      vim.api.nvim_buf_set_extmark(
-        buf,
-        sidebar_ns,
-        row.line_number - 1,
-        row.chunk_column,
-        {
-          virt_text = {
-            { chunk_text, "Normal" },
-          },
-          virt_text_pos = "overlay",
-          hl_mode = "combine",
-          priority = 100,
-        }
-      )
-    end
     vim.api.nvim_buf_set_extmark(
       buf,
       sidebar_ns,
@@ -1590,16 +1545,9 @@ local function setup_inspection_sidebar(group)
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
     local total = #(session.hunks or {})
-    local total_text = tostring(total)
-    local chunk_width = math.max(
-      #total_text,
-      #total_text * 2 + 1
-    )
     local row = sidebar_row(
       sidebar_file(session.file),
-      group.sidebar_width,
-      total_text,
-      chunk_width
+      group.sidebar_width
     )
     local file_line = #lines + 1
     row.line_number = file_line

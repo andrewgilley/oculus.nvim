@@ -3,7 +3,7 @@
 <!-- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 15 Describe multi-forge activity support -->
 Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
 
-In a user's activity feed, press `b` to load the next page of eight past
+In a user's activity feed, press `p` to load the next page of eight past
 activity items and move directly to the first item on that page. Press `r`
 from a later page to move one page back toward recent activity.
 <!-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 15 -->
@@ -35,12 +35,10 @@ first changed hunk. When that cursor is on line 10 or later, the tab applies
 line-10-aware view normalization is reapplied after every jump. `<C-s>`
 switches between the parent and changed tabs for the current file.
 Every Inspect tab includes the same right-hand changed-files sidebar.
-The first inspected file starts at the top, and long paths show only their
-parent directory and filename. Each unnumbered file row includes its
-change-hunk count and expands into a visible tree of unnumbered hunks, labeled
-with their parent and changed starting lines. The active row shows the
-cursor's current hunk as `(current/total)` without highlighting file or hunk
-rows.
+The first inspected file starts at the top, and file rows show only the changed
+filename followed by `P C`. Each file expands into a visible tree of
+unnumbered hunks labeled with their parent and changed starting lines, without
+highlighting file or hunk rows.
 The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the visible version is underlined. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that
