@@ -39,6 +39,15 @@ vim.api.nvim_buf_set_lines(viewport_buf, 0, -1, false, { "" })
 vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
 vim.bo[viewport_buf].modified = false
 
+local shortened_sidebar_row = inspect._sidebar_row(
+  12,
+  "a/very/long/path/to/a/changed/file.lua",
+  24
+)
+assert(shortened_sidebar_row.line:match("^12%. …"))
+assert(shortened_sidebar_row.line:match("C P$"))
+assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
+
 assert(inspect._inspection_directory(
   root,
   "lua/pantheon/inspect.lua"
@@ -409,6 +418,7 @@ if integration_root and (integration_sha or integration_url) then
   local next_file_indices = {}
   local buffers = {}
   local sidebar_buf
+  local sidebar_width
   local function inspection_window(tab)
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
       local buf = vim.api.nvim_win_get_buf(win)
@@ -437,8 +447,13 @@ if integration_root and (integration_sha or integration_url) then
     local old_sidebar_buf = vim.api.nvim_win_get_buf(old_sidebar_win)
     local new_sidebar_buf = vim.api.nvim_win_get_buf(new_sidebar_win)
     sidebar_buf = sidebar_buf or old_sidebar_buf
+    sidebar_width = sidebar_width
+      or vim.api.nvim_win_get_width(old_sidebar_win)
     assert(old_sidebar_buf == sidebar_buf)
     assert(new_sidebar_buf == sidebar_buf)
+    assert(vim.api.nvim_win_get_width(old_sidebar_win) == sidebar_width)
+    assert(vim.api.nvim_win_get_width(new_sidebar_win) == sidebar_width)
+    assert(sidebar_width >= 32)
     assert(vim.api.nvim_win_get_position(old_sidebar_win)[2]
       > vim.api.nvim_win_get_position(old_main_win)[2])
     assert(vim.api.nvim_win_get_position(new_sidebar_win)[2]
@@ -530,9 +545,18 @@ if integration_root and (integration_sha or integration_url) then
     false
   )
   assert(#sidebar_lines == pair_count)
-  for _, line in ipairs(sidebar_lines) do
-    assert(line:match("  C P$"))
+  for index, line in ipairs(sidebar_lines) do
+    assert(line:match("^" .. index .. "%. "))
+    assert(line:match("C P$"))
+    assert(vim.fn.strdisplaywidth(line) == sidebar_width)
   end
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  local first_sidebar_win = assert(sidebar_window(tabs[3]))
+  assert(vim.api.nvim_win_get_cursor(first_sidebar_win)[1] == 1)
+  assert(vim.api.nvim_win_call(
+    first_sidebar_win,
+    vim.fn.winsaveview
+  ).topline == 1)
   if expect_no_worktrees then
     assert(vim.uv.fs_stat(vim.fs.joinpath(
       integration_root,
