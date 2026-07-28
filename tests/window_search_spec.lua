@@ -39,6 +39,17 @@ window.open({
 })
 
 local state = window.state
+local page_events = {}
+for index = 1, 20 do
+  page_events[index] = { id = tostring(index) }
+end
+local second_page = window._activity_page(page_events, 2, 8)
+assert(#second_page == 8)
+assert(second_page[1].id == "9")
+assert(second_page[8].id == "16")
+local third_page = window._activity_page(page_events, 3, 8)
+assert(#third_page == 4)
+assert(third_page[1].id == "17")
 local search_mapping = vim.fn.maparg("/", "n", false, true)
 assert(search_mapping.desc == "Fuzzy-search Pantheon users")
 search_mapping.callback()
@@ -46,23 +57,45 @@ vim.wait(10)
 assert(vim.api.nvim_win_is_valid(state.win))
 assert(vim.api.nvim_win_is_valid(state.search_win))
 assert(vim.api.nvim_buf_is_valid(state.search_buf))
+local prompt = vim.fn.prompt_getprompt(state.search_buf)
+assert(prompt == "  Search: ")
+assert(window._prompt_query(state.search_buf) == "")
 
-vim.api.nvim_buf_set_lines(state.search_buf, 0, -1, false, { "m" })
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { prompt .. "m" }
+)
 vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+assert(state.search_query == "m")
 assert(#state.search_results == 2)
 local down_mapping = vim.fn.maparg("<Down>", "i", false, true)
 down_mapping.callback()
 assert(state.search_index == 2)
 assert(state.preview_items[4][1] == state.search_results[2].name)
 
-vim.api.nvim_buf_set_lines(state.search_buf, 0, -1, false, { "mhash" })
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { prompt .. "mhash" }
+)
 vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
 assert(state.search_query == "mhash")
 assert(#state.search_results == 1)
 assert(state.search_results[1].username == "mitchellh")
 assert(state.preview_items[4][1] == "Mitchell Hashimoto")
 
-vim.api.nvim_buf_set_lines(state.search_buf, 0, -1, false, { "zz" })
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { prompt .. "zz" }
+)
 vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
 assert(#state.search_results == 0)
 local main_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
@@ -74,7 +107,67 @@ assert(state.search_query == nil)
 assert(state.search_win == nil)
 assert(vim.api.nvim_win_is_valid(state.win))
 
+local github = require("pantheon.github")
+local original_events = github.events
+local original_enrich_pull_requests = github.enrich_pull_requests
+local original_enrich_pushes = github.enrich_pushes
+local requested_per_page = {}
+local activity_events = {}
+for index = 1, 20 do
+  activity_events[index] = {
+    id = tostring(index),
+    type = "CreateEvent",
+    created_at = ("2026-07-%02dT12:00:00Z"):format(index),
+    actor = { login = "mitchellh" },
+    repo = { name = "example/repository" },
+    payload = {
+      ref_type = "branch",
+      ref = "page-" .. index,
+    },
+  }
+end
+github.events = function(_, opts, callback)
+  requested_per_page[#requested_per_page + 1] = opts.per_page
+  callback(vim.deepcopy(activity_events), nil, false)
+end
+github.enrich_pull_requests = function(events, _, callback)
+  callback(events)
+end
+github.enrich_pushes = function(events, _, callback)
+  callback(events)
+end
+
+local select_mapping = vim.fn.maparg("<CR>", "n", false, true)
+select_mapping.callback()
+assert(state.view == "activity")
+assert(state.activity_page == 1)
+assert(#state.events == 8)
+assert(state.events[1].id == "1")
+assert(state.events[8].id == "8")
+assert(requested_per_page[1] == 30)
+
+local older_mapping = vim.fn.maparg("n", "n", false, true)
+assert(older_mapping.desc
+  == "Load older Pantheon activity or disable all filters")
+older_mapping.callback()
+assert(state.view == "activity")
+assert(state.activity_page == 2)
+assert(#state.events == 8)
+assert(state.events[1].id == "9")
+assert(state.events[8].id == "16")
+assert(requested_per_page[2] == 38)
+local activity_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(activity_text:find("GitHub · page 2", 1, true))
+assert(vim.api.nvim_win_get_cursor(state.win)[1]
+  == state.activity_cursor_min_line)
+
 window.close()
+github.events = original_events
+github.enrich_pull_requests = original_enrich_pull_requests
+github.enrich_pushes = original_enrich_pushes
 assert(state.search_query == nil)
 assert(state.search_win == nil)
 assert(state.win == nil)

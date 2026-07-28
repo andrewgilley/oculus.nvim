@@ -1126,15 +1126,6 @@ local function apply_change_signs(parent_buf, change_buf, hunks)
 
   for _, hunk in ipairs(hunks or {}) do
     place_range(
-      parent_buf,
-      hunk.old_start,
-      hunk.old_count,
-      hunk.old_count == 0 and "+" or "-",
-      hunk.old_count == 0
-          and "PantheonInspectAdded"
-        or "PantheonInspectRemoved"
-    )
-    place_range(
       change_buf,
       hunk.new_start,
       hunk.new_count,
@@ -1250,29 +1241,7 @@ local function select_endpoint(endpoint)
   sidebar_navigating = false
 end
 
-local function next_file_session(group, current)
-  local current_index
-  for index, session in ipairs(group) do
-    if session == current then
-      current_index = index
-      break
-    end
-  end
-  if not current_index then
-    return
-  end
-  for offset = 1, #group do
-    local index = ((current_index + offset - 1) % #group) + 1
-    local candidate = group[index]
-    if valid_endpoint(candidate.parent)
-      and valid_endpoint(candidate.change)
-    then
-      return candidate
-    end
-  end
-end
-
-local function map_file_navigation(endpoint, session, group, role)
+local function map_file_navigation(endpoint, session, role)
   local function toggle_version()
     select_endpoint(
       role == "parent" and session.change or session.parent
@@ -1289,17 +1258,6 @@ local function map_file_navigation(endpoint, session, group, role)
     nowait = true,
     silent = true,
     desc = "Switch Pantheon file version",
-  })
-  vim.keymap.set("n", "<C-n>", function()
-    local target = next_file_session(group, session)
-    if target then
-      select_endpoint(target[role])
-    end
-  end, {
-    buffer = endpoint.buf,
-    nowait = true,
-    silent = true,
-    desc = "Next Pantheon changed file",
   })
 end
 
@@ -1341,28 +1299,25 @@ local function sidebar_file(file)
 end
 
 local function sidebar_row(
-  index,
   file,
   width,
   chunk_text,
   chunk_width
 )
-  local prefix = ("%d. "):format(index)
   chunk_text = chunk_text or "0"
   chunk_width = chunk_width or #chunk_text
-  local chunk_display =
-    string.rep(" ", math.max(0, chunk_width - #chunk_text))
-      .. chunk_text
-  local suffix = ("%s P C"):format(chunk_display)
+  local suffix = ("%s(%s) P C"):format(
+    string.rep(" ", math.max(0, chunk_width - #chunk_text)),
+    chunk_text
+  )
   local path_width = math.max(
     1,
     width
-      - vim.fn.strdisplaywidth(prefix)
       - vim.fn.strdisplaywidth(suffix)
       - 1
   )
   local path = truncate_path(file, path_width)
-  local body = prefix .. path
+  local body = path
   local padding = math.max(
     1,
     width
@@ -1374,18 +1329,17 @@ local function sidebar_row(
   return {
     line = line,
     chunk_column = chunk_column,
-    chunk_end_column = chunk_column + chunk_width,
-    chunk_width = chunk_width,
+    chunk_end_column = chunk_column + chunk_width + 2,
+    chunk_width = chunk_width + 2,
     parent_column = #line - 3,
     change_column = #line - 1,
   }
 end
 
-local function sidebar_chunk_row(index, hunk, last)
+local function sidebar_chunk_row(hunk, last)
   local branch = last and "└─" or "├─"
-  return ("   %s %d  -%d +%d"):format(
+  return ("  %s -%d +%d"):format(
     branch,
-    index,
     hunk.old_start,
     hunk.new_start
   )
@@ -1472,11 +1426,13 @@ refresh_sidebar = function(group, tab)
         active_chunk,
         #(group[index].hunks or {})
       )
-      chunk_text =
-        string.rep(
-          " ",
-          math.max(0, row.chunk_width - #chunk_text)
-        ) .. chunk_text
+      chunk_text = string.rep(
+        " ",
+        math.max(0, row.chunk_width - #chunk_text - 2)
+      )
+        .. "("
+        .. chunk_text
+        .. ")"
       vim.api.nvim_buf_set_extmark(
         buf,
         sidebar_ns,
@@ -1587,7 +1543,6 @@ local function setup_inspection_sidebar(group)
       #total_text * 2 + 1
     )
     local row = sidebar_row(
-      index,
       sidebar_file(session.file),
       group.sidebar_width,
       total_text,
@@ -1609,7 +1564,6 @@ local function setup_inspection_sidebar(group)
         chunk_index = chunk_index,
       }
       lines[chunk_line] = sidebar_chunk_row(
-        chunk_index,
         hunk,
         chunk_index == total
       )
@@ -2044,7 +1998,8 @@ local function load_tab(
     win = vim.api.nvim_get_current_win(),
     buf = vim.api.nvim_get_current_buf(),
   }
-  vim.wo[loaded.win].signcolumn = "yes:2"
+  vim.wo[loaded.win].signcolumn =
+    role == "change" and "yes" or "no"
   vim.wo[loaded.win].wrap = false
   return loaded
 end
@@ -2105,13 +2060,11 @@ local function open_tabs(inspections, loading, done)
       map_file_navigation(
         parent,
         session,
-        inspection_sessions,
         "parent"
       )
       map_file_navigation(
         change,
         session,
-        inspection_sessions,
         "change"
       )
       if session.parent_lines[1] then

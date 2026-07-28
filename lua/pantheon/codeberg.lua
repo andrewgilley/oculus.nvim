@@ -331,14 +331,24 @@ function M.events(username, opts, callback)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
   local cached = cache[username]
-  if not opts.force and cached and os.time() - cached.fetched_at < ttl then
+  local limit = math.min(
+    50,
+    math.max(1, math.floor(opts.per_page or 30))
+  )
+  if not opts.force
+    and cached
+    and os.time() - cached.fetched_at < ttl
+    and (
+      (cached.per_page or #cached.events) >= limit
+      or cached.complete
+    )
+  then
     vim.schedule(function()
       callback(cached.events, nil, true)
     end)
     return
   end
 
-  local limit = math.min(50, math.max(1, math.floor(opts.per_page or 30)))
   local url = (
     "%s/api/v1/users/%s/activities/feeds?only-performed-by=true&limit=%d"
   ):format(base_url, vim.uri_encode(username), limit)
@@ -352,7 +362,12 @@ function M.events(username, opts, callback)
     for _, activity in ipairs(activities) do
       events[#events + 1] = M.normalize_activity(activity)
     end
-    cache[username] = { events = events, fetched_at = os.time() }
+    cache[username] = {
+      events = events,
+      fetched_at = os.time(),
+      per_page = limit,
+      complete = #activities < limit,
+    }
     callback(events, nil, false)
   end)
 end

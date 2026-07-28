@@ -47,26 +47,23 @@ vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
 vim.bo[viewport_buf].modified = false
 
 local shortened_sidebar_row = inspect._sidebar_row(
-  12,
   "a/very/long/path/to/a/changed/file.lua",
   24,
   "2/7"
 )
-assert(shortened_sidebar_row.line:match("^12%. …"))
-assert(shortened_sidebar_row.line:match("2/7 P C$"))
+assert(shortened_sidebar_row.line:match("^…"))
+assert(shortened_sidebar_row.line:match("%(2/7%) P C$"))
 assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
 assert(inspect._sidebar_chunk_row(
-  2,
   { old_start = 24, new_start = 25 },
   false
-) == "   ├─ 2  -24 +25")
+) == "  ├─ -24 +25")
 assert(inspect._sidebar_chunk_row(
-  3,
   { old_start = 30, new_start = 31 },
   true
-) == "   └─ 3  -30 +31")
+) == "  └─ -30 +31")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
 ) == "changed/file.lua")
@@ -575,25 +572,21 @@ if integration_root and (integration_sha or integration_url) then
   local file_lines = {}
   local chunk_lines = 0
   for line_number, line in ipairs(sidebar_lines) do
-    if line:match("^%d+%. ") then
+    local branch =
+      line:match("^  ├─ %-%d+ %+%d+$")
+        or line:match("^  └─ %-%d+ %+%d+$")
+    if branch then
+      chunk_lines = chunk_lines + 1
+    else
       file_lines[#file_lines + 1] = line_number
-      assert(line:match(
-        "^" .. #file_lines .. "%. "
-      ))
-      assert(line:match("[%d/]+ P C$"))
+      assert(line:match("%([%d/]+%) P C$"))
+      assert(not line:match("^%d+%. "))
       assert(vim.fn.strdisplaywidth(line) == sidebar_width)
       local displayed_file = line
-        :gsub("^%d+%. ", "")
-        :gsub("%s+[%d/]+ P C$", "")
+        :gsub("%s+%([%d/]+%) P C$", "")
         :gsub("^…", "")
       local _, separators = displayed_file:gsub("/", "")
       assert(separators <= 1)
-    else
-      chunk_lines = chunk_lines + 1
-      local branch =
-        line:match("^   ├─ %d+  %-%d+ %+%d+$")
-          or line:match("^   └─ %d+  %-%d+ %+%d+$")
-      assert(branch, "invalid chunk subtree row: " .. line)
     end
   end
   assert(#file_lines == pair_count)
@@ -667,7 +660,8 @@ if integration_root and (integration_sha or integration_url) then
     0,
     -1,
     {}
-  ) > 0)
+  ) == 0)
+  assert(vim.wo[parent_win].signcolumn == "no")
   local change_marks = vim.api.nvim_buf_get_extmarks(
     change_buf,
     signs,
@@ -676,6 +670,7 @@ if integration_root and (integration_sha or integration_url) then
     {}
   )
   assert(#change_marks > 0)
+  assert(vim.wo[change_win].signcolumn == "yes")
   assert(vim.api.nvim_win_get_cursor(change_win)[1]
     == change_marks[1][2] + 1)
   assert(vim.api.nvim_win_get_cursor(parent_win)[1]
@@ -704,7 +699,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(next_mapped)
   assert(toggle_mapped)
   assert(switch_mapped)
-  assert(next_file_mapped)
+  assert(not next_file_mapped)
 
   vim.api.nvim_set_current_tabpage(tabs[2])
   local sidebar_active = vim.b[sidebar_buf]
@@ -745,6 +740,38 @@ if integration_root and (integration_sha or integration_url) then
     ).fg)
   assert(parent_hl.bg == normal_hl.bg)
   assert(change_hl.bg == normal_hl.bg)
+  local parent_active_hl = vim.api.nvim_get_hl(
+    0,
+    { name = "PantheonInspectSidebarParentActive", link = false }
+  )
+  local change_active_hl = vim.api.nvim_get_hl(
+    0,
+    { name = "PantheonInspectSidebarChangeActive", link = false }
+  )
+  assert(parent_active_hl.bold == true)
+  assert(change_active_hl.bold == true)
+  assert(parent_hl.bold ~= true)
+  assert(change_hl.bold ~= true)
+  local function sidebar_role_groups(line)
+    local groups = {}
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+      sidebar_buf,
+      sidebar_signs,
+      { line - 1, 0 },
+      { line - 1, -1 },
+      { details = true }
+    )) do
+      local group = mark[4].hl_group
+      if group then
+        groups[group] = true
+      end
+    end
+    return groups
+  end
+  local visible_role_groups = sidebar_role_groups(file_lines[1])
+  assert(visible_role_groups.PantheonInspectSidebarParentActive)
+  assert(visible_role_groups.PantheonInspectSidebarChange)
+  assert(not visible_role_groups.PantheonInspectSidebarChangeActive)
   assert(vim.fs.normalize(vim.api.nvim_buf_get_name(parent_buf)):lower()
     == vim.fs.normalize(parent_state.source_path):lower())
   local initial_cursor = vim.api.nvim_win_get_cursor(change_win)
@@ -801,7 +828,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(jumped_view.topline == jumped_cursor[1] - 10)
   end
   local chunk_label =
-    ("%d/%d"):format(expected_chunk, sidebar_active.chunk_count)
+    ("(%d/%d)"):format(expected_chunk, sidebar_active.chunk_count)
   local chunk_label_visible = false
   for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
     sidebar_buf,
@@ -865,6 +892,10 @@ if integration_root and (integration_sha or integration_url) then
   sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")
+  visible_role_groups = sidebar_role_groups(file_lines[1])
+  assert(visible_role_groups.PantheonInspectSidebarParent)
+  assert(visible_role_groups.PantheonInspectSidebarChangeActive)
+  assert(not visible_role_groups.PantheonInspectSidebarParentActive)
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
     "x",
@@ -883,12 +914,6 @@ if integration_root and (integration_sha or integration_url) then
     == vim.fs.normalize(change_state.source_path):lower())
   assert(vim.api.nvim_buf_get_name(parent_buf) == "")
   if pair_count > 1 then
-    vim.api.nvim_feedkeys(
-      vim.api.nvim_replace_termcodes("<C-n>", true, false, true),
-      "x",
-      false
-    )
-    assert(vim.api.nvim_get_current_tabpage() == tabs[5])
     vim.api.nvim_set_current_tabpage(tabs[2])
     vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
     vim.api.nvim_win_set_cursor(0, { file_lines[2], 0 })

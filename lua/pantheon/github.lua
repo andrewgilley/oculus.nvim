@@ -70,8 +70,19 @@ function M.events(username, opts, callback)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
   local cached = cache[username]
+  local per_page = math.min(
+    100,
+    math.max(1, math.floor(opts.per_page or 30))
+  )
 
-  if not opts.force and cached and os.time() - cached.fetched_at < ttl then
+  if not opts.force
+    and cached
+    and os.time() - cached.fetched_at < ttl
+    and (
+      (cached.per_page or #cached.events) >= per_page
+      or cached.complete
+    )
+  then
     vim.schedule(function()
       callback(cached.events, nil, true)
     end)
@@ -80,13 +91,18 @@ function M.events(username, opts, callback)
 
   local url = (
     "https://api.github.com/users/%s/events/public?per_page=%d"
-  ):format(username, opts.per_page or 30)
+  ):format(username, per_page)
   request_json(url, opts, function(events, err)
     if not events then
       callback(nil, err)
       return
     end
-    cache[username] = { events = events, fetched_at = os.time() }
+    cache[username] = {
+      events = events,
+      fetched_at = os.time(),
+      per_page = per_page,
+      complete = #events < per_page,
+    }
     callback(events, nil, false)
   end)
 end
