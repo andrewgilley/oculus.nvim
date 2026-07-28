@@ -426,6 +426,72 @@ local function clone_mirror(source, info, mirror, callback)
   end)
 end
 
+local function download_destination(info, opts)
+  local source_root = (opts.inspect_search_paths or {})[1]
+  if type(source_root) ~= "string" or source_root == "" then
+    return nil, "no default source directory is configured"
+  end
+  return vim.fs.joinpath(vim.fs.normalize(source_root), info.repo)
+end
+
+local function offer_repository_download(info, opts, callback)
+  local destination, destination_err = download_destination(info, opts)
+  if not destination then
+    callback(nil, destination_err)
+    return
+  end
+  if vim.uv.fs_stat(destination) then
+    callback(
+      nil,
+      "cannot download because the destination already exists: "
+        .. destination
+    )
+    return
+  end
+
+  local choices = {
+    {
+      download = true,
+      label = "Download repository",
+    },
+    {
+      download = false,
+      label = "Do not download",
+    },
+  }
+  vim.ui.select(choices, {
+    prompt = ("No local clone of %s/%s was found. Download it to %s?")
+      :format(info.owner, info.repo, destination),
+    format_item = function(choice)
+      return choice.label
+    end,
+  }, function(choice)
+    if not choice or not choice.download then
+      callback(nil, "repository download was declined")
+      return
+    end
+
+    local source_root = vim.fs.dirname(destination)
+    local made_root = vim.fn.mkdir(source_root, "p")
+    if made_root == 0 and not directory(source_root) then
+      callback(nil, "could not create source directory: " .. source_root)
+      return
+    end
+    run({
+      "git",
+      "clone",
+      info.remote_url,
+      destination,
+    }, function(_, clone_err)
+      if clone_err then
+        callback(nil, "could not download repository: " .. clone_err)
+        return
+      end
+      callback(destination)
+    end)
+  end)
+end
+
 local function ensure_mirror(info, root, opts, callback)
   local mirror = vim.fs.joinpath(
     root,
@@ -434,30 +500,31 @@ local function ensure_mirror(info, root, opts, callback)
     info.repo .. ".git"
   )
   find_local_repository(info, opts, function(source)
-    if not source and not opts.inspect_allow_remote_clone then
-      local search_root = (opts.inspect_search_paths or {})[1]
-      local location = search_root
-          and (" under " .. search_root)
-        or ""
-      callback(
-        nil,
-        ("no local clone of %s/%s was found%s; remote cloning is disabled")
-          :format(info.owner, info.repo, location)
-      )
-      return
+    local function use_source(local_source)
+      if directory(mirror) then
+        callback(mirror)
+        return
+      end
+      if vim.uv.fs_stat(mirror) then
+        callback(nil, "the inspection repository cache is not a directory")
+        return
+      end
+
+      vim.fn.mkdir(vim.fs.dirname(mirror), "p")
+      clone_mirror(local_source, info, mirror, callback)
     end
 
-    if directory(mirror) then
-      callback(mirror)
+    if source or opts.inspect_allow_remote_clone then
+      use_source(source)
       return
     end
-    if vim.uv.fs_stat(mirror) then
-      callback(nil, "the inspection repository cache is not a directory")
-      return
-    end
-
-    vim.fn.mkdir(vim.fs.dirname(mirror), "p")
-    clone_mirror(source, info, mirror, callback)
+    offer_repository_download(info, opts, function(downloaded, download_err)
+      if not downloaded then
+        callback(nil, download_err)
+        return
+      end
+      use_source(downloaded)
+    end)
   end)
 end
 
@@ -1721,6 +1788,8 @@ M._apply_pull_request = apply_pull_request
 M._first_changed_paths = first_changed_paths
 M._parse_changed_files = parse_changed_files
 M._github_repository = github_repository
+M._download_destination = download_destination
+M._offer_repository_download = offer_repository_download
 M._parse_hunks = parse_hunks
 M._parse_revision_pairs = parse_revision_pairs
 M._oil_entry_status = oil_entry_status
