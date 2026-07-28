@@ -25,8 +25,9 @@ Pantheon first checks the repositories associated with the current working
 directories and loaded buffers. If a matching clone is available, its local
 Git objects seed the inspection cache instead of downloading another copy.
 It also searches the immediate repositories under
-`~/Desktop/Dev/code/source` by default. Search roots and clones elsewhere can
-be configured explicitly:
+`~/Desktop/Dev/code/source` by default. Inspection stops with an error when no
+matching local clone is found; Pantheon does not download absent source
+repositories. Search roots and clones elsewhere can be configured explicitly:
 
 ```lua
 require("pantheon").setup({

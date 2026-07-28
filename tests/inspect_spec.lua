@@ -134,6 +134,42 @@ assert(hunks[2].new_count == 0)
 assert(hunks[3].old_count == 0)
 assert(hunks[3].new_count == 4)
 
+local missing_root = vim.env.PANTHEON_INSPECT_TEST_MISSING_ROOT
+if missing_root then
+  local ok, err = inspect.open(
+    "https://github.com/pantheon/missing/commit/"
+      .. "0123456789abcdef0123456789abcdef01234567",
+    {
+      inspect_root = missing_root,
+      inspect_search_paths = {},
+      inspect_repositories = {},
+      inspect_allow_remote_clone = false,
+    }
+  )
+  assert(ok, err)
+  assert(vim.wait(10000, function()
+    local tabs = vim.api.nvim_list_tabpages()
+    if #tabs ~= 3 then
+      return false
+    end
+    local state_ok, state = pcall(
+      vim.api.nvim_tabpage_get_var,
+      tabs[3],
+      "pantheon_inspect"
+    )
+    return state_ok and state.error ~= nil
+  end), "missing local repository did not stop inspection")
+  local tabs = vim.api.nvim_list_tabpages()
+  local state = vim.api.nvim_tabpage_get_var(tabs[3], "pantheon_inspect")
+  assert(state.error:match("remote cloning is disabled"))
+  assert(vim.uv.fs_stat(vim.fs.joinpath(
+    missing_root,
+    "repositories",
+    "pantheon",
+    "missing.git"
+  )) == nil)
+end
+
 local integration_root = vim.env.PANTHEON_INSPECT_TEST_ROOT
 local integration_sha = vim.env.PANTHEON_INSPECT_TEST_SHA
 local integration_url = vim.env.PANTHEON_INSPECT_TEST_URL
