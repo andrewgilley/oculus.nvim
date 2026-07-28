@@ -70,11 +70,26 @@ local expected_left_width = math.max(
   )
 )
 local search_config = vim.api.nvim_win_get_config(state.search_win)
+local expected_right_width = main_width - expected_left_width - 1
+local expected_outer_width = math.min(30, expected_right_width)
 assert(search_config.col
-  == main_position[2] + expected_left_width + 1)
+  == main_position[2]
+    + expected_left_width
+    + 1
+    + math.floor(
+      (expected_right_width - expected_outer_width) / 2
+    ))
 assert(search_config.width
-  == main_width - expected_left_width - 3)
+  == expected_outer_width - 2)
 assert(search_config.title == nil or search_config.title == "")
+local initial_search_lines = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(initial_search_lines:find("  SEARCH", 1, true))
+assert(not initial_search_lines:find("arrows preview", 1, true))
+assert(not initial_search_lines:find("enter open", 1, true))
+assert(not initial_search_lines:find("matching user", 1, true))
 
 vim.api.nvim_buf_set_lines(
   state.search_buf,
