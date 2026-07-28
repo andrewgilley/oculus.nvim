@@ -1285,6 +1285,24 @@ local function truncate_path(path, width)
   return "…"
 end
 
+local function truncate_title(title, width)
+  title = vim.trim((title or ""):gsub("[%c]", " "))
+  if vim.fn.strdisplaywidth(title) <= width then
+    return title
+  end
+  if width <= 1 then
+    return "…"
+  end
+  local characters = vim.fn.strchars(title)
+  for length = characters - 1, 1, -1 do
+    local head = vim.fn.strcharpart(title, 0, length)
+    if vim.fn.strdisplaywidth(head) <= width - 1 then
+      return head .. "…"
+    end
+  end
+  return "…"
+end
+
 local function sidebar_file(file)
   local normalized = file:gsub("\\", "/"):gsub("/+$", "")
   return normalized:match("([^/]+)$") or normalized
@@ -1554,8 +1572,22 @@ local function setup_inspection_sidebar(group)
   group.sidebar_chunk_lines = {}
   group.sidebar_entries = {}
   group.sidebar_lines = {}
+  group.sidebar_header_lines = {}
   local lines = {}
+  local previous_commit_index
   for index, session in ipairs(group) do
+    local commit_index = session.commit_index or 1
+    if commit_index ~= previous_commit_index then
+      local title = session.commit_title
+      if not title or title == "" then
+        title = ("Commit %d"):format(commit_index)
+      end
+      local header_line = #lines + 1
+      lines[header_line] = truncate_title(title, group.sidebar_width)
+      group.sidebar_header_lines[#group.sidebar_header_lines + 1] =
+        header_line
+      previous_commit_index = commit_index
+    end
     session.file = session.file or ("file " .. index)
     local total = #(session.hunks or {})
     local row = sidebar_row(
@@ -2081,6 +2113,7 @@ local function load_tab(
     loading = false,
     pair_index = pair_index,
     commit_index = inspection.commit_index,
+    commit_title = inspection.commit_title,
     file_index = inspection.file_index,
     file_count = inspection.file_count,
     file = file,
@@ -2131,6 +2164,8 @@ local function open_tabs(inspections, loading, done)
         parent = parent,
         change = change,
         file = paths.change_file or paths.parent_file,
+        commit_index = paths.commit_index,
+        commit_title = paths.commit_title,
         parent_repository = paths.repository,
         change_repository = paths.repository,
         changes = paths.changes,
@@ -2328,13 +2363,39 @@ local function prepare_revision(
   commit_index,
   callback
 )
-  read_revision_diff(
+  run({
+    "git",
+    "-C",
     repository,
-    info,
-    pair,
-    commit_index,
-    callback
-  )
+    "log",
+    "-1",
+    "--format=%s",
+    pair.commit,
+  }, function(title, title_err)
+    if title_err then
+      callback(nil, "could not read commit title: " .. title_err)
+      return
+    end
+    if title == "" then
+      title = pair.commit:sub(1, 12)
+    end
+    read_revision_diff(
+      repository,
+      info,
+      pair,
+      commit_index,
+      function(inspections, err)
+        if err then
+          callback(nil, err)
+          return
+        end
+        for _, inspection in ipairs(inspections) do
+          inspection.commit_title = title
+        end
+        callback(inspections)
+      end
+    )
+  end)
 end
 
 local function prepare(info, opts, on_pairs, callback)
