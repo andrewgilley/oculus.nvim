@@ -1051,7 +1051,7 @@ local function render_shortcuts()
   })
   section("ACTIVITY", {
     { "h", "Inspect a GitHub commit or pull request" },
-    { "[c / ]c", "Jump through changes in inspection tabs" },
+    { "<C-Left> / <C-Right>", "Jump through inspection changes" },
     { "o", "Open the selected activity" },
     { "r", "Refresh activity without using the cache" },
   })

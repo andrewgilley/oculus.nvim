@@ -309,6 +309,7 @@ function M.pull_request(repo, number, opts, callback)
       base_ref = base.ref,
       head_sha = head.sha,
       head_ref = head.ref,
+      commit_count = pull_request.commits,
     }
     inspect_pull_request_cache[key] = {
       details = details,

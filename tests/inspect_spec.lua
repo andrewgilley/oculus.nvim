@@ -51,11 +51,24 @@ local resolved_pull_request = inspect._apply_pull_request(pull_request, {
   base_ref = "main",
   head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   head_ref = "feature",
+  commit_count = 3,
 })
 assert(resolved_pull_request.base_ref == "main")
 assert(resolved_pull_request.head_ref == "feature")
 assert(resolved_pull_request.base_sha:match("^a+$"))
 assert(resolved_pull_request.head_sha:match("^b+$"))
+assert(resolved_pull_request.commit_count == 3)
+
+local revision_pairs = inspect._parse_revision_pairs(table.concat({
+  "1111111 aaaaaaa",
+  "2222222 1111111",
+  "3333333 2222222 bbbbbbb",
+}, "\n"))
+assert(#revision_pairs == 3)
+assert(revision_pairs[1].parent == "aaaaaaa")
+assert(revision_pairs[1].commit == "1111111")
+assert(revision_pairs[3].parent == "2222222")
+assert(revision_pairs[3].commit == "3333333")
 
 assert(inspect._github_repository(
   "https://github.com/neovim/neovim.git"
@@ -179,6 +192,12 @@ end
 local integration_root = vim.env.PANTHEON_INSPECT_TEST_ROOT
 local integration_sha = vim.env.PANTHEON_INSPECT_TEST_SHA
 local integration_url = vim.env.PANTHEON_INSPECT_TEST_URL
+local expected_pair_count = tonumber(
+  vim.env.PANTHEON_INSPECT_TEST_PAIR_COUNT
+)
+local expected_commit_count = tonumber(
+  vim.env.PANTHEON_INSPECT_TEST_COMMIT_COUNT
+)
 if integration_root and (integration_sha or integration_url) then
   local integration_repository =
     vim.env.PANTHEON_INSPECT_TEST_REPOSITORY or "pantheon/test"
@@ -210,6 +229,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(ok, err)
   local loading_tabs = vim.api.nvim_list_tabpages()
   assert(#loading_tabs == 3)
+  assert(#vim.api.nvim_tabpage_list_wins(loading_tabs[2]) == 1)
+  assert(#vim.api.nvim_tabpage_list_wins(loading_tabs[3]) == 1)
   local loading_state = vim.api.nvim_tabpage_get_var(
     loading_tabs[3],
     "pantheon_inspect"
@@ -218,18 +239,76 @@ if integration_root and (integration_sha or integration_url) then
 
   assert(vim.wait(60000, function()
     local current_tabs = vim.api.nvim_list_tabpages()
-    if #current_tabs ~= 3 then
+    if #current_tabs < 3 or #current_tabs % 2 ~= 1 then
       return false
     end
-    local state_ok, state = pcall(
-      vim.api.nvim_tabpage_get_var,
-      current_tabs[3],
-      "pantheon_inspect"
-    )
-    return state_ok and state.loading == false and state.commit ~= nil
+    for index = 2, #current_tabs do
+      local state_ok, state = pcall(
+        vim.api.nvim_tabpage_get_var,
+        current_tabs[index],
+        "pantheon_inspect"
+      )
+      if not state_ok or state.loading ~= false or state.commit == nil then
+        return false
+      end
+    end
+    return true
   end), "inspection tabs were not opened")
 
   local tabs = vim.api.nvim_list_tabpages()
+  local pair_count = (#tabs - 1) / 2
+  assert(pair_count >= 1)
+  if expected_pair_count then
+    assert(pair_count == expected_pair_count)
+  end
+  local commit_indices = {}
+  local next_file_indices = {}
+  local buffers = {}
+  for pair_index = 1, pair_count do
+    local old_tab = tabs[pair_index * 2]
+    local new_tab = tabs[pair_index * 2 + 1]
+    assert(#vim.api.nvim_tabpage_list_wins(old_tab) == 1)
+    assert(#vim.api.nvim_tabpage_list_wins(new_tab) == 1)
+    local old_state = vim.api.nvim_tabpage_get_var(
+      old_tab,
+      "pantheon_inspect"
+    )
+    local new_state = vim.api.nvim_tabpage_get_var(
+      new_tab,
+      "pantheon_inspect"
+    )
+    assert(old_state.role == (integration_url and "old" or "parent"))
+    assert(new_state.role == "change")
+    assert(old_state.pair_index == pair_index)
+    assert(new_state.pair_index == pair_index)
+    assert(old_state.commit_index == new_state.commit_index)
+    assert(old_state.file_index == new_state.file_index)
+    assert(old_state.file_count == new_state.file_count)
+    assert(old_state.status == new_state.status)
+    assert(old_state.file)
+    assert(new_state.file)
+    commit_indices[old_state.commit_index] = true
+    local expected_file_index =
+      next_file_indices[old_state.commit_index] or 1
+    assert(old_state.file_index == expected_file_index)
+    assert(old_state.file_index <= old_state.file_count)
+    next_file_indices[old_state.commit_index] = expected_file_index + 1
+    local old_buf = vim.api.nvim_win_get_buf(
+      vim.api.nvim_tabpage_list_wins(old_tab)[1]
+    )
+    local new_buf = vim.api.nvim_win_get_buf(
+      vim.api.nvim_tabpage_list_wins(new_tab)[1]
+    )
+    assert(not buffers[old_buf])
+    buffers[old_buf] = true
+    assert(not buffers[new_buf])
+    buffers[new_buf] = true
+    assert(vim.api.nvim_buf_get_name(old_buf):match(" Old · "))
+    assert(vim.api.nvim_buf_get_name(new_buf):match(" New · "))
+  end
+  if expected_commit_count then
+    assert(vim.tbl_count(commit_indices) == expected_commit_count)
+  end
   local parent_state = vim.api.nvim_tabpage_get_var(
     tabs[2],
     "pantheon_inspect"
@@ -238,7 +317,7 @@ if integration_root and (integration_sha or integration_url) then
     tabs[3],
     "pantheon_inspect"
   )
-  assert(parent_state.role == (integration_url and "base" or "parent"))
+  assert(parent_state.role == (integration_url and "old" or "parent"))
   assert(change_state.role == "change")
   if integration_sha and not integration_url then
     assert(change_state.commit == integration_sha)
@@ -276,9 +355,9 @@ if integration_root and (integration_sha or integration_url) then
   local next_mapped = false
   for _, mapping in ipairs(jump_maps) do
     if mapping.desc == "Previous Pantheon change" then
-      previous_mapped = mapping.lhs == "[c"
+      previous_mapped = mapping.lhs == "<C-Left>"
     elseif mapping.desc == "Next Pantheon change" then
-      next_mapped = mapping.lhs == "]c"
+      next_mapped = mapping.lhs == "<C-Right>"
     end
   end
   assert(previous_mapped)
