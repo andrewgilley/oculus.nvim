@@ -414,6 +414,17 @@ local function find_local_repository(info, opts, callback)
   local slug = (info.owner .. "/" .. info.repo):lower()
   local index = 1
 
+  local function matching_remote(remotes)
+    for line in (remotes or ""):gmatch("[^\r\n]+") do
+      local remote, url =
+        line:match("^(%S+)%s+(%S+)%s+%(fetch%)$")
+      local forge, repository = forge_repository(url)
+      if forge == info.forge and repository == slug then
+        return remote
+      end
+    end
+  end
+
   local function inspect_next()
     local candidate = candidates[index]
     index = index + 1
@@ -422,76 +433,17 @@ local function find_local_repository(info, opts, callback)
       return
     end
 
-    if candidate.explicit then
-      callback(candidate.path)
-      return
-    end
-
     run({ "git", "-C", candidate.path, "remote", "-v" }, function(remotes)
-      for line in (remotes or ""):gmatch("[^\r\n]+") do
-        local url = line:match("^%S+%s+(%S+)%s+%(fetch%)$")
-        local forge, repository = forge_repository(url)
-        if forge == info.forge and repository == slug then
-          callback(candidate.path)
-          return
-        end
+      local remote = matching_remote(remotes)
+      if remote or candidate.explicit then
+        callback(candidate.path, remote or info.remote_url)
+        return
       end
       inspect_next()
     end)
   end
 
   inspect_next()
-end
-
-local function clone_mirror(source, info, mirror, callback)
-  local command
-  if source then
-    command = {
-      "git",
-      "clone",
-      "--bare",
-      "--local",
-      source,
-      mirror,
-    }
-  else
-    command = {
-      "git",
-      "clone",
-      "--filter=blob:none",
-      "--bare",
-      info.remote_url,
-      mirror,
-    }
-  end
-
-  run(command, function(_, err)
-    if err then
-      local origin = source and ("local clone at " .. source)
-        or (info.owner .. "/" .. info.repo)
-      callback(nil, "could not clone " .. origin .. ": " .. err)
-      return
-    end
-    if not source then
-      callback(mirror)
-      return
-    end
-    run({
-      "git",
-      "--git-dir",
-      mirror,
-      "remote",
-      "set-url",
-      "origin",
-      info.remote_url,
-    }, function(_, remote_err)
-      if remote_err then
-        callback(nil, "could not configure inspection remote: " .. remote_err)
-        return
-      end
-      callback(mirror)
-    end)
-  end)
 end
 
 local function download_destination(info, opts)
@@ -560,45 +512,10 @@ local function offer_repository_download(info, opts, callback)
   end)
 end
 
-local function forge_cache_path(root, category, info, leaf)
-  if info.forge == "github" then
-    return vim.fs.joinpath(root, category, info.owner, leaf)
-  end
-  return vim.fs.joinpath(
-    root,
-    category,
-    info.forge,
-    info.owner,
-    leaf
-  )
-end
-
-local function ensure_mirror(info, root, opts, callback)
-  local mirror = forge_cache_path(
-    root,
-    "repositories",
-    info,
-    info.repo .. ".git"
-  )
-  find_local_repository(info, opts, function(source)
-    local function use_source(local_source)
-      if directory(mirror) then
-        callback(mirror, nil, local_source)
-        return
-      end
-      if vim.uv.fs_stat(mirror) then
-        callback(nil, "the inspection repository cache is not a directory")
-        return
-      end
-
-      vim.fn.mkdir(vim.fs.dirname(mirror), "p")
-      clone_mirror(local_source, info, mirror, function(result, err)
-        callback(result, err, local_source)
-      end)
-    end
-
-    if source then
-      use_source(source)
+local function ensure_repository(info, opts, callback)
+  find_local_repository(info, opts, function(repository, fetch_source)
+    if repository then
+      callback(repository, nil, fetch_source or info.remote_url)
       return
     end
     offer_repository_download(info, opts, function(downloaded, download_err)
@@ -606,29 +523,29 @@ local function ensure_mirror(info, root, opts, callback)
         callback(nil, download_err)
         return
       end
-      use_source(downloaded)
+      callback(downloaded, nil, "origin")
     end)
   end)
 end
 
-local function resolve_revision(mirror, revision, callback)
+local function resolve_revision(repository, revision, callback)
   run({
     "git",
-    "--git-dir",
-    mirror,
+    "-C",
+    repository,
     "rev-parse",
     revision .. "^{commit}",
   }, callback)
 end
 
-local function resolve_pair(mirror, info, callback)
+local function resolve_pair(repository, info, callback)
   if info.kind == "pull_request" then
-    resolve_revision(mirror, info.base_sha, function(base, base_err)
+    resolve_revision(repository, info.base_sha, function(base, base_err)
       if base_err then
         callback(nil, base_err)
         return
       end
-      resolve_revision(mirror, info.head_sha, function(head, head_err)
+      resolve_revision(repository, info.head_sha, function(head, head_err)
         if head_err then
           callback(nil, head_err)
           return
@@ -639,15 +556,15 @@ local function resolve_pair(mirror, info, callback)
     return
   end
 
-  resolve_revision(mirror, info.sha, function(commit, resolve_err)
+  resolve_revision(repository, info.sha, function(commit, resolve_err)
     if resolve_err then
       callback(nil, resolve_err)
       return
     end
     run({
       "git",
-      "--git-dir",
-      mirror,
+      "-C",
+      repository,
       "rev-parse",
       commit .. "^",
     }, function(parent, parent_err)
@@ -660,8 +577,8 @@ local function resolve_pair(mirror, info, callback)
   end)
 end
 
-local function fetch_pair(mirror, info, callback)
-  resolve_pair(mirror, info, function(commits)
+local function fetch_pair(repository, fetch_source, info, callback)
+  resolve_pair(repository, info, function(commits)
     if commits then
       callback(commits)
       return
@@ -669,11 +586,11 @@ local function fetch_pair(mirror, info, callback)
 
     local command = {
       "git",
-      "--git-dir",
-      mirror,
+      "-C",
+      repository,
       "fetch",
       "--filter=blob:none",
-      "origin",
+      fetch_source or info.remote_url,
     }
     if info.kind == "pull_request" then
       command[#command + 1] = info.base_sha
@@ -691,7 +608,7 @@ local function fetch_pair(mirror, info, callback)
         callback(nil, "could not fetch " .. target .. ": " .. err)
         return
       end
-      resolve_pair(mirror, info, function(resolved, resolve_err)
+      resolve_pair(repository, info, function(resolved, resolve_err)
         if resolve_err then
           callback(nil, "could not resolve commit: " .. resolve_err)
           return
@@ -702,7 +619,7 @@ local function fetch_pair(mirror, info, callback)
   end)
 end
 
-local function revision_pairs(mirror, info, commits, callback)
+local function revision_pairs(repository, info, commits, callback)
   if info.kind ~= "pull_request" then
     callback({ commits })
     return
@@ -710,8 +627,8 @@ local function revision_pairs(mirror, info, commits, callback)
 
   run({
     "git",
-    "--git-dir",
-    mirror,
+    "-C",
+    repository,
     "rev-list",
     "--reverse",
     "--topo-order",
@@ -1589,15 +1506,15 @@ local function blob_lines(output)
   return #lines > 0 and lines or { "" }
 end
 
-local function read_revision_file(mirror, revision, file, missing, callback)
+local function read_revision_file(repository, revision, file, missing, callback)
   if missing then
     callback({ "" })
     return
   end
   run_raw({
     "git",
-    "--git-dir",
-    mirror,
+    "-C",
+    repository,
     "show",
     revision .. ":" .. file,
   }, function(output, err)
@@ -1610,17 +1527,16 @@ local function read_revision_file(mirror, revision, file, missing, callback)
 end
 
 local function read_revision_diff(
-  mirror,
+  repository,
   info,
   pair,
   commit_index,
-  repository_path,
   callback
 )
   run({
     "git",
-    "--git-dir",
-    mirror,
+    "-C",
+    repository,
     "diff",
     "--name-status",
     "-M",
@@ -1646,8 +1562,8 @@ local function read_revision_diff(
       local change_file = changed_file.new_path
       local diff_command = {
         "git",
-        "--git-dir",
-        mirror,
+        "-C",
+        repository,
         "diff",
         "--no-color",
         "--no-ext-diff",
@@ -1667,7 +1583,7 @@ local function read_revision_diff(
           return
         end
         read_revision_file(
-          mirror,
+          repository,
           pair.parent,
           parent_file,
           changed_file.status == "A",
@@ -1677,7 +1593,7 @@ local function read_revision_diff(
               return
             end
             read_revision_file(
-              mirror,
+              repository,
               pair.commit,
               change_file,
               changed_file.status == "D",
@@ -1693,7 +1609,7 @@ local function read_revision_diff(
                   parent_role = info.kind == "pull_request"
                       and "old"
                     or "parent",
-                  repository = repository_path,
+                  repository = repository,
                   parent_file = parent_file,
                   change_file = change_file,
                   parent_lines = parent_lines,
@@ -1718,42 +1634,41 @@ local function read_revision_diff(
 end
 
 local function prepare_revision(
-  mirror,
-  repository_path,
+  repository,
   info,
   pair,
   commit_index,
   callback
 )
   read_revision_diff(
-    mirror,
+    repository,
     info,
     pair,
     commit_index,
-    repository_path,
     callback
   )
 end
 
 local function prepare(info, opts, on_pairs, callback)
-  local root = opts.inspect_root
-    or vim.fs.joinpath(vim.fn.stdpath("cache"), "pantheon", "inspect")
-
-  ensure_mirror(info, root, opts, function(mirror, mirror_err, repository_path)
-    if mirror_err then
-      callback(nil, mirror_err)
+  ensure_repository(info, opts, function(
+    repository,
+    repository_err,
+    fetch_source
+  )
+    if repository_err then
+      callback(nil, repository_err)
       return
     end
-    if not repository_path then
+    if not repository then
       callback(nil, "inspect requires a standard local repository")
       return
     end
-    fetch_pair(mirror, info, function(commits, commit_err)
+    fetch_pair(repository, fetch_source, info, function(commits, commit_err)
       if commit_err then
         callback(nil, commit_err)
         return
       end
-      revision_pairs(mirror, info, commits, function(pairs, pairs_err)
+      revision_pairs(repository, info, commits, function(pairs, pairs_err)
         if pairs_err then
           callback(nil, pairs_err)
           return
@@ -1771,8 +1686,7 @@ local function prepare(info, opts, on_pairs, callback)
             return
           end
           prepare_revision(
-            mirror,
-            repository_path,
+            repository,
             info,
             pair,
             index,

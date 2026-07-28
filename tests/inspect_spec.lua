@@ -213,7 +213,6 @@ if missing_root then
     "https://github.com/pantheon/missing/commit/"
       .. "0123456789abcdef0123456789abcdef01234567",
     {
-      inspect_root = missing_root,
       inspect_search_paths = { source_root },
       inspect_repositories = {},
     }
@@ -237,12 +236,7 @@ if missing_root then
   local state = vim.api.nvim_tabpage_get_var(tabs[3], "pantheon_inspect")
   assert(state.error:match("download was declined"))
   assert(vim.uv.fs_stat(vim.fs.joinpath(source_root, "missing")) == nil)
-  assert(vim.uv.fs_stat(vim.fs.joinpath(
-    missing_root,
-    "repositories",
-    "pantheon",
-    "missing.git"
-  )) == nil)
+  assert(vim.uv.fs_stat(vim.fs.joinpath(missing_root, "repositories")) == nil)
 end
 
 local download_root = vim.env.PANTHEON_INSPECT_TEST_DOWNLOAD_ROOT
@@ -297,6 +291,8 @@ if integration_root and (integration_sha or integration_url) then
       or integration_source
   local expect_no_worktrees =
     vim.env.PANTHEON_INSPECT_TEST_NO_WORKTREES == "1"
+  local expect_no_external_state =
+    vim.env.PANTHEON_INSPECT_TEST_NO_EXTERNAL_STATE == "1"
   local verify_revision_content =
     vim.env.PANTHEON_INSPECT_TEST_VERIFY_CONTENT == "1"
   local integration_cwd = vim.env.PANTHEON_INSPECT_TEST_CWD
@@ -316,7 +312,6 @@ if integration_root and (integration_sha or integration_url) then
         .. "/commit/" .. integration_sha
       ),
     {
-      inspect_root = integration_root,
       inspect_repositories = repositories,
       inspect_search_paths = integration_search_root
           and { integration_search_root }
@@ -425,26 +420,26 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.b[old_buf].pantheon_inspect_repository)
     assert(vim.b[new_buf].pantheon_inspect_repository)
     if expected_source_root then
-      local old_cwd = vim.api.nvim_win_call(
-        vim.api.nvim_tabpage_list_wins(old_tab)[1],
-        vim.fn.getcwd
+      local old_cwd = vim.fn.getcwd(
+        -1,
+        vim.api.nvim_tabpage_get_number(old_tab)
       )
-      local new_cwd = vim.api.nvim_win_call(
-        vim.api.nvim_tabpage_list_wins(new_tab)[1],
-        vim.fn.getcwd
+      local new_cwd = vim.fn.getcwd(
+        -1,
+        vim.api.nvim_tabpage_get_number(new_tab)
       )
-      local expected_old_cwd = inspect._inspection_directory(
-        expected_source_root,
-        old_state.file
+      assert(
+        vim.fs.normalize(old_cwd):lower()
+          == vim.fs.normalize(old_state.directory):lower(),
+        ("old inspection cwd %s did not match %s")
+          :format(old_cwd, old_state.directory)
       )
-      local expected_new_cwd = inspect._inspection_directory(
-        expected_source_root,
-        new_state.file
+      assert(
+        vim.fs.normalize(new_cwd):lower()
+          == vim.fs.normalize(new_state.directory):lower(),
+        ("new inspection cwd %s did not match %s")
+          :format(new_cwd, new_state.directory)
       )
-      assert(vim.fs.normalize(old_cwd):lower()
-        == vim.fs.normalize(expected_old_cwd):lower())
-      assert(vim.fs.normalize(new_cwd):lower()
-        == vim.fs.normalize(expected_new_cwd):lower())
     end
   end
   if expected_commit_count then
@@ -455,6 +450,12 @@ if integration_root and (integration_sha or integration_url) then
       integration_root,
       "worktrees"
     )) == nil)
+  end
+  if expect_no_external_state then
+    assert(
+      vim.uv.fs_stat(integration_root) == nil,
+      "inspect created state outside the project repository"
+    )
   end
   local parent_state = vim.api.nvim_tabpage_get_var(
     tabs[2],

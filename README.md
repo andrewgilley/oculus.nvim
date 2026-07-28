@@ -22,8 +22,9 @@ appear with animated loading indicators and are replaced in place when their
 files are ready. Cursor positions and scroll views remain linked within each
 pair, and `-`/`+` signs mark the old and new lines. The cursor starts at the
 first changed hunk; use `<C-Left>` and `<C-Right>` to jump to the previous and
-next hunks. Git objects are cached under Neovim's cache directory; set
-`inspect_root` in `require("pantheon").setup()` to use a different location.
+next hunks. Required revisions are resolved or fetched through the project's
+own `.git` directory. Inspect does not create a separate Pantheon repository,
+object cache, or worktree, and it does not alter the working checkout.
 
 When an inspection tab is opened with
 [oil.nvim](https://github.com/stevearc/oil.nvim), a single foreground-only
@@ -32,13 +33,11 @@ renamed, and `•` a directory containing changes.
 
 Pantheon first checks the repositories associated with the current working
 directories and loaded buffers. If a matching clone is available, its local
-Git objects seed the inspection cache instead of downloading another copy.
-It also searches the immediate repositories under
-`~/Desktop/Dev/code/source` by default. When no matching local clone is found,
-Pantheon asks whether it should clone the repository into that source
-directory. Choosing not to download leaves the source directory and inspection
-cache unchanged. Search roots and clones elsewhere can be configured
-explicitly:
+Git objects are used directly. It also searches the immediate repositories
+under `~/Desktop/Dev/code/source` by default. When no matching local clone is
+found, Pantheon asks whether it should clone the repository into that source
+directory. Choosing not to download leaves the source directory unchanged.
+Search roots and clones elsewhere can be configured explicitly:
 
 ```lua
 require("pantheon").setup({
