@@ -1134,7 +1134,7 @@ local function normalize_inspection_view(win)
   vim.api.nvim_win_call(win, function()
     local cursor_line = vim.api.nvim_win_get_cursor(win)[1]
     local keys = vim.api.nvim_replace_termcodes(
-      "zt10<C-y>$",
+      "zt10<C-y>^",
       true,
       false,
       true
