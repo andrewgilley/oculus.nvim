@@ -196,9 +196,13 @@ local function render_activity_footer()
   end
 
   local width = config.width
+  local activity_commands = "  h inspect   p past"
+  if (M.state.activity_page or 1) > 1 then
+    activity_commands = activity_commands .. "   r recent"
+  end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  h inspect   n older   ? shortcuts   j/← back   q close",
+    activity_commands .. "   ? shortcuts   j/← back   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1027,7 +1031,7 @@ local function render_loading(contributor)
   M.state.activity_loaded = false
   M.state.activity_error = nil
   local loading_text = M.state.activity_page > 1
-      and ("Loading older %s activity · page %d…"):format(
+      and ("Loading past %s activity · page %d…"):format(
         provider_name(contributor),
         M.state.activity_page
       )
@@ -1145,7 +1149,7 @@ local function render_activity(events, cached, notice)
 
   if #events == 0 then
     lines[#lines + 1] = M.state.activity_page > 1
-        and "  No older public activity was returned."
+        and "  No past public activity was returned."
       or "  No recent public activity was returned."
     lines[#lines + 1] = ""
     scroll_limit_line = #lines
@@ -1218,10 +1222,10 @@ local function render_shortcuts()
   })
   section("ACTIVITY", {
     { "h", "Inspect a commit or pull request" },
-    { "n", "Load the next eight older activity items" },
+    { "p", "Load the next eight past activity items" },
+    { "r", "Load the previous page of recent activity" },
     { "<C-Left> / <C-Right>", "Jump through inspection changes" },
     { "o", "Open the selected activity" },
-    { "r", "Refresh activity without using the cache" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
@@ -1349,6 +1353,21 @@ local function next_activity_page()
     M.state.contributor,
     false,
     (M.state.activity_page or 1) + 1
+  )
+end
+
+local function previous_activity_page()
+  if
+    M.state.view ~= "activity"
+    or not M.state.contributor
+    or (M.state.activity_page or 1) == 1
+  then
+    return
+  end
+  load_activity(
+    M.state.contributor,
+    false,
+    (M.state.activity_page or 1) - 1
   )
 end
 
@@ -1842,12 +1861,10 @@ local function map_keys(buf)
     set_all_filter_types(true)
   end, "Enable all Pantheon activity types")
   map("n", function()
-    if M.state.view == "activity" then
-      next_activity_page()
-    else
-      set_all_filter_types(false)
-    end
-  end, "Load older Pantheon activity or disable all filters")
+    set_all_filter_types(false)
+  end, "Disable all Pantheon activity filters")
+  map("p", next_activity_page, "Load past Pantheon activity")
+  map("r", previous_activity_page, "Load more recent Pantheon activity")
   map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
   map("h", inspect_current, "Inspect Pantheon commit or pull request")
   map("k", function()
@@ -1867,16 +1884,6 @@ local function map_keys(buf)
   map("<ScrollWheelUp>", function()
     move_cursor(-1)
   end, "Scroll Pantheon contributors up")
-  map("r", function()
-    -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 17 Clear the selected provider cache on refresh
-    if M.state.view == "activity" and M.state.contributor then
-      activity_provider(M.state.contributor).clear(
-        M.state.contributor.username
-      )
-      load_activity(M.state.contributor, true)
-    end
-    -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 17
-  end, "Refresh Pantheon activity")
 end
 
 function M.close()
