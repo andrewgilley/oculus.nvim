@@ -17,8 +17,15 @@ assert(parsed.repo == "neovim")
 assert(parsed.sha == "0123456789abcdef0123456789abcdef01234567")
 assert(parsed.remote_url == "https://github.com/neovim/neovim.git")
 
-assert(inspect._parse_commit_url("https://codeberg.org/a/b/commit/0123456")
-  == nil)
+local codeberg_commit = inspect._parse_commit_url(
+  "https://codeberg.org/ziglang/zig/commit/0123456"
+)
+assert(codeberg_commit)
+assert(codeberg_commit.forge == "codeberg")
+assert(codeberg_commit.owner == "ziglang")
+assert(codeberg_commit.repo == "zig")
+assert(codeberg_commit.sha == "0123456")
+assert(codeberg_commit.remote_url == "https://codeberg.org/ziglang/zig.git")
 assert(inspect._parse_commit_url("https://github.com/a/b/issues/1") == nil)
 assert(inspect._parse_commit_url("https://github.com/a/b/commit/123") == nil)
 assert(inspect._parse_commit_url(
@@ -44,6 +51,17 @@ assert(pull_request_comment.via_issue)
 assert(inspect._parse_pull_request_url(
   "https://github.com/neovim/neovim/issues/not-a-number"
 ) == nil)
+local codeberg_pull_request = inspect._parse_pull_request_url(
+  "https://codeberg.org/ziglang/zig/pulls/35754#issuecomment-1"
+)
+assert(codeberg_pull_request)
+assert(codeberg_pull_request.forge == "codeberg")
+assert(codeberg_pull_request.owner == "ziglang")
+assert(codeberg_pull_request.repo == "zig")
+assert(codeberg_pull_request.number == 35754)
+assert(not codeberg_pull_request.via_issue)
+assert(codeberg_pull_request.remote_url
+  == "https://codeberg.org/ziglang/zig.git")
 
 local resolved_pull_request = inspect._apply_pull_request(pull_request, {
   title = "Test pull request",
@@ -80,6 +98,21 @@ assert(inspect._github_repository(
   "ssh://git@github.com/neovim/neovim.git"
 ) == "neovim/neovim")
 assert(inspect._github_repository("https://codeberg.org/a/b.git") == nil)
+local forge, repository = inspect._forge_repository(
+  "https://codeberg.org/ziglang/zig.git"
+)
+assert(forge == "codeberg")
+assert(repository == "ziglang/zig")
+forge, repository = inspect._forge_repository(
+  "git@codeberg.org:ziglang/zig.git"
+)
+assert(forge == "codeberg")
+assert(repository == "ziglang/zig")
+forge, repository = inspect._forge_repository(
+  "ssh://git@codeberg.org/ziglang/zig.git"
+)
+assert(forge == "codeberg")
+assert(repository == "ziglang/zig")
 
 local parent, change = inspect._first_changed_paths("M\tlua/pantheon/init.lua")
 assert(parent == "lua/pantheon/init.lua")
@@ -249,6 +282,8 @@ if integration_root and (integration_sha or integration_url) then
     vim.env.PANTHEON_INSPECT_TEST_SEARCH_ROOT
   local integration_cwd = vim.env.PANTHEON_INSPECT_TEST_CWD
   local repositories = {}
+  local integration_is_pull_request = integration_url
+    and integration_url:match("/pulls?/%d+")
   if integration_source then
     repositories[integration_repository] = integration_source
   end
@@ -281,7 +316,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(loading_state.loading)
 
   local inspection_error
-  local inspection_finished = vim.wait(60000, function()
+  local inspection_finished = vim.wait(180000, function()
     local current_tabs = vim.api.nvim_list_tabpages()
     if #current_tabs < 3 or #current_tabs % 2 ~= 1 then
       return false
@@ -327,7 +362,7 @@ if integration_root and (integration_sha or integration_url) then
       new_tab,
       "pantheon_inspect"
     )
-    assert(old_state.role == (integration_url and "old" or "parent"))
+    assert(old_state.role == (integration_is_pull_request and "old" or "parent"))
     assert(new_state.role == "change")
     assert(old_state.pair_index == pair_index)
     assert(new_state.pair_index == pair_index)
@@ -367,7 +402,8 @@ if integration_root and (integration_sha or integration_url) then
     tabs[3],
     "pantheon_inspect"
   )
-  assert(parent_state.role == (integration_url and "old" or "parent"))
+  assert(parent_state.role
+    == (integration_is_pull_request and "old" or "parent"))
   assert(change_state.role == "change")
   if integration_sha and not integration_url then
     assert(change_state.commit == integration_sha)

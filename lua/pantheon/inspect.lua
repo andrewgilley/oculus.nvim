@@ -1,6 +1,7 @@
 local M = {}
 
 local github = require("pantheon.github")
+local codeberg = require("pantheon.codeberg")
 
 local active = false
 local change_ns = vim.api.nvim_create_namespace("pantheon_inspect_changes")
@@ -39,13 +40,22 @@ local function parse_commit_url(url)
   local owner, repo, sha, suffix = url:match(
     "^https?://github%.com/([^/]+)/([^/]+)/commit/([0-9a-fA-F]+)(.*)$"
   )
+  local forge = "github"
+  local host = "github.com"
+  if not owner then
+    owner, repo, sha, suffix = url:match(
+      "^https?://codeberg%.org/([^/]+)/([^/]+)/commit/([0-9a-fA-F]+)(.*)$"
+    )
+    forge = "codeberg"
+    host = "codeberg.org"
+  end
   if not owner or not repo or not sha then
     return nil
   end
 
   repo = repo:gsub("%.git$", "")
   if
-    not owner:match("^[%w][%w-]*$")
+    not owner:match("^[%w][%w._-]*$")
     or not repo:match("^[%w._-]+$")
     or repo == "."
     or repo == ".."
@@ -58,10 +68,12 @@ local function parse_commit_url(url)
 
   return {
     kind = "commit",
+    forge = forge,
+    host = host,
     owner = owner,
     repo = repo,
     sha = sha:lower(),
-    remote_url = ("https://github.com/%s/%s.git"):format(owner, repo),
+    remote_url = ("https://%s/%s/%s.git"):format(host, owner, repo),
   }
 end
 
@@ -74,17 +86,27 @@ local function parse_pull_request_url(url)
     "^https?://github%.com/([^/]+)/([^/]+)/pull/(%d+)(.*)$"
   )
   local section = "pull"
+  local forge = "github"
+  local host = "github.com"
   if not owner then
     owner, repo, number, suffix = url:match(
       "^https?://github%.com/([^/]+)/([^/]+)/issues/(%d+)(.*)$"
     )
     section = "issues"
   end
+  if not owner then
+    owner, repo, number, suffix = url:match(
+      "^https?://codeberg%.org/([^/]+)/([^/]+)/pulls/(%d+)(.*)$"
+    )
+    section = "pull"
+    forge = "codeberg"
+    host = "codeberg.org"
+  end
   if
     not owner
     or not repo
     or not number
-    or not owner:match("^[%w][%w-]*$")
+    or not owner:match("^[%w][%w._-]*$")
     or not repo:match("^[%w._-]+$")
     or repo == "."
     or repo == ".."
@@ -96,11 +118,13 @@ local function parse_pull_request_url(url)
   repo = repo:gsub("%.git$", "")
   return {
     kind = "pull_request",
+    forge = forge,
+    host = host,
     via_issue = section == "issues",
     owner = owner,
     repo = repo,
     number = tonumber(number),
-    remote_url = ("https://github.com/%s/%s.git"):format(owner, repo),
+    remote_url = ("https://%s/%s/%s.git"):format(host, owner, repo),
   }
 end
 
@@ -221,24 +245,47 @@ local function directory(path)
   return stat and stat.type == "directory"
 end
 
-local function github_repository(url)
+local function forge_repository(url)
   if type(url) ~= "string" then
     return nil
   end
-  local owner, repo = url:match("^https?://github%.com/([^/]+)/([^/]+)")
-  if not owner then
-    owner, repo = url:match("^git@github%.com:([^/]+)/([^/]+)")
-  end
-  if not owner then
+  local forge
+  local owner
+  local repo
+  for _, candidate in ipairs({
+    { name = "github", host = "github%.com" },
+    { name = "codeberg", host = "codeberg%.org" },
+  }) do
     owner, repo = url:match(
-      "^ssh://git@github%.com/([^/]+)/([^/]+)"
+      "^https?://" .. candidate.host .. "/([^/]+)/([^/]+)"
     )
+    if not owner then
+      owner, repo = url:match(
+        "^git@" .. candidate.host .. ":([^/]+)/([^/]+)"
+      )
+    end
+    if not owner then
+      owner, repo = url:match(
+        "^ssh://git@" .. candidate.host .. "/([^/]+)/([^/]+)"
+      )
+    end
+    if owner then
+      forge = candidate.name
+      break
+    end
   end
-  if not owner or not repo then
+  if not forge or not owner or not repo then
     return nil
   end
   repo = repo:gsub("[/?#].*$", ""):gsub("%.git$", "")
-  return (owner .. "/" .. repo):lower()
+  return forge, (owner .. "/" .. repo):lower()
+end
+
+local function github_repository(url)
+  local forge, repository = forge_repository(url)
+  if forge == "github" then
+    return repository
+  end
 end
 
 local function repository_root(path)
@@ -363,7 +410,8 @@ local function find_local_repository(info, opts, callback)
     run({ "git", "-C", candidate.path, "remote", "-v" }, function(remotes)
       for line in (remotes or ""):gmatch("[^\r\n]+") do
         local url = line:match("^%S+%s+(%S+)%s+%(fetch%)$")
-        if github_repository(url) == slug then
+        local forge, repository = forge_repository(url)
+        if forge == info.forge and repository == slug then
           callback(candidate.path)
           return
         end
@@ -492,11 +540,24 @@ local function offer_repository_download(info, opts, callback)
   end)
 end
 
+local function forge_cache_path(root, category, info, leaf)
+  if info.forge == "github" then
+    return vim.fs.joinpath(root, category, info.owner, leaf)
+  end
+  return vim.fs.joinpath(
+    root,
+    category,
+    info.forge,
+    info.owner,
+    leaf
+  )
+end
+
 local function ensure_mirror(info, root, opts, callback)
-  local mirror = vim.fs.joinpath(
+  local mirror = forge_cache_path(
     root,
     "repositories",
-    info.owner,
+    info,
     info.repo .. ".git"
   )
   find_local_repository(info, opts, function(source)
@@ -594,8 +655,8 @@ local function fetch_pair(mirror, info, callback)
     }
     if info.kind == "pull_request" then
       command[#command + 1] = info.base_sha
-      command[#command + 1] =
-        ("refs/pull/%d/head"):format(info.number)
+      command[#command + 1] = info.fetch_ref
+        or ("refs/pull/%d/head"):format(info.number)
     else
       command[#command + 1] = info.sha
     end
@@ -1649,10 +1710,10 @@ local function prepare(info, opts, on_pairs, callback)
             return
           end
 
-          local worktree_root = vim.fs.joinpath(
+          local worktree_root = forge_cache_path(
             root,
             "worktrees",
-            info.owner,
+            info,
             info.repo
           )
           local inspections = {}
@@ -1700,6 +1761,7 @@ local function apply_pull_request(info, details)
   resolved.base_ref = details.base_ref
   resolved.head_sha = details.head_sha
   resolved.head_ref = details.head_ref
+  resolved.fetch_ref = details.fetch_ref
   resolved.commit_count = details.commit_count
   resolved.title = details.title
   return resolved
@@ -1711,7 +1773,8 @@ local function resolve_target(info, opts, callback)
     return
   end
 
-  github.pull_request(
+  local provider = info.forge == "codeberg" and codeberg or github
+  provider.pull_request(
     info.owner .. "/" .. info.repo,
     info.number,
     opts,
@@ -1733,7 +1796,8 @@ function M.open(url, opts)
   local info = parse_target_url(url)
   if not info then
     return nil,
-      "inspect currently supports GitHub commit and pull request activity"
+      "inspect currently supports GitHub and Codeberg commit "
+        .. "and pull request activity"
   end
   if vim.fn.executable("git") ~= 1 then
     return nil, "inspect requires git"
@@ -1788,6 +1852,7 @@ M._apply_pull_request = apply_pull_request
 M._first_changed_paths = first_changed_paths
 M._parse_changed_files = parse_changed_files
 M._github_repository = github_repository
+M._forge_repository = forge_repository
 M._download_destination = download_destination
 M._offer_repository_download = offer_repository_download
 M._parse_hunks = parse_hunks

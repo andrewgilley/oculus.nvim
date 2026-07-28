@@ -1050,7 +1050,7 @@ local function render_shortcuts()
     { "o", "Open the selected contributor profile" },
   })
   section("ACTIVITY", {
-    { "h", "Inspect a GitHub commit or pull request" },
+    { "h", "Inspect a commit or pull request" },
     { "<C-Left> / <C-Right>", "Jump through inspection changes" },
     { "o", "Open the selected activity" },
     { "r", "Refresh activity without using the cache" },
@@ -1215,7 +1215,7 @@ end
 local function inspect_current()
   if M.state.view ~= "activity" then
     vim.notify(
-      "Pantheon: select a GitHub commit or pull request to inspect",
+      "Pantheon: select a commit or pull request to inspect",
       vim.log.levels.WARN
     )
     return
@@ -1224,7 +1224,7 @@ local function inspect_current()
   local target = target_on_cursor()
   if type(target) ~= "string" then
     vim.notify(
-      "Pantheon: this activity does not have an inspectable commit",
+      "Pantheon: this activity does not have an inspectable change",
       vim.log.levels.WARN
     )
     return

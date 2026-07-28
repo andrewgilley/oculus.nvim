@@ -2,6 +2,7 @@
 local M = {}
 
 local cache = {}
+local inspect_pull_request_cache = {}
 local base_url = "https://codeberg.org"
 
 local function decode_response(stdout)
@@ -365,6 +366,63 @@ end
 function M.enrich_pushes(events, _, callback)
   vim.schedule(function()
     callback(events)
+  end)
+end
+
+function M.pull_request(repo, number, opts, callback)
+  opts = opts or {}
+  local key = ("%s#%s"):format(repo, number)
+  local cached = inspect_pull_request_cache[key]
+  local ttl = opts.inspect_cache_ttl or 60
+  if
+    cached
+    and not opts.force
+    and os.time() - cached.fetched_at < ttl
+  then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.details))
+    end)
+    return
+  end
+
+  local url = ("%s/api/v1/repos/%s/pulls/%s"):format(
+    base_url,
+    repo,
+    number
+  )
+  request_json(url, opts, function(pull_request, err)
+    if not pull_request then
+      callback(nil, err)
+      return
+    end
+
+    local base = pull_request.base or {}
+    local head = pull_request.head or {}
+    local base_sha = pull_request.merge_base or base.sha
+    if not base_sha or not head.sha then
+      callback(
+        nil,
+        "Codeberg returned a pull request without base/head commits"
+      )
+      return
+    end
+    local details = {
+      number = pull_request.number or number,
+      title = pull_request.title,
+      base_sha = base_sha,
+      base_ref = base.ref,
+      head_sha = head.sha,
+      head_ref = head.ref,
+      fetch_ref = type(head.ref) == "string"
+          and head.ref:match("^refs/")
+          and head.ref
+        or ("refs/pull/%d/head"):format(number),
+    }
+    inspect_pull_request_cache[key] = {
+      details = details,
+      fetched_at = os.time(),
+    }
+    callback(vim.deepcopy(details))
   end)
 end
 
