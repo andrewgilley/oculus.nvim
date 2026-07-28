@@ -57,6 +57,16 @@ assert(shortened_sidebar_row.line:match("2/7 P C$"))
 assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
+assert(inspect._sidebar_chunk_row(
+  2,
+  { old_start = 24, new_start = 25 },
+  false
+) == "   ├─ 2  -24 +25")
+assert(inspect._sidebar_chunk_row(
+  3,
+  { old_start = 30, new_start = 31 },
+  true
+) == "   └─ 3  -30 +31")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
 ) == "changed/file.lua")
@@ -245,6 +255,10 @@ assert(hunks[3].old_count == 0)
 assert(hunks[3].new_count == 4)
 local jump_lines = inspect._change_lines(hunks)
 assert(vim.deep_equal(jump_lines, { 10, 25, 31 }))
+assert(vim.deep_equal(
+  inspect._change_lines(hunks, "parent"),
+  { 10, 24, 30 }
+))
 assert(inspect._next_change_line(jump_lines, 10, 1) == 25)
 assert(inspect._next_change_line(jump_lines, 31, 1) == 10)
 assert(inspect._next_change_line(jump_lines, 25, -1) == 10)
@@ -558,18 +572,33 @@ if integration_root and (integration_sha or integration_url) then
     -1,
     false
   )
-  assert(#sidebar_lines == pair_count)
-  for index, line in ipairs(sidebar_lines) do
-    assert(line:match("^" .. index .. "%. "))
-    assert(line:match("[%d/]+ P C$"))
-    assert(vim.fn.strdisplaywidth(line) == sidebar_width)
-    local displayed_file = line
-      :gsub("^%d+%. ", "")
-      :gsub("%s+[%d/]+ P C$", "")
-      :gsub("^…", "")
-    local _, separators = displayed_file:gsub("/", "")
-    assert(separators <= 1)
+  local file_lines = {}
+  local chunk_lines = 0
+  for line_number, line in ipairs(sidebar_lines) do
+    if line:match("^%d+%. ") then
+      file_lines[#file_lines + 1] = line_number
+      assert(line:match(
+        "^" .. #file_lines .. "%. "
+      ))
+      assert(line:match("[%d/]+ P C$"))
+      assert(vim.fn.strdisplaywidth(line) == sidebar_width)
+      local displayed_file = line
+        :gsub("^%d+%. ", "")
+        :gsub("%s+[%d/]+ P C$", "")
+        :gsub("^…", "")
+      local _, separators = displayed_file:gsub("/", "")
+      assert(separators <= 1)
+    else
+      chunk_lines = chunk_lines + 1
+      local branch =
+        line:match("^   ├─ %d+  %-%d+ %+%d+$")
+          or line:match("^   └─ %d+  %-%d+ %+%d+$")
+      assert(branch, "invalid chunk subtree row: " .. line)
+    end
   end
+  assert(#file_lines == pair_count)
+  assert(chunk_lines >= pair_count)
+  assert(#sidebar_lines == pair_count + chunk_lines)
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   local first_sidebar_win = assert(sidebar_window(tabs[2]))
   assert(vim.api.nvim_win_get_cursor(first_sidebar_win)[1] == 1)
@@ -754,6 +783,79 @@ if integration_root and (integration_sha or integration_url) then
     assert(initial_parent_view.topline
       == math.max(1, initial_parent_cursor[1] - 10))
   end
+  vim.api.nvim_set_current_win(parent_win)
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes("<C-Right>", true, false, true),
+    "x",
+    false
+  )
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  local expected_chunk = sidebar_active.chunk_count > 1 and 2 or 1
+  assert(sidebar_active.chunk_index == expected_chunk)
+  local jumped_cursor = vim.api.nvim_win_get_cursor(parent_win)
+  local jumped_view = vim.api.nvim_win_call(
+    parent_win,
+    vim.fn.winsaveview
+  )
+  if jumped_cursor[1] >= 10 then
+    assert(jumped_view.topline == jumped_cursor[1] - 10)
+  end
+  local chunk_label =
+    ("%d/%d"):format(expected_chunk, sidebar_active.chunk_count)
+  local chunk_label_visible = false
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    sidebar_buf,
+    sidebar_signs,
+    0,
+    -1,
+    { details = true }
+  )) do
+    for _, part in ipairs(mark[4].virt_text or {}) do
+      if vim.trim(part[1]) == chunk_label then
+        chunk_label_visible = true
+      end
+    end
+  end
+  assert(chunk_label_visible, "active chunk label was not rendered")
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes("<C-Left>", true, false, true),
+    "x",
+    false
+  )
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.chunk_index == 1)
+  local sidebar_parent_win = assert(sidebar_window(tabs[2]))
+  vim.api.nvim_set_current_win(sidebar_parent_win)
+  local selected_chunk =
+    sidebar_active.chunk_count > 1 and 2 or 1
+  local selected_chunk_line = file_lines[1] + selected_chunk
+  local selected_parent_line = tonumber(
+    assert(sidebar_lines[selected_chunk_line]:match("%-(%d+)"))
+  )
+  vim.api.nvim_win_set_cursor(
+    sidebar_parent_win,
+    { selected_chunk_line, 0 }
+  )
+  vim.api.nvim_exec_autocmds("CursorMoved", {
+    buffer = sidebar_buf,
+  })
+  assert(vim.wait(1000, function()
+    return vim.api.nvim_get_current_tabpage() == tabs[2]
+      and vim.api.nvim_get_current_win() == sidebar_parent_win
+      and vim.api.nvim_win_get_cursor(parent_win)[1]
+        == selected_parent_line
+  end), "sidebar chunk did not open in the main pane")
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.chunk_index == selected_chunk)
+  local selected_view = vim.api.nvim_win_call(
+    parent_win,
+    vim.fn.winsaveview
+  )
+  if selected_parent_line >= 10 then
+    assert(selected_view.topline == selected_parent_line - 10)
+  end
+  vim.cmd("wincmd h")
+  assert(vim.api.nvim_get_current_win() == parent_win)
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
     "x",
@@ -789,13 +891,18 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_get_current_tabpage() == tabs[5])
     vim.api.nvim_set_current_tabpage(tabs[2])
     vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
-    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    vim.api.nvim_win_set_cursor(0, { file_lines[2], 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", {
       buffer = sidebar_buf,
     })
     assert(vim.wait(1000, function()
       return vim.api.nvim_get_current_tabpage() == tabs[4]
     end), "sidebar cursor did not open the second changed file")
+    assert(vim.api.nvim_get_current_win()
+      == assert(sidebar_window(tabs[4])))
+    vim.wait(50, function()
+      return false
+    end)
     assert(vim.api.nvim_get_current_win()
       == assert(sidebar_window(tabs[4])))
     sidebar_active = vim.b[sidebar_buf]
@@ -809,6 +916,8 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.wait(1000, function()
       return vim.api.nvim_get_current_tabpage() == tabs[2]
     end), "sidebar cursor did not return to the first changed file")
+    assert(vim.api.nvim_get_current_win()
+      == assert(sidebar_window(tabs[2])))
     vim.cmd("wincmd h")
     assert(vim.api.nvim_get_current_win() == parent_win)
   end
