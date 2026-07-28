@@ -1139,6 +1139,17 @@ local function normalize_inspection_view(win)
       true
     )
     vim.cmd("normal! " .. keys)
+    local buf = vim.api.nvim_win_get_buf(win)
+    local text = vim.api.nvim_buf_get_lines(
+      buf,
+      cursor_line - 1,
+      cursor_line,
+      false
+    )[1] or ""
+    vim.api.nvim_win_set_cursor(
+      win,
+      { cursor_line, math.max(0, #text - 1) }
+    )
     local view = vim.fn.winsaveview()
     view.topline = math.max(1, cursor_line - 10)
     vim.fn.winrestview(view)
@@ -1246,6 +1257,49 @@ local function sidebar_active_item(group, tab)
   end
 end
 
+local function truncate_path(path, width)
+  if vim.fn.strdisplaywidth(path) <= width then
+    return path
+  end
+  if width <= 1 then
+    return "…"
+  end
+  local characters = vim.fn.strchars(path)
+  for start = 1, characters - 1 do
+    local tail = vim.fn.strcharpart(path, start)
+    if vim.fn.strdisplaywidth(tail) <= width - 1 then
+      return "…" .. tail
+    end
+  end
+  return "…"
+end
+
+local function sidebar_row(index, file, width)
+  local prefix = ("%d. "):format(index)
+  local suffix = "C P"
+  local path_width = math.max(
+    1,
+    width
+      - vim.fn.strdisplaywidth(prefix)
+      - vim.fn.strdisplaywidth(suffix)
+      - 1
+  )
+  local path = truncate_path(file, path_width)
+  local body = prefix .. path
+  local padding = math.max(
+    1,
+    width
+      - vim.fn.strdisplaywidth(body)
+      - vim.fn.strdisplaywidth(suffix)
+  )
+  local line = body .. string.rep(" ", padding) .. suffix
+  return {
+    line = line,
+    change_column = #line - #suffix,
+    parent_column = #line - 1,
+  }
+end
+
 local function refresh_sidebar(group, tab)
   local buf = group.sidebar_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
@@ -1268,10 +1322,8 @@ local function refresh_sidebar(group, tab)
     default = true,
   })
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
-  for index, session in ipairs(group) do
-    local file = session.file
-    local change_column = #file + 2
-    local parent_column = #file + 4
+  for index, _ in ipairs(group) do
+    local row = group.sidebar_rows[index]
     if index == active_index then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 0, {
         line_hl_group = "PantheonInspectSidebarCurrent",
@@ -1282,9 +1334,9 @@ local function refresh_sidebar(group, tab)
       buf,
       sidebar_ns,
       index - 1,
-      change_column,
+      row.change_column,
       {
-        end_col = change_column + 1,
+        end_col = row.change_column + 1,
         hl_group = index == active_index
             and active_role == "change"
             and "PantheonInspectSidebarRoleActive"
@@ -1296,9 +1348,9 @@ local function refresh_sidebar(group, tab)
       buf,
       sidebar_ns,
       index - 1,
-      parent_column,
+      row.parent_column,
       {
-        end_col = parent_column + 1,
+        end_col = row.parent_column + 1,
         hl_group = index == active_index
             and active_role == "parent"
             and "PantheonInspectSidebarRoleActive"
@@ -1326,8 +1378,7 @@ local function create_sidebar_window(group, endpoint)
   vim.cmd("botright vsplit")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, group.sidebar_buf)
-  local width = math.min(48, math.max(24, math.floor(vim.o.columns * 0.24)))
-  vim.api.nvim_win_set_width(win, width)
+  vim.api.nvim_win_set_width(win, group.sidebar_width)
   vim.wo[win].winfixwidth = true
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
@@ -1340,15 +1391,22 @@ local function create_sidebar_window(group, endpoint)
 end
 
 local function setup_inspection_sidebar(group)
-  local active_tab = vim.api.nvim_get_current_tabpage()
-  local active_win = vim.api.nvim_get_current_win()
   local buf = vim.api.nvim_create_buf(false, true)
   group.sidebar_buf = buf
   group.sidebar_windows = {}
+  group.sidebar_width =
+    math.min(60, math.max(32, math.floor(vim.o.columns * 0.30)))
+  group.sidebar_rows = {}
   local lines = {}
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
-    lines[index] = session.file .. "  C P"
+    local row = sidebar_row(
+      index,
+      session.file,
+      group.sidebar_width
+    )
+    group.sidebar_rows[index] = row
+    lines[index] = row.line
   end
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
@@ -1362,12 +1420,12 @@ local function setup_inspection_sidebar(group)
     create_sidebar_window(group, session.change)
   end
   sidebar_groups[#sidebar_groups + 1] = group
-  if vim.api.nvim_tabpage_is_valid(active_tab) then
-    vim.api.nvim_set_current_tabpage(active_tab)
-    if vim.api.nvim_win_is_valid(active_win) then
-      vim.api.nvim_set_current_win(active_win)
-    end
-    refresh_sidebar(group, active_tab)
+  local first = group[1] and group[1].change or nil
+  if valid_endpoint(first) then
+    vim.api.nvim_set_current_tabpage(first.tab)
+    vim.api.nvim_set_current_win(first.win)
+    show_inspection_path(first.buf)
+    refresh_sidebar(group, first.tab)
   end
 end
 
@@ -1674,6 +1732,7 @@ local function load_tab(
     buf = vim.api.nvim_get_current_buf(),
   }
   vim.wo[loaded.win].signcolumn = "yes:2"
+  vim.wo[loaded.win].wrap = false
   return loaded
 end
 
@@ -1735,10 +1794,12 @@ local function open_tabs(inspections, loading, done)
       else
         sync_window(change.win)
       end
-      normalize_inspection_view(parent.win)
-      normalize_inspection_view(change.win)
     end
     setup_inspection_sidebar(inspection_sessions)
+    for _, session in ipairs(inspection_sessions) do
+      normalize_inspection_view(session.parent.win)
+      normalize_inspection_view(session.change.win)
+    end
   end)
   if not ok then
     done(nil, "could not open inspection tabs: " .. tostring(err))
@@ -2070,5 +2131,6 @@ M._oil_entry_status = oil_entry_status
 M._change_lines = change_lines
 M._next_change_line = next_change_line
 M._normalize_inspection_view = normalize_inspection_view
+M._sidebar_row = sidebar_row
 
 return M
