@@ -37,8 +37,9 @@ switches between the parent and changed tabs for the current file from either
 the main pane or the changed-files sidebar; sidebar focus, row, and viewport
 are preserved.
 Every Inspect tab includes the same right-hand changed-files sidebar.
-The first inspected file starts at the top, and file rows show `•`, the changed
-filename, and the trailing `P C`. Each file expands into a visible tree of
+Each inspected commit’s title appears above its changed-file group. File rows
+show `•`, the changed filename, and the trailing `P C`. Each file expands into
+a visible tree of
 unnumbered hunks labeled with their changed-side start and end lines, such as
 `├─ 25-31`, without highlighting file or hunk rows. The sidebar is 28 columns
 wide.
