@@ -17,6 +17,7 @@ local sidebar_navigating = false
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
+local switch_sidebar_version
 
 local function git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
@@ -1315,10 +1316,12 @@ end
 
 local function sidebar_chunk_row(hunk, last)
   local branch = last and "└─" or "├─"
-  return ("  %s• -%d +%d"):format(
+  local first = hunk.new_start
+  local last_line = first + math.max(0, (hunk.new_count or 0) - 1)
+  return ("  %s %d-%d"):format(
     branch,
-    hunk.old_start,
-    hunk.new_start
+    first,
+    last_line
   )
 end
 
@@ -1528,6 +1531,14 @@ local function map_inspection_sidebar_toggle(group)
     silent = true,
     desc = "Open Pantheon Inspect sidebar item",
   })
+  vim.keymap.set("n", "<C-s>", function()
+    switch_sidebar_version(group)
+  end, {
+    buffer = group.sidebar_buf,
+    nowait = true,
+    silent = true,
+    desc = "Switch Pantheon file version",
+  })
 end
 
 local function setup_inspection_sidebar(group)
@@ -1536,7 +1547,7 @@ local function setup_inspection_sidebar(group)
   group.sidebar_windows = {}
   group.sidebar_visible = false
   group.sidebar_width =
-    math.min(30, math.max(20, vim.o.columns - 20))
+    math.min(28, math.max(20, vim.o.columns - 20))
   group.sidebar_rows = {}
   group.sidebar_chunk_lines = {}
   group.sidebar_entries = {}
@@ -1670,6 +1681,47 @@ focus_sidebar_selection = function(group)
     set_change_cursor(endpoint.win, hunk_start(hunk, role))
   end
   show_inspection_path(endpoint.buf)
+  refresh_sidebar(group, endpoint.tab)
+  sidebar_navigating = false
+end
+
+switch_sidebar_version = function(group)
+  if
+    sidebar_navigating
+    or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
+  then
+    return
+  end
+  local tab = vim.api.nvim_get_current_tabpage()
+  local _, role = sidebar_active_item(group, tab)
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local entry = group.sidebar_entries[line]
+  local session = entry and group[entry.pair_index] or nil
+  local target_role = role == "parent" and "change" or "parent"
+  local endpoint = session and session[target_role] or nil
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  local sidebar_win = group.sidebar_windows[endpoint.tab]
+  if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
+    return
+  end
+
+  local source_win = vim.api.nvim_get_current_win()
+  local source_view = vim.api.nvim_win_call(source_win, function()
+    return vim.fn.winsaveview()
+  end)
+  sidebar_navigating = true
+  vim.api.nvim_win_set_cursor(sidebar_win, { line, 0 })
+  source_view.lnum = line
+  source_view.col = 0
+  source_view.curswant = 0
+  vim.api.nvim_win_call(sidebar_win, function()
+    vim.fn.winrestview(source_view)
+  end)
+  show_inspection_path(endpoint.buf)
+  vim.api.nvim_set_current_win(sidebar_win)
+  group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
   sidebar_navigating = false
 end

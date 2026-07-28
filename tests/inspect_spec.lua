@@ -56,13 +56,13 @@ assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
 assert(inspect._sidebar_chunk_row(
-  { old_start = 24, new_start = 25 },
+  { new_start = 25, new_count = 4 },
   false
-) == "  ├─• -24 +25")
+) == "  ├─ 25-28")
 assert(inspect._sidebar_chunk_row(
-  { old_start = 30, new_start = 31 },
+  { new_start = 31, new_count = 0 },
   true
-) == "  └─• -30 +31")
+) == "  └─ 31-31")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
 ) == "file.lua")
@@ -503,7 +503,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(new_sidebar_buf == sidebar_buf)
     assert(vim.api.nvim_win_get_width(old_sidebar_win) == sidebar_width)
     assert(vim.api.nvim_win_get_width(new_sidebar_win) == sidebar_width)
-    assert(sidebar_width == 30)
+    assert(sidebar_width == 28)
     assert(vim.api.nvim_win_get_position(old_sidebar_win)[2]
       > vim.api.nvim_win_get_position(old_main_win)[2])
     assert(vim.api.nvim_win_get_position(new_sidebar_win)[2]
@@ -598,8 +598,8 @@ if integration_root and (integration_sha or integration_url) then
   local chunk_lines = 0
   for line_number, line in ipairs(sidebar_lines) do
     local branch =
-      line:match("^  ├─• %-%d+ %+%d+$")
-        or line:match("^  └─• %-%d+ %+%d+$")
+      line:match("^  ├─ %d+%-%d+$")
+        or line:match("^  └─ %d+%-%d+$")
     if branch then
       chunk_lines = chunk_lines + 1
     else
@@ -739,6 +739,7 @@ if integration_root and (integration_sha or integration_url) then
   local sidebar_toggle_from_sidebar
   local sidebar_tab_toggle_from_sidebar
   local sidebar_open_mapping
+  local sidebar_switch_mapping
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
     sidebar_buf,
     "n"
@@ -751,6 +752,8 @@ if integration_root and (integration_sha or integration_url) then
       end
     elseif mapping.desc == "Open Pantheon Inspect sidebar item" then
       sidebar_open_mapping = mapping
+    elseif mapping.desc == "Switch Pantheon file version" then
+      sidebar_switch_mapping = mapping
     end
   end
   assert(
@@ -763,6 +766,8 @@ if integration_root and (integration_sha or integration_url) then
   )
   assert(sidebar_open_mapping
     and sidebar_open_mapping.lhs == "<CR>")
+  assert(sidebar_switch_mapping
+    and sidebar_switch_mapping.lhs == "<C-S>")
   vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
   sidebar_tab_toggle_from_sidebar.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
@@ -944,9 +949,6 @@ if integration_root and (integration_sha or integration_url) then
   local selected_chunk =
     sidebar_active.chunk_count > 1 and 2 or 1
   local selected_chunk_line = file_lines[1] + selected_chunk
-  local selected_parent_line = tonumber(
-    assert(sidebar_lines[selected_chunk_line]:match("%-(%d+)"))
-  )
   vim.api.nvim_win_set_cursor(
     sidebar_parent_win,
     { selected_chunk_line, 0 }
@@ -955,11 +957,14 @@ if integration_root and (integration_sha or integration_url) then
     buffer = sidebar_buf,
   })
   assert(vim.wait(1000, function()
+    local active = vim.b[sidebar_buf]
+      .pantheon_inspect_sidebar_active
     return vim.api.nvim_get_current_tabpage() == tabs[2]
       and vim.api.nvim_get_current_win() == sidebar_parent_win
-      and vim.api.nvim_win_get_cursor(parent_win)[1]
-        == selected_parent_line
+      and active.chunk_index == selected_chunk
   end), "sidebar chunk did not open in the main pane")
+  local selected_parent_line =
+    vim.api.nvim_win_get_cursor(parent_win)[1]
   sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
   assert(sidebar_active.chunk_index == selected_chunk)
   local selected_view = vim.api.nvim_win_call(
@@ -973,6 +978,25 @@ if integration_root and (integration_sha or integration_url) then
     pattern = tostring(parent_win),
   })
   assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
+  local parent_sidebar_view = vim.fn.winsaveview()
+  sidebar_switch_mapping.callback()
+  local sidebar_change_win = assert(sidebar_window(tabs[3]))
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == sidebar_change_win)
+  assert(vim.api.nvim_win_get_cursor(sidebar_change_win)[1]
+    == selected_chunk_line)
+  assert(vim.fn.winsaveview().topline
+    == parent_sidebar_view.topline)
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.pair_index == 1)
+  assert(sidebar_active.role == "change")
+  sidebar_switch_mapping.callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
+  assert(vim.api.nvim_win_get_cursor(sidebar_parent_win)[1]
+    == selected_chunk_line)
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.role == "parent")
   sidebar_open_mapping.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(vim.api.nvim_win_get_cursor(parent_win)[1]
@@ -1041,9 +1065,8 @@ if integration_root and (integration_sha or integration_url) then
       .pantheon_inspect_sidebar_active
     assert(sidebar_active.pair_index == 2)
     assert(sidebar_active.role == "parent")
-    local second_first_parent_line = tonumber(
-      assert(sidebar_lines[file_lines[2] + 1]:match("%-(%d+)"))
-    )
+    local second_first_parent_line =
+      vim.api.nvim_win_get_cursor(second_main_win)[1]
     sidebar_open_mapping.callback()
     assert(vim.api.nvim_get_current_win() == second_main_win)
     assert(vim.api.nvim_win_get_cursor(second_main_win)[1]

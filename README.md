@@ -33,12 +33,15 @@ first changed hunk. When that cursor is on line 10 or later, the tab applies
 `zt10<C-y>$` to normalize its view; lines 1–9 retain their existing view. Use
 `<C-Left>` and `<C-Right>` to jump to the previous and next hunks; the same
 line-10-aware view normalization is reapplied after every jump. `<C-s>`
-switches between the parent and changed tabs for the current file.
+switches between the parent and changed tabs for the current file from either
+the main pane or the changed-files sidebar; sidebar focus, row, and viewport
+are preserved.
 Every Inspect tab includes the same right-hand changed-files sidebar.
 The first inspected file starts at the top, and file rows show only the changed
 filename followed by `P C`. Each file expands into a visible tree of
-unnumbered hunks labeled with their parent and changed starting lines, without
-highlighting file or hunk rows.
+unnumbered hunks labeled with their changed-side start and end lines, such as
+`├─ 25-31`, without highlighting file or hunk rows. The sidebar is 28 columns
+wide.
 The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the visible version is underlined. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that
