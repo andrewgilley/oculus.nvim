@@ -59,6 +59,9 @@ M.state = {
   activity_notice = nil,
   activity_error = nil,
   activity_loaded = false,
+  activity_page = 1,
+  activity_page_size = 8,
+  activity_source_events = nil,
   activity_cursor_min_line = 1,
   activity_scroll_limit_line = nil,
   restore_cursor = nil,
@@ -175,7 +178,7 @@ local function render_activity_footer()
   local width = config.width
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  h inspect   ? shortcuts   j/← back   q close",
+    "  h inspect   n older   ? shortcuts   j/← back   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1006,12 +1009,20 @@ local function render_loading(contributor)
   M.state.view = "activity"
   M.state.activity_loaded = false
   M.state.activity_error = nil
+  local loading_text = M.state.activity_page > 1
+      and ("Loading older %s activity · page %d…"):format(
+        provider_name(contributor),
+        M.state.activity_page
+      )
+    or ("Loading recent %s activity…"):format(
+      provider_name(contributor)
+    )
   local lines = {
     "",
     "  " .. (contributor.name or contributor.username),
     "  @" .. contributor.username,
     "",
-    "  Loading recent " .. provider_name(contributor) .. " activity…",
+    "  " .. loading_text,
   }
   footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
@@ -1060,9 +1071,12 @@ local function render_activity(events, cached, notice)
   local lines = {
     "",
     "  " .. (contributor.name or contributor.username),
-    ("  %s · %s%s"):format(
+    ("  %s · %s%s%s"):format(
       "@" .. contributor.username,
       provider_name(contributor),
+      M.state.activity_page > 1
+          and (" · page " .. M.state.activity_page)
+        or "",
       cached and " · cached" or ""
     ),
   }
@@ -1113,7 +1127,9 @@ local function render_activity(events, cached, notice)
   end
 
   if #events == 0 then
-    lines[#lines + 1] = "  No recent public activity was returned."
+    lines[#lines + 1] = M.state.activity_page > 1
+        and "  No older public activity was returned."
+      or "  No recent public activity was returned."
     lines[#lines + 1] = ""
     scroll_limit_line = #lines
   end
@@ -1185,6 +1201,7 @@ local function render_shortcuts()
   })
   section("ACTIVITY", {
     { "h", "Inspect a commit or pull request" },
+    { "n", "Load the next eight older activity items" },
     { "<C-Left> / <C-Right>", "Jump through inspection changes" },
     { "o", "Open the selected activity" },
     { "r", "Refresh activity without using the cache" },
@@ -1238,9 +1255,26 @@ local function contributor_by_username(username)
   return nil
 end
 
-local function load_activity(contributor, force)
+local function activity_page(events, page, page_size)
+  local result = {}
+  local first = (page - 1) * page_size + 1
+  local last = math.min(#events, first + page_size - 1)
+  for index = first, last do
+    result[#result + 1] = events[index]
+  end
+  return result
+end
+
+M._activity_page = activity_page
+
+local function load_activity(contributor, force, page)
   M.state.view = "activity"
   M.state.contributor = contributor
+  M.state.activity_page = math.max(1, page or 1)
+  M.state.activity_page_size = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.results_limit) or 8)
+  )
   M.state.request_id = M.state.request_id + 1
   local request_id = M.state.request_id
   render_loading(contributor)
@@ -1252,6 +1286,10 @@ local function load_activity(contributor, force)
     M.state.opts,
     { force = force or false }
   )
+  local base_per_page =
+    math.max(1, math.floor(tonumber(M.state.opts.per_page) or 30))
+  request_opts.per_page = base_per_page
+    + (M.state.activity_page - 1) * M.state.activity_page_size
   local callback = function(events, err, cached, notice)
     if request_id ~= M.state.request_id or not is_valid_win(M.state.win) then
       return
@@ -1260,10 +1298,11 @@ local function load_activity(contributor, force)
       render_error(err)
     else
       local filtered = actions.filter(events, activity_types_for(contributor))
-      local results = vim.list_slice(
+      M.state.activity_source_events = filtered
+      local results = activity_page(
         filtered,
-        1,
-        M.state.opts.results_limit or 8
+        M.state.activity_page,
+        M.state.activity_page_size
       )
       render_activity(results, cached, notice)
       provider.enrich_pull_requests(results, request_opts, function(with_prs)
@@ -1283,6 +1322,17 @@ local function load_activity(contributor, force)
 
   provider.events(contributor.username, request_opts, callback)
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 14
+end
+
+local function next_activity_page()
+  if M.state.view ~= "activity" or not M.state.contributor then
+    return
+  end
+  load_activity(
+    M.state.contributor,
+    false,
+    (M.state.activity_page or 1) + 1
+  )
 end
 
 local function search_win_config()
@@ -1348,6 +1398,22 @@ local function cancel_search()
   end
 end
 
+local function prompt_query(buf)
+  local line = vim.api.nvim_buf_get_lines(
+    buf,
+    0,
+    1,
+    false
+  )[1] or ""
+  local prompt = vim.fn.prompt_getprompt(buf)
+  if prompt ~= "" and line:sub(1, #prompt) == prompt then
+    return line:sub(#prompt + 1)
+  end
+  return line
+end
+
+M._prompt_query = prompt_query
+
 local function update_search_results()
   if
     M.state.search_query == nil
@@ -1356,12 +1422,7 @@ local function update_search_results()
   then
     return
   end
-  local line = vim.api.nvim_buf_get_lines(
-    M.state.search_buf,
-    0,
-    1,
-    false
-  )[1] or ""
+  local line = prompt_query(M.state.search_buf)
   M.state.search_query = line
   M.state.search_results = fuzzy_contributors(M.state.contributors, line)
   M.state.search_index = 1
@@ -1742,8 +1803,12 @@ local function map_keys(buf)
     set_all_filter_types(true)
   end, "Enable all Pantheon activity types")
   map("n", function()
-    set_all_filter_types(false)
-  end, "Disable all Pantheon activity types")
+    if M.state.view == "activity" then
+      next_activity_page()
+    else
+      set_all_filter_types(false)
+    end
+  end, "Load older Pantheon activity or disable all filters")
   map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
   map("h", inspect_current, "Inspect Pantheon commit or pull request")
   map("k", function()

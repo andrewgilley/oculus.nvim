@@ -2,6 +2,9 @@
 
 <!-- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 15 Describe multi-forge activity support -->
 Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
+
+In a user's activity feed, press `n` to load the next page of eight older
+activity items and move directly to the first item on that page.
 <!-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 15 -->
 
 From the startup user list, press `/` to fuzzy-search contributor names and
@@ -20,21 +23,22 @@ immediate parent when that directory exists in the checkout, so opening Oil
 starts beside the file instead of at the project root. The tabs
 appear with animated loading indicators and are replaced in place when their
 files are ready. Cursor positions and scroll views remain linked within each
-pair, and `-`/`+` signs mark the old and new lines. The cursor starts at the
+pair. Only changed-version tabs show sign-column markers: `+` marks added
+lines and `-` marks deletion locations. Parent tabs have no sign column. The
+cursor starts at the
 first changed hunk. When that cursor is on line 10 or later, the tab applies
 `zt10<C-y>$` to normalize its view; lines 1–9 retain their existing view. Use
 `<C-Left>` and `<C-Right>` to jump to the previous and next hunks; the same
 line-10-aware view normalization is reapplied after every jump. `<Tab>` toggles
 only between the old and new tabs for the current file.
 `<C-s>` also switches between that file's parent and changed versions.
-`<C-n>` advances to the next changed file while keeping the current old/new
-side. Every Inspect tab includes the same right-hand changed-files sidebar.
-The first inspected file starts at the top, file rows are numbered, and long
-paths show only their parent directory and filename. Each file row includes
-its change-hunk count and expands into a visible tree of its hunks, labeled
-with their parent and changed starting lines. The active row shows the cursor's
-current hunk as `current/total`, and its corresponding tree child is
-highlighted.
+Every Inspect tab includes the same right-hand changed-files sidebar.
+The first inspected file starts at the top, and long paths show only their
+parent directory and filename. Each unnumbered file row includes its
+change-hunk count and expands into a visible tree of unnumbered hunks, labeled
+with their parent and changed starting lines. The active row shows the
+cursor's current hunk as `(current/total)`, and its corresponding tree child
+is highlighted.
 The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the active version is bold. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that
