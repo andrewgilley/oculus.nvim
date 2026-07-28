@@ -11,6 +11,15 @@ end
 
 local inspect = require("pantheon.inspect")
 
+assert(inspect._inspection_directory(
+  root,
+  "lua/pantheon/inspect.lua"
+) == vim.fs.joinpath(root, "lua", "pantheon"))
+assert(inspect._inspection_directory(
+  root,
+  "not-present/inspect.lua"
+) == root)
+
 local parsed = inspect._parse_commit_url(
   "https://github.com/neovim/neovim/commit/"
     .. "0123456789abcdef0123456789abcdef01234567#diff"
@@ -424,10 +433,18 @@ if integration_root and (integration_sha or integration_url) then
         vim.api.nvim_tabpage_list_wins(new_tab)[1],
         vim.fn.getcwd
       )
+      local expected_old_cwd = inspect._inspection_directory(
+        expected_source_root,
+        old_state.file
+      )
+      local expected_new_cwd = inspect._inspection_directory(
+        expected_source_root,
+        new_state.file
+      )
       assert(vim.fs.normalize(old_cwd):lower()
-        == vim.fs.normalize(expected_source_root):lower())
+        == vim.fs.normalize(expected_old_cwd):lower())
       assert(vim.fs.normalize(new_cwd):lower()
-        == vim.fs.normalize(expected_source_root):lower())
+        == vim.fs.normalize(expected_new_cwd):lower())
     end
   end
   if expected_commit_count then
@@ -539,7 +556,7 @@ if integration_root and (integration_sha or integration_url) then
     local oil = require("oil")
     oil.setup({ watch_for_changes = false })
     vim.api.nvim_set_current_tabpage(tabs[3])
-    oil.open(change_state.repository)
+    oil.open()
     assert(vim.wait(10000, function()
       local oil_buf = vim.api.nvim_get_current_buf()
       if vim.bo[oil_buf].filetype ~= "oil" then
@@ -557,6 +574,8 @@ if integration_root and (integration_sha or integration_url) then
         ) > 0
     end), "Oil entries were not decorated")
     local oil_buf = vim.api.nvim_get_current_buf()
+    assert(vim.fs.normalize(oil.get_current_dir()):lower()
+      == vim.fs.normalize(change_state.directory):lower())
     local oil_signs = vim.api.nvim_get_namespaces().pantheon_inspect_oil
     local oil_marks = vim.api.nvim_buf_get_extmarks(
       oil_buf,

@@ -257,6 +257,14 @@ local function directory(path)
   return stat and stat.type == "directory"
 end
 
+local function inspection_directory(repository, file)
+  if not file then
+    return repository
+  end
+  local parent = vim.fs.dirname(vim.fs.joinpath(repository, file))
+  return directory(parent) and parent or repository
+end
+
 local function forge_repository(url)
   if type(url) ~= "string" then
     return nil
@@ -1388,12 +1396,25 @@ local function show_loading_error(loading, message)
           .. " " .. endpoint.label
       )
       vim.bo[endpoint.buf].modifiable = true
-      vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, {
+      local error_lines = {
         "",
         "  Inspection failed",
         "",
-        "  " .. message,
-      })
+      }
+      for _, line in ipairs(vim.split(
+        tostring(message),
+        "\n",
+        { plain = true }
+      )) do
+        error_lines[#error_lines + 1] = "  " .. line:gsub("\r$", "")
+      end
+      vim.api.nvim_buf_set_lines(
+        endpoint.buf,
+        0,
+        -1,
+        false,
+        error_lines
+      )
       vim.bo[endpoint.buf].modifiable = false
       vim.api.nvim_buf_clear_namespace(endpoint.buf, loading_ns, 0, -1)
       vim.api.nvim_buf_add_highlight(
@@ -1430,7 +1451,8 @@ local function load_tab(
   if vim.api.nvim_win_is_valid(endpoint.win) then
     vim.api.nvim_set_current_win(endpoint.win)
   end
-  vim.cmd("tcd " .. vim.fn.fnameescape(path))
+  local working_directory = inspection_directory(path, file)
+  vim.cmd("tcd " .. vim.fn.fnameescape(working_directory))
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
   local lines = role == "change"
@@ -1469,6 +1491,7 @@ local function load_tab(
   vim.bo[buf].modifiable = false
   vim.bo[buf].readonly = true
   vim.b[buf].pantheon_inspect_repository = path
+  vim.b[buf].pantheon_inspect_directory = working_directory
   vim.b[buf].pantheon_inspect_source_path =
     file and vim.fs.joinpath(path, file) or nil
   local state = {
@@ -1480,6 +1503,7 @@ local function load_tab(
     parent_commit = inspection.parent,
     change_commit = inspection.commit,
     repository = path,
+    directory = working_directory,
     source_path = file and vim.fs.joinpath(path, file) or nil,
     loading = false,
     pair_index = pair_index,
@@ -1868,6 +1892,7 @@ M._parse_target_url = parse_target_url
 M._apply_pull_request = apply_pull_request
 M._first_changed_paths = first_changed_paths
 M._parse_changed_files = parse_changed_files
+M._inspection_directory = inspection_directory
 M._github_repository = github_repository
 M._forge_repository = forge_repository
 M._download_destination = download_destination
