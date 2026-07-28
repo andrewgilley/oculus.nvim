@@ -460,9 +460,21 @@ local function offer_repository_download(info, opts, callback)
     return
   end
   if vim.uv.fs_stat(destination) then
+    local root = repository_root(destination)
+    local normalized_destination = vim.fs.normalize(destination)
+    local normalized_root = root and vim.fs.normalize(root) or nil
+    if vim.uv.os_uname().sysname == "Windows_NT" then
+      normalized_destination = normalized_destination:lower()
+      normalized_root = normalized_root and normalized_root:lower() or nil
+    end
+    if normalized_root == normalized_destination then
+      callback(destination)
+      return
+    end
     callback(
       nil,
-      "cannot download because the destination already exists: "
+      "cannot use the existing destination because it is not a Git "
+        .. "repository: "
         .. destination
     )
     return
@@ -522,7 +534,7 @@ local function ensure_repository(info, opts, callback)
         callback(nil, download_err)
         return
       end
-      callback(downloaded, nil, "origin")
+      callback(downloaded, nil, info.remote_url)
     end)
   end)
 end

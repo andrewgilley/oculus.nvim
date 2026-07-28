@@ -241,6 +241,23 @@ end
 
 local download_root = vim.env.PANTHEON_INSPECT_TEST_DOWNLOAD_ROOT
 local download_source = vim.env.PANTHEON_INSPECT_TEST_DOWNLOAD_SOURCE
+
+local existing_repository = vim.fs.normalize(vim.fn.getcwd())
+local existing_repository_result
+local existing_repository_error
+inspect._offer_repository_download({
+  owner = "andrewgilley",
+  repo = vim.fs.basename(existing_repository),
+  remote_url = "https://github.com/andrewgilley/pantheon.nvim.git",
+}, {
+  inspect_search_paths = { vim.fs.dirname(existing_repository) },
+}, function(path, err)
+  existing_repository_result = path
+  existing_repository_error = err
+end)
+assert(existing_repository_result, existing_repository_error)
+assert(vim.fs.normalize(existing_repository_result) == existing_repository)
+
 if download_root and download_source then
   local original_select = vim.ui.select
   local prompted = false
