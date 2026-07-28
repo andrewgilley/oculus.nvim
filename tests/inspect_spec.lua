@@ -434,8 +434,12 @@ if integration_root and (integration_sha or integration_url) then
     buffers[new_buf] = true
     local old_name = vim.api.nvim_buf_get_name(old_buf)
     local new_name = vim.api.nvim_buf_get_name(new_buf)
-    assert(old_name == "")
-    assert(new_name == "")
+    assert(not old_name:lower():match("pantheon%-inspect"))
+    assert(not new_name:lower():match("pantheon%-inspect"))
+    assert(not old_name:match(" Old "))
+    assert(not old_name:match(" New "))
+    assert(not new_name:match(" Old "))
+    assert(not new_name:match(" New "))
     assert(vim.b[old_buf].pantheon_inspect_repository)
     assert(vim.b[new_buf].pantheon_inspect_repository)
     if expected_source_root then
@@ -561,12 +565,45 @@ if integration_root and (integration_sha or integration_url) then
   assert(next_file_mapped)
 
   vim.api.nvim_set_current_tabpage(tabs[3])
+  assert(vim.fs.normalize(vim.api.nvim_buf_get_name(change_buf)):lower()
+    == vim.fs.normalize(change_state.source_path):lower())
+  local initial_cursor = vim.api.nvim_win_get_cursor(change_win)
+  local initial_line = vim.api.nvim_buf_get_lines(
+    change_buf,
+    initial_cursor[1] - 1,
+    initial_cursor[1],
+    false
+  )[1] or ""
+  assert(initial_cursor[2] == math.max(0, #initial_line - 1))
+  local initial_view = vim.api.nvim_win_call(
+    change_win,
+    vim.fn.winsaveview
+  )
+  assert(initial_view.topline == math.max(1, initial_cursor[1] - 10))
+  local initial_parent_cursor = vim.api.nvim_win_get_cursor(parent_win)
+  local initial_parent_line = vim.api.nvim_buf_get_lines(
+    parent_buf,
+    initial_parent_cursor[1] - 1,
+    initial_parent_cursor[1],
+    false
+  )[1] or ""
+  assert(initial_parent_cursor[2]
+    == math.max(0, #initial_parent_line - 1))
+  local initial_parent_view = vim.api.nvim_win_call(
+    parent_win,
+    vim.fn.winsaveview
+  )
+  assert(initial_parent_view.topline
+    == math.max(1, initial_parent_cursor[1] - 10))
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<Tab>", true, false, true),
     "x",
     false
   )
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.fs.normalize(vim.api.nvim_buf_get_name(parent_buf)):lower()
+    == vim.fs.normalize(parent_state.source_path):lower())
+  assert(vim.api.nvim_buf_get_name(change_buf) == "")
   if pair_count > 1 then
     vim.api.nvim_feedkeys(
       vim.api.nvim_replace_termcodes("<C-n>", true, false, true),
