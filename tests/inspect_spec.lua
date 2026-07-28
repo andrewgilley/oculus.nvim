@@ -275,10 +275,11 @@ if integration_root and (integration_sha or integration_url) then
   local previous_mapped = false
   local next_mapped = false
   for _, mapping in ipairs(jump_maps) do
-    previous_mapped = previous_mapped
-      or mapping.desc == "Previous Pantheon change"
-    next_mapped = next_mapped
-      or mapping.desc == "Next Pantheon change"
+    if mapping.desc == "Previous Pantheon change" then
+      previous_mapped = mapping.lhs == "[c"
+    elseif mapping.desc == "Next Pantheon change" then
+      next_mapped = mapping.lhs == "]c"
+    end
   end
   assert(previous_mapped)
   assert(next_mapped)
@@ -324,5 +325,23 @@ if integration_root and (integration_sha or integration_url) then
           {}
         ) > 0
     end), "Oil entries were not decorated")
+    local oil_buf = vim.api.nvim_get_current_buf()
+    local oil_signs = vim.api.nvim_get_namespaces().pantheon_inspect_oil
+    local oil_marks = vim.api.nvim_buf_get_extmarks(
+      oil_buf,
+      oil_signs,
+      0,
+      -1,
+      { details = true }
+    )
+    assert(#oil_marks > 0)
+    assert(oil_marks[1][4].sign_text)
+    assert(oil_marks[1][4].virt_text == nil)
+    assert(vim.wo[vim.api.nvim_get_current_win()].signcolumn == "yes")
+    local oil_highlight = vim.api.nvim_get_hl(0, {
+      name = oil_marks[1][4].sign_hl_group,
+      link = false,
+    })
+    assert(oil_highlight.bg == nil)
   end
 end

@@ -12,16 +12,15 @@ loading indicators and are replaced in place when their files are ready. The
 first changed file is opened in each tab when one is available. Cursor
 positions and scroll views remain linked between the tabs, and `-`/`+` signs
 mark the base/parent and changed lines. The cursor starts at the first changed
-hunk; use `<C-1>` and `<C-3>` to jump to the previous and next hunks.
+hunk; use `[c` and `]c` to jump to the previous and next hunks.
 Inspection repositories and worktrees are cached under Neovim's cache
 directory; set `inspect_root` in `require("pantheon").setup()` to use a
 different location.
 
 When an inspection worktree is opened with
-[oil.nvim](https://github.com/stevearc/oil.nvim), Oil entries are annotated as
-added, modified, deleted, or renamed. Directories containing changed files are
-marked as well, so changes remain visible while navigating from the worktree
-root.
+[oil.nvim](https://github.com/stevearc/oil.nvim), a single foreground-only
+symbol marks each relevant entry: `+` added, `~` modified, `-` deleted, `→`
+renamed, and `•` a directory containing changes.
 
 Pantheon first checks the repositories associated with the current working
 directories and loaded buffers. If a matching clone is available, its local
