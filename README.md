@@ -13,9 +13,11 @@ On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
 Pantheon reads each commit and its first parent from Git without changing the
 local checkout. Every changed file opens an adjacent old/new tab pair. Pull
-requests group those file pairs by commit, in commit order. Each tab remains
-anchored to the standard local repository directory and records the original
-relative source path; no separate Pantheon worktree is created. The tabs
+requests group those file pairs by commit, in commit order. Each tab records
+the standard local repository and original relative source path; no separate
+Pantheon worktree is created. Its tab-local directory is the inspected file's
+immediate parent when that directory exists in the checkout, so opening Oil
+starts beside the file instead of at the project root. The tabs
 appear with animated loading indicators and are replaced in place when their
 files are ready. Cursor positions and scroll views remain linked within each
 pair, and `-`/`+` signs mark the old and new lines. The cursor starts at the
