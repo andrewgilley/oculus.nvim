@@ -23,18 +23,23 @@ files are ready. Cursor positions and scroll views remain linked within each
 pair, and `-`/`+` signs mark the old and new lines. The cursor starts at the
 first changed hunk. When that cursor is on line 10 or later, the tab applies
 `zt10<C-y>$` to normalize its view; lines 1–9 retain their existing view. Use
-`<C-Left>` and `<C-Right>` to jump to the previous and next hunks. `<Tab>`
-toggles only between the old and new tabs for the current file.
+`<C-Left>` and `<C-Right>` to jump to the previous and next hunks; the same
+line-10-aware view normalization is reapplied after every jump. `<Tab>` toggles
+only between the old and new tabs for the current file.
 `<C-s>` also switches between that file's parent and changed versions.
 `<C-n>` advances to the next changed file while keeping the current old/new
 side. Every Inspect tab includes the same right-hand changed-files sidebar.
-The first inspected file starts at the top, rows are numbered, and long paths
-show only their parent directory and filename. Each row includes its change
-hunk count; the active row shows the cursor's current hunk as `current/total`.
+The first inspected file starts at the top, file rows are numbered, and long
+paths show only their parent directory and filename. Each file row includes
+its change-hunk count and expands into a visible tree of its hunks, labeled
+with their parent and changed starting lines. The active row shows the cursor's
+current hunk as `current/total`, and its corresponding tree child is
+highlighted.
 The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the active version is bold. Inspect opens on the
-parent version of the first file. Moving the cursor onto a sidebar row opens
-that file on the same side while keeping the sidebar active. Required
+parent version of the first file. Moving the cursor onto a file row opens that
+file on the same side; moving onto a hunk child also jumps the main pane to
+that hunk. Focus remains in the sidebar in both cases. Required
 revisions are resolved or fetched through the project's own `.git` directory.
 Inspect does not create a separate Pantheon repository, object cache, or
 worktree, and it does not alter the working checkout.
