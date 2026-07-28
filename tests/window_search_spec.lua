@@ -87,18 +87,19 @@ local expected_left_width = math.max(
 local search_config = vim.api.nvim_win_get_config(state.search_win)
 local expected_right_width = main_width - expected_left_width - 1
 local expected_midpoint = math.floor(expected_right_width / 2)
+local expected_search_start = math.max(0, expected_midpoint - 3)
 local expected_outer_width =
-  expected_right_width - expected_midpoint - 1
+  expected_right_width - expected_search_start
 assert(search_config.col
   == main_position[2]
     + expected_left_width
     + 1
-    + expected_midpoint)
+    + expected_search_start)
 assert(search_config.width
   == expected_outer_width - 2)
 assert(
   search_config.col + search_config.width + 2
-    == main_position[2] + main_width - 1
+    == main_position[2] + main_width
 )
 assert(search_config.title == nil or search_config.title == "")
 local initial_search_lines = table.concat(
