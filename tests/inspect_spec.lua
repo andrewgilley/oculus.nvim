@@ -47,26 +47,25 @@ vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
 vim.bo[viewport_buf].modified = false
 
 local shortened_sidebar_row = inspect._sidebar_row(
-  "a/very/long/path/to/a/changed/file.lua",
-  24,
-  "2/7"
+  "a-very-long-changed-file-name.lua",
+  24
 )
 assert(shortened_sidebar_row.line:match("^…"))
-assert(shortened_sidebar_row.line:match("%(2/7%) P C$"))
+assert(shortened_sidebar_row.line:match(" P C$"))
 assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
 assert(inspect._sidebar_chunk_row(
   { old_start = 24, new_start = 25 },
   false
-) == "  ├─ • -24 +25")
+) == "  ├─• -24 +25")
 assert(inspect._sidebar_chunk_row(
   { old_start = 30, new_start = 31 },
   true
-) == "  └─ • -30 +31")
+) == "  └─• -30 +31")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
-) == "changed/file.lua")
+) == "file.lua")
 assert(inspect._sidebar_file("README.md") == "README.md")
 
 assert(inspect._inspection_directory(
@@ -599,20 +598,20 @@ if integration_root and (integration_sha or integration_url) then
   local chunk_lines = 0
   for line_number, line in ipairs(sidebar_lines) do
     local branch =
-      line:match("^  ├─ • %-%d+ %+%d+$")
-        or line:match("^  └─ • %-%d+ %+%d+$")
+      line:match("^  ├─• %-%d+ %+%d+$")
+        or line:match("^  └─• %-%d+ %+%d+$")
     if branch then
       chunk_lines = chunk_lines + 1
     else
       file_lines[#file_lines + 1] = line_number
-      assert(line:match("%([%d/]+%) P C$"))
+      assert(line:match(" P C$"))
       assert(not line:match("^%d+%. "))
       assert(vim.fn.strdisplaywidth(line) == sidebar_width)
       local displayed_file = line
-        :gsub("%s+%([%d/]+%) P C$", "")
+        :gsub("%s+P C$", "")
         :gsub("^…", "")
       local _, separators = displayed_file:gsub("/", "")
-      assert(separators <= 1)
+      assert(separators == 0)
     end
   end
   assert(#file_lines == pair_count)
@@ -804,7 +803,7 @@ if integration_root and (integration_sha or integration_url) then
     0,
     -1,
     {}
-  ) >= pair_count * 2 + 1)
+  ) == pair_count * 2)
   local file_line_lookup = {}
   for _, line in ipairs(file_lines) do
     file_line_lookup[line] = true
@@ -933,23 +932,6 @@ if integration_root and (integration_sha or integration_url) then
   if jumped_cursor[1] >= 10 then
     assert(jumped_view.topline == jumped_cursor[1] - 10)
   end
-  local chunk_label =
-    ("(%d/%d)"):format(expected_chunk, sidebar_active.chunk_count)
-  local chunk_label_visible = false
-  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
-    sidebar_buf,
-    sidebar_signs,
-    0,
-    -1,
-    { details = true }
-  )) do
-    for _, part in ipairs(mark[4].virt_text or {}) do
-      if vim.trim(part[1]) == chunk_label then
-        chunk_label_visible = true
-      end
-    end
-  end
-  assert(chunk_label_visible, "active chunk label was not rendered")
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-Left>", true, false, true),
     "x",

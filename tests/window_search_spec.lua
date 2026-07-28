@@ -220,9 +220,9 @@ assert(state.events[1].id == "1")
 assert(state.events[8].id == "8")
 assert(requested_per_page[1] == 30)
 
-local past_mapping = vim.fn.maparg("b", "n", false, true)
+local past_mapping = vim.fn.maparg("p", "n", false, true)
 assert(past_mapping.desc == "Load past Pantheon activity")
-assert(vim.fn.maparg("p", "n", false, true).callback == nil)
+assert(vim.fn.maparg("b", "n", false, true).callback == nil)
 past_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
@@ -241,7 +241,7 @@ local footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(footer_text:find("b back", 1, true))
+assert(footer_text:find("p past", 1, true))
 assert(footer_text:find("r recent", 1, true))
 
 past_mapping.callback()
@@ -264,7 +264,7 @@ local recent_footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(recent_footer_text:find("b back", 1, true))
+assert(recent_footer_text:find("p past", 1, true))
 assert(recent_footer_text:find("r recent", 1, true))
 
 recent_mapping.callback()
@@ -274,7 +274,7 @@ local page_one_footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(page_one_footer_text:find("b back", 1, true))
+assert(page_one_footer_text:find("p past", 1, true))
 assert(not page_one_footer_text:find("r recent", 1, true))
 
 window.close()
