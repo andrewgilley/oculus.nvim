@@ -133,6 +133,12 @@ assert(hunks[2].old_count == 1)
 assert(hunks[2].new_count == 0)
 assert(hunks[3].old_count == 0)
 assert(hunks[3].new_count == 4)
+local jump_lines = inspect._change_lines(hunks)
+assert(vim.deep_equal(jump_lines, { 10, 25, 31 }))
+assert(inspect._next_change_line(jump_lines, 10, 1) == 25)
+assert(inspect._next_change_line(jump_lines, 31, 1) == 10)
+assert(inspect._next_change_line(jump_lines, 25, -1) == 10)
+assert(inspect._next_change_line(jump_lines, 10, -1) == 31)
 
 local missing_root = vim.env.PANTHEON_INSPECT_TEST_MISSING_ROOT
 if missing_root then
@@ -252,13 +258,30 @@ if integration_root and (integration_sha or integration_url) then
     -1,
     {}
   ) > 0)
-  assert(#vim.api.nvim_buf_get_extmarks(
+  local change_marks = vim.api.nvim_buf_get_extmarks(
     change_buf,
     signs,
     0,
     -1,
     {}
-  ) > 0)
+  )
+  assert(#change_marks > 0)
+  assert(vim.api.nvim_win_get_cursor(change_win)[1]
+    == change_marks[1][2] + 1)
+  assert(vim.api.nvim_win_get_cursor(parent_win)[1]
+    == change_marks[1][2] + 1)
+
+  local jump_maps = vim.api.nvim_buf_get_keymap(change_buf, "n")
+  local previous_mapped = false
+  local next_mapped = false
+  for _, mapping in ipairs(jump_maps) do
+    previous_mapped = previous_mapped
+      or mapping.desc == "Previous Pantheon change"
+    next_mapped = next_mapped
+      or mapping.desc == "Next Pantheon change"
+  end
+  assert(previous_mapped)
+  assert(next_mapped)
 
   vim.api.nvim_set_current_tabpage(tabs[3])
   local linked_line = math.min(
