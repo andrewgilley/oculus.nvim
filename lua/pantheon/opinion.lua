@@ -128,7 +128,11 @@ local function open_view(opts)
   vim.bo[buf].modifiable = false
   vim.bo[buf].readonly = true
   vim.bo[buf].filetype = opts.filetype
-  view.win = vim.api.nvim_open_win(buf, opts.enter ~= false, window_config(opts))
+  view.win = vim.api.nvim_open_win(
+    buf,
+    opts.enter ~= false,
+    window_config(opts)
+  )
   vim.wo[view.win].wrap = true
   vim.wo[view.win].linebreak = true
   vim.wo[view.win].cursorline = false
@@ -200,7 +204,11 @@ function M.context(buf, win)
   local inspection = inspection_state(buf)
   local source_path = vim.b[buf].pantheon_inspect_source_path
   local buffer_name = vim.api.nvim_buf_get_name(buf)
-  if not source_path and buffer_name ~= "" and not buffer_name:match("^[%w-]+://") then
+  if
+    not source_path
+    and buffer_name ~= ""
+    and not buffer_name:match("^[%w-]+://")
+  then
     source_path = vim.fs.normalize(buffer_name)
   end
 

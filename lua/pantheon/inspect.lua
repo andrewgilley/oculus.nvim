@@ -1472,10 +1472,13 @@ local function load_tab(
   vim.b[buf].pantheon_inspect_source_path =
     file and vim.fs.joinpath(path, file) or nil
   local state = {
+    kind = inspection.kind,
     role = role,
     commit = role == "change"
         and inspection.commit
       or inspection.parent,
+    parent_commit = inspection.parent,
+    change_commit = inspection.commit,
     repository = path,
     source_path = file and vim.fs.joinpath(path, file) or nil,
     loading = false,
@@ -1484,6 +1487,8 @@ local function load_tab(
     file_index = inspection.file_index,
     file_count = inspection.file_count,
     file = file,
+    parent_file = inspection.parent_file,
+    change_file = inspection.change_file,
     status = inspection.status,
   }
   vim.t.pantheon_inspect = state
