@@ -415,8 +415,10 @@ if integration_root and (integration_sha or integration_url) then
     buffers[old_buf] = true
     assert(not buffers[new_buf])
     buffers[new_buf] = true
-    assert(vim.api.nvim_buf_get_name(old_buf):match(" Old · "))
-    assert(vim.api.nvim_buf_get_name(new_buf):match(" New · "))
+    local old_name = vim.api.nvim_buf_get_name(old_buf)
+    local new_name = vim.api.nvim_buf_get_name(new_buf)
+    assert(old_name == "")
+    assert(new_name == "")
     assert(vim.b[old_buf].pantheon_inspect_repository)
     assert(vim.b[new_buf].pantheon_inspect_repository)
     if expected_source_root then
@@ -523,17 +525,40 @@ if integration_root and (integration_sha or integration_url) then
   local jump_maps = vim.api.nvim_buf_get_keymap(change_buf, "n")
   local previous_mapped = false
   local next_mapped = false
+  local toggle_mapped = false
+  local next_file_mapped = false
   for _, mapping in ipairs(jump_maps) do
     if mapping.desc == "Previous Pantheon change" then
       previous_mapped = mapping.lhs == "<C-Left>"
     elseif mapping.desc == "Next Pantheon change" then
       next_mapped = mapping.lhs == "<C-Right>"
+    elseif mapping.desc == "Toggle Pantheon file version" then
+      toggle_mapped = mapping.lhs == "<Tab>"
+    elseif mapping.desc == "Next Pantheon changed file" then
+      next_file_mapped = mapping.lhs == "<C-N>"
     end
   end
   assert(previous_mapped)
   assert(next_mapped)
+  assert(toggle_mapped)
+  assert(next_file_mapped)
 
   vim.api.nvim_set_current_tabpage(tabs[3])
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes("<Tab>", true, false, true),
+    "x",
+    false
+  )
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  if pair_count > 1 then
+    vim.api.nvim_feedkeys(
+      vim.api.nvim_replace_termcodes("<C-n>", true, false, true),
+      "x",
+      false
+    )
+    assert(vim.api.nvim_get_current_tabpage() == tabs[4])
+    vim.api.nvim_set_current_tabpage(tabs[3])
+  end
   local linked_line = math.min(
     2,
     vim.api.nvim_buf_line_count(parent_buf),
