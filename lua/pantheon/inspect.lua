@@ -1291,15 +1291,17 @@ local function sidebar_file(file)
 end
 
 local function sidebar_row(file, width)
+  local prefix = "• "
   local suffix = "P C"
   local path_width = math.max(
     1,
     width
+      - vim.fn.strdisplaywidth(prefix)
       - vim.fn.strdisplaywidth(suffix)
       - 1
   )
   local path = truncate_path(file, path_width)
-  local body = path
+  local body = prefix .. path
   local padding = math.max(
     1,
     width

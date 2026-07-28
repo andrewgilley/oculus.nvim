@@ -50,7 +50,7 @@ local shortened_sidebar_row = inspect._sidebar_row(
   "a-very-long-changed-file-name.lua",
   24
 )
-assert(shortened_sidebar_row.line:match("^…"))
+assert(shortened_sidebar_row.line:match("^• …"))
 assert(shortened_sidebar_row.line:match(" P C$"))
 assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
@@ -604,11 +604,13 @@ if integration_root and (integration_sha or integration_url) then
       chunk_lines = chunk_lines + 1
     else
       file_lines[#file_lines + 1] = line_number
+      assert(line:match("^• "))
       assert(line:match(" P C$"))
       assert(not line:match("^%d+%. "))
       assert(vim.fn.strdisplaywidth(line) == sidebar_width)
       local displayed_file = line
         :gsub("%s+P C$", "")
+        :gsub("^• ", "")
         :gsub("^…", "")
       local _, separators = displayed_file:gsub("/", "")
       assert(separators == 0)
