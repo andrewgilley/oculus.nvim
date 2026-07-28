@@ -196,7 +196,7 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local activity_commands = "  h inspect   p past"
+  local activity_commands = "  h inspect   b back"
   if (M.state.activity_page or 1) > 1 then
     activity_commands = activity_commands .. "   r recent"
   end
@@ -1222,7 +1222,7 @@ local function render_shortcuts()
   })
   section("ACTIVITY", {
     { "h", "Inspect a commit or pull request" },
-    { "p", "Load the next eight past activity items" },
+    { "b", "Load the next eight past activity items" },
     { "r", "Load the previous page of recent activity" },
     { "<C-Left> / <C-Right>", "Jump through inspection changes" },
     { "o", "Open the selected activity" },
@@ -1380,8 +1380,8 @@ local function search_win_config()
   local left_width = preview_left_width(parent_width)
   local right_width = math.max(3, parent_width - left_width - 1)
   local midpoint = math.floor(right_width / 2)
-  local search_start = math.max(0, midpoint - 3)
-  local outer_width = math.max(3, right_width - search_start)
+  local search_start = math.max(0, midpoint - 2)
+  local outer_width = math.max(3, right_width - search_start - 1)
   return {
     relative = "editor",
     width = math.max(1, outer_width - 2),
@@ -1864,7 +1864,7 @@ local function map_keys(buf)
   map("n", function()
     set_all_filter_types(false)
   end, "Disable all Pantheon activity filters")
-  map("p", next_activity_page, "Load past Pantheon activity")
+  map("b", next_activity_page, "Load past Pantheon activity")
   map("r", previous_activity_page, "Load more recent Pantheon activity")
   map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
   map("h", inspect_current, "Inspect Pantheon commit or pull request")
