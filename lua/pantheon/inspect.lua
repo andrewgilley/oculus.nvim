@@ -1487,6 +1487,7 @@ local function load_tab(
     status = inspection.status,
   }
   vim.t.pantheon_inspect = state
+  vim.b[buf].pantheon_inspect = vim.deepcopy(state)
   local loaded = {
     tab = vim.api.nvim_get_current_tabpage(),
     win = vim.api.nvim_get_current_win(),

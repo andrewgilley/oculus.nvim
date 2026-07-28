@@ -4,6 +4,11 @@
 Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
 <!-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 15 -->
 
+From the startup user list, press `/` to fuzzy-search contributor names and
+handles. Results and the contributor preview update as you type. Use
+`<Up>`/`<Down>` (or `<C-p>`/`<C-n>`) to preview another match, `<CR>` to open
+it, and `<Esc>` to cancel the search.
+
 On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
 Pantheon reads each commit and its first parent from Git without changing the
@@ -43,6 +48,35 @@ require("pantheon").setup({
   },
 })
 ```
+
+Pantheon also provides a provider-neutral foundation for model-assisted
+opinions. It does not make network requests or choose a model on its own.
+Configure an asynchronous provider and call `consult` with an action-specific
+request:
+
+```lua
+require("pantheon").setup({
+  opinion = {
+    provider = function(request, respond)
+      -- Pass request to the model integration of your choice.
+      -- Call respond(result) or respond(nil, error_message) when it finishes.
+      my_model.ask(request, respond)
+    end,
+  },
+})
+
+require("pantheon").consult({
+  action = "review",
+  prompt = "Give a concise opinion about this change.",
+})
+```
+
+The request is enriched with current project, buffer, and inspection metadata.
+The provider's string (or `{ text = ..., filetype = ... }` result) is shown in
+a read-only floating buffer. Returning a function or an object with `cancel`
+lets Pantheon cancel pending work when the float is closed. Actions, prompts,
+model adapters, commands, and inspection keybindings remain separate so they
+can be integrated without changing the display lifecycle.
 
 <img width="1902" height="1027" alt="pantheon" src="https://github.com/user-attachments/assets/c6de957e-f9ba-4c7f-870f-8fc46754b673" />
 <img width="1917" height="1061" alt="pan" src="https://github.com/user-attachments/assets/d75e4a85-a02c-410d-ad4f-62fce8f361da" />

@@ -32,6 +32,14 @@ local defaults = {
   inspect_cache_ttl = 60,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
+  opinion = {
+    provider = nil,
+    width = 0.64,
+    height = 0.70,
+    border = "rounded",
+    title = " Pantheon opinion ",
+    filetype = "markdown",
+  },
   token = nil,
 
   contributors = {
@@ -369,6 +377,21 @@ end
 
 function M.toggle()
   require("pantheon.window").toggle(M.config)
+end
+
+function M.consult(request)
+  return require("pantheon.opinion").consult(request, M.config.opinion)
+end
+
+function M.show_opinion(value, opts)
+  return require("pantheon.opinion").show(
+    value,
+    vim.tbl_deep_extend(
+      "force",
+      vim.deepcopy(M.config.opinion),
+      opts or {}
+    )
+  )
 end
 
 return M
