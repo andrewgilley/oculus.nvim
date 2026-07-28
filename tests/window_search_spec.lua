@@ -35,10 +35,25 @@ window.open({
   height = 0.8,
   border = "rounded",
   contributor_list_limit = 20,
+  navigation_delay = 50,
   contributors = contributors,
 })
 
 local state = window.state
+local main_down_mapping =
+  vim.fn.maparg("<Down>", "n", false, true)
+local first_username = state.selected_username
+main_down_mapping.callback()
+local second_username = state.selected_username
+assert(second_username ~= first_username)
+main_down_mapping.callback()
+assert(state.selected_username == second_username)
+vim.wait(70, function()
+  return false
+end)
+main_down_mapping.callback()
+assert(state.selected_username ~= second_username)
+
 local page_events = {}
 for index = 1, 20 do
   page_events[index] = { id = tostring(index) }
@@ -71,16 +86,20 @@ local expected_left_width = math.max(
 )
 local search_config = vim.api.nvim_win_get_config(state.search_win)
 local expected_right_width = main_width - expected_left_width - 1
-local expected_outer_width = math.min(30, expected_right_width)
+local expected_midpoint = math.floor(expected_right_width / 2)
+local expected_outer_width =
+  expected_right_width - expected_midpoint - 1
 assert(search_config.col
   == main_position[2]
     + expected_left_width
     + 1
-    + math.floor(
-      (expected_right_width - expected_outer_width) / 2
-    ))
+    + expected_midpoint)
 assert(search_config.width
   == expected_outer_width - 2)
+assert(
+  search_config.col + search_config.width + 2
+    == main_position[2] + main_width - 1
+)
 assert(search_config.title == nil or search_config.title == "")
 local initial_search_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
@@ -101,10 +120,34 @@ vim.api.nvim_buf_set_lines(
 vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
 assert(state.search_query == "m")
 assert(#state.search_results == 2)
-local down_mapping = vim.fn.maparg("<Down>", "i", false, true)
-down_mapping.callback()
+local search_down_mapping =
+  vim.fn.maparg("<C-k>", "i", false, true)
+local search_up_mapping =
+  vim.fn.maparg("<C-i>", "i", false, true)
+local search_up_tab_mapping =
+  vim.fn.maparg("<Tab>", "i", false, true)
+assert(search_down_mapping.desc
+  == "Move down in Pantheon user search results")
+assert(search_up_mapping.desc
+  == "Move up in Pantheon user search results")
+assert(search_up_tab_mapping.desc
+  == "Move up in Pantheon user search results")
+search_down_mapping.callback()
 assert(state.search_index == 2)
 assert(state.preview_items[4][1] == state.search_results[2].name)
+search_up_mapping.callback()
+assert(state.search_index == 2)
+vim.wait(70, function()
+  return false
+end)
+search_up_mapping.callback()
+assert(state.search_index == 1)
+assert(state.preview_items[4][1] == state.search_results[1].name)
+vim.wait(70, function()
+  return false
+end)
+search_down_mapping.callback()
+assert(state.search_index == 2)
 
 vim.api.nvim_buf_set_lines(
   state.search_buf,

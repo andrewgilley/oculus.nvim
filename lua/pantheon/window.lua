@@ -74,6 +74,8 @@ M.state = {
   search_return = nil,
   opening_search = false,
   closing_search = false,
+  last_contributor_move = nil,
+  last_search_move = nil,
   opts = {},
 }
 
@@ -83,6 +85,24 @@ end
 
 local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
+end
+
+local function movement_allowed(field)
+  local delay = math.max(
+    0,
+    tonumber(M.state.opts.navigation_delay) or 80
+  )
+  if delay == 0 then
+    return true
+  end
+
+  local now = vim.uv.hrtime() / 1000000
+  local previous = M.state[field]
+  if previous and now - previous < delay then
+    return false
+  end
+  M.state[field] = now
+  return true
 end
 
 local function dimension(value, total, fallback, minimum)
@@ -1340,7 +1360,8 @@ local function search_win_config()
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(parent_width)
   local right_width = math.max(3, parent_width - left_width - 1)
-  local outer_width = math.min(30, right_width)
+  local midpoint = math.floor(right_width / 2)
+  local outer_width = math.max(3, right_width - midpoint - 1)
   return {
     relative = "editor",
     width = math.max(1, outer_width - 2),
@@ -1349,7 +1370,7 @@ local function search_win_config()
     col = position[2]
       + left_width
       + 1
-      + math.floor((right_width - outer_width) / 2),
+      + midpoint,
     style = "minimal",
     border = M.state.opts.border or "rounded",
     zindex = 70,
@@ -1379,6 +1400,7 @@ local function clear_search_state()
   M.state.search_results = nil
   M.state.search_index = 1
   M.state.search_return = nil
+  M.state.last_search_move = nil
 end
 
 local function cancel_search()
@@ -1426,6 +1448,7 @@ local function update_search_results()
   M.state.search_query = line
   M.state.search_results = fuzzy_contributors(M.state.contributors, line)
   M.state.search_index = 1
+  M.state.last_search_move = nil
   M.state.contributor_offset = 1
   local first = M.state.search_results[1]
   M.state.selected_username = first and first.username or nil
@@ -1435,6 +1458,9 @@ end
 local function move_search_selection(direction)
   local results = M.state.search_results or {}
   if #results == 0 then
+    return
+  end
+  if not movement_allowed("last_search_move") then
     return
   end
   M.state.search_index = (
@@ -1477,6 +1503,7 @@ local function open_search()
   M.state.search_query = ""
   M.state.search_results = fuzzy_contributors(M.state.contributors, "")
   M.state.search_index = 1
+  M.state.last_search_move = nil
   for index, contributor in ipairs(M.state.search_results) do
     if contributor.username == M.state.selected_username then
       M.state.search_index = index
@@ -1536,6 +1563,15 @@ local function open_search()
   search_map("<C-p>", function()
     move_search_selection(-1)
   end, "Preview previous Pantheon user search result")
+  search_map("<C-i>", function()
+    move_search_selection(-1)
+  end, "Move up in Pantheon user search results")
+  search_map("<Tab>", function()
+    move_search_selection(-1)
+  end, "Move up in Pantheon user search results")
+  search_map("<C-k>", function()
+    move_search_selection(1)
+  end, "Move down in Pantheon user search results")
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = autocmd_group,
@@ -1651,6 +1687,9 @@ local function move_cursor(direction)
   end
 
   if M.state.view == "contributors" and #M.state.contributors > 0 then
+    if not movement_allowed("last_contributor_move") then
+      return
+    end
     local target = target_on_cursor()
     local username = type(target) == "table" and target.username
       or M.state.selected_username
@@ -1858,6 +1897,8 @@ function M.close()
   M.state.contributors = {}
   M.state.filter_scope = nil
   M.state.shortcut_return = nil
+  M.state.last_contributor_move = nil
+  M.state.last_search_move = nil
 end
 
 function M.open(opts)
@@ -1872,6 +1913,8 @@ function M.open(opts)
 
   local buf = make_buf()
   local win = vim.api.nvim_open_win(buf, true, make_win_config(M.state.opts))
+  M.state.last_contributor_move = nil
+  M.state.last_search_move = nil
   M.state.buf = buf
   M.state.win = win
   M.state.contributors = display_contributors(M.state.opts.contributors)

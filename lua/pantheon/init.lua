@@ -20,6 +20,7 @@ local defaults = {
   per_page = 30,
   results_limit = 8,
   contributor_list_limit = 20,
+  navigation_delay = 80,
   push_detail_limit = 10,
   cache_ttl = 300,
   request_timeout = 15,
