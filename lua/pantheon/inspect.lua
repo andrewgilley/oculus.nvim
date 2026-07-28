@@ -1247,12 +1247,6 @@ local function map_file_navigation(endpoint, session, role)
       role == "parent" and session.change or session.parent
     )
   end
-  vim.keymap.set("n", "<Tab>", toggle_version, {
-    buffer = endpoint.buf,
-    nowait = true,
-    silent = true,
-    desc = "Toggle Pantheon file version",
-  })
   vim.keymap.set("n", "<C-s>", toggle_version, {
     buffer = endpoint.buf,
     nowait = true,
@@ -1338,7 +1332,7 @@ end
 
 local function sidebar_chunk_row(hunk, last)
   local branch = last and "└─" or "├─"
-  return ("  %s -%d +%d"):format(
+  return ("  %s • -%d +%d"):format(
     branch,
     hunk.old_start,
     hunk.new_start
@@ -1590,29 +1584,30 @@ local function map_inspection_sidebar_toggle(group)
     silent = true,
     desc = "Toggle Pantheon Inspect sidebar",
   }
+  local function map_buffer(buf)
+    for _, lhs in ipairs({ "<C-i>", "<Tab>" }) do
+      vim.keymap.set("n", lhs, function()
+        toggle_inspection_sidebar(group)
+      end, vim.tbl_extend("force", opts, {
+        buffer = buf,
+      }))
+    end
+  end
   for _, session in ipairs(group) do
     for _, endpoint in ipairs({ session.parent, session.change }) do
       if valid_endpoint(endpoint) then
-        vim.keymap.set("n", "<C-i>", function()
-          toggle_inspection_sidebar(group)
-        end, vim.tbl_extend("force", opts, {
-          buffer = endpoint.buf,
-        }))
+        map_buffer(endpoint.buf)
       end
     end
   end
-  vim.keymap.set("n", "<C-i>", function()
-    toggle_inspection_sidebar(group)
-  end, vim.tbl_extend("force", opts, {
-    buffer = group.sidebar_buf,
-  }))
+  map_buffer(group.sidebar_buf)
 end
 
 local function setup_inspection_sidebar(group)
   local buf = vim.api.nvim_create_buf(false, true)
   group.sidebar_buf = buf
   group.sidebar_windows = {}
-  group.sidebar_visible = true
+  group.sidebar_visible = false
   group.sidebar_width =
     math.min(30, math.max(20, vim.o.columns - 20))
   group.sidebar_rows = {}
@@ -1663,10 +1658,6 @@ local function setup_inspection_sidebar(group)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   vim.bo[buf].filetype = "pantheon-inspect-files"
-  for _, session in ipairs(group) do
-    create_sidebar_window(group, session.parent)
-    create_sidebar_window(group, session.change)
-  end
   map_inspection_sidebar_toggle(group)
   sidebar_groups[#sidebar_groups + 1] = group
   local first = group[1] and group[1].parent or nil
