@@ -29,9 +29,8 @@ locations. The cursor starts at the
 first changed hunk. When that cursor is on line 10 or later, the tab applies
 `zt10<C-y>$` to normalize its view; lines 1–9 retain their existing view. Use
 `<C-Left>` and `<C-Right>` to jump to the previous and next hunks; the same
-line-10-aware view normalization is reapplied after every jump. `<Tab>` toggles
-only between the old and new tabs for the current file.
-`<C-s>` also switches between that file's parent and changed versions.
+line-10-aware view normalization is reapplied after every jump. `<C-s>`
+switches between the parent and changed tabs for the current file.
 Every Inspect tab includes the same right-hand changed-files sidebar.
 The first inspected file starts at the top, and long paths show only their
 parent directory and filename. Each unnumbered file row includes its
@@ -43,9 +42,10 @@ The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the visible version is underlined. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that
 file on the same side; moving onto a hunk child also jumps the main pane to
-that hunk. Focus remains in the sidebar in both cases. After Inspect is
-initialized, `<C-i>` closes or reopens the shared sidebar across all Inspect
-tabs. Required
+that hunk. Focus remains in the sidebar in both cases. The sidebar starts
+hidden when Inspect is initialized. `<C-i>` opens or closes it across all
+Inspect tabs. Pantheon also maps `<Tab>` to this toggle because terminals
+commonly send `<C-i>` as the Tab control code. Required
 revisions are resolved or fetched through the project's own `.git` directory.
 Inspect does not create a separate Pantheon repository, object cache, or
 worktree, and it does not alter the working checkout.
