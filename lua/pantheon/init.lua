@@ -17,6 +17,7 @@ local defaults = {
   persist_filters = true,
   state_file = vim.fn.stdpath("state") .. "/pantheon.json",
   browser_command = nil,
+  inspect_root = vim.fn.stdpath("cache") .. "/pantheon/inspect",
   token = nil,
 
   contributors = {

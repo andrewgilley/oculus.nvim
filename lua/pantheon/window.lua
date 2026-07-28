@@ -3,6 +3,7 @@ local M = {}
 local actions = require("pantheon.actions")
 local browser = require("pantheon.browser")
 local github = require("pantheon.github")
+local inspect = require("pantheon.inspect")
 
 -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 7 Add contributor activity-provider helpers
 local codeberg = require("pantheon.codeberg")
@@ -166,7 +167,7 @@ local function render_activity_footer()
   local width = config.width
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  ? shortcuts   j/← back   q close",
+    "  i inspect   o browser   ? shortcuts   j/← back   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1036,7 +1037,7 @@ local function render_shortcuts()
   end
 
   section("NAVIGATION", {
-    { "i / <Up>", "Select the previous item" },
+    { "<Up>", "Select the previous item" },
     { "k / <Down>", "Select the next item" },
     { "l / <Right> / <CR>", "Select or open the current item" },
     { "j / <Left>", "Return to the previous page" },
@@ -1049,6 +1050,7 @@ local function render_shortcuts()
     { "o", "Open the selected contributor profile" },
   })
   section("ACTIVITY", {
+    { "i", "Inspect a GitHub commit in two worktree tabs" },
     { "o", "Open the selected activity" },
     { "r", "Refresh activity without using the cache" },
   })
@@ -1207,6 +1209,30 @@ local function open_current()
     end
   end
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 16
+end
+
+local function inspect_current()
+  if M.state.view ~= "activity" then
+    vim.notify(
+      "Pantheon: select a GitHub commit activity to inspect",
+      vim.log.levels.WARN
+    )
+    return
+  end
+
+  local target = target_on_cursor()
+  if type(target) ~= "string" then
+    vim.notify(
+      "Pantheon: this activity does not have an inspectable commit",
+      vim.log.levels.WARN
+    )
+    return
+  end
+
+  local ok, err = inspect.open(target, M.state.opts)
+  if not ok and err then
+    vim.notify("Pantheon: " .. err, vim.log.levels.WARN)
+  end
 end
 
 local function move_cursor(direction)
@@ -1374,9 +1400,7 @@ local function map_keys(buf)
     set_all_filter_types(false)
   end, "Disable all Pantheon activity types")
   map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
-  map("i", function()
-    move_cursor(-1)
-  end, "Move up in Pantheon")
+  map("i", inspect_current, "Inspect Pantheon commit activity")
   map("k", function()
     move_cursor(1)
   end, "Move down in Pantheon")
