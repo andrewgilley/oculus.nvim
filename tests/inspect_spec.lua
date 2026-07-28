@@ -739,6 +739,7 @@ if integration_root and (integration_sha or integration_url) then
 
   local sidebar_toggle_from_sidebar
   local sidebar_tab_toggle_from_sidebar
+  local sidebar_open_mapping
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
     sidebar_buf,
     "n"
@@ -749,6 +750,8 @@ if integration_root and (integration_sha or integration_url) then
       elseif mapping.lhs == "<Tab>" then
         sidebar_tab_toggle_from_sidebar = mapping
       end
+    elseif mapping.desc == "Open Pantheon Inspect sidebar item" then
+      sidebar_open_mapping = mapping
     end
   end
   assert(
@@ -759,6 +762,8 @@ if integration_root and (integration_sha or integration_url) then
     sidebar_tab_toggle_from_sidebar
       and sidebar_tab_toggle_from_sidebar.lhs == "<Tab>"
   )
+  assert(sidebar_open_mapping
+    and sidebar_open_mapping.lhs == "<CR>")
   vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
   sidebar_tab_toggle_from_sidebar.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
@@ -800,6 +805,24 @@ if integration_root and (integration_sha or integration_url) then
     -1,
     {}
   ) >= pair_count * 2 + 1)
+  local file_line_lookup = {}
+  for _, line in ipairs(file_lines) do
+    file_line_lookup[line] = true
+  end
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    sidebar_buf,
+    sidebar_signs,
+    0,
+    -1,
+    { details = true }
+  )) do
+    assert(file_line_lookup[mark[2] + 1])
+    assert(mark[4].line_hl_group == nil)
+    assert(mark[4].hl_group
+      ~= "PantheonInspectSidebarChunkActive")
+    assert(mark[4].hl_group
+      ~= "PantheonInspectSidebarCurrent")
+  end
   local normal_hl =
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local parent_hl = vim.api.nvim_get_hl(
@@ -968,8 +991,10 @@ if integration_root and (integration_sha or integration_url) then
     pattern = tostring(parent_win),
   })
   assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
-  vim.cmd("wincmd h")
+  sidebar_open_mapping.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
+  assert(vim.api.nvim_win_get_cursor(parent_win)[1]
+    == selected_parent_line)
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
     "x",
@@ -1034,6 +1059,14 @@ if integration_root and (integration_sha or integration_url) then
       .pantheon_inspect_sidebar_active
     assert(sidebar_active.pair_index == 2)
     assert(sidebar_active.role == "parent")
+    local second_first_parent_line = tonumber(
+      assert(sidebar_lines[file_lines[2] + 1]:match("%-(%d+)"))
+    )
+    sidebar_open_mapping.callback()
+    assert(vim.api.nvim_get_current_win() == second_main_win)
+    assert(vim.api.nvim_win_get_cursor(second_main_win)[1]
+      == second_first_parent_line)
+    vim.api.nvim_set_current_win(second_sidebar_win)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", {
       buffer = sidebar_buf,

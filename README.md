@@ -39,14 +39,16 @@ The first inspected file starts at the top, and long paths show only their
 parent directory and filename. Each unnumbered file row includes its
 change-hunk count and expands into a visible tree of unnumbered hunks, labeled
 with their parent and changed starting lines. The active row shows the
-cursor's current hunk as `(current/total)`, and its corresponding tree child
-is highlighted.
+cursor's current hunk as `(current/total)` without highlighting file or hunk
+rows.
 The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the visible version is underlined. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that
 file on the same side; moving onto a hunk child also jumps the main pane to
 that hunk. Focus and the existing sidebar viewport remain in the sidebar in
-both cases. The sidebar starts visible when Inspect is initialized. `<C-i>`
+both cases. Pressing `<CR>` on a hunk moves focus to that location in the main
+pane; pressing it on a file moves focus to that file's first hunk. The sidebar
+starts visible when Inspect is initialized. `<C-i>`
 opens or closes it across all Inspect tabs. Pantheon also maps `<Tab>` to this
 toggle because terminals
 commonly send `<C-i>` as the Tab control code. Required
