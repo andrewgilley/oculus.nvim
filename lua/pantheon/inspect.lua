@@ -385,23 +385,36 @@ local function ensure_mirror(info, root, opts, callback)
     info.owner,
     info.repo .. ".git"
   )
-  if directory(mirror) then
-    callback(mirror)
-    return
-  end
-  if vim.uv.fs_stat(mirror) then
-    callback(nil, "the inspection repository cache is not a directory")
-    return
-  end
-
-  vim.fn.mkdir(vim.fs.dirname(mirror), "p")
   find_local_repository(info, opts, function(source)
+    if not source and not opts.inspect_allow_remote_clone then
+      local search_root = (opts.inspect_search_paths or {})[1]
+      local location = search_root
+          and (" under " .. search_root)
+        or ""
+      callback(
+        nil,
+        ("no local clone of %s/%s was found%s; remote cloning is disabled")
+          :format(info.owner, info.repo, location)
+      )
+      return
+    end
+
     if source then
       vim.notify(
         "Pantheon: using local clone at " .. source,
         vim.log.levels.INFO
       )
     end
+    if directory(mirror) then
+      callback(mirror)
+      return
+    end
+    if vim.uv.fs_stat(mirror) then
+      callback(nil, "the inspection repository cache is not a directory")
+      return
+    end
+
+    vim.fn.mkdir(vim.fs.dirname(mirror), "p")
     clone_mirror(source, info, mirror, callback)
   end)
 end

@@ -167,7 +167,7 @@ local function render_activity_footer()
   local width = config.width
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  h inspect   o browser   ? shortcuts   j/← back   q close",
+    "  h inspect   ? shortcuts   j/← back   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
