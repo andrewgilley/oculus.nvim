@@ -1128,6 +1128,7 @@ local function normalize_inspection_view(win)
     return
   end
   vim.api.nvim_win_call(win, function()
+    local cursor_line = vim.api.nvim_win_get_cursor(win)[1]
     local keys = vim.api.nvim_replace_termcodes(
       "zt10<C-y>$",
       true,
@@ -1135,6 +1136,9 @@ local function normalize_inspection_view(win)
       true
     )
     vim.cmd("normal! " .. keys)
+    local view = vim.fn.winsaveview()
+    view.topline = math.max(1, cursor_line - 10)
+    vim.fn.winrestview(view)
   end)
 end
 
@@ -1907,5 +1911,6 @@ M._blob_lines = blob_lines
 M._oil_entry_status = oil_entry_status
 M._change_lines = change_lines
 M._next_change_line = next_change_line
+M._normalize_inspection_view = normalize_inspection_view
 
 return M

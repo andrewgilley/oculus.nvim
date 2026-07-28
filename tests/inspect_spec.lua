@@ -11,6 +11,34 @@ end
 
 local inspect = require("pantheon.inspect")
 
+local viewport_buf = vim.api.nvim_get_current_buf()
+local viewport_win = vim.api.nvim_get_current_win()
+local viewport_lines = {}
+for index = 1, 40 do
+  viewport_lines[index] = "line " .. index
+end
+vim.api.nvim_buf_set_lines(
+  viewport_buf,
+  0,
+  -1,
+  false,
+  viewport_lines
+)
+for _, expected in ipairs({
+  { cursor = 5, topline = 1 },
+  { cursor = 15, topline = 5 },
+}) do
+  vim.api.nvim_win_set_cursor(viewport_win, { expected.cursor, 0 })
+  inspect._normalize_inspection_view(viewport_win)
+  local view = vim.api.nvim_win_call(viewport_win, vim.fn.winsaveview)
+  local cursor = vim.api.nvim_win_get_cursor(viewport_win)
+  assert(view.topline == expected.topline)
+  assert(cursor[2] == #viewport_lines[expected.cursor] - 1)
+end
+vim.api.nvim_buf_set_lines(viewport_buf, 0, -1, false, { "" })
+vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
+vim.bo[viewport_buf].modified = false
+
 assert(inspect._inspection_directory(
   root,
   "lua/pantheon/inspect.lua"
