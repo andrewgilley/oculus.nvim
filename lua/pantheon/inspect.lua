@@ -1664,7 +1664,7 @@ local function setup_inspection_sidebar(group)
   if valid_endpoint(first) then
     vim.api.nvim_set_current_win(first.win)
     show_inspection_path(first.buf)
-    refresh_sidebar(group, first.tab)
+    open_inspection_sidebar(group)
   end
 end
 
@@ -1693,6 +1693,10 @@ local function open_sidebar_selection(group)
   if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
     return
   end
+  local source_win = vim.api.nvim_get_current_win()
+  local source_view = vim.api.nvim_win_call(source_win, function()
+    return vim.fn.winsaveview()
+  end)
   sidebar_navigating = true
   if entry.chunk_index then
     session.active_chunk = entry.chunk_index
@@ -1702,7 +1706,16 @@ local function open_sidebar_selection(group)
     )
   end
   show_inspection_path(endpoint.buf)
-  vim.api.nvim_set_current_win(sidebar_win)
+  if sidebar_win ~= source_win then
+    vim.api.nvim_win_set_cursor(sidebar_win, { line, 0 })
+    source_view.lnum = line
+    source_view.col = 0
+    source_view.curswant = 0
+    vim.api.nvim_win_call(sidebar_win, function()
+      vim.fn.winrestview(source_view)
+    end)
+    vim.api.nvim_set_current_win(sidebar_win)
+  end
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
   sidebar_navigating = false

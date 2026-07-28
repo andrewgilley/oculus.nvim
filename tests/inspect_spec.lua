@@ -466,12 +466,12 @@ if integration_root and (integration_sha or integration_url) then
   for pair_index = 1, pair_count do
     assert(#vim.api.nvim_tabpage_list_wins(
       tabs[pair_index * 2]
-    ) == 1)
+    ) == 2)
     assert(#vim.api.nvim_tabpage_list_wins(
       tabs[pair_index * 2 + 1]
-    ) == 1)
-    assert(sidebar_window(tabs[pair_index * 2]) == nil)
-    assert(sidebar_window(tabs[pair_index * 2 + 1]) == nil)
+    ) == 2)
+    assert(sidebar_window(tabs[pair_index * 2]))
+    assert(sidebar_window(tabs[pair_index * 2 + 1]))
   end
   local initial_sidebar_toggle
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
@@ -486,8 +486,6 @@ if integration_root and (integration_sha or integration_url) then
     end
   end
   assert(initial_sidebar_toggle)
-  initial_sidebar_toggle.callback()
-  assert(vim.api.nvim_get_current_win() == initial_parent_win)
   for pair_index = 1, pair_count do
     local old_tab = tabs[pair_index * 2]
     local new_tab = tabs[pair_index * 2 + 1]
@@ -1006,6 +1004,7 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_set_current_tabpage(tabs[2])
     vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
     vim.api.nvim_win_set_cursor(0, { file_lines[2], 0 })
+    local source_sidebar_view = vim.fn.winsaveview()
     vim.api.nvim_exec_autocmds("CursorMoved", {
       buffer = sidebar_buf,
     })
@@ -1019,6 +1018,13 @@ if integration_root and (integration_sha or integration_url) then
     end)
     local second_sidebar_win = assert(sidebar_window(tabs[4]))
     assert(vim.api.nvim_get_current_win() == second_sidebar_win)
+    assert(vim.api.nvim_win_get_cursor(second_sidebar_win)[1]
+      == file_lines[2])
+    local second_sidebar_view = vim.fn.winsaveview()
+    assert(second_sidebar_view.topline == source_sidebar_view.topline)
+    if file_lines[2] > source_sidebar_view.topline then
+      assert(second_sidebar_view.topline < file_lines[2])
+    end
     local second_main_win = assert(inspection_window(tabs[4]))
     vim.api.nvim_exec_autocmds("WinScrolled", {
       pattern = tostring(second_main_win),

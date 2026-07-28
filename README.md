@@ -45,9 +45,10 @@ The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the visible version is underlined. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that
 file on the same side; moving onto a hunk child also jumps the main pane to
-that hunk. Focus remains in the sidebar in both cases. The sidebar starts
-hidden when Inspect is initialized. `<C-i>` opens or closes it across all
-Inspect tabs. Pantheon also maps `<Tab>` to this toggle because terminals
+that hunk. Focus and the existing sidebar viewport remain in the sidebar in
+both cases. The sidebar starts visible when Inspect is initialized. `<C-i>`
+opens or closes it across all Inspect tabs. Pantheon also maps `<Tab>` to this
+toggle because terminals
 commonly send `<C-i>` as the Tab control code. Required
 revisions are resolved or fetched through the project's own `.git` directory.
 Inspect does not create a separate Pantheon repository, object cache, or

@@ -1380,7 +1380,8 @@ local function search_win_config()
   local left_width = preview_left_width(parent_width)
   local right_width = math.max(3, parent_width - left_width - 1)
   local midpoint = math.floor(right_width / 2)
-  local outer_width = math.max(3, right_width - midpoint - 1)
+  local search_start = math.max(0, midpoint - 3)
+  local outer_width = math.max(3, right_width - search_start)
   return {
     relative = "editor",
     width = math.max(1, outer_width - 2),
@@ -1389,7 +1390,7 @@ local function search_win_config()
     col = position[2]
       + left_width
       + 1
-      + midpoint,
+      + search_start,
     style = "minimal",
     border = M.state.opts.border or "rounded",
     zindex = 70,
