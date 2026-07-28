@@ -439,7 +439,6 @@ if integration_root and (integration_sha or integration_url) then
     assert(pair_count == expected_pair_count)
   end
   local commit_indices = {}
-  local commit_titles = {}
   local next_file_indices = {}
   local buffers = {}
   local sidebar_buf
@@ -522,9 +521,6 @@ if integration_root and (integration_sha or integration_url) then
     assert(old_state.pair_index == pair_index)
     assert(new_state.pair_index == pair_index)
     assert(old_state.commit_index == new_state.commit_index)
-    assert(old_state.commit_title == new_state.commit_title)
-    assert(type(old_state.commit_title) == "string")
-    assert(old_state.commit_title ~= "")
     assert(old_state.file_index == new_state.file_index)
     assert(old_state.file_count == new_state.file_count)
     assert(old_state.status == new_state.status)
@@ -544,7 +540,6 @@ if integration_root and (integration_sha or integration_url) then
       ) == expected_root)
     end
     commit_indices[old_state.commit_index] = true
-    commit_titles[old_state.commit_index] = old_state.commit_title
     local expected_file_index =
       next_file_indices[old_state.commit_index] or 1
     assert(old_state.file_index == expected_file_index)
@@ -600,7 +595,6 @@ if integration_root and (integration_sha or integration_url) then
     false
   )
   local file_lines = {}
-  local header_lines = {}
   local chunk_lines = 0
   for line_number, line in ipairs(sidebar_lines) do
     local branch =
@@ -608,8 +602,9 @@ if integration_root and (integration_sha or integration_url) then
         or line:match("^  └─ %d+%-%d+$")
     if branch then
       chunk_lines = chunk_lines + 1
-    elseif line:match("^• ") then
+    else
       file_lines[#file_lines + 1] = line_number
+      assert(line:match("^• "))
       assert(line:match(" P C$"))
       assert(not line:match("^%d+%. "))
       assert(vim.fn.strdisplaywidth(line) == sidebar_width)
@@ -619,31 +614,11 @@ if integration_root and (integration_sha or integration_url) then
         :gsub("^…", "")
       local _, separators = displayed_file:gsub("/", "")
       assert(separators == 0)
-    else
-      header_lines[#header_lines + 1] = line_number
-      assert(line ~= "")
-      assert(vim.fn.strdisplaywidth(line) <= sidebar_width)
     end
   end
   assert(#file_lines == pair_count)
-  assert(#header_lines == vim.tbl_count(commit_indices))
-  for index, line_number in ipairs(header_lines) do
-    local displayed_title =
-      sidebar_lines[line_number]:gsub("…$", "")
-    assert(vim.startswith(commit_titles[index], displayed_title))
-    local next_header = header_lines[index + 1] or (#sidebar_lines + 1)
-    local contains_file = false
-    for _, file_line in ipairs(file_lines) do
-      if file_line > line_number and file_line < next_header then
-        contains_file = true
-        break
-      end
-    end
-    assert(contains_file)
-  end
   assert(chunk_lines >= pair_count)
-  assert(#sidebar_lines
-    == pair_count + chunk_lines + #header_lines)
+  assert(#sidebar_lines == pair_count + chunk_lines)
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   local first_sidebar_win = assert(sidebar_window(tabs[2]))
   assert(vim.api.nvim_win_get_cursor(first_sidebar_win)[1] == 1)
