@@ -23,9 +23,9 @@ immediate parent when that directory exists in the checkout, so opening Oil
 starts beside the file instead of at the project root. The tabs
 appear with animated loading indicators and are replaced in place when their
 files are ready. Cursor positions and scroll views remain linked within each
-pair. Only changed-version tabs show sign-column markers: `+` marks added
-lines and `-` marks deletion locations. Parent tabs have no sign column. The
-cursor starts at the
+pair. Both versions retain one standard-width sign column, but only
+changed-version tabs show markers: `+` marks added lines and `-` marks deletion
+locations. The cursor starts at the
 first changed hunk. When that cursor is on line 10 or later, the tab applies
 `zt10<C-y>$` to normalize its view; lines 1–9 retain their existing view. Use
 `<C-Left>` and `<C-Right>` to jump to the previous and next hunks; the same
@@ -40,10 +40,12 @@ with their parent and changed starting lines. The active row shows the
 cursor's current hunk as `(current/total)`, and its corresponding tree child
 is highlighted.
 The trailing `P C` always remains visible: parent `P` is red, changed `C` is
-green, and the symbol for the active version is bold. Inspect opens on the
+green, and the symbol for the visible version is underlined. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that
 file on the same side; moving onto a hunk child also jumps the main pane to
-that hunk. Focus remains in the sidebar in both cases. Required
+that hunk. Focus remains in the sidebar in both cases. After Inspect is
+initialized, `<C-i>` closes or reopens the shared sidebar across all Inspect
+tabs. Required
 revisions are resolved or fetched through the project's own `.git` directory.
 Inspect does not create a separate Pantheon repository, object cache, or
 worktree, and it does not alter the working checkout.

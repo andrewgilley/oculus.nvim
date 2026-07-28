@@ -661,7 +661,7 @@ if integration_root and (integration_sha or integration_url) then
     -1,
     {}
   ) == 0)
-  assert(vim.wo[parent_win].signcolumn == "no")
+  assert(vim.wo[parent_win].signcolumn == "yes")
   local change_marks = vim.api.nvim_buf_get_extmarks(
     change_buf,
     signs,
@@ -682,6 +682,7 @@ if integration_root and (integration_sha or integration_url) then
   local toggle_mapped = false
   local switch_mapped = false
   local next_file_mapped = false
+  local sidebar_toggle
   for _, mapping in ipairs(jump_maps) do
     if mapping.desc == "Previous Pantheon change" then
       previous_mapped = mapping.lhs == "<C-Left>"
@@ -693,6 +694,8 @@ if integration_root and (integration_sha or integration_url) then
       switch_mapped = mapping.lhs == "<C-S>"
     elseif mapping.desc == "Next Pantheon changed file" then
       next_file_mapped = mapping.lhs == "<C-N>"
+    elseif mapping.desc == "Toggle Pantheon Inspect sidebar" then
+      sidebar_toggle = mapping
     end
   end
   assert(previous_mapped)
@@ -700,6 +703,45 @@ if integration_root and (integration_sha or integration_url) then
   assert(toggle_mapped)
   assert(switch_mapped)
   assert(not next_file_mapped)
+  assert(sidebar_toggle and sidebar_toggle.lhs == "<C-I>")
+
+  local sidebar_toggle_from_sidebar
+  for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
+    sidebar_buf,
+    "n"
+  )) do
+    if mapping.desc == "Toggle Pantheon Inspect sidebar" then
+      sidebar_toggle_from_sidebar = mapping
+      break
+    end
+  end
+  assert(
+    sidebar_toggle_from_sidebar
+      and sidebar_toggle_from_sidebar.lhs == "<C-I>"
+  )
+  vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
+  sidebar_toggle_from_sidebar.callback()
+  assert(vim.api.nvim_get_current_win() == parent_win)
+  for pair_index = 1, pair_count do
+    assert(#vim.api.nvim_tabpage_list_wins(
+      tabs[pair_index * 2]
+    ) == 1)
+    assert(#vim.api.nvim_tabpage_list_wins(
+      tabs[pair_index * 2 + 1]
+    ) == 1)
+  end
+  sidebar_toggle.callback()
+  assert(vim.api.nvim_get_current_win() == parent_win)
+  for pair_index = 1, pair_count do
+    for _, tab in ipairs({
+      tabs[pair_index * 2],
+      tabs[pair_index * 2 + 1],
+    }) do
+      assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
+      assert(vim.api.nvim_win_get_buf(assert(sidebar_window(tab)))
+        == sidebar_buf)
+    end
+  end
 
   vim.api.nvim_set_current_tabpage(tabs[2])
   local sidebar_active = vim.b[sidebar_buf]
@@ -733,11 +775,7 @@ if integration_root and (integration_sha or integration_url) then
       0,
       { name = "DiagnosticError", link = false }
     ).fg)
-  assert(change_hl.fg
-    == vim.api.nvim_get_hl(
-      0,
-      { name = "DiagnosticOk", link = false }
-    ).fg)
+  assert(change_hl.fg == 0x00c853)
   assert(parent_hl.bg == normal_hl.bg)
   assert(change_hl.bg == normal_hl.bg)
   local parent_active_hl = vim.api.nvim_get_hl(
@@ -748,10 +786,15 @@ if integration_root and (integration_sha or integration_url) then
     0,
     { name = "PantheonInspectSidebarChangeActive", link = false }
   )
-  assert(parent_active_hl.bold == true)
-  assert(change_active_hl.bold == true)
+  assert(parent_active_hl.underline == true)
+  assert(change_active_hl.underline == true)
+  assert(change_active_hl.fg == 0x00c853)
+  assert(parent_active_hl.bold ~= true)
+  assert(change_active_hl.bold ~= true)
   assert(parent_hl.bold ~= true)
   assert(change_hl.bold ~= true)
+  assert(parent_hl.underline ~= true)
+  assert(change_hl.underline ~= true)
   local function sidebar_role_groups(line)
     local groups = {}
     for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
@@ -881,6 +924,10 @@ if integration_root and (integration_sha or integration_url) then
   if selected_parent_line >= 10 then
     assert(selected_view.topline == selected_parent_line - 10)
   end
+  vim.api.nvim_exec_autocmds("WinScrolled", {
+    pattern = tostring(parent_win),
+  })
+  assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
   vim.cmd("wincmd h")
   assert(vim.api.nvim_get_current_win() == parent_win)
   vim.api.nvim_feedkeys(
@@ -928,8 +975,13 @@ if integration_root and (integration_sha or integration_url) then
     vim.wait(50, function()
       return false
     end)
-    assert(vim.api.nvim_get_current_win()
-      == assert(sidebar_window(tabs[4])))
+    local second_sidebar_win = assert(sidebar_window(tabs[4]))
+    assert(vim.api.nvim_get_current_win() == second_sidebar_win)
+    local second_main_win = assert(inspection_window(tabs[4]))
+    vim.api.nvim_exec_autocmds("WinScrolled", {
+      pattern = tostring(second_main_win),
+    })
+    assert(vim.api.nvim_get_current_win() == second_sidebar_win)
     sidebar_active = vim.b[sidebar_buf]
       .pantheon_inspect_sidebar_active
     assert(sidebar_active.pair_index == 2)
