@@ -766,15 +766,14 @@ local function oil_entry_status(session, role, path, directory)
 end
 
 local oil_status = {
-  A = { sign = "+", label = "added", highlight = "PantheonOilAdded" },
-  C = { sign = "+", label = "copied", highlight = "PantheonOilAdded" },
-  D = { sign = "-", label = "deleted", highlight = "PantheonOilDeleted" },
-  M = { sign = "~", label = "modified", highlight = "PantheonOilModified" },
-  R = { sign = "→", label = "renamed", highlight = "PantheonOilRenamed" },
-  T = { sign = "~", label = "changed", highlight = "PantheonOilModified" },
+  A = { sign = "+", highlight = "PantheonOilAdded" },
+  C = { sign = "+", highlight = "PantheonOilAdded" },
+  D = { sign = "-", highlight = "PantheonOilDeleted" },
+  M = { sign = "~", highlight = "PantheonOilModified" },
+  R = { sign = "→", highlight = "PantheonOilRenamed" },
+  T = { sign = "~", highlight = "PantheonOilModified" },
   directory = {
     sign = "•",
-    label = "contains changes",
     highlight = "PantheonOilDirectory",
   },
 }
@@ -814,8 +813,6 @@ local function decorate_oil_buffer(buf)
         vim.api.nvim_buf_set_extmark(buf, oil_ns, line - 1, 0, {
           sign_text = style.sign,
           sign_hl_group = style.highlight,
-          virt_text = { { "  " .. style.label, style.highlight } },
-          virt_text_pos = "right_align",
           priority = 50,
         })
       end
@@ -823,35 +820,51 @@ local function decorate_oil_buffer(buf)
   end
 
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    vim.wo[win].signcolumn = "yes:2"
+    vim.wo[win].signcolumn = "yes"
   end
 end
 
-vim.api.nvim_set_hl(0, "PantheonOilAdded", {
-  link = "DiffAdd",
-  default = true,
-})
-vim.api.nvim_set_hl(0, "PantheonOilDeleted", {
-  link = "DiffDelete",
-  default = true,
-})
-vim.api.nvim_set_hl(0, "PantheonOilModified", {
-  link = "DiffChange",
-  default = true,
-})
-vim.api.nvim_set_hl(0, "PantheonOilRenamed", {
-  link = "DiffText",
-  default = true,
-})
-vim.api.nvim_set_hl(0, "PantheonOilDirectory", {
-  link = "DiagnosticInfo",
-  default = true,
-})
+local function highlight_foreground(name, fallback)
+  local ok, highlight = pcall(
+    vim.api.nvim_get_hl,
+    0,
+    { name = name, link = false }
+  )
+  if ok and highlight.fg then
+    return highlight.fg
+  end
+  return fallback
+end
+
+local function set_oil_highlights()
+  vim.api.nvim_set_hl(0, "PantheonOilAdded", {
+    fg = highlight_foreground("DiagnosticOk", 0x9ae6b4),
+  })
+  vim.api.nvim_set_hl(0, "PantheonOilDeleted", {
+    fg = highlight_foreground("DiagnosticError", 0xf87171),
+  })
+  vim.api.nvim_set_hl(0, "PantheonOilModified", {
+    fg = highlight_foreground("DiagnosticWarn", 0xfbd38d),
+  })
+  vim.api.nvim_set_hl(0, "PantheonOilRenamed", {
+    fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
+  })
+  vim.api.nvim_set_hl(0, "PantheonOilDirectory", {
+    fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
+  })
+end
+
+set_oil_highlights()
 
 local oil_group = vim.api.nvim_create_augroup(
   "PantheonInspectOil",
   { clear = true }
 )
+
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = oil_group,
+  callback = set_oil_highlights,
+})
 
 local function queue_oil_decorations(buf)
   vim.schedule(function()
@@ -971,8 +984,8 @@ local function map_change_jumps(endpoint, session)
       desc = description,
     })
   end
-  map("<C-1>", -1, "Previous Pantheon change")
-  map("<C-3>", 1, "Next Pantheon change")
+  map("[c", -1, "Previous Pantheon change")
+  map("]c", 1, "Next Pantheon change")
 end
 
 local spinner_frames = {
