@@ -1050,7 +1050,7 @@ local function render_shortcuts()
     { "o", "Open the selected contributor profile" },
   })
   section("ACTIVITY", {
-    { "h", "Inspect a GitHub commit in two worktree tabs" },
+    { "h", "Inspect a GitHub commit or pull request" },
     { "o", "Open the selected activity" },
     { "r", "Refresh activity without using the cache" },
   })
@@ -1214,7 +1214,7 @@ end
 local function inspect_current()
   if M.state.view ~= "activity" then
     vim.notify(
-      "Pantheon: select a GitHub commit activity to inspect",
+      "Pantheon: select a GitHub commit or pull request to inspect",
       vim.log.levels.WARN
     )
     return
@@ -1400,7 +1400,7 @@ local function map_keys(buf)
     set_all_filter_types(false)
   end, "Disable all Pantheon activity types")
   map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
-  map("h", inspect_current, "Inspect Pantheon commit activity")
+  map("h", inspect_current, "Inspect Pantheon commit or pull request")
   map("k", function()
     move_cursor(1)
   end, "Move down in Pantheon")

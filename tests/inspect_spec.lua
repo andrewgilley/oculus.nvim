@@ -1,5 +1,9 @@
 local root = vim.fn.getcwd()
 vim.opt.runtimepath:prepend(root)
+local oil_runtime = vim.env.PANTHEON_INSPECT_TEST_OIL
+if oil_runtime then
+  vim.opt.runtimepath:append(oil_runtime)
+end
 
 local inspect = require("pantheon.inspect")
 
@@ -23,6 +27,35 @@ assert(inspect._parse_commit_url(
 assert(inspect._parse_commit_url(
   "https://github.com/../b/commit/0123456"
 ) == nil)
+
+local pull_request = inspect._parse_pull_request_url(
+  "https://github.com/neovim/neovim/pull/123/files#diff-test"
+)
+assert(pull_request)
+assert(pull_request.kind == "pull_request")
+assert(pull_request.owner == "neovim")
+assert(pull_request.repo == "neovim")
+assert(pull_request.number == 123)
+local pull_request_comment = inspect._parse_pull_request_url(
+  "https://github.com/neovim/neovim/issues/123#issuecomment-456"
+)
+assert(pull_request_comment)
+assert(pull_request_comment.via_issue)
+assert(inspect._parse_pull_request_url(
+  "https://github.com/neovim/neovim/issues/not-a-number"
+) == nil)
+
+local resolved_pull_request = inspect._apply_pull_request(pull_request, {
+  title = "Test pull request",
+  base_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  base_ref = "main",
+  head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  head_ref = "feature",
+})
+assert(resolved_pull_request.base_ref == "main")
+assert(resolved_pull_request.head_ref == "feature")
+assert(resolved_pull_request.base_sha:match("^a+$"))
+assert(resolved_pull_request.head_sha:match("^b+$"))
 
 assert(inspect._github_repository(
   "https://github.com/neovim/neovim.git"
@@ -49,9 +82,62 @@ parent, change = inspect._first_changed_paths("")
 assert(parent == nil)
 assert(change == nil)
 
+local changed_files = inspect._parse_changed_files(table.concat({
+  "M\tlua/pantheon/inspect.lua",
+  "A\tlua/pantheon/new.lua",
+  "D\tlua/pantheon/old.lua",
+  "R100\tREADME.old.md\tREADME.md",
+}, "\n"))
+assert(#changed_files == 4)
+assert(changed_files[1].status == "M")
+assert(changed_files[2].new_path == "lua/pantheon/new.lua")
+assert(changed_files[4].old_path == "README.old.md")
+assert(changed_files[4].new_path == "README.md")
+local oil_session = { changes = changed_files }
+assert(inspect._oil_entry_status(
+  oil_session,
+  "change",
+  "lua/pantheon/new.lua",
+  false
+) == "A")
+assert(inspect._oil_entry_status(
+  oil_session,
+  "parent",
+  "lua/pantheon/old.lua",
+  false
+) == "D")
+assert(inspect._oil_entry_status(
+  oil_session,
+  "change",
+  "lua",
+  true
+) == "directory")
+assert(inspect._oil_entry_status(
+  oil_session,
+  "parent",
+  "lua/pantheon/new.lua",
+  false
+) == nil)
+
+local hunks = inspect._parse_hunks(table.concat({
+  "@@ -10,2 +10,3 @@ local function changed()",
+  "@@ -24 +25,0 @@",
+  "@@ -30,0 +31,4 @@",
+}, "\n"))
+assert(#hunks == 3)
+assert(hunks[1].old_start == 10)
+assert(hunks[1].old_count == 2)
+assert(hunks[1].new_start == 10)
+assert(hunks[1].new_count == 3)
+assert(hunks[2].old_count == 1)
+assert(hunks[2].new_count == 0)
+assert(hunks[3].old_count == 0)
+assert(hunks[3].new_count == 4)
+
 local integration_root = vim.env.PANTHEON_INSPECT_TEST_ROOT
 local integration_sha = vim.env.PANTHEON_INSPECT_TEST_SHA
-if integration_root and integration_sha then
+local integration_url = vim.env.PANTHEON_INSPECT_TEST_URL
+if integration_root and (integration_sha or integration_url) then
   local integration_repository =
     vim.env.PANTHEON_INSPECT_TEST_REPOSITORY or "pantheon/test"
   local integration_source = vim.env.PANTHEON_INSPECT_TEST_SOURCE
@@ -66,8 +152,11 @@ if integration_root and integration_sha then
     vim.api.nvim_set_current_dir(integration_cwd)
   end
   local ok, err = inspect.open(
-    "https://github.com/" .. integration_repository
-      .. "/commit/" .. integration_sha,
+    integration_url
+      or (
+        "https://github.com/" .. integration_repository
+        .. "/commit/" .. integration_sha
+      ),
     {
       inspect_root = integration_root,
       inspect_repositories = repositories,
@@ -77,8 +166,25 @@ if integration_root and integration_sha then
     }
   )
   assert(ok, err)
-  assert(vim.wait(30000, function()
-    return #vim.api.nvim_list_tabpages() == 3
+  local loading_tabs = vim.api.nvim_list_tabpages()
+  assert(#loading_tabs == 3)
+  local loading_state = vim.api.nvim_tabpage_get_var(
+    loading_tabs[3],
+    "pantheon_inspect"
+  )
+  assert(loading_state.loading)
+
+  assert(vim.wait(60000, function()
+    local current_tabs = vim.api.nvim_list_tabpages()
+    if #current_tabs ~= 3 then
+      return false
+    end
+    local state_ok, state = pcall(
+      vim.api.nvim_tabpage_get_var,
+      current_tabs[3],
+      "pantheon_inspect"
+    )
+    return state_ok and state.loading == false and state.commit ~= nil
   end), "inspection tabs were not opened")
 
   local tabs = vim.api.nvim_list_tabpages()
@@ -90,7 +196,74 @@ if integration_root and integration_sha then
     tabs[3],
     "pantheon_inspect"
   )
-  assert(parent_state.role == "parent")
+  assert(parent_state.role == (integration_url and "base" or "parent"))
   assert(change_state.role == "change")
-  assert(change_state.commit == integration_sha)
+  if integration_sha and not integration_url then
+    assert(change_state.commit == integration_sha)
+  end
+
+  local parent_win = vim.api.nvim_tabpage_list_wins(tabs[2])[1]
+  local change_win = vim.api.nvim_tabpage_list_wins(tabs[3])[1]
+  local parent_buf = vim.api.nvim_win_get_buf(parent_win)
+  local change_buf = vim.api.nvim_win_get_buf(change_win)
+  local namespaces = vim.api.nvim_get_namespaces()
+  local signs = namespaces.pantheon_inspect_changes
+  assert(signs)
+  assert(#vim.api.nvim_buf_get_extmarks(
+    parent_buf,
+    signs,
+    0,
+    -1,
+    {}
+  ) > 0)
+  assert(#vim.api.nvim_buf_get_extmarks(
+    change_buf,
+    signs,
+    0,
+    -1,
+    {}
+  ) > 0)
+
+  vim.api.nvim_set_current_tabpage(tabs[3])
+  local linked_line = math.min(
+    2,
+    vim.api.nvim_buf_line_count(parent_buf),
+    vim.api.nvim_buf_line_count(change_buf)
+  )
+  vim.api.nvim_win_set_cursor(change_win, { linked_line, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = change_buf })
+  assert(vim.api.nvim_win_get_cursor(parent_win)[1] == linked_line)
+
+  vim.api.nvim_win_call(change_win, function()
+    vim.fn.winrestview({ topline = linked_line })
+  end)
+  vim.api.nvim_exec_autocmds("WinScrolled", {
+    pattern = tostring(change_win),
+  })
+  local change_view = vim.api.nvim_win_call(change_win, vim.fn.winsaveview)
+  local parent_view = vim.api.nvim_win_call(parent_win, vim.fn.winsaveview)
+  assert(parent_view.topline == change_view.topline)
+
+  if oil_runtime then
+    local oil = require("oil")
+    oil.setup({ watch_for_changes = false })
+    vim.api.nvim_set_current_tabpage(tabs[3])
+    oil.open(change_state.worktree)
+    assert(vim.wait(10000, function()
+      local oil_buf = vim.api.nvim_get_current_buf()
+      if vim.bo[oil_buf].filetype ~= "oil" then
+        return false
+      end
+      local oil_signs = vim.api.nvim_get_namespaces()
+        .pantheon_inspect_oil
+      return oil_signs
+        and #vim.api.nvim_buf_get_extmarks(
+          oil_buf,
+          oil_signs,
+          0,
+          -1,
+          {}
+        ) > 0
+    end), "Oil entries were not decorated")
+  end
 end
