@@ -155,12 +155,20 @@ assert(inspect._next_change_line(jump_lines, 10, -1) == 31)
 
 local missing_root = vim.env.PANTHEON_INSPECT_TEST_MISSING_ROOT
 if missing_root then
+  local original_select = vim.ui.select
+  local prompted = false
+  vim.ui.select = function(items, select_opts, on_choice)
+    prompted = true
+    assert(select_opts.prompt:match("Download it to"))
+    on_choice(items[2])
+  end
+  local source_root = vim.fs.joinpath(missing_root, "source")
   local ok, err = inspect.open(
     "https://github.com/pantheon/missing/commit/"
       .. "0123456789abcdef0123456789abcdef01234567",
     {
       inspect_root = missing_root,
-      inspect_search_paths = {},
+      inspect_search_paths = { source_root },
       inspect_repositories = {},
       inspect_allow_remote_clone = false,
     }
@@ -178,15 +186,50 @@ if missing_root then
     )
     return state_ok and state.error ~= nil
   end), "missing local repository did not stop inspection")
+  vim.ui.select = original_select
+  assert(prompted)
   local tabs = vim.api.nvim_list_tabpages()
   local state = vim.api.nvim_tabpage_get_var(tabs[3], "pantheon_inspect")
-  assert(state.error:match("remote cloning is disabled"))
+  assert(state.error:match("download was declined"))
+  assert(vim.uv.fs_stat(vim.fs.joinpath(source_root, "missing")) == nil)
   assert(vim.uv.fs_stat(vim.fs.joinpath(
     missing_root,
     "repositories",
     "pantheon",
     "missing.git"
   )) == nil)
+end
+
+local download_root = vim.env.PANTHEON_INSPECT_TEST_DOWNLOAD_ROOT
+local download_source = vim.env.PANTHEON_INSPECT_TEST_DOWNLOAD_SOURCE
+if download_root and download_source then
+  local original_select = vim.ui.select
+  local prompted = false
+  vim.ui.select = function(items, select_opts, on_choice)
+    prompted = true
+    assert(select_opts.prompt:match("Download it to"))
+    on_choice(items[1])
+  end
+  local downloaded
+  local download_err
+  inspect._offer_repository_download({
+    owner = "pantheon",
+    repo = "downloaded",
+    remote_url = download_source,
+  }, {
+    inspect_search_paths = { download_root },
+  }, function(path, err)
+    downloaded = path
+    download_err = err
+  end)
+  assert(vim.wait(30000, function()
+    return downloaded ~= nil or download_err ~= nil
+  end), "repository download prompt did not finish")
+  vim.ui.select = original_select
+  assert(prompted)
+  assert(downloaded, download_err)
+  assert(downloaded == vim.fs.joinpath(download_root, "downloaded"))
+  assert(vim.uv.fs_stat(vim.fs.joinpath(downloaded, ".git")))
 end
 
 local integration_root = vim.env.PANTHEON_INSPECT_TEST_ROOT
@@ -237,7 +280,8 @@ if integration_root and (integration_sha or integration_url) then
   )
   assert(loading_state.loading)
 
-  assert(vim.wait(60000, function()
+  local inspection_error
+  local inspection_finished = vim.wait(60000, function()
     local current_tabs = vim.api.nvim_list_tabpages()
     if #current_tabs < 3 or #current_tabs % 2 ~= 1 then
       return false
@@ -248,12 +292,18 @@ if integration_root and (integration_sha or integration_url) then
         current_tabs[index],
         "pantheon_inspect"
       )
+      if state_ok and state.error then
+        inspection_error = state.error
+        return true
+      end
       if not state_ok or state.loading ~= false or state.commit == nil then
         return false
       end
     end
     return true
-  end), "inspection tabs were not opened")
+  end)
+  assert(inspection_finished, "inspection tabs were not opened")
+  assert(not inspection_error, inspection_error)
 
   local tabs = vim.api.nvim_list_tabpages()
   local pair_count = (#tabs - 1) / 2
