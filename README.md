@@ -38,8 +38,10 @@ directories and loaded buffers. If a matching clone is available, its local
 Git objects are used directly. It also searches the immediate repositories
 under `~/Desktop/Dev/code/source` by default. When no matching local clone is
 found, Pantheon asks whether it should clone the repository into that source
-directory. Choosing not to download leaves the source directory unchanged.
-Search roots and clones elsewhere can be configured explicitly:
+directory. If the expected destination already contains a Git repository,
+Pantheon uses it directly instead of offering another download. Choosing not
+to download leaves the source directory unchanged. Search roots and clones
+elsewhere can be configured explicitly:
 
 ```lua
 require("pantheon").setup({
