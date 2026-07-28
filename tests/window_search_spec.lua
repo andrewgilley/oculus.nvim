@@ -58,8 +58,23 @@ assert(vim.api.nvim_win_is_valid(state.win))
 assert(vim.api.nvim_win_is_valid(state.search_win))
 assert(vim.api.nvim_buf_is_valid(state.search_buf))
 local prompt = vim.fn.prompt_getprompt(state.search_buf)
-assert(prompt == "  Search: ")
+assert(prompt == "")
 assert(window._prompt_query(state.search_buf) == "")
+local main_position = vim.api.nvim_win_get_position(state.win)
+local main_width = vim.api.nvim_win_get_width(state.win)
+local expected_left_width = math.max(
+  30,
+  math.min(
+    math.max(40, math.floor(main_width * 0.46)),
+    main_width - 22
+  )
+)
+local search_config = vim.api.nvim_win_get_config(state.search_win)
+assert(search_config.col
+  == main_position[2] + expected_left_width + 1)
+assert(search_config.width
+  == main_width - expected_left_width - 3)
+assert(search_config.title == nil or search_config.title == "")
 
 vim.api.nvim_buf_set_lines(
   state.search_buf,

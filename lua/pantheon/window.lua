@@ -1341,17 +1341,16 @@ local function search_win_config()
   end
   local position = vim.api.nvim_win_get_position(M.state.win)
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
-  local width = math.max(24, math.min(56, parent_width - 6))
+  local left_width = preview_left_width(parent_width)
+  local right_width = math.max(3, parent_width - left_width - 1)
   return {
     relative = "editor",
-    width = width,
+    width = math.max(1, right_width - 2),
     height = 1,
     row = position[1] + 1,
-    col = position[2] + math.floor((parent_width - width) / 2),
+    col = position[2] + left_width + 1,
     style = "minimal",
     border = M.state.opts.border or "rounded",
-    title = " Search users ",
-    title_pos = "center",
     zindex = 70,
   }
 end
@@ -1491,7 +1490,7 @@ local function open_search()
   vim.bo[buf].buftype = "prompt"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "pantheon-search"
-  vim.fn.prompt_setprompt(buf, "  Search: ")
+  vim.fn.prompt_setprompt(buf, "")
 
   local config = search_win_config()
   if not config then
