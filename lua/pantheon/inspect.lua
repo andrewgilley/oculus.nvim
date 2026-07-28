@@ -743,6 +743,8 @@ local function sync_window(source_win)
   if syncing or not vim.api.nvim_win_is_valid(source_win) then
     return
   end
+  local origin_tab = vim.api.nvim_win_get_tabpage(source_win)
+  local origin_win = source_win
   local target = paired_endpoint(source_win)
   if not target then
     return
@@ -776,6 +778,14 @@ local function sync_window(source_win)
     end)
   end)
   syncing = false
+  if vim.api.nvim_tabpage_is_valid(origin_tab)
+    and vim.api.nvim_win_is_valid(origin_win)
+  then
+    sidebar_navigating = true
+    vim.api.nvim_set_current_tabpage(origin_tab)
+    vim.api.nvim_set_current_win(origin_win)
+    sidebar_navigating = false
+  end
   if not ok then
     return
   end
@@ -1133,6 +1143,9 @@ local function normalize_inspection_view(win)
   end
   vim.api.nvim_win_call(win, function()
     local cursor_line = vim.api.nvim_win_get_cursor(win)[1]
+    if cursor_line < 10 then
+      return
+    end
     local keys = vim.api.nvim_replace_termcodes(
       "zt10<C-y>^",
       true,
@@ -1286,9 +1299,20 @@ local function sidebar_file(file)
   return parent and (parent .. "/" .. name) or name
 end
 
-local function sidebar_row(index, file, width, chunk_text)
+local function sidebar_row(
+  index,
+  file,
+  width,
+  chunk_text,
+  chunk_width
+)
   local prefix = ("%d. "):format(index)
-  local suffix = ("%s C P"):format(chunk_text or "0")
+  chunk_text = chunk_text or "0"
+  chunk_width = chunk_width or #chunk_text
+  local chunk_display =
+    string.rep(" ", math.max(0, chunk_width - #chunk_text))
+      .. chunk_text
+  local suffix = ("%s P C"):format(chunk_display)
   local path_width = math.max(
     1,
     width
@@ -1309,9 +1333,10 @@ local function sidebar_row(index, file, width, chunk_text)
   return {
     line = line,
     chunk_column = chunk_column,
-    chunk_end_column = chunk_column + #(chunk_text or "0"),
-    change_column = #line - 3,
-    parent_column = #line - 1,
+    chunk_end_column = chunk_column + chunk_width,
+    chunk_width = chunk_width,
+    parent_column = #line - 3,
+    change_column = #line - 1,
   }
 end
 
@@ -1338,8 +1363,6 @@ local function sidebar_chunk(session, role)
   end
 end
 
-local sidebar_rendering = false
-
 local function refresh_sidebar(group, tab)
   local buf = group.sidebar_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
@@ -1353,12 +1376,32 @@ local function refresh_sidebar(group, tab)
     link = "CursorLine",
     default = true,
   })
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarRoleActive", {
-    link = "Search",
+  local normal_hl =
+    vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  local parent_hl =
+    vim.api.nvim_get_hl(0, { name = "DiagnosticError", link = false })
+  local change_hl =
+    vim.api.nvim_get_hl(0, { name = "DiagnosticOk", link = false })
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarParent", {
+    fg = parent_hl.fg or 0xe06c75,
+    bg = normal_hl.bg,
     default = true,
   })
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarRoleInactive", {
-    link = "Comment",
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarParentActive", {
+    fg = parent_hl.fg or 0xe06c75,
+    bg = normal_hl.bg,
+    bold = true,
+    default = true,
+  })
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarChange", {
+    fg = change_hl.fg or 0x98c379,
+    bg = normal_hl.bg,
+    default = true,
+  })
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarChangeActive", {
+    fg = change_hl.fg or 0x98c379,
+    bg = normal_hl.bg,
+    bold = true,
     default = true,
   })
   vim.api.nvim_set_hl(0, "PantheonInspectSidebarChunkActive", {
@@ -1366,40 +1409,6 @@ local function refresh_sidebar(group, tab)
     default = true,
   })
   local active_chunk = sidebar_chunk(group[active_index], active_role)
-  local lines = {}
-  group.sidebar_rows = {}
-  for index, session in ipairs(group) do
-    local total = #(session.hunks or {})
-    local chunk_text = tostring(total)
-    if index == active_index and active_chunk then
-      chunk_text = ("%d/%d"):format(active_chunk, total)
-    end
-    local row = sidebar_row(
-      index,
-      sidebar_file(session.file),
-      group.sidebar_width,
-      chunk_text
-    )
-    group.sidebar_rows[index] = row
-    lines[index] = row.line
-  end
-  local existing_lines =
-    vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  sidebar_rendering = true
-  vim.bo[buf].modifiable = true
-  for index, line in ipairs(lines) do
-    if existing_lines[index] ~= line then
-      vim.api.nvim_buf_set_lines(
-        buf,
-        index - 1,
-        index,
-        false,
-        { line }
-      )
-    end
-  end
-  vim.bo[buf].modifiable = false
-  sidebar_rendering = false
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   for index, _ in ipairs(group) do
     local row = group.sidebar_rows[index]
@@ -1410,32 +1419,30 @@ local function refresh_sidebar(group, tab)
       })
     end
     if index == active_index and active_chunk then
+      local chunk_text = ("%d/%d"):format(
+        active_chunk,
+        #(group[index].hunks or {})
+      )
+      chunk_text =
+        string.rep(
+          " ",
+          math.max(0, row.chunk_width - #chunk_text)
+        ) .. chunk_text
       vim.api.nvim_buf_set_extmark(
         buf,
         sidebar_ns,
         index - 1,
         row.chunk_column,
         {
-          end_col = row.chunk_end_column,
-          hl_group = "PantheonInspectSidebarChunkActive",
+          virt_text = {
+            { chunk_text, "PantheonInspectSidebarChunkActive" },
+          },
+          virt_text_pos = "overlay",
+          hl_mode = "combine",
           priority = 100,
         }
       )
     end
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      sidebar_ns,
-      index - 1,
-      row.change_column,
-      {
-        end_col = row.change_column + 1,
-        hl_group = index == active_index
-            and active_role == "change"
-            and "PantheonInspectSidebarRoleActive"
-          or "PantheonInspectSidebarRoleInactive",
-        priority = 100,
-      }
-    )
     vim.api.nvim_buf_set_extmark(
       buf,
       sidebar_ns,
@@ -1445,8 +1452,22 @@ local function refresh_sidebar(group, tab)
         end_col = row.parent_column + 1,
         hl_group = index == active_index
             and active_role == "parent"
-            and "PantheonInspectSidebarRoleActive"
-          or "PantheonInspectSidebarRoleInactive",
+            and "PantheonInspectSidebarParentActive"
+          or "PantheonInspectSidebarParent",
+        priority = 100,
+      }
+    )
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      sidebar_ns,
+      index - 1,
+      row.change_column,
+      {
+        end_col = row.change_column + 1,
+        hl_group = index == active_index
+            and active_role == "change"
+            and "PantheonInspectSidebarChangeActive"
+          or "PantheonInspectSidebarChange",
         priority = 100,
       }
     )
@@ -1490,11 +1511,18 @@ local function setup_inspection_sidebar(group)
   local lines = {}
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
+    local total = #(session.hunks or {})
+    local total_text = tostring(total)
+    local chunk_width = math.max(
+      #total_text,
+      #total_text * 2 + 1
+    )
     local row = sidebar_row(
       index,
       sidebar_file(session.file),
       group.sidebar_width,
-      tostring(#(session.hunks or {}))
+      total_text,
+      chunk_width
     )
     group.sidebar_rows[index] = row
     lines[index] = row.line
@@ -1511,7 +1539,7 @@ local function setup_inspection_sidebar(group)
     create_sidebar_window(group, session.change)
   end
   sidebar_groups[#sidebar_groups + 1] = group
-  local first = group[1] and group[1].change or nil
+  local first = group[1] and group[1].parent or nil
   if valid_endpoint(first) then
     vim.api.nvim_set_current_win(first.win)
     show_inspection_path(first.buf)
@@ -1566,28 +1594,63 @@ vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
   callback = function(args)
     local group = sidebar_group_for_buffer(args.buf)
     if group
-      and not sidebar_rendering
       and vim.api.nvim_get_current_buf() == args.buf
+      and group.focused_win == vim.api.nvim_get_current_win()
     then
-      open_sidebar_selection(group)
+      local generation = group.sidebar_focus_generation or 0
+      local focused_win = group.focused_win
+      vim.schedule(function()
+        if group.sidebar_focus_generation == generation
+          and group.focused_win == focused_win
+          and focused_win == vim.api.nvim_get_current_win()
+          and vim.api.nvim_get_current_buf() == group.sidebar_buf
+        then
+          open_sidebar_selection(group)
+        end
+      end)
       return
     end
     local tab = vim.api.nvim_get_current_tabpage()
     for _, candidate in ipairs(sidebar_groups) do
+      candidate.sidebar_focus_generation =
+        (candidate.sidebar_focus_generation or 0) + 1
+      candidate.focused_win = nil
       refresh_sidebar(candidate, tab)
     end
   end,
 })
 
-vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+vim.api.nvim_create_autocmd("WinEnter", {
+  group = sync_group,
+  callback = function(args)
+    local current_win = vim.api.nvim_get_current_win()
+    for _, candidate in ipairs(sidebar_groups) do
+      if candidate.focused_win ~= current_win then
+        candidate.sidebar_focus_generation =
+          (candidate.sidebar_focus_generation or 0) + 1
+        candidate.focused_win = nil
+      end
+    end
+    local group = sidebar_group_for_buffer(args.buf)
+    if group
+      and vim.api.nvim_get_current_buf() == args.buf
+    then
+      group.sidebar_focus_generation =
+        (group.sidebar_focus_generation or 0) + 1
+      group.focused_win = current_win
+      open_sidebar_selection(group)
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd("WinLeave", {
   group = sync_group,
   callback = function(args)
     local group = sidebar_group_for_buffer(args.buf)
-    if group
-      and not sidebar_rendering
-      and vim.api.nvim_get_current_buf() == args.buf
-    then
-      open_sidebar_selection(group)
+    if group and group.focused_win == vim.api.nvim_get_current_win() then
+      group.sidebar_focus_generation =
+        (group.sidebar_focus_generation or 0) + 1
+      group.focused_win = nil
     end
   end,
 })

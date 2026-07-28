@@ -25,15 +25,22 @@ vim.api.nvim_buf_set_lines(
   viewport_lines
 )
 for _, expected in ipairs({
-  { cursor = 5, topline = 1 },
-  { cursor = 15, topline = 5 },
+  { cursor = 5, topline = 1, column = 0 },
+  {
+    cursor = 15,
+    topline = 5,
+    column = #viewport_lines[15] - 1,
+  },
 }) do
+  vim.api.nvim_win_call(viewport_win, function()
+    vim.fn.winrestview({ topline = 1 })
+  end)
   vim.api.nvim_win_set_cursor(viewport_win, { expected.cursor, 0 })
   inspect._normalize_inspection_view(viewport_win)
   local view = vim.api.nvim_win_call(viewport_win, vim.fn.winsaveview)
   local cursor = vim.api.nvim_win_get_cursor(viewport_win)
   assert(view.topline == expected.topline)
-  assert(cursor[2] == #viewport_lines[expected.cursor] - 1)
+  assert(cursor[2] == expected.column)
 end
 vim.api.nvim_buf_set_lines(viewport_buf, 0, -1, false, { "" })
 vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
@@ -46,7 +53,9 @@ local shortened_sidebar_row = inspect._sidebar_row(
   "2/7"
 )
 assert(shortened_sidebar_row.line:match("^12%. …"))
-assert(shortened_sidebar_row.line:match("2/7 C P$"))
+assert(shortened_sidebar_row.line:match("2/7 P C$"))
+assert(shortened_sidebar_row.parent_column
+  < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
@@ -552,17 +561,17 @@ if integration_root and (integration_sha or integration_url) then
   assert(#sidebar_lines == pair_count)
   for index, line in ipairs(sidebar_lines) do
     assert(line:match("^" .. index .. "%. "))
-    assert(line:match("[%d/]+ C P$"))
+    assert(line:match("[%d/]+ P C$"))
     assert(vim.fn.strdisplaywidth(line) == sidebar_width)
     local displayed_file = line
       :gsub("^%d+%. ", "")
-      :gsub("%s+[%d/]+ C P$", "")
+      :gsub("%s+[%d/]+ P C$", "")
       :gsub("^…", "")
     local _, separators = displayed_file:gsub("/", "")
     assert(separators <= 1)
   end
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
-  local first_sidebar_win = assert(sidebar_window(tabs[3]))
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  local first_sidebar_win = assert(sidebar_window(tabs[2]))
   assert(vim.api.nvim_win_get_cursor(first_sidebar_win)[1] == 1)
   assert(vim.api.nvim_win_call(
     first_sidebar_win,
@@ -668,11 +677,11 @@ if integration_root and (integration_sha or integration_url) then
   assert(switch_mapped)
   assert(next_file_mapped)
 
-  vim.api.nvim_set_current_tabpage(tabs[3])
+  vim.api.nvim_set_current_tabpage(tabs[2])
   local sidebar_active = vim.b[sidebar_buf]
     .pantheon_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
-  assert(sidebar_active.role == "change")
+  assert(sidebar_active.role == "parent")
   assert(sidebar_active.chunk_index == 1)
   assert(sidebar_active.chunk_count >= 1)
   local sidebar_signs = vim.api.nvim_get_namespaces()
@@ -685,8 +694,30 @@ if integration_root and (integration_sha or integration_url) then
     -1,
     {}
   ) >= pair_count * 2 + 1)
-  assert(vim.fs.normalize(vim.api.nvim_buf_get_name(change_buf)):lower()
-    == vim.fs.normalize(change_state.source_path):lower())
+  local normal_hl =
+    vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  local parent_hl = vim.api.nvim_get_hl(
+    0,
+    { name = "PantheonInspectSidebarParent", link = false }
+  )
+  local change_hl = vim.api.nvim_get_hl(
+    0,
+    { name = "PantheonInspectSidebarChange", link = false }
+  )
+  assert(parent_hl.fg
+    == vim.api.nvim_get_hl(
+      0,
+      { name = "DiagnosticError", link = false }
+    ).fg)
+  assert(change_hl.fg
+    == vim.api.nvim_get_hl(
+      0,
+      { name = "DiagnosticOk", link = false }
+    ).fg)
+  assert(parent_hl.bg == normal_hl.bg)
+  assert(change_hl.bg == normal_hl.bg)
+  assert(vim.fs.normalize(vim.api.nvim_buf_get_name(parent_buf)):lower()
+    == vim.fs.normalize(parent_state.source_path):lower())
   local initial_cursor = vim.api.nvim_win_get_cursor(change_win)
   local initial_line = vim.api.nvim_buf_get_lines(
     change_buf,
@@ -694,12 +725,16 @@ if integration_root and (integration_sha or integration_url) then
     initial_cursor[1],
     false
   )[1] or ""
-  assert(initial_cursor[2] == math.max(0, #initial_line - 1))
+  if initial_cursor[1] >= 10 then
+    assert(initial_cursor[2] == math.max(0, #initial_line - 1))
+  end
   local initial_view = vim.api.nvim_win_call(
     change_win,
     vim.fn.winsaveview
   )
-  assert(initial_view.topline == math.max(1, initial_cursor[1] - 10))
+  if initial_cursor[1] >= 10 then
+    assert(initial_view.topline == math.max(1, initial_cursor[1] - 10))
+  end
   local initial_parent_cursor = vim.api.nvim_win_get_cursor(parent_win)
   local initial_parent_line = vim.api.nvim_buf_get_lines(
     parent_buf,
@@ -707,23 +742,18 @@ if integration_root and (integration_sha or integration_url) then
     initial_parent_cursor[1],
     false
   )[1] or ""
-  assert(initial_parent_cursor[2]
-    == math.max(0, #initial_parent_line - 1))
+  if initial_parent_cursor[1] >= 10 then
+    assert(initial_parent_cursor[2]
+      == math.max(0, #initial_parent_line - 1))
+  end
   local initial_parent_view = vim.api.nvim_win_call(
     parent_win,
     vim.fn.winsaveview
   )
-  assert(initial_parent_view.topline
-    == math.max(1, initial_parent_cursor[1] - 10))
-  vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
-    "x",
-    false
-  )
-  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
-  assert(sidebar_active.pair_index == 1)
-  assert(sidebar_active.role == "parent")
+  if initial_parent_cursor[1] >= 10 then
+    assert(initial_parent_view.topline
+      == math.max(1, initial_parent_cursor[1] - 10))
+  end
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
     "x",
@@ -731,43 +761,56 @@ if integration_root and (integration_sha or integration_url) then
   )
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
+    "x",
+    false
+  )
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.role == "parent")
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<Tab>", true, false, true),
     "x",
     false
   )
-  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
-  assert(vim.fs.normalize(vim.api.nvim_buf_get_name(parent_buf)):lower()
-    == vim.fs.normalize(parent_state.source_path):lower())
-  assert(vim.api.nvim_buf_get_name(change_buf) == "")
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.fs.normalize(vim.api.nvim_buf_get_name(change_buf)):lower()
+    == vim.fs.normalize(change_state.source_path):lower())
+  assert(vim.api.nvim_buf_get_name(parent_buf) == "")
   if pair_count > 1 then
     vim.api.nvim_feedkeys(
       vim.api.nvim_replace_termcodes("<C-n>", true, false, true),
       "x",
       false
     )
-    assert(vim.api.nvim_get_current_tabpage() == tabs[4])
-    vim.api.nvim_set_current_tabpage(tabs[3])
-    vim.api.nvim_set_current_win(assert(sidebar_window(tabs[3])))
+    assert(vim.api.nvim_get_current_tabpage() == tabs[5])
+    vim.api.nvim_set_current_tabpage(tabs[2])
+    vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
     vim.api.nvim_win_set_cursor(0, { 2, 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", {
       buffer = sidebar_buf,
     })
-    assert(vim.api.nvim_get_current_tabpage() == tabs[5])
+    assert(vim.wait(1000, function()
+      return vim.api.nvim_get_current_tabpage() == tabs[4]
+    end), "sidebar cursor did not open the second changed file")
     assert(vim.api.nvim_get_current_win()
-      == assert(sidebar_window(tabs[5])))
+      == assert(sidebar_window(tabs[4])))
     sidebar_active = vim.b[sidebar_buf]
       .pantheon_inspect_sidebar_active
     assert(sidebar_active.pair_index == 2)
-    assert(sidebar_active.role == "change")
+    assert(sidebar_active.role == "parent")
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", {
       buffer = sidebar_buf,
     })
-    assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+    assert(vim.wait(1000, function()
+      return vim.api.nvim_get_current_tabpage() == tabs[2]
+    end), "sidebar cursor did not return to the first changed file")
     vim.cmd("wincmd h")
-    assert(vim.api.nvim_get_current_win() == change_win)
+    assert(vim.api.nvim_get_current_win() == parent_win)
   end
   local linked_line = math.min(
     2,
@@ -775,10 +818,7 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_buf_line_count(change_buf)
   )
   vim.api.nvim_win_set_cursor(change_win, { linked_line, 0 })
-  assert(
-    vim.api.nvim_get_current_win() == change_win,
-    "main cursor movement returned focus to the sidebar"
-  )
+  vim.api.nvim_set_current_win(change_win)
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = change_buf })
   assert(
     vim.api.nvim_win_get_cursor(parent_win)[1] == linked_line,
