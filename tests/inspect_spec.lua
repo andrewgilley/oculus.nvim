@@ -1,5 +1,9 @@
 local root = vim.fn.getcwd()
 vim.opt.runtimepath:prepend(root)
+vim.api.nvim_set_hl(0, "Normal", {
+  fg = 0xd0d0d0,
+  bg = 0x101820,
+})
 local oil_runtime = vim.env.PANTHEON_INSPECT_TEST_OIL
 if oil_runtime then
   vim.opt.runtimepath:append(oil_runtime)
@@ -203,7 +207,6 @@ if missing_root then
       inspect_root = missing_root,
       inspect_search_paths = { source_root },
       inspect_repositories = {},
-      inspect_allow_remote_clone = false,
     }
   )
   assert(ok, err)
@@ -280,6 +283,13 @@ if integration_root and (integration_sha or integration_url) then
   local integration_source = vim.env.PANTHEON_INSPECT_TEST_SOURCE
   local integration_search_root =
     vim.env.PANTHEON_INSPECT_TEST_SEARCH_ROOT
+  local expected_source_root =
+    vim.env.PANTHEON_INSPECT_TEST_EXPECT_SOURCE_ROOT
+      or integration_source
+  local expect_no_worktrees =
+    vim.env.PANTHEON_INSPECT_TEST_NO_WORKTREES == "1"
+  local verify_revision_content =
+    vim.env.PANTHEON_INSPECT_TEST_VERIFY_CONTENT == "1"
   local integration_cwd = vim.env.PANTHEON_INSPECT_TEST_CWD
   local repositories = {}
   local integration_is_pull_request = integration_url
@@ -372,6 +382,19 @@ if integration_root and (integration_sha or integration_url) then
     assert(old_state.status == new_state.status)
     assert(old_state.file)
     assert(new_state.file)
+    if expected_source_root then
+      local expected_root = vim.fs.normalize(expected_source_root):lower()
+      assert(vim.fs.normalize(old_state.repository):lower() == expected_root)
+      assert(vim.fs.normalize(new_state.repository):lower() == expected_root)
+      assert(vim.fs.normalize(old_state.source_path):lower():sub(
+        1,
+        #expected_root
+      ) == expected_root)
+      assert(vim.fs.normalize(new_state.source_path):lower():sub(
+        1,
+        #expected_root
+      ) == expected_root)
+    end
     commit_indices[old_state.commit_index] = true
     local expected_file_index =
       next_file_indices[old_state.commit_index] or 1
@@ -390,9 +413,31 @@ if integration_root and (integration_sha or integration_url) then
     buffers[new_buf] = true
     assert(vim.api.nvim_buf_get_name(old_buf):match(" Old · "))
     assert(vim.api.nvim_buf_get_name(new_buf):match(" New · "))
+    assert(vim.b[old_buf].pantheon_inspect_repository)
+    assert(vim.b[new_buf].pantheon_inspect_repository)
+    if expected_source_root then
+      local old_cwd = vim.api.nvim_win_call(
+        vim.api.nvim_tabpage_list_wins(old_tab)[1],
+        vim.fn.getcwd
+      )
+      local new_cwd = vim.api.nvim_win_call(
+        vim.api.nvim_tabpage_list_wins(new_tab)[1],
+        vim.fn.getcwd
+      )
+      assert(vim.fs.normalize(old_cwd):lower()
+        == vim.fs.normalize(expected_source_root):lower())
+      assert(vim.fs.normalize(new_cwd):lower()
+        == vim.fs.normalize(expected_source_root):lower())
+    end
   end
   if expected_commit_count then
     assert(vim.tbl_count(commit_indices) == expected_commit_count)
+  end
+  if expect_no_worktrees then
+    assert(vim.uv.fs_stat(vim.fs.joinpath(
+      integration_root,
+      "worktrees"
+    )) == nil)
   end
   local parent_state = vim.api.nvim_tabpage_get_var(
     tabs[2],
@@ -413,6 +458,27 @@ if integration_root and (integration_sha or integration_url) then
   local change_win = vim.api.nvim_tabpage_list_wins(tabs[3])[1]
   local parent_buf = vim.api.nvim_win_get_buf(parent_win)
   local change_buf = vim.api.nvim_win_get_buf(change_win)
+  if verify_revision_content then
+    assert(expected_source_root)
+    local content_state = change_state.status == "D"
+        and parent_state
+      or change_state
+    local content_buf = change_state.status == "D"
+        and parent_buf
+      or change_buf
+    local result = vim.system({
+      "git",
+      "-C",
+      expected_source_root,
+      "show",
+      content_state.commit .. ":" .. content_state.file,
+    }, { text = true }):wait()
+    assert(result.code == 0, result.stderr)
+    assert(vim.deep_equal(
+      vim.api.nvim_buf_get_lines(content_buf, 0, -1, false),
+      inspect._blob_lines(result.stdout)
+    ))
+  end
   local namespaces = vim.api.nvim_get_namespaces()
   local signs = namespaces.pantheon_inspect_changes
   assert(signs)
@@ -473,7 +539,7 @@ if integration_root and (integration_sha or integration_url) then
     local oil = require("oil")
     oil.setup({ watch_for_changes = false })
     vim.api.nvim_set_current_tabpage(tabs[3])
-    oil.open(change_state.worktree)
+    oil.open(change_state.repository)
     assert(vim.wait(10000, function()
       local oil_buf = vim.api.nvim_get_current_buf()
       if vim.bo[oil_buf].filetype ~= "oil" then
@@ -507,6 +573,10 @@ if integration_root and (integration_sha or integration_url) then
       name = oil_marks[1][4].sign_hl_group,
       link = false,
     })
-    assert(oil_highlight.bg == nil)
+    local normal_highlight = vim.api.nvim_get_hl(0, {
+      name = "Normal",
+      link = false,
+    })
+    assert(oil_highlight.bg == normal_highlight.bg)
   end
 end

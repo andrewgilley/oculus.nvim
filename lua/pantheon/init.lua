@@ -30,7 +30,6 @@ local defaults = {
   browser_command = nil,
   inspect_root = vim.fn.stdpath("cache") .. "/pantheon/inspect",
   inspect_cache_ttl = 60,
-  inspect_allow_remote_clone = false,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
   token = nil,

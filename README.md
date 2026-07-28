@@ -6,18 +6,19 @@ Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activi
 
 On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
-Pantheon prepares detached worktrees for each commit and its first parent.
-Every changed file opens an adjacent old/new tab pair. Pull requests group
-those file pairs by commit, in commit order. The tabs appear with animated
-loading indicators and are replaced in place when their files are ready.
-Cursor positions and scroll views remain linked within each pair, and `-`/`+`
-signs mark the old and new lines. The cursor starts at the first changed hunk;
-use `<C-Left>` and `<C-Right>` to jump to the previous and next hunks.
-Inspection repositories and worktrees are cached under Neovim's cache
-directory; set `inspect_root` in `require("pantheon").setup()` to use a
-different location.
+Pantheon reads each commit and its first parent from Git without changing the
+local checkout. Every changed file opens an adjacent old/new tab pair. Pull
+requests group those file pairs by commit, in commit order. Each tab remains
+anchored to the standard local repository directory and records the original
+relative source path; no separate Pantheon worktree is created. The tabs
+appear with animated loading indicators and are replaced in place when their
+files are ready. Cursor positions and scroll views remain linked within each
+pair, and `-`/`+` signs mark the old and new lines. The cursor starts at the
+first changed hunk; use `<C-Left>` and `<C-Right>` to jump to the previous and
+next hunks. Git objects are cached under Neovim's cache directory; set
+`inspect_root` in `require("pantheon").setup()` to use a different location.
 
-When an inspection worktree is opened with
+When an inspection tab is opened with
 [oil.nvim](https://github.com/stevearc/oil.nvim), a single foreground-only
 symbol marks each relevant entry: `+` added, `~` modified, `-` deleted, `→`
 renamed, and `•` a directory containing changes.

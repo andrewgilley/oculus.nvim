@@ -32,6 +32,18 @@ local function run(command, callback)
   end)
 end
 
+local function run_raw(command, callback)
+  vim.system(command, { text = true }, function(result)
+    vim.schedule(function()
+      if result.code ~= 0 then
+        callback(nil, git_error(result, "git command failed"))
+        return
+      end
+      callback(result.stdout or "")
+    end)
+  end)
+end
+
 local function parse_commit_url(url)
   if type(url) ~= "string" then
     return nil
@@ -563,7 +575,7 @@ local function ensure_mirror(info, root, opts, callback)
   find_local_repository(info, opts, function(source)
     local function use_source(local_source)
       if directory(mirror) then
-        callback(mirror)
+        callback(mirror, nil, local_source)
         return
       end
       if vim.uv.fs_stat(mirror) then
@@ -572,10 +584,12 @@ local function ensure_mirror(info, root, opts, callback)
       end
 
       vim.fn.mkdir(vim.fs.dirname(mirror), "p")
-      clone_mirror(local_source, info, mirror, callback)
+      clone_mirror(local_source, info, mirror, function(result, err)
+        callback(result, err, local_source)
+      end)
     end
 
-    if source or opts.inspect_allow_remote_clone then
+    if source then
       use_source(source)
       return
     end
@@ -706,42 +720,6 @@ local function revision_pairs(mirror, info, commits, callback)
       return
     end
     callback(pairs)
-  end)
-end
-
-local function ensure_worktree(mirror, path, commit, callback)
-  if directory(path) then
-    run({ "git", "-C", path, "rev-parse", "HEAD" }, function(head, err)
-      if err or head ~= commit then
-        callback(nil, "the cached worktree at " .. path
-          .. " is not at the expected commit")
-        return
-      end
-      callback(path)
-    end)
-    return
-  end
-  if vim.uv.fs_stat(path) then
-    callback(nil, "the worktree path is not a directory: " .. path)
-    return
-  end
-
-  vim.fn.mkdir(vim.fs.dirname(path), "p")
-  run({
-    "git",
-    "--git-dir",
-    mirror,
-    "worktree",
-    "add",
-    "--detach",
-    path,
-    commit,
-  }, function(_, err)
-    if err then
-      callback(nil, "could not create worktree: " .. err)
-      return
-    end
-    callback(path)
   end)
 end
 
@@ -876,8 +854,8 @@ end
 
 local function session_directory(session, role, directory)
   local root = role == "parent"
-      and session.parent_worktree
-    or session.change_worktree
+      and session.parent_repository
+    or session.change_repository
   local relative = relative_path(root, directory)
   if relative ~= nil then
     return session, role, relative
@@ -1030,21 +1008,36 @@ local function highlight_foreground(name, fallback)
   return fallback
 end
 
+local function highlight_background(name)
+  local ok, highlight = pcall(
+    vim.api.nvim_get_hl,
+    0,
+    { name = name, link = false }
+  )
+  return ok and highlight.bg or nil
+end
+
 local function set_oil_highlights()
+  local background = highlight_background("Normal")
   vim.api.nvim_set_hl(0, "PantheonOilAdded", {
     fg = highlight_foreground("DiagnosticOk", 0x9ae6b4),
+    bg = background,
   })
   vim.api.nvim_set_hl(0, "PantheonOilDeleted", {
     fg = highlight_foreground("DiagnosticError", 0xf87171),
+    bg = background,
   })
   vim.api.nvim_set_hl(0, "PantheonOilModified", {
     fg = highlight_foreground("DiagnosticWarn", 0xfbd38d),
+    bg = background,
   })
   vim.api.nvim_set_hl(0, "PantheonOilRenamed", {
     fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
+    bg = background,
   })
   vim.api.nvim_set_hl(0, "PantheonOilDirectory", {
     fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
+    bg = background,
   })
 end
 
@@ -1210,7 +1203,7 @@ local function update_loading_buffer(loading, endpoint, frame)
     "",
     ("  %s  Loading %s…"):format(frame, endpoint.description),
     "",
-    "  Preparing repository and worktree",
+    "  Preparing repository and revisions",
   })
   vim.bo[endpoint.buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(endpoint.buf, loading_ns, 0, -1)
@@ -1440,14 +1433,10 @@ local function load_tab(
   vim.cmd("tcd " .. vim.fn.fnameescape(path))
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
-  local target = file and vim.fs.joinpath(path, file) or nil
-  if target and vim.uv.fs_stat(target) then
-    local read_ok, lines = pcall(vim.fn.readfile, target)
-    if not read_ok then
-      error("could not read inspected file: " .. tostring(lines))
-    end
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  end
+  local lines = role == "change"
+      and inspection.change_lines
+    or inspection.parent_lines
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines or { "" })
   local display_file = file or "[missing]"
   local tab_prefix = inspection.kind == "pull_request"
       and ("C%d F%d"):format(
@@ -1463,10 +1452,11 @@ local function load_tab(
   )
   vim.api.nvim_buf_set_name(
     buf,
-    ("pantheon-inspect://%d/%d/%s"):format(
+    ("pantheon-inspect://%d/%d/%s/%s"):format(
       endpoint.loading_id,
       pair_index,
-      tab_label
+      tab_label,
+      display_file
     )
   )
   local filetype = file and vim.filetype.match({ filename = file }) or nil
@@ -1478,12 +1468,16 @@ local function load_tab(
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = false
   vim.bo[buf].readonly = true
+  vim.b[buf].pantheon_inspect_repository = path
+  vim.b[buf].pantheon_inspect_source_path =
+    file and vim.fs.joinpath(path, file) or nil
   local state = {
     role = role,
     commit = role == "change"
         and inspection.commit
       or inspection.parent,
-    worktree = path,
+    repository = path,
+    source_path = file and vim.fs.joinpath(path, file) or nil,
     loading = false,
     pair_index = pair_index,
     commit_index = inspection.commit_index,
@@ -1512,7 +1506,7 @@ local function open_tabs(inspections, loading, done)
       local loading_pair = loading.pairs[index]
       local parent = load_tab(
         loading_pair.parent,
-        paths.parent_worktree,
+        paths.repository,
         paths.parent_file,
         paths.parent_role or "parent",
         paths,
@@ -1520,7 +1514,7 @@ local function open_tabs(inspections, loading, done)
       )
       local change = load_tab(
         loading_pair.change,
-        paths.change_worktree,
+        paths.repository,
         paths.change_file,
         "change",
         paths,
@@ -1530,8 +1524,8 @@ local function open_tabs(inspections, loading, done)
       local session = {
         parent = parent,
         change = change,
-        parent_worktree = paths.parent_worktree,
-        change_worktree = paths.change_worktree,
+        parent_repository = paths.repository,
+        change_repository = paths.repository,
         changes = paths.changes,
         hunks = paths.hunks,
         change_lines = change_lines(paths.hunks),
@@ -1554,13 +1548,43 @@ local function open_tabs(inspections, loading, done)
   done(inspections)
 end
 
+local function blob_lines(output)
+  local lines = vim.split(output or "", "\n", { plain = true })
+  if #lines > 1 and lines[#lines] == "" then
+    table.remove(lines)
+  end
+  for index, line in ipairs(lines) do
+    lines[index] = line:gsub("\r$", "")
+  end
+  return #lines > 0 and lines or { "" }
+end
+
+local function read_revision_file(mirror, revision, file, missing, callback)
+  if missing then
+    callback({ "" })
+    return
+  end
+  run_raw({
+    "git",
+    "--git-dir",
+    mirror,
+    "show",
+    revision .. ":" .. file,
+  }, function(output, err)
+    if err then
+      callback(nil, "could not read inspected file: " .. err)
+      return
+    end
+    callback(blob_lines(output))
+  end)
+end
+
 local function read_revision_diff(
   mirror,
   info,
   pair,
   commit_index,
-  parent_path,
-  change_path,
+  repository_path,
   callback
 )
   run({
@@ -1612,24 +1636,51 @@ local function read_revision_diff(
           callback(nil, "could not read file hunks: " .. patch_err)
           return
         end
-        inspections[file_index] = {
-          kind = info.kind,
-          parent = pair.parent,
-          commit = pair.commit,
-          parent_role = info.kind == "pull_request" and "old" or "parent",
-          parent_worktree = parent_path,
-          change_worktree = change_path,
-          parent_file = parent_file,
-          change_file = change_file,
-          changes = changed_files,
-          hunks = parse_hunks(patch),
-          commit_index = commit_index,
-          file_index = file_index,
-          file_count = #changed_files,
-          status = changed_file.status,
-        }
-        file_index = file_index + 1
-        read_file_diff()
+        read_revision_file(
+          mirror,
+          pair.parent,
+          parent_file,
+          changed_file.status == "A",
+          function(parent_lines, parent_err)
+            if parent_err then
+              callback(nil, parent_err)
+              return
+            end
+            read_revision_file(
+              mirror,
+              pair.commit,
+              change_file,
+              changed_file.status == "D",
+              function(change_lines_value, change_err)
+                if change_err then
+                  callback(nil, change_err)
+                  return
+                end
+                inspections[file_index] = {
+                  kind = info.kind,
+                  parent = pair.parent,
+                  commit = pair.commit,
+                  parent_role = info.kind == "pull_request"
+                      and "old"
+                    or "parent",
+                  repository = repository_path,
+                  parent_file = parent_file,
+                  change_file = change_file,
+                  parent_lines = parent_lines,
+                  change_lines = change_lines_value,
+                  changes = changed_files,
+                  hunks = parse_hunks(patch),
+                  commit_index = commit_index,
+                  file_index = file_index,
+                  file_count = #changed_files,
+                  status = changed_file.status,
+                }
+                file_index = file_index + 1
+                read_file_diff()
+              end
+            )
+          end
+        )
       end)
     end
     read_file_diff()
@@ -1638,44 +1689,19 @@ end
 
 local function prepare_revision(
   mirror,
-  worktree_root,
+  repository_path,
   info,
   pair,
   commit_index,
   callback
 )
-  local parent_path = vim.fs.joinpath(worktree_root, pair.parent)
-  local change_path = vim.fs.joinpath(worktree_root, pair.commit)
-  ensure_worktree(
+  read_revision_diff(
     mirror,
-    parent_path,
-    pair.parent,
-    function(_, parent_err)
-      if parent_err then
-        callback(nil, parent_err)
-        return
-      end
-      ensure_worktree(
-        mirror,
-        change_path,
-        pair.commit,
-        function(_, change_err)
-          if change_err then
-            callback(nil, change_err)
-            return
-          end
-          read_revision_diff(
-            mirror,
-            info,
-            pair,
-            commit_index,
-            parent_path,
-            change_path,
-            callback
-          )
-        end
-      )
-    end
+    info,
+    pair,
+    commit_index,
+    repository_path,
+    callback
   )
 end
 
@@ -1683,9 +1709,13 @@ local function prepare(info, opts, on_pairs, callback)
   local root = opts.inspect_root
     or vim.fs.joinpath(vim.fn.stdpath("cache"), "pantheon", "inspect")
 
-  ensure_mirror(info, root, opts, function(mirror, mirror_err)
+  ensure_mirror(info, root, opts, function(mirror, mirror_err, repository_path)
     if mirror_err then
       callback(nil, mirror_err)
+      return
+    end
+    if not repository_path then
+      callback(nil, "inspect requires a standard local repository")
       return
     end
     fetch_pair(mirror, info, function(commits, commit_err)
@@ -1698,58 +1728,39 @@ local function prepare(info, opts, on_pairs, callback)
           callback(nil, pairs_err)
           return
         end
-        run({
-          "git",
-          "--git-dir",
-          mirror,
-          "worktree",
-          "prune",
-        }, function(_, prune_err)
-          if prune_err then
-            callback(nil, "could not prune cached worktrees: " .. prune_err)
-            return
-          end
-
-          local worktree_root = forge_cache_path(
-            root,
-            "worktrees",
-            info,
-            info.repo
-          )
-          local inspections = {}
-          local index = 1
-          local function prepare_next()
-            local pair = pairs[index]
-            if not pair then
-              if #inspections == 0 then
-                callback(nil, "the inspected revisions do not change any files")
-                return
-              end
-              callback(inspections)
+        local inspections = {}
+        local index = 1
+        local function prepare_next()
+          local pair = pairs[index]
+          if not pair then
+            if #inspections == 0 then
+              callback(nil, "the inspected revisions do not change any files")
               return
             end
-            prepare_revision(
-              mirror,
-              worktree_root,
-              info,
-              pair,
-              index,
-              function(commit_inspections, err)
-                if err then
-                  callback(nil, err)
-                  return
-                end
-                for _, inspection in ipairs(commit_inspections) do
-                  inspections[#inspections + 1] = inspection
-                end
-                on_pairs(inspections)
-                index = index + 1
-                prepare_next()
-              end
-            )
+            callback(inspections)
+            return
           end
-          prepare_next()
-        end)
+          prepare_revision(
+            mirror,
+            repository_path,
+            info,
+            pair,
+            index,
+            function(commit_inspections, err)
+              if err then
+                callback(nil, err)
+                return
+              end
+              for _, inspection in ipairs(commit_inspections) do
+                inspections[#inspections + 1] = inspection
+              end
+              on_pairs(inspections)
+              index = index + 1
+              prepare_next()
+            end
+          )
+        end
+        prepare_next()
       end)
     end)
   end)
@@ -1857,6 +1868,7 @@ M._download_destination = download_destination
 M._offer_repository_download = offer_repository_download
 M._parse_hunks = parse_hunks
 M._parse_revision_pairs = parse_revision_pairs
+M._blob_lines = blob_lines
 M._oil_entry_status = oil_entry_status
 M._change_lines = change_lines
 M._next_change_line = next_change_line
