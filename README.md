@@ -28,12 +28,14 @@ hunks. `<Tab>` toggles only between the old and new tabs for the current file.
 `<C-n>` advances to the next changed file while keeping the current old/new
 side. Every Inspect tab includes the same right-hand changed-files sidebar.
 The first inspected file starts at the top, rows are numbered, and long paths
-are shortened on the left so the trailing `C P` always remains visible. The
-current file row is highlighted, and `C` or `P` highlights for the changed or
-parent version of the active tab. Required revisions are resolved or fetched
-through the project's own `.git` directory. Inspect does not create a separate
-Pantheon repository, object cache, or worktree, and it does not alter the
-working checkout.
+show only their parent directory and filename. Each row includes its change
+hunk count; the active row shows the cursor's current hunk as `current/total`.
+The trailing `C P` always remains visible, with `C` or `P` highlighted for the
+changed or parent version of the active tab. Moving the cursor onto a sidebar
+row opens that file on the same side while keeping the sidebar active. Required
+revisions are resolved or fetched through the project's own `.git` directory.
+Inspect does not create a separate Pantheon repository, object cache, or
+worktree, and it does not alter the working checkout.
 
 When an inspection tab is opened with
 [oil.nvim](https://github.com/stevearc/oil.nvim), a single foreground-only
