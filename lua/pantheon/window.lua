@@ -729,11 +729,8 @@ local function render_contributors()
   local lines = searching
       and {
         "",
-        "  SEARCH RESULTS",
-        ("  %d matching user%s · arrows preview · enter open"):format(
-          #(M.state.search_results or {}),
-          #(M.state.search_results or {}) == 1 and "" or "s"
-        ),
+        "  SEARCH",
+        "",
         "",
       }
     or {
@@ -1343,12 +1340,16 @@ local function search_win_config()
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(parent_width)
   local right_width = math.max(3, parent_width - left_width - 1)
+  local outer_width = math.min(30, right_width)
   return {
     relative = "editor",
-    width = math.max(1, right_width - 2),
+    width = math.max(1, outer_width - 2),
     height = 1,
     row = position[1] + 1,
-    col = position[2] + left_width + 1,
+    col = position[2]
+      + left_width
+      + 1
+      + math.floor((right_width - outer_width) / 2),
     style = "minimal",
     border = M.state.opts.border or "rounded",
     zindex = 70,
