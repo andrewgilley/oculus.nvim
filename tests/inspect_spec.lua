@@ -408,11 +408,41 @@ if integration_root and (integration_sha or integration_url) then
   local commit_indices = {}
   local next_file_indices = {}
   local buffers = {}
+  local sidebar_buf
+  local function inspection_window(tab)
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+      local buf = vim.api.nvim_win_get_buf(win)
+      if type(vim.b[buf].pantheon_inspect) == "table" then
+        return win
+      end
+    end
+  end
+  local function sidebar_window(tab)
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+      local buf = vim.api.nvim_win_get_buf(win)
+      if vim.bo[buf].filetype == "pantheon-inspect-files" then
+        return win
+      end
+    end
+  end
   for pair_index = 1, pair_count do
     local old_tab = tabs[pair_index * 2]
     local new_tab = tabs[pair_index * 2 + 1]
-    assert(#vim.api.nvim_tabpage_list_wins(old_tab) == 1)
-    assert(#vim.api.nvim_tabpage_list_wins(new_tab) == 1)
+    assert(#vim.api.nvim_tabpage_list_wins(old_tab) == 2)
+    assert(#vim.api.nvim_tabpage_list_wins(new_tab) == 2)
+    local old_main_win = assert(inspection_window(old_tab))
+    local new_main_win = assert(inspection_window(new_tab))
+    local old_sidebar_win = assert(sidebar_window(old_tab))
+    local new_sidebar_win = assert(sidebar_window(new_tab))
+    local old_sidebar_buf = vim.api.nvim_win_get_buf(old_sidebar_win)
+    local new_sidebar_buf = vim.api.nvim_win_get_buf(new_sidebar_win)
+    sidebar_buf = sidebar_buf or old_sidebar_buf
+    assert(old_sidebar_buf == sidebar_buf)
+    assert(new_sidebar_buf == sidebar_buf)
+    assert(vim.api.nvim_win_get_position(old_sidebar_win)[2]
+      > vim.api.nvim_win_get_position(old_main_win)[2])
+    assert(vim.api.nvim_win_get_position(new_sidebar_win)[2]
+      > vim.api.nvim_win_get_position(new_main_win)[2])
     local old_state = vim.api.nvim_tabpage_get_var(
       old_tab,
       "pantheon_inspect"
@@ -450,12 +480,8 @@ if integration_root and (integration_sha or integration_url) then
     assert(old_state.file_index == expected_file_index)
     assert(old_state.file_index <= old_state.file_count)
     next_file_indices[old_state.commit_index] = expected_file_index + 1
-    local old_buf = vim.api.nvim_win_get_buf(
-      vim.api.nvim_tabpage_list_wins(old_tab)[1]
-    )
-    local new_buf = vim.api.nvim_win_get_buf(
-      vim.api.nvim_tabpage_list_wins(new_tab)[1]
-    )
+    local old_buf = vim.api.nvim_win_get_buf(old_main_win)
+    local new_buf = vim.api.nvim_win_get_buf(new_main_win)
     assert(not buffers[old_buf])
     buffers[old_buf] = true
     assert(not buffers[new_buf])
@@ -496,6 +522,17 @@ if integration_root and (integration_sha or integration_url) then
   if expected_commit_count then
     assert(vim.tbl_count(commit_indices) == expected_commit_count)
   end
+  assert(sidebar_buf)
+  local sidebar_lines = vim.api.nvim_buf_get_lines(
+    sidebar_buf,
+    0,
+    -1,
+    false
+  )
+  assert(#sidebar_lines == pair_count)
+  for _, line in ipairs(sidebar_lines) do
+    assert(line:match("  C P$"))
+  end
   if expect_no_worktrees then
     assert(vim.uv.fs_stat(vim.fs.joinpath(
       integration_root,
@@ -523,8 +560,8 @@ if integration_root and (integration_sha or integration_url) then
     assert(change_state.commit == integration_sha)
   end
 
-  local parent_win = vim.api.nvim_tabpage_list_wins(tabs[2])[1]
-  local change_win = vim.api.nvim_tabpage_list_wins(tabs[3])[1]
+  local parent_win = assert(inspection_window(tabs[2]))
+  local change_win = assert(inspection_window(tabs[3]))
   local parent_buf = vim.api.nvim_win_get_buf(parent_win)
   local change_buf = vim.api.nvim_win_get_buf(change_win)
   if verify_revision_content then
@@ -575,6 +612,7 @@ if integration_root and (integration_sha or integration_url) then
   local previous_mapped = false
   local next_mapped = false
   local toggle_mapped = false
+  local switch_mapped = false
   local next_file_mapped = false
   for _, mapping in ipairs(jump_maps) do
     if mapping.desc == "Previous Pantheon change" then
@@ -583,6 +621,8 @@ if integration_root and (integration_sha or integration_url) then
       next_mapped = mapping.lhs == "<C-Right>"
     elseif mapping.desc == "Toggle Pantheon file version" then
       toggle_mapped = mapping.lhs == "<Tab>"
+    elseif mapping.desc == "Switch Pantheon file version" then
+      switch_mapped = mapping.lhs == "<C-S>"
     elseif mapping.desc == "Next Pantheon changed file" then
       next_file_mapped = mapping.lhs == "<C-N>"
     end
@@ -590,9 +630,24 @@ if integration_root and (integration_sha or integration_url) then
   assert(previous_mapped)
   assert(next_mapped)
   assert(toggle_mapped)
+  assert(switch_mapped)
   assert(next_file_mapped)
 
   vim.api.nvim_set_current_tabpage(tabs[3])
+  local sidebar_active = vim.b[sidebar_buf]
+    .pantheon_inspect_sidebar_active
+  assert(sidebar_active.pair_index == 1)
+  assert(sidebar_active.role == "change")
+  local sidebar_signs = vim.api.nvim_get_namespaces()
+    .pantheon_inspect_sidebar
+  assert(sidebar_signs)
+  assert(#vim.api.nvim_buf_get_extmarks(
+    sidebar_buf,
+    sidebar_signs,
+    0,
+    -1,
+    {}
+  ) >= pair_count * 2 + 1)
   assert(vim.fs.normalize(vim.api.nvim_buf_get_name(change_buf)):lower()
     == vim.fs.normalize(change_state.source_path):lower())
   local initial_cursor = vim.api.nvim_win_get_cursor(change_win)
@@ -623,6 +678,23 @@ if integration_root and (integration_sha or integration_url) then
   )
   assert(initial_parent_view.topline
     == math.max(1, initial_parent_cursor[1] - 10))
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
+    "x",
+    false
+  )
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.pair_index == 1)
+  assert(sidebar_active.role == "parent")
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
+    "x",
+    false
+  )
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  assert(sidebar_active.role == "change")
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<Tab>", true, false, true),
     "x",

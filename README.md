@@ -24,10 +24,14 @@ pair, and `-`/`+` signs mark the old and new lines. The cursor starts at the
 first changed hunk, and each tab opens with `zt10<C-y>$` applied to normalize
 its view. Use `<C-Left>` and `<C-Right>` to jump to the previous and next
 hunks. `<Tab>` toggles only between the old and new tabs for the current file.
+`<C-s>` also switches between that file's parent and changed versions.
 `<C-n>` advances to the next changed file while keeping the current old/new
-side. Required revisions are resolved or fetched through the project's own
-`.git` directory. Inspect does not create a separate Pantheon repository,
-object cache, or worktree, and it does not alter the working checkout.
+side. Every Inspect tab includes the same right-hand changed-files sidebar.
+Its current file row is highlighted, and the trailing `C P` symbols highlight
+the changed or parent version for the active tab. Required revisions are
+resolved or fetched through the project's own `.git` directory. Inspect does
+not create a separate Pantheon repository, object cache, or worktree, and it
+does not alter the working checkout.
 
 When an inspection tab is opened with
 [oil.nvim](https://github.com/stevearc/oil.nvim), a single foreground-only

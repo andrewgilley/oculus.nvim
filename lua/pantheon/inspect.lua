@@ -7,7 +7,10 @@ local active = false
 local change_ns = vim.api.nvim_create_namespace("pantheon_inspect_changes")
 local loading_ns = vim.api.nvim_create_namespace("pantheon_inspect_loading")
 local oil_ns = vim.api.nvim_create_namespace("pantheon_inspect_oil")
+local sidebar_ns =
+  vim.api.nvim_create_namespace("pantheon_inspect_sidebar")
 local sessions = {}
+local sidebar_groups = {}
 local next_session = 0
 local syncing = false
 
@@ -1202,15 +1205,22 @@ local function next_file_session(group, current)
 end
 
 local function map_file_navigation(endpoint, session, group, role)
-  vim.keymap.set("n", "<Tab>", function()
+  local function toggle_version()
     select_endpoint(
       role == "parent" and session.change or session.parent
     )
-  end, {
+  end
+  vim.keymap.set("n", "<Tab>", toggle_version, {
     buffer = endpoint.buf,
     nowait = true,
     silent = true,
     desc = "Toggle Pantheon file version",
+  })
+  vim.keymap.set("n", "<C-s>", toggle_version, {
+    buffer = endpoint.buf,
+    nowait = true,
+    silent = true,
+    desc = "Switch Pantheon file version",
   })
   vim.keymap.set("n", "<C-n>", function()
     local target = next_file_session(group, session)
@@ -1224,6 +1234,152 @@ local function map_file_navigation(endpoint, session, group, role)
     desc = "Next Pantheon changed file",
   })
 end
+
+local function sidebar_active_item(group, tab)
+  for index, session in ipairs(group) do
+    if session.parent.tab == tab then
+      return index, "parent"
+    end
+    if session.change.tab == tab then
+      return index, "change"
+    end
+  end
+end
+
+local function refresh_sidebar(group, tab)
+  local buf = group.sidebar_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local active_index, active_role = sidebar_active_item(group, tab)
+  if not active_index then
+    return
+  end
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarCurrent", {
+    link = "CursorLine",
+    default = true,
+  })
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarRoleActive", {
+    link = "Search",
+    default = true,
+  })
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarRoleInactive", {
+    link = "Comment",
+    default = true,
+  })
+  vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+  for index, session in ipairs(group) do
+    local file = session.file
+    local change_column = #file + 2
+    local parent_column = #file + 4
+    if index == active_index then
+      vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 0, {
+        line_hl_group = "PantheonInspectSidebarCurrent",
+        hl_eol = true,
+      })
+    end
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      sidebar_ns,
+      index - 1,
+      change_column,
+      {
+        end_col = change_column + 1,
+        hl_group = index == active_index
+            and active_role == "change"
+            and "PantheonInspectSidebarRoleActive"
+          or "PantheonInspectSidebarRoleInactive",
+        priority = 100,
+      }
+    )
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      sidebar_ns,
+      index - 1,
+      parent_column,
+      {
+        end_col = parent_column + 1,
+        hl_group = index == active_index
+            and active_role == "parent"
+            and "PantheonInspectSidebarRoleActive"
+          or "PantheonInspectSidebarRoleInactive",
+        priority = 100,
+      }
+    )
+  end
+  vim.b[buf].pantheon_inspect_sidebar_active = {
+    pair_index = active_index,
+    role = active_role,
+  }
+  local sidebar_win = group.sidebar_windows[tab]
+  if sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+    vim.api.nvim_win_set_cursor(sidebar_win, { active_index, 0 })
+  end
+end
+
+local function create_sidebar_window(group, endpoint)
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  vim.api.nvim_set_current_tabpage(endpoint.tab)
+  vim.api.nvim_set_current_win(endpoint.win)
+  vim.cmd("botright vsplit")
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, group.sidebar_buf)
+  local width = math.min(48, math.max(24, math.floor(vim.o.columns * 0.24)))
+  vim.api.nvim_win_set_width(win, width)
+  vim.wo[win].winfixwidth = true
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].foldcolumn = "0"
+  vim.wo[win].wrap = false
+  vim.wo[win].cursorline = false
+  group.sidebar_windows[endpoint.tab] = win
+  vim.api.nvim_set_current_win(endpoint.win)
+end
+
+local function setup_inspection_sidebar(group)
+  local active_tab = vim.api.nvim_get_current_tabpage()
+  local active_win = vim.api.nvim_get_current_win()
+  local buf = vim.api.nvim_create_buf(false, true)
+  group.sidebar_buf = buf
+  group.sidebar_windows = {}
+  local lines = {}
+  for index, session in ipairs(group) do
+    session.file = session.file or ("file " .. index)
+    lines[index] = session.file .. "  C P"
+  end
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "hide"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].filetype = "pantheon-inspect-files"
+  for _, session in ipairs(group) do
+    create_sidebar_window(group, session.parent)
+    create_sidebar_window(group, session.change)
+  end
+  sidebar_groups[#sidebar_groups + 1] = group
+  if vim.api.nvim_tabpage_is_valid(active_tab) then
+    vim.api.nvim_set_current_tabpage(active_tab)
+    if vim.api.nvim_win_is_valid(active_win) then
+      vim.api.nvim_set_current_win(active_win)
+    end
+    refresh_sidebar(group, active_tab)
+  end
+end
+
+vim.api.nvim_create_autocmd("TabEnter", {
+  group = sync_group,
+  callback = function()
+    local tab = vim.api.nvim_get_current_tabpage()
+    for _, group in ipairs(sidebar_groups) do
+      refresh_sidebar(group, tab)
+    end
+  end,
+})
 
 local spinner_frames = {
   "⠋",
@@ -1550,6 +1706,7 @@ local function open_tabs(inspections, loading, done)
       local session = {
         parent = parent,
         change = change,
+        file = paths.change_file or paths.parent_file,
         parent_repository = paths.repository,
         change_repository = paths.repository,
         changes = paths.changes,
@@ -1581,6 +1738,7 @@ local function open_tabs(inspections, loading, done)
       normalize_inspection_view(parent.win)
       normalize_inspection_view(change.win)
     end
+    setup_inspection_sidebar(inspection_sessions)
   end)
   if not ok then
     done(nil, "could not open inspection tabs: " .. tostring(err))
