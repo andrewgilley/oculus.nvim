@@ -16,6 +16,7 @@ local syncing = false
 local sidebar_navigating = false
 local normalize_inspection_view
 local refresh_sidebar
+local focus_sidebar_selection
 
 local function git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
@@ -1363,10 +1364,6 @@ refresh_sidebar = function(group, tab)
   if not active_index then
     return
   end
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarCurrent", {
-    link = "CursorLine",
-    default = true,
-  })
   local normal_hl =
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local parent_hl =
@@ -1393,26 +1390,10 @@ refresh_sidebar = function(group, tab)
     underline = true,
     default = true,
   })
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarChunkActive", {
-    link = "DiagnosticWarn",
-    default = true,
-  })
   local active_chunk = sidebar_chunk(group[active_index], active_role)
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   for index, _ in ipairs(group) do
     local row = group.sidebar_rows[index]
-    if index == active_index then
-      vim.api.nvim_buf_set_extmark(
-        buf,
-        sidebar_ns,
-        row.line_number - 1,
-        0,
-        {
-        line_hl_group = "PantheonInspectSidebarCurrent",
-        hl_eol = true,
-        }
-      )
-    end
     if index == active_index and active_chunk then
       local chunk_text = ("%d/%d"):format(
         active_chunk,
@@ -1432,30 +1413,13 @@ refresh_sidebar = function(group, tab)
         row.chunk_column,
         {
           virt_text = {
-            { chunk_text, "PantheonInspectSidebarChunkActive" },
+            { chunk_text, "Normal" },
           },
           virt_text_pos = "overlay",
           hl_mode = "combine",
           priority = 100,
         }
       )
-      local chunk_line =
-        group.sidebar_chunk_lines[index][active_chunk]
-      local chunk_text =
-        chunk_line and group.sidebar_lines[chunk_line] or nil
-      if chunk_line and chunk_text then
-        vim.api.nvim_buf_set_extmark(
-          buf,
-          sidebar_ns,
-          chunk_line - 1,
-          0,
-          {
-            end_col = #chunk_text,
-            hl_group = "PantheonInspectSidebarChunkActive",
-            priority = 100,
-          }
-        )
-      end
     end
     vim.api.nvim_buf_set_extmark(
       buf,
@@ -1601,6 +1565,14 @@ local function map_inspection_sidebar_toggle(group)
     end
   end
   map_buffer(group.sidebar_buf)
+  vim.keymap.set("n", "<CR>", function()
+    focus_sidebar_selection(group)
+  end, {
+    buffer = group.sidebar_buf,
+    nowait = true,
+    silent = true,
+    desc = "Open Pantheon Inspect sidebar item",
+  })
 end
 
 local function setup_inspection_sidebar(group)
@@ -1717,6 +1689,39 @@ local function open_sidebar_selection(group)
     vim.api.nvim_set_current_win(sidebar_win)
   end
   group.focused_win = sidebar_win
+  refresh_sidebar(group, endpoint.tab)
+  sidebar_navigating = false
+end
+
+focus_sidebar_selection = function(group)
+  if
+    sidebar_navigating
+    or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
+  then
+    return
+  end
+  local tab = vim.api.nvim_get_current_tabpage()
+  local _, role = sidebar_active_item(group, tab)
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local entry = group.sidebar_entries[line]
+  local session = entry and group[entry.pair_index] or nil
+  local endpoint = session and role and session[role] or nil
+  if not valid_endpoint(endpoint) then
+    return
+  end
+
+  local chunk_index = entry.chunk_index or 1
+  local hunk = session.hunks and session.hunks[chunk_index] or nil
+  sidebar_navigating = true
+  group.sidebar_focus_generation =
+    (group.sidebar_focus_generation or 0) + 1
+  group.focused_win = nil
+  vim.api.nvim_set_current_win(endpoint.win)
+  if hunk then
+    session.active_chunk = chunk_index
+    set_change_cursor(endpoint.win, hunk_start(hunk, role))
+  end
+  show_inspection_path(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
   sidebar_navigating = false
 end
