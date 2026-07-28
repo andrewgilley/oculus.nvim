@@ -63,6 +63,14 @@ M.state = {
   activity_scroll_limit_line = nil,
   restore_cursor = nil,
   shortcut_return = nil,
+  search_buf = nil,
+  search_win = nil,
+  search_query = nil,
+  search_results = nil,
+  search_index = 1,
+  search_return = nil,
+  opening_search = false,
+  closing_search = false,
   opts = {},
 }
 
@@ -286,6 +294,116 @@ end
 
 local function display_contributors(contributors)
   return vim.list_extend({}, contributors or {})
+end
+
+local function fuzzy_score(value, query)
+  value = vim.fn.tolower(value)
+  query = vim.fn.tolower(query)
+  if query == "" then
+    return 0
+  end
+
+  local function characters(text)
+    local result = {}
+    for index = 0, vim.fn.strchars(text) - 1 do
+      result[#result + 1] = vim.fn.strcharpart(text, index, 1)
+    end
+    return result
+  end
+
+  local value_characters = characters(value)
+  local query_characters = characters(query)
+  local score = -#value_characters
+  local previous = 0
+  local consecutive = 0
+  for _, character in ipairs(query_characters) do
+    local position
+    for index = previous + 1, #value_characters do
+      if value_characters[index] == character then
+        position = index
+        break
+      end
+    end
+    if not position then
+      return nil
+    end
+
+    local gap = position - previous - 1
+    score = score - gap * 2
+    if position == previous + 1 then
+      consecutive = consecutive + 1
+      score = score + 10 + consecutive * 2
+    else
+      consecutive = 0
+    end
+    if
+      position == 1
+      or value_characters[position - 1]:match("[%s%-%._@]")
+    then
+      score = score + 18
+    end
+    previous = position
+  end
+
+  local substring = value:find(query, 1, true)
+  if substring then
+    score = score + 120 - substring
+  end
+  if value == query then
+    score = score + 200
+  elseif value:sub(1, #query) == query then
+    score = score + 60
+  end
+  return score
+end
+
+local function fuzzy_contributors(contributors, query)
+  query = tostring(query or "")
+    :gsub("^%s+", "")
+    :gsub("%s+$", "")
+    :gsub("^@", "")
+  if query == "" then
+    return display_contributors(contributors)
+  end
+
+  local matches = {}
+  for index, contributor in ipairs(contributors or {}) do
+    local name_score = fuzzy_score(
+      contributor.name or contributor.username or "",
+      query
+    )
+    local username_score = fuzzy_score(contributor.username or "", query)
+    local score = math.max(name_score or -math.huge, username_score or -math.huge)
+    if score > -math.huge then
+      matches[#matches + 1] = {
+        contributor = contributor,
+        score = score,
+        index = index,
+      }
+    end
+  end
+
+  table.sort(matches, function(left, right)
+    if left.score == right.score then
+      return left.index < right.index
+    end
+    return left.score > right.score
+  end)
+
+  local result = {}
+  for _, match in ipairs(matches) do
+    result[#result + 1] = match.contributor
+  end
+  return result
+end
+
+M._fuzzy_contributors = fuzzy_contributors
+
+local function visible_contributors()
+  if M.state.search_query ~= nil then
+    return M.state.search_results or {}
+  end
+  return M.state.contributors
 end
 
 local function utc_time(year, month, day, hour, minute, second)
@@ -604,14 +722,25 @@ local function render_contributors()
   M.state.preview_key = nil
 
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 10 Generalize the contributor list for multiple forges
-  local lines = {
-    "",
-    "  COMMUNITY FIGURES",
-    "  Public developer activity",
-    "",
-  }
+  local searching = M.state.search_query ~= nil
+  local lines = searching
+      and {
+        "",
+        "  SEARCH RESULTS",
+        ("  %d matching user%s · arrows preview · enter open"):format(
+          #(M.state.search_results or {}),
+          #(M.state.search_results or {}) == 1 and "" or "s"
+        ),
+        "",
+      }
+    or {
+      "",
+      "  COMMUNITY FIGURES",
+      "  Public developer activity",
+      "",
+    }
 
-  local contributors = M.state.contributors
+  local contributors = visible_contributors()
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
   local name_width = 4
   local username_width = 6
@@ -666,11 +795,15 @@ local function render_contributors()
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 10
 
   if #contributors == 0 then
-    lines[#lines + 1] = "  No contributors configured."
+    lines[#lines + 1] = searching
+        and "  No matching users."
+      or "  No contributors configured."
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = "  ?: shortcuts  q: quit"
+  lines[#lines + 1] = searching
+      and "  Keep typing to refine · esc cancel"
+    or "  /: search  ?: shortcuts  q: quit"
   local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
@@ -1044,6 +1177,7 @@ local function render_shortcuts()
   })
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
   section("STARTUP USER LIST", {
+    { "/", "Fuzzy-search contributor names and handles" },
     { "f", "Edit filters for the selected contributor" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
@@ -1149,6 +1283,215 @@ local function load_activity(contributor, force)
 
   provider.events(contributor.username, request_opts, callback)
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 14
+end
+
+local function search_win_config()
+  if not is_valid_win(M.state.win) then
+    return nil
+  end
+  local position = vim.api.nvim_win_get_position(M.state.win)
+  local parent_width = vim.api.nvim_win_get_width(M.state.win)
+  local width = math.max(24, math.min(56, parent_width - 6))
+  return {
+    relative = "editor",
+    width = width,
+    height = 1,
+    row = position[1] + 1,
+    col = position[2] + math.floor((parent_width - width) / 2),
+    style = "minimal",
+    border = M.state.opts.border or "rounded",
+    title = " Search users ",
+    title_pos = "center",
+    zindex = 70,
+  }
+end
+
+local function clear_search_window()
+  M.state.closing_search = true
+  local search_win = M.state.search_win
+  local search_buf = M.state.search_buf
+  M.state.search_win = nil
+  M.state.search_buf = nil
+  if is_valid_win(search_win) and vim.api.nvim_get_current_win() == search_win then
+    vim.cmd("stopinsert")
+  end
+  if is_valid_win(search_win) then
+    vim.api.nvim_win_close(search_win, true)
+  end
+  if is_valid_buf(search_buf) then
+    vim.api.nvim_buf_delete(search_buf, { force = true })
+  end
+  M.state.closing_search = false
+end
+
+local function clear_search_state()
+  M.state.search_query = nil
+  M.state.search_results = nil
+  M.state.search_index = 1
+  M.state.search_return = nil
+end
+
+local function cancel_search()
+  if M.state.search_query == nil then
+    return
+  end
+  local return_state = M.state.search_return
+  clear_search_window()
+  clear_search_state()
+  if return_state then
+    M.state.selected_username = return_state.selected_username
+    M.state.contributor_offset = return_state.contributor_offset
+  end
+  if is_valid_win(M.state.win) then
+    vim.api.nvim_set_current_win(M.state.win)
+    render_contributors()
+  end
+end
+
+local function update_search_results()
+  if
+    M.state.search_query == nil
+    or not is_valid_buf(M.state.search_buf)
+    or not is_valid_win(M.state.win)
+  then
+    return
+  end
+  local line = vim.api.nvim_buf_get_lines(
+    M.state.search_buf,
+    0,
+    1,
+    false
+  )[1] or ""
+  M.state.search_query = line
+  M.state.search_results = fuzzy_contributors(M.state.contributors, line)
+  M.state.search_index = 1
+  M.state.contributor_offset = 1
+  local first = M.state.search_results[1]
+  M.state.selected_username = first and first.username or nil
+  render_contributors()
+end
+
+local function move_search_selection(direction)
+  local results = M.state.search_results or {}
+  if #results == 0 then
+    return
+  end
+  M.state.search_index = (
+    (M.state.search_index - 1 + direction) % #results
+  ) + 1
+  local contributor = results[M.state.search_index]
+  M.state.selected_username = contributor.username
+  render_contributors()
+end
+
+local function accept_search()
+  local results = M.state.search_results or {}
+  local contributor = results[M.state.search_index]
+  if not contributor then
+    return
+  end
+  clear_search_window()
+  clear_search_state()
+  M.state.selected_username = contributor.username
+  if is_valid_win(M.state.win) then
+    vim.api.nvim_set_current_win(M.state.win)
+    load_activity(contributor, false)
+  end
+end
+
+local function open_search()
+  if M.state.view ~= "contributors" or not is_valid_win(M.state.win) then
+    return
+  end
+  if is_valid_win(M.state.search_win) then
+    vim.api.nvim_set_current_win(M.state.search_win)
+    vim.cmd("startinsert")
+    return
+  end
+
+  M.state.search_return = {
+    selected_username = M.state.selected_username,
+    contributor_offset = M.state.contributor_offset,
+  }
+  M.state.search_query = ""
+  M.state.search_results = fuzzy_contributors(M.state.contributors, "")
+  M.state.search_index = 1
+  for index, contributor in ipairs(M.state.search_results) do
+    if contributor.username == M.state.selected_username then
+      M.state.search_index = index
+      break
+    end
+  end
+  render_contributors()
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  M.state.search_buf = buf
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].buftype = "prompt"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "pantheon-search"
+  vim.fn.prompt_setprompt(buf, "  Search: ")
+
+  local config = search_win_config()
+  if not config then
+    cancel_search()
+    return
+  end
+  M.state.opening_search = true
+  local win = vim.api.nvim_open_win(buf, true, config)
+  M.state.opening_search = false
+  M.state.search_win = win
+  vim.wo[win].wrap = false
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].winhighlight = table.concat({
+    "Normal:PantheonNormal",
+    "NormalFloat:PantheonNormal",
+    "FloatBorder:PantheonBorder",
+    "FloatTitle:PantheonBorder",
+  }, ",")
+
+  local search_map = function(lhs, rhs, desc)
+    vim.keymap.set({ "i", "n" }, lhs, rhs, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = desc,
+    })
+  end
+  search_map("<Esc>", cancel_search, "Cancel Pantheon user search")
+  search_map("<C-c>", cancel_search, "Cancel Pantheon user search")
+  search_map("<CR>", accept_search, "Open searched Pantheon user")
+  search_map("<Down>", function()
+    move_search_selection(1)
+  end, "Preview next Pantheon user search result")
+  search_map("<Up>", function()
+    move_search_selection(-1)
+  end, "Preview previous Pantheon user search result")
+  search_map("<C-n>", function()
+    move_search_selection(1)
+  end, "Preview next Pantheon user search result")
+  search_map("<C-p>", function()
+    move_search_selection(-1)
+  end, "Preview previous Pantheon user search result")
+
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group = autocmd_group,
+    buffer = buf,
+    callback = update_search_results,
+  })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    group = autocmd_group,
+    pattern = tostring(win),
+    callback = function()
+      if M.state.closing_search or M.state.search_query == nil then
+        return
+      end
+      vim.schedule(cancel_search)
+    end,
+  })
+  vim.cmd("startinsert")
 end
 
 local function target_on_cursor()
@@ -1383,6 +1726,7 @@ local function map_keys(buf)
   map("q", M.close, "Close Pantheon")
   map("<Esc>", M.close, "Close Pantheon")
   map("?", toggle_shortcuts, "Show Pantheon keyboard shortcuts")
+  map("/", open_search, "Fuzzy-search Pantheon users")
   map("<CR>", select_current, "Select Pantheon item")
   map("l", select_current, "Move right in Pantheon")
   map("<Right>", select_current, "Move right in Pantheon")
@@ -1435,6 +1779,8 @@ function M.close()
   M.state.request_id = M.state.request_id + 1
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
   close_activity_footer()
+  clear_search_window()
+  clear_search_state()
   if is_valid_win(M.state.win) then
     M.state.restore_cursor = vim.api.nvim_win_get_cursor(M.state.win)
     vim.api.nvim_win_close(M.state.win, true)
@@ -1452,7 +1798,9 @@ end
 function M.open(opts)
   M.state.opts = opts or {}
   if is_valid_win(M.state.win) then
-    vim.api.nvim_set_current_win(M.state.win)
+    vim.api.nvim_set_current_win(
+      is_valid_win(M.state.search_win) and M.state.search_win or M.state.win
+    )
     update_activity_cursorline()
     return
   end
@@ -1523,8 +1871,18 @@ function M.open(opts)
     callback = function()
       if is_valid_win(M.state.win) then
         vim.api.nvim_win_set_config(M.state.win, make_win_config(M.state.opts))
-        if M.state.view == "contributors" and M.state.preview_items then
-          render_preview_panel(M.state.preview_items)
+        if M.state.view == "contributors" then
+          if M.state.search_query ~= nil then
+            render_contributors()
+          elseif M.state.preview_items then
+            render_preview_panel(M.state.preview_items)
+          end
+          if is_valid_win(M.state.search_win) then
+            local config = search_win_config()
+            if config then
+              vim.api.nvim_win_set_config(M.state.search_win, config)
+            end
+          end
         elseif M.state.view == "activity" then
           render_activity_footer()
           update_activity_cursorline()
@@ -1578,6 +1936,12 @@ function M.open(opts)
       end
       if entered == M.state.win then
         update_activity_cursorline()
+        return
+      end
+      if M.state.opening_search then
+        return
+      end
+      if entered == M.state.search_win then
         return
       end
       if vim.api.nvim_win_get_config(entered).relative ~= "" then
