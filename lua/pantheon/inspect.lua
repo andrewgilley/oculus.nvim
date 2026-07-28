@@ -13,6 +13,7 @@ local sessions = {}
 local sidebar_groups = {}
 local next_session = 0
 local syncing = false
+local sidebar_navigating = false
 
 local function git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
@@ -1188,9 +1189,11 @@ local function select_endpoint(endpoint)
   if not valid_endpoint(endpoint) then
     return
   end
+  sidebar_navigating = true
   vim.api.nvim_set_current_tabpage(endpoint.tab)
   vim.api.nvim_set_current_win(endpoint.win)
   show_inspection_path(endpoint.buf)
+  sidebar_navigating = false
 end
 
 local function next_file_session(group, current)
@@ -1274,9 +1277,18 @@ local function truncate_path(path, width)
   return "…"
 end
 
-local function sidebar_row(index, file, width)
+local function sidebar_file(file)
+  local normalized = file:gsub("\\", "/"):gsub("/+$", "")
+  local name = normalized:match("([^/]+)$") or normalized
+  local parent_path =
+    normalized:sub(1, math.max(0, #normalized - #name - 1))
+  local parent = parent_path:match("([^/]+)$")
+  return parent and (parent .. "/" .. name) or name
+end
+
+local function sidebar_row(index, file, width, chunk_text)
   local prefix = ("%d. "):format(index)
-  local suffix = "C P"
+  local suffix = ("%s C P"):format(chunk_text or "0")
   local path_width = math.max(
     1,
     width
@@ -1293,12 +1305,40 @@ local function sidebar_row(index, file, width)
       - vim.fn.strdisplaywidth(suffix)
   )
   local line = body .. string.rep(" ", padding) .. suffix
+  local chunk_column = #line - #suffix
   return {
     line = line,
-    change_column = #line - #suffix,
+    chunk_column = chunk_column,
+    chunk_end_column = chunk_column + #(chunk_text or "0"),
+    change_column = #line - 3,
     parent_column = #line - 1,
   }
 end
+
+local function sidebar_chunk(session, role)
+  local endpoint = role == "parent"
+      and session.parent
+    or session.change
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+  for index, hunk in ipairs(session.hunks or {}) do
+    local start = role == "parent"
+        and hunk.old_start
+      or hunk.new_start
+    local count = role == "parent"
+        and hunk.old_count
+      or hunk.new_count
+    if line >= math.max(1, start)
+      and line <= math.max(1, start + math.max(1, count) - 1)
+    then
+      return index
+    end
+  end
+end
+
+local sidebar_rendering = false
 
 local function refresh_sidebar(group, tab)
   local buf = group.sidebar_buf
@@ -1321,6 +1361,45 @@ local function refresh_sidebar(group, tab)
     link = "Comment",
     default = true,
   })
+  vim.api.nvim_set_hl(0, "PantheonInspectSidebarChunkActive", {
+    link = "DiagnosticWarn",
+    default = true,
+  })
+  local active_chunk = sidebar_chunk(group[active_index], active_role)
+  local lines = {}
+  group.sidebar_rows = {}
+  for index, session in ipairs(group) do
+    local total = #(session.hunks or {})
+    local chunk_text = tostring(total)
+    if index == active_index and active_chunk then
+      chunk_text = ("%d/%d"):format(active_chunk, total)
+    end
+    local row = sidebar_row(
+      index,
+      sidebar_file(session.file),
+      group.sidebar_width,
+      chunk_text
+    )
+    group.sidebar_rows[index] = row
+    lines[index] = row.line
+  end
+  local existing_lines =
+    vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  sidebar_rendering = true
+  vim.bo[buf].modifiable = true
+  for index, line in ipairs(lines) do
+    if existing_lines[index] ~= line then
+      vim.api.nvim_buf_set_lines(
+        buf,
+        index - 1,
+        index,
+        false,
+        { line }
+      )
+    end
+  end
+  vim.bo[buf].modifiable = false
+  sidebar_rendering = false
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   for index, _ in ipairs(group) do
     local row = group.sidebar_rows[index]
@@ -1329,6 +1408,19 @@ local function refresh_sidebar(group, tab)
         line_hl_group = "PantheonInspectSidebarCurrent",
         hl_eol = true,
       })
+    end
+    if index == active_index and active_chunk then
+      vim.api.nvim_buf_set_extmark(
+        buf,
+        sidebar_ns,
+        index - 1,
+        row.chunk_column,
+        {
+          end_col = row.chunk_end_column,
+          hl_group = "PantheonInspectSidebarChunkActive",
+          priority = 100,
+        }
+      )
     end
     vim.api.nvim_buf_set_extmark(
       buf,
@@ -1362,11 +1454,9 @@ local function refresh_sidebar(group, tab)
   vim.b[buf].pantheon_inspect_sidebar_active = {
     pair_index = active_index,
     role = active_role,
+    chunk_index = active_chunk,
+    chunk_count = #(group[active_index].hunks or {}),
   }
-  local sidebar_win = group.sidebar_windows[tab]
-  if sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
-    vim.api.nvim_win_set_cursor(sidebar_win, { active_index, 0 })
-  end
 end
 
 local function create_sidebar_window(group, endpoint)
@@ -1395,15 +1485,16 @@ local function setup_inspection_sidebar(group)
   group.sidebar_buf = buf
   group.sidebar_windows = {}
   group.sidebar_width =
-    math.min(60, math.max(32, math.floor(vim.o.columns * 0.30)))
+    math.min(30, math.max(20, vim.o.columns - 20))
   group.sidebar_rows = {}
   local lines = {}
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
     local row = sidebar_row(
       index,
-      session.file,
-      group.sidebar_width
+      sidebar_file(session.file),
+      group.sidebar_width,
+      tostring(#(session.hunks or {}))
     )
     group.sidebar_rows[index] = row
     lines[index] = row.line
@@ -1422,11 +1513,42 @@ local function setup_inspection_sidebar(group)
   sidebar_groups[#sidebar_groups + 1] = group
   local first = group[1] and group[1].change or nil
   if valid_endpoint(first) then
-    vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
     show_inspection_path(first.buf)
     refresh_sidebar(group, first.tab)
   end
+end
+
+local function sidebar_group_for_buffer(buf)
+  for _, group in ipairs(sidebar_groups) do
+    if group.sidebar_buf == buf then
+      return group
+    end
+  end
+end
+
+local function open_sidebar_selection(group)
+  if sidebar_navigating then
+    return
+  end
+  local tab = vim.api.nvim_get_current_tabpage()
+  local _, role = sidebar_active_item(group, tab)
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local session = group[line]
+  local endpoint = session and role and session[role] or nil
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  sidebar_navigating = true
+  show_inspection_path(endpoint.buf)
+  local sidebar_win = group.sidebar_windows[endpoint.tab]
+  if sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+    vim.api.nvim_set_current_win(sidebar_win)
+  else
+    vim.api.nvim_set_current_win(endpoint.win)
+  end
+  refresh_sidebar(group, endpoint.tab)
+  sidebar_navigating = false
 end
 
 vim.api.nvim_create_autocmd("TabEnter", {
@@ -1435,6 +1557,37 @@ vim.api.nvim_create_autocmd("TabEnter", {
     local tab = vim.api.nvim_get_current_tabpage()
     for _, group in ipairs(sidebar_groups) do
       refresh_sidebar(group, tab)
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+  group = sync_group,
+  callback = function(args)
+    local group = sidebar_group_for_buffer(args.buf)
+    if group
+      and not sidebar_rendering
+      and vim.api.nvim_get_current_buf() == args.buf
+    then
+      open_sidebar_selection(group)
+      return
+    end
+    local tab = vim.api.nvim_get_current_tabpage()
+    for _, candidate in ipairs(sidebar_groups) do
+      refresh_sidebar(candidate, tab)
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+  group = sync_group,
+  callback = function(args)
+    local group = sidebar_group_for_buffer(args.buf)
+    if group
+      and not sidebar_rendering
+      and vim.api.nvim_get_current_buf() == args.buf
+    then
+      open_sidebar_selection(group)
     end
   end,
 })
@@ -2132,5 +2285,6 @@ M._change_lines = change_lines
 M._next_change_line = next_change_line
 M._normalize_inspection_view = normalize_inspection_view
 M._sidebar_row = sidebar_row
+M._sidebar_file = sidebar_file
 
 return M

@@ -42,11 +42,16 @@ vim.bo[viewport_buf].modified = false
 local shortened_sidebar_row = inspect._sidebar_row(
   12,
   "a/very/long/path/to/a/changed/file.lua",
-  24
+  24,
+  "2/7"
 )
 assert(shortened_sidebar_row.line:match("^12%. …"))
-assert(shortened_sidebar_row.line:match("C P$"))
+assert(shortened_sidebar_row.line:match("2/7 C P$"))
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
+assert(inspect._sidebar_file(
+  "a/very/long/path/to/a/changed/file.lua"
+) == "changed/file.lua")
+assert(inspect._sidebar_file("README.md") == "README.md")
 
 assert(inspect._inspection_directory(
   root,
@@ -453,7 +458,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(new_sidebar_buf == sidebar_buf)
     assert(vim.api.nvim_win_get_width(old_sidebar_win) == sidebar_width)
     assert(vim.api.nvim_win_get_width(new_sidebar_win) == sidebar_width)
-    assert(sidebar_width >= 32)
+    assert(sidebar_width == 30)
     assert(vim.api.nvim_win_get_position(old_sidebar_win)[2]
       > vim.api.nvim_win_get_position(old_main_win)[2])
     assert(vim.api.nvim_win_get_position(new_sidebar_win)[2]
@@ -547,8 +552,14 @@ if integration_root and (integration_sha or integration_url) then
   assert(#sidebar_lines == pair_count)
   for index, line in ipairs(sidebar_lines) do
     assert(line:match("^" .. index .. "%. "))
-    assert(line:match("C P$"))
+    assert(line:match("[%d/]+ C P$"))
     assert(vim.fn.strdisplaywidth(line) == sidebar_width)
+    local displayed_file = line
+      :gsub("^%d+%. ", "")
+      :gsub("%s+[%d/]+ C P$", "")
+      :gsub("^…", "")
+    local _, separators = displayed_file:gsub("/", "")
+    assert(separators <= 1)
   end
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   local first_sidebar_win = assert(sidebar_window(tabs[3]))
@@ -662,6 +673,8 @@ if integration_root and (integration_sha or integration_url) then
     .pantheon_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")
+  assert(sidebar_active.chunk_index == 1)
+  assert(sidebar_active.chunk_count >= 1)
   local sidebar_signs = vim.api.nvim_get_namespaces()
     .pantheon_inspect_sidebar
   assert(sidebar_signs)
@@ -736,6 +749,25 @@ if integration_root and (integration_sha or integration_url) then
     )
     assert(vim.api.nvim_get_current_tabpage() == tabs[4])
     vim.api.nvim_set_current_tabpage(tabs[3])
+    vim.api.nvim_set_current_win(assert(sidebar_window(tabs[3])))
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    vim.api.nvim_exec_autocmds("CursorMoved", {
+      buffer = sidebar_buf,
+    })
+    assert(vim.api.nvim_get_current_tabpage() == tabs[5])
+    assert(vim.api.nvim_get_current_win()
+      == assert(sidebar_window(tabs[5])))
+    sidebar_active = vim.b[sidebar_buf]
+      .pantheon_inspect_sidebar_active
+    assert(sidebar_active.pair_index == 2)
+    assert(sidebar_active.role == "change")
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    vim.api.nvim_exec_autocmds("CursorMoved", {
+      buffer = sidebar_buf,
+    })
+    assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+    vim.cmd("wincmd h")
+    assert(vim.api.nvim_get_current_win() == change_win)
   end
   local linked_line = math.min(
     2,
@@ -743,8 +775,21 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_buf_line_count(change_buf)
   )
   vim.api.nvim_win_set_cursor(change_win, { linked_line, 0 })
+  assert(
+    vim.api.nvim_get_current_win() == change_win,
+    "main cursor movement returned focus to the sidebar"
+  )
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = change_buf })
-  assert(vim.api.nvim_win_get_cursor(parent_win)[1] == linked_line)
+  assert(
+    vim.api.nvim_win_get_cursor(parent_win)[1] == linked_line,
+    ("paired cursor stayed at %d instead of %d (current win %d, change %d)")
+      :format(
+        vim.api.nvim_win_get_cursor(parent_win)[1],
+        linked_line,
+        vim.api.nvim_get_current_win(),
+        change_win
+      )
+  )
 
   vim.api.nvim_win_call(change_win, function()
     vim.fn.winrestview({ topline = linked_line })
