@@ -24,6 +24,17 @@ assert(inspect._parse_commit_url(
   "https://github.com/../b/commit/0123456"
 ) == nil)
 
+assert(inspect._github_repository(
+  "https://github.com/neovim/neovim.git"
+) == "neovim/neovim")
+assert(inspect._github_repository(
+  "git@github.com:Neovim/Neovim.git"
+) == "neovim/neovim")
+assert(inspect._github_repository(
+  "ssh://git@github.com/neovim/neovim.git"
+) == "neovim/neovim")
+assert(inspect._github_repository("https://codeberg.org/a/b.git") == nil)
+
 local parent, change = inspect._first_changed_paths("M\tlua/pantheon/init.lua")
 assert(parent == "lua/pantheon/init.lua")
 assert(change == "lua/pantheon/init.lua")
@@ -41,9 +52,29 @@ assert(change == nil)
 local integration_root = vim.env.PANTHEON_INSPECT_TEST_ROOT
 local integration_sha = vim.env.PANTHEON_INSPECT_TEST_SHA
 if integration_root and integration_sha then
+  local integration_repository =
+    vim.env.PANTHEON_INSPECT_TEST_REPOSITORY or "pantheon/test"
+  local integration_source = vim.env.PANTHEON_INSPECT_TEST_SOURCE
+  local integration_search_root =
+    vim.env.PANTHEON_INSPECT_TEST_SEARCH_ROOT
+  local integration_cwd = vim.env.PANTHEON_INSPECT_TEST_CWD
+  local repositories = {}
+  if integration_source then
+    repositories[integration_repository] = integration_source
+  end
+  if integration_cwd then
+    vim.api.nvim_set_current_dir(integration_cwd)
+  end
   local ok, err = inspect.open(
-    "https://github.com/pantheon/test/commit/" .. integration_sha,
-    { inspect_root = integration_root }
+    "https://github.com/" .. integration_repository
+      .. "/commit/" .. integration_sha,
+    {
+      inspect_root = integration_root,
+      inspect_repositories = repositories,
+      inspect_search_paths = integration_search_root
+          and { integration_search_root }
+        or {},
+    }
   )
   assert(ok, err)
   assert(vim.wait(30000, function()
