@@ -77,7 +77,212 @@ local function directory(path)
   return stat and stat.type == "directory"
 end
 
-local function ensure_mirror(info, root, callback)
+local function github_repository(url)
+  if type(url) ~= "string" then
+    return nil
+  end
+  local owner, repo = url:match("^https?://github%.com/([^/]+)/([^/]+)")
+  if not owner then
+    owner, repo = url:match("^git@github%.com:([^/]+)/([^/]+)")
+  end
+  if not owner then
+    owner, repo = url:match(
+      "^ssh://git@github%.com/([^/]+)/([^/]+)"
+    )
+  end
+  if not owner or not repo then
+    return nil
+  end
+  repo = repo:gsub("[/?#].*$", ""):gsub("%.git$", "")
+  return (owner .. "/" .. repo):lower()
+end
+
+local function repository_root(path)
+  if type(path) ~= "string" or path == "" then
+    return nil
+  end
+  local stat = vim.uv.fs_stat(path)
+  if stat and stat.type ~= "directory" then
+    path = vim.fs.dirname(path)
+  end
+  if not vim.uv.fs_stat(path) then
+    return nil
+  end
+  return vim.fs.root(path, ".git")
+end
+
+local function local_candidates(info, opts)
+  local candidates = {}
+  local seen = {}
+
+  local function add(path, explicit)
+    local root = repository_root(path)
+    if not root then
+      return
+    end
+    root = vim.fs.normalize(root)
+    local key = vim.uv.os_uname().sysname == "Windows_NT"
+        and root:lower()
+      or root
+    if seen[key] then
+      if explicit then
+        seen[key].explicit = true
+      end
+      return
+    end
+    local candidate = { path = root, explicit = explicit or false }
+    seen[key] = candidate
+    candidates[#candidates + 1] = candidate
+  end
+
+  local function add_search_path(path)
+    if type(path) ~= "string" or not directory(path) then
+      return
+    end
+    add(path, false)
+
+    local children = {}
+    local scanner = vim.uv.fs_scandir(path)
+    if not scanner then
+      return
+    end
+    while true do
+      local name, kind = vim.uv.fs_scandir_next(scanner)
+      if not name then
+        break
+      end
+      if kind == "directory" or kind == "link" then
+        children[#children + 1] = vim.fs.joinpath(path, name)
+      end
+    end
+    table.sort(children, function(left, right)
+      local left_matches = vim.fs.basename(left):lower()
+        == info.repo:lower()
+      local right_matches = vim.fs.basename(right):lower()
+        == info.repo:lower()
+      if left_matches ~= right_matches then
+        return left_matches
+      end
+      return left:lower() < right:lower()
+    end)
+    for _, child in ipairs(children) do
+      local marker = vim.fs.joinpath(child, ".git")
+      if vim.uv.fs_stat(marker) then
+        add(child, false)
+      end
+    end
+  end
+
+  local slug = (info.owner .. "/" .. info.repo):lower()
+  for name, path in pairs(opts.inspect_repositories or {}) do
+    if type(name) == "string" and name:lower() == slug then
+      add(path, true)
+    end
+  end
+
+  add(vim.fn.getcwd(), false)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      add(vim.api.nvim_buf_get_name(buf), false)
+    end
+  end
+  for tab = 1, vim.fn.tabpagenr("$") do
+    local ok, cwd = pcall(vim.fn.getcwd, -1, tab)
+    if ok then
+      add(cwd, false)
+    end
+  end
+  for _, path in ipairs(opts.inspect_search_paths or {}) do
+    add_search_path(path)
+  end
+  return candidates
+end
+
+local function find_local_repository(info, opts, callback)
+  local candidates = local_candidates(info, opts)
+  local slug = (info.owner .. "/" .. info.repo):lower()
+  local index = 1
+
+  local function inspect_next()
+    local candidate = candidates[index]
+    index = index + 1
+    if not candidate then
+      callback()
+      return
+    end
+
+    if candidate.explicit then
+      callback(candidate.path)
+      return
+    end
+
+    run({ "git", "-C", candidate.path, "remote", "-v" }, function(remotes)
+      for line in (remotes or ""):gmatch("[^\r\n]+") do
+        local url = line:match("^%S+%s+(%S+)%s+%(fetch%)$")
+        if github_repository(url) == slug then
+          callback(candidate.path)
+          return
+        end
+      end
+      inspect_next()
+    end)
+  end
+
+  inspect_next()
+end
+
+local function clone_mirror(source, info, mirror, callback)
+  local command
+  if source then
+    command = {
+      "git",
+      "clone",
+      "--bare",
+      "--local",
+      source,
+      mirror,
+    }
+  else
+    command = {
+      "git",
+      "clone",
+      "--filter=blob:none",
+      "--bare",
+      info.remote_url,
+      mirror,
+    }
+  end
+
+  run(command, function(_, err)
+    if err then
+      local origin = source and ("local clone at " .. source)
+        or (info.owner .. "/" .. info.repo)
+      callback(nil, "could not clone " .. origin .. ": " .. err)
+      return
+    end
+    if not source then
+      callback(mirror)
+      return
+    end
+    run({
+      "git",
+      "--git-dir",
+      mirror,
+      "remote",
+      "set-url",
+      "origin",
+      info.remote_url,
+    }, function(_, remote_err)
+      if remote_err then
+        callback(nil, "could not configure inspection remote: " .. remote_err)
+        return
+      end
+      callback(mirror)
+    end)
+  end)
+end
+
+local function ensure_mirror(info, root, opts, callback)
   local mirror = vim.fs.joinpath(
     root,
     "repositories",
@@ -94,35 +299,49 @@ local function ensure_mirror(info, root, callback)
   end
 
   vim.fn.mkdir(vim.fs.dirname(mirror), "p")
-  run({
-    "git",
-    "clone",
-    "--filter=blob:none",
-    "--bare",
-    info.remote_url,
-    mirror,
-  }, function(_, err)
-    if err then
-      callback(nil, "could not clone " .. info.owner .. "/" .. info.repo
-        .. ": " .. err)
-      return
+  find_local_repository(info, opts, function(source)
+    if source then
+      vim.notify(
+        "Pantheon: using local clone at " .. source,
+        vim.log.levels.INFO
+      )
     end
-    callback(mirror)
+    clone_mirror(source, info, mirror, callback)
   end)
 end
 
-local function fetch_commit(mirror, info, callback)
+local function resolve_commit(mirror, info, callback)
   run({
     "git",
     "--git-dir",
     mirror,
-    "fetch",
-    "--filter=blob:none",
-    "origin",
-    info.sha,
-  }, function(_, err)
-    if err then
-      callback(nil, "could not fetch commit " .. info.sha .. ": " .. err)
+    "rev-parse",
+    info.sha .. "^{commit}",
+  }, function(commit, resolve_err)
+    if resolve_err then
+      callback(nil, resolve_err)
+      return
+    end
+    run({
+      "git",
+      "--git-dir",
+      mirror,
+      "rev-parse",
+      commit .. "^",
+    }, function(parent, parent_err)
+      if parent_err then
+        callback(nil, "this commit does not have an inspectable parent")
+        return
+      end
+      callback({ commit = commit, parent = parent })
+    end)
+  end)
+end
+
+local function fetch_commit(mirror, info, callback)
+  resolve_commit(mirror, info, function(commits)
+    if commits then
+      callback(commits)
       return
     end
 
@@ -130,25 +349,21 @@ local function fetch_commit(mirror, info, callback)
       "git",
       "--git-dir",
       mirror,
-      "rev-parse",
-      info.sha .. "^{commit}",
-    }, function(commit, resolve_err)
-      if resolve_err then
-        callback(nil, "could not resolve commit: " .. resolve_err)
+      "fetch",
+      "--filter=blob:none",
+      "origin",
+      info.sha,
+    }, function(_, err)
+      if err then
+        callback(nil, "could not fetch commit " .. info.sha .. ": " .. err)
         return
       end
-      run({
-        "git",
-        "--git-dir",
-        mirror,
-        "rev-parse",
-        commit .. "^",
-      }, function(parent, parent_err)
-        if parent_err then
-          callback(nil, "this commit does not have an inspectable parent")
+      resolve_commit(mirror, info, function(resolved, resolve_err)
+        if resolve_err then
+          callback(nil, "could not resolve commit: " .. resolve_err)
           return
         end
-        callback({ commit = commit, parent = parent })
+        callback(resolved)
       end)
     end)
   end)
@@ -231,7 +446,7 @@ local function prepare(info, opts, callback)
   local root = opts.inspect_root
     or vim.fs.joinpath(vim.fn.stdpath("cache"), "pantheon", "inspect")
 
-  ensure_mirror(info, root, function(mirror, mirror_err)
+  ensure_mirror(info, root, opts, function(mirror, mirror_err)
     if mirror_err then
       callback(nil, mirror_err)
       return
@@ -367,5 +582,6 @@ end
 
 M._parse_commit_url = parse_commit_url
 M._first_changed_paths = first_changed_paths
+M._github_repository = github_repository
 
 return M

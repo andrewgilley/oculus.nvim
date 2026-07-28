@@ -1,5 +1,16 @@
 local M = {}
 
+local default_inspect_search_paths = {}
+if vim.env.USERPROFILE and vim.env.USERPROFILE ~= "" then
+  default_inspect_search_paths[1] = vim.fs.joinpath(
+    vim.env.USERPROFILE,
+    "Desktop",
+    "Dev",
+    "code",
+    "source"
+  )
+end
+
 local defaults = {
   width = 0.90,
   height = 0.80,
@@ -18,6 +29,8 @@ local defaults = {
   state_file = vim.fn.stdpath("state") .. "/pantheon.json",
   browser_command = nil,
   inspect_root = vim.fn.stdpath("cache") .. "/pantheon/inspect",
+  inspect_repositories = {},
+  inspect_search_paths = default_inspect_search_paths,
   token = nil,
 
   contributors = {
