@@ -766,8 +766,8 @@ local function sync_window(source_win)
   if syncing or not vim.api.nvim_win_is_valid(source_win) then
     return
   end
-  local origin_tab = vim.api.nvim_win_get_tabpage(source_win)
-  local origin_win = source_win
+  local origin_tab = vim.api.nvim_get_current_tabpage()
+  local origin_win = vim.api.nvim_get_current_win()
   local target = paired_endpoint(source_win)
   if not target then
     return
@@ -1377,8 +1377,6 @@ refresh_sidebar = function(group, tab)
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local parent_hl =
     vim.api.nvim_get_hl(0, { name = "DiagnosticError", link = false })
-  local change_hl =
-    vim.api.nvim_get_hl(0, { name = "DiagnosticOk", link = false })
   vim.api.nvim_set_hl(0, "PantheonInspectSidebarParent", {
     fg = parent_hl.fg or 0xe06c75,
     bg = normal_hl.bg,
@@ -1387,18 +1385,18 @@ refresh_sidebar = function(group, tab)
   vim.api.nvim_set_hl(0, "PantheonInspectSidebarParentActive", {
     fg = parent_hl.fg or 0xe06c75,
     bg = normal_hl.bg,
-    bold = true,
+    underline = true,
     default = true,
   })
   vim.api.nvim_set_hl(0, "PantheonInspectSidebarChange", {
-    fg = change_hl.fg or 0x98c379,
+    fg = 0x00c853,
     bg = normal_hl.bg,
     default = true,
   })
   vim.api.nvim_set_hl(0, "PantheonInspectSidebarChangeActive", {
-    fg = change_hl.fg or 0x98c379,
+    fg = 0x00c853,
     bg = normal_hl.bg,
-    bold = true,
+    underline = true,
     default = true,
   })
   vim.api.nvim_set_hl(0, "PantheonInspectSidebarChunkActive", {
@@ -1523,10 +1521,98 @@ local function create_sidebar_window(group, endpoint)
   vim.api.nvim_set_current_win(endpoint.win)
 end
 
+local function endpoint_for_tab(group, tab)
+  local index, role = sidebar_active_item(group, tab)
+  local session = index and group[index] or nil
+  return session and role and session[role] or nil
+end
+
+local function close_inspection_sidebar(group)
+  local origin_tab = vim.api.nvim_get_current_tabpage()
+  local origin_win = vim.api.nvim_get_current_win()
+  local sidebar_focused =
+    vim.api.nvim_get_current_buf() == group.sidebar_buf
+  local fallback = endpoint_for_tab(group, origin_tab)
+  group.sidebar_visible = false
+  group.sidebar_focus_generation =
+    (group.sidebar_focus_generation or 0) + 1
+  group.focused_win = nil
+  sidebar_navigating = true
+  for tab, win in pairs(group.sidebar_windows or {}) do
+    if vim.api.nvim_tabpage_is_valid(tab)
+      and vim.api.nvim_win_is_valid(win)
+    then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+  group.sidebar_windows = {}
+  local focus_win = sidebar_focused
+      and fallback
+      and fallback.win
+    or origin_win
+  if focus_win and vim.api.nvim_win_is_valid(focus_win) then
+    vim.api.nvim_set_current_win(focus_win)
+  end
+  sidebar_navigating = false
+end
+
+local function open_inspection_sidebar(group)
+  local origin_tab = vim.api.nvim_get_current_tabpage()
+  local origin_win = vim.api.nvim_get_current_win()
+  group.sidebar_windows = {}
+  group.sidebar_visible = true
+  sidebar_navigating = true
+  for _, session in ipairs(group) do
+    create_sidebar_window(group, session.parent)
+    create_sidebar_window(group, session.change)
+  end
+  if vim.api.nvim_tabpage_is_valid(origin_tab)
+    and vim.api.nvim_win_is_valid(origin_win)
+  then
+    vim.api.nvim_set_current_tabpage(origin_tab)
+    vim.api.nvim_set_current_win(origin_win)
+  end
+  sidebar_navigating = false
+  refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+end
+
+local function toggle_inspection_sidebar(group)
+  if group.sidebar_visible then
+    close_inspection_sidebar(group)
+  else
+    open_inspection_sidebar(group)
+  end
+end
+
+local function map_inspection_sidebar_toggle(group)
+  local opts = {
+    nowait = true,
+    silent = true,
+    desc = "Toggle Pantheon Inspect sidebar",
+  }
+  for _, session in ipairs(group) do
+    for _, endpoint in ipairs({ session.parent, session.change }) do
+      if valid_endpoint(endpoint) then
+        vim.keymap.set("n", "<C-i>", function()
+          toggle_inspection_sidebar(group)
+        end, vim.tbl_extend("force", opts, {
+          buffer = endpoint.buf,
+        }))
+      end
+    end
+  end
+  vim.keymap.set("n", "<C-i>", function()
+    toggle_inspection_sidebar(group)
+  end, vim.tbl_extend("force", opts, {
+    buffer = group.sidebar_buf,
+  }))
+end
+
 local function setup_inspection_sidebar(group)
   local buf = vim.api.nvim_create_buf(false, true)
   group.sidebar_buf = buf
   group.sidebar_windows = {}
+  group.sidebar_visible = true
   group.sidebar_width =
     math.min(30, math.max(20, vim.o.columns - 20))
   group.sidebar_rows = {}
@@ -1581,6 +1667,7 @@ local function setup_inspection_sidebar(group)
     create_sidebar_window(group, session.parent)
     create_sidebar_window(group, session.change)
   end
+  map_inspection_sidebar_toggle(group)
   sidebar_groups[#sidebar_groups + 1] = group
   local first = group[1] and group[1].parent or nil
   if valid_endpoint(first) then
@@ -1998,8 +2085,7 @@ local function load_tab(
     win = vim.api.nvim_get_current_win(),
     buf = vim.api.nvim_get_current_buf(),
   }
-  vim.wo[loaded.win].signcolumn =
-    role == "change" and "yes" or "no"
+  vim.wo[loaded.win].signcolumn = "yes"
   vim.wo[loaded.win].wrap = false
   return loaded
 end
