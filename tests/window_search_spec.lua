@@ -219,10 +219,9 @@ assert(state.events[1].id == "1")
 assert(state.events[8].id == "8")
 assert(requested_per_page[1] == 30)
 
-local older_mapping = vim.fn.maparg("n", "n", false, true)
-assert(older_mapping.desc
-  == "Load older Pantheon activity or disable all filters")
-older_mapping.callback()
+local past_mapping = vim.fn.maparg("p", "n", false, true)
+assert(past_mapping.desc == "Load past Pantheon activity")
+past_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
 assert(#state.events == 8)
@@ -236,6 +235,45 @@ local activity_text = table.concat(
 assert(activity_text:find("GitHub · page 2", 1, true))
 assert(vim.api.nvim_win_get_cursor(state.win)[1]
   == state.activity_cursor_min_line)
+local footer_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+  "\n"
+)
+assert(footer_text:find("p past", 1, true))
+assert(footer_text:find("r recent", 1, true))
+
+past_mapping.callback()
+assert(state.view == "activity")
+assert(state.activity_page == 3)
+assert(#state.events == 4)
+assert(state.events[1].id == "17")
+assert(requested_per_page[3] == 46)
+
+local recent_mapping = vim.fn.maparg("r", "n", false, true)
+assert(recent_mapping.desc == "Load more recent Pantheon activity")
+recent_mapping.callback()
+assert(state.view == "activity")
+assert(state.activity_page == 2)
+assert(#state.events == 8)
+assert(state.events[1].id == "9")
+assert(state.events[8].id == "16")
+assert(requested_per_page[4] == 38)
+local recent_footer_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+  "\n"
+)
+assert(recent_footer_text:find("p past", 1, true))
+assert(recent_footer_text:find("r recent", 1, true))
+
+recent_mapping.callback()
+assert(state.activity_page == 1)
+assert(requested_per_page[5] == 30)
+local page_one_footer_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+  "\n"
+)
+assert(page_one_footer_text:find("p past", 1, true))
+assert(not page_one_footer_text:find("r recent", 1, true))
 
 window.close()
 github.events = original_events
