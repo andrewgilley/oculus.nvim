@@ -4,7 +4,8 @@
 Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
 <!-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 15 -->
 
-On a GitHub commit or pull-request activity, press `h` to inspect the change.
+On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
+the change.
 Pantheon prepares detached worktrees for each commit and its first parent.
 Every changed file opens an adjacent old/new tab pair. Pull requests group
 those file pairs by commit, in commit order. The tabs appear with animated
