@@ -676,6 +676,45 @@ local function update_session_buffer(win, buf)
   end
 end
 
+local function show_inspection_path(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local state = vim.b[buf].pantheon_inspect
+  if type(state) ~= "table"
+    or type(state.source_path) ~= "string"
+    or state.source_path == ""
+  then
+    return
+  end
+  for _, other in ipairs(vim.api.nvim_list_bufs()) do
+    if other ~= buf
+      and vim.api.nvim_buf_is_valid(other)
+      and type(vim.b[other].pantheon_inspect) == "table"
+      and vim.api.nvim_buf_get_name(other) ~= ""
+    then
+      pcall(vim.api.nvim_buf_set_name, other, "")
+    end
+  end
+  if vim.api.nvim_buf_get_name(buf) == "" then
+    local named = pcall(
+      vim.api.nvim_buf_set_name,
+      buf,
+      state.source_path
+    )
+    if not named then
+      local revision = type(state.commit) == "string"
+          and state.commit:sub(1, 8)
+        or tostring(state.pair_index or "")
+      pcall(
+        vim.api.nvim_buf_set_name,
+        buf,
+        state.source_path .. "@" .. revision
+      )
+    end
+  end
+end
+
 local function paired_endpoint(win)
   for id, session in pairs(sessions) do
     if not valid_endpoint(session.parent)
@@ -754,6 +793,7 @@ vim.api.nvim_create_autocmd("BufEnter", {
   group = sync_group,
   callback = function(args)
     update_session_buffer(vim.api.nvim_get_current_win(), args.buf)
+    show_inspection_path(args.buf)
   end,
 })
 
@@ -1083,6 +1123,21 @@ local function set_change_cursor(win, line)
   sync_window(win)
 end
 
+local function normalize_inspection_view(win)
+  if not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  vim.api.nvim_win_call(win, function()
+    local keys = vim.api.nvim_replace_termcodes(
+      "zt10<C-y>$",
+      true,
+      false,
+      true
+    )
+    vim.cmd("normal! " .. keys)
+  end)
+end
+
 local function jump_change(session, direction)
   local win = vim.api.nvim_get_current_win()
   local cursor = vim.api.nvim_win_get_cursor(win)
@@ -1117,6 +1172,7 @@ local function select_endpoint(endpoint)
   end
   vim.api.nvim_set_current_tabpage(endpoint.tab)
   vim.api.nvim_set_current_win(endpoint.win)
+  show_inspection_path(endpoint.buf)
 end
 
 local function next_file_session(group, current)
@@ -1451,6 +1507,7 @@ local function load_tab(
   }
   vim.t.pantheon_inspect = state
   vim.b[buf].pantheon_inspect = vim.deepcopy(state)
+  show_inspection_path(buf)
   local loaded = {
     tab = vim.api.nvim_get_current_tabpage(),
     win = vim.api.nvim_get_current_win(),
@@ -1517,6 +1574,8 @@ local function open_tabs(inspections, loading, done)
       else
         sync_window(change.win)
       end
+      normalize_inspection_view(parent.win)
+      normalize_inspection_view(change.win)
     end
   end)
   if not ok then
