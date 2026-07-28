@@ -4,12 +4,22 @@
 Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
 <!-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 15 -->
 
-On a GitHub commit activity, press `h` to inspect the change. Pantheon
-prepares detached worktrees for the commit and its first parent, then opens
-both in new tabs in the current Neovim instance. The first changed file is
-opened in each tab when one is available. Inspection repositories and
-worktrees are cached under Neovim's cache directory; set `inspect_root` in
+On a GitHub commit or pull-request activity, press `h` to inspect the change.
+Pantheon prepares detached worktrees for the commit and its first parent, or
+for the pull request's exact base and head commits, then opens both in new tabs
+in the current Neovim instance. Those tabs appear immediately with animated
+loading indicators and are replaced in place when their files are ready. The
+first changed file is opened in each tab when one is available. Cursor
+positions and scroll views remain linked between the tabs, and `-`/`+` signs
+mark the base/parent and changed lines. Inspection repositories and worktrees
+are cached under Neovim's cache directory; set `inspect_root` in
 `require("pantheon").setup()` to use a different location.
+
+When an inspection worktree is opened with
+[oil.nvim](https://github.com/stevearc/oil.nvim), Oil entries are annotated as
+added, modified, deleted, or renamed. Directories containing changed files are
+marked as well, so changes remain visible while navigating from the worktree
+root.
 
 Pantheon first checks the repositories associated with the current working
 directories and loaded buffers. If a matching clone is available, its local

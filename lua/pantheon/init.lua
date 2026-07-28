@@ -29,6 +29,7 @@ local defaults = {
   state_file = vim.fn.stdpath("state") .. "/pantheon.json",
   browser_command = nil,
   inspect_root = vim.fn.stdpath("cache") .. "/pantheon/inspect",
+  inspect_cache_ttl = 60,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
   token = nil,
