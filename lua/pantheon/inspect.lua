@@ -1268,9 +1268,25 @@ local function codex_issue_candidates(
   end
 end
 
-local function select_issue_candidates(candidates, request_codex, callback)
+local function select_issue_candidates(
+  candidates,
+  request_codex,
+  page_context,
+  callback
+)
   local selected = {}
   local codex_requested = false
+  local finished = false
+  local window = require("pantheon.window")
+  page_context = vim.deepcopy(page_context or {})
+  local function cancel(message)
+    if finished then
+      return
+    end
+    finished = true
+    window.restore_issue_picker_page()
+    callback(nil, message or "issue inspection was cancelled")
+  end
   local function merge_candidates(additions)
     local seen = {}
     for _, candidate in ipairs(candidates) do
@@ -1311,6 +1327,9 @@ local function select_issue_candidates(candidates, request_codex, callback)
     return count
   end
   local function prompt()
+    if finished then
+      return
+    end
     local choices = {
       {
         action = "codex",
@@ -1357,19 +1376,36 @@ local function select_issue_candidates(candidates, request_codex, callback)
       action = "cancel",
       label = "Cancel issue inspection",
     }
-    vim.ui.select(choices, {
-      prompt = "Issue inspect: select files and sections",
-      format_item = function(choice)
-        return choice.label
-      end,
-    }, function(choice)
+    window.show_issue_picker(page_context, choices, function(
+      choice,
+      picker_err
+    )
+      if finished then
+        return
+      end
       if not choice or choice.action == "cancel" then
-        callback(nil, "issue inspection was cancelled")
+        cancel(picker_err)
         return
       end
       if choice.action == "codex" then
         codex_requested = true
+        page_context.status =
+          "Codex is identifying relevant files and sections…"
+        window.show_issue_picker(page_context, {
+          {
+            action = "cancel",
+            label = "Cancel issue inspection",
+          },
+        }, function(busy_choice, busy_err)
+          if not busy_choice or busy_choice.action == "cancel" then
+            cancel(busy_err)
+          end
+        end)
         request_codex(function(additions, codex_err)
+          if finished then
+            return
+          end
+          page_context.status = nil
           if not additions then
             vim.notify(
               "Pantheon: " .. tostring(codex_err),
@@ -1391,6 +1427,7 @@ local function select_issue_candidates(candidates, request_codex, callback)
         return
       end
       if choice.action == "build" then
+        finished = true
         local result = {}
         for _, candidate in ipairs(candidates) do
           if selected[candidate] then
@@ -1402,6 +1439,140 @@ local function select_issue_candidates(candidates, request_codex, callback)
       end
       if choice.candidate then
         selected[choice.candidate] = not selected[choice.candidate]
+      end
+      prompt()
+    end)
+  end
+  prompt()
+end
+
+local function select_change_inspections(
+  inspections,
+  info,
+  opts,
+  callback
+)
+  local selected = {}
+  local finished = false
+  local window = require("pantheon.window")
+  local commit_indices = {}
+  for _, inspection in ipairs(inspections) do
+    commit_indices[inspection.commit_index or 1] = true
+  end
+  local multiple_commits = vim.tbl_count(commit_indices) > 1
+  local status_labels = {
+    A = "added",
+    D = "deleted",
+    M = "modified",
+    R = "renamed",
+    C = "copied",
+    T = "type changed",
+  }
+  local page_context = {
+    kind = "change",
+    opts = opts,
+    info = info,
+    details = {
+      title = info.title,
+      comment = type(info.comment) == "table"
+          and info.comment.body
+        or nil,
+    },
+    repository = inspections[1] and inspections[1].repository,
+    default_source = (opts.inspect_search_paths or {})[1],
+    remote_url = info.remote_url,
+  }
+  local function cancel(message)
+    if finished then
+      return
+    end
+    finished = true
+    window.restore_change_picker_page()
+    callback(nil, message or "change inspection was cancelled")
+  end
+  local function selected_count()
+    local count = 0
+    for _, inspection in ipairs(inspections) do
+      if selected[inspection] then
+        count = count + 1
+      end
+    end
+    return count
+  end
+  local function prompt()
+    if finished then
+      return
+    end
+    local choices = {}
+    for _, inspection in ipairs(inspections) do
+      local path = inspection.change_file or inspection.parent_file
+      if inspection.parent_file ~= inspection.change_file then
+        path = ("%s → %s"):format(
+          inspection.parent_file,
+          inspection.change_file
+        )
+      end
+      local commit_prefix = multiple_commits
+          and ("commit %d · "):format(inspection.commit_index or 1)
+        or ""
+      choices[#choices + 1] = {
+        inspection = inspection,
+        label = ("%s %s%s · %s"):format(
+          selected[inspection] and "[x]" or "[ ]",
+          commit_prefix,
+          path,
+          status_labels[inspection.status]
+            or inspection.status
+            or "changed"
+        ),
+      }
+    end
+    choices[#choices + 1] = {
+      action = "all",
+      label = "[+] Select all changed files",
+    }
+    local count = selected_count()
+    if count > 0 then
+      choices[#choices + 1] = {
+        action = "build",
+        label = ("Build tabs from selected files (%d)"):format(count),
+      }
+    end
+    choices[#choices + 1] = {
+      action = "cancel",
+      label = "Cancel change inspection",
+    }
+    window.show_change_picker(page_context, choices, function(
+      choice,
+      picker_err
+    )
+      if finished then
+        return
+      end
+      if not choice or choice.action == "cancel" then
+        cancel(picker_err)
+        return
+      end
+      if choice.action == "all" then
+        for _, inspection in ipairs(inspections) do
+          selected[inspection] = true
+        end
+        prompt()
+        return
+      end
+      if choice.action == "build" then
+        local result = {}
+        for _, inspection in ipairs(inspections) do
+          if selected[inspection] then
+            result[#result + 1] = inspection
+          end
+        end
+        finished = true
+        callback(result)
+        return
+      end
+      if choice.inspection then
+        selected[choice.inspection] = not selected[choice.inspection]
       end
       prompt()
     end)
@@ -3898,7 +4069,14 @@ local function open_issue(info, opts, context, loading, done)
             opts,
             callback
           )
-        end, function(selected, selection_err)
+        end, {
+          opts = opts,
+          info = info,
+          details = details,
+          repository = repository,
+          default_source = (opts.inspect_search_paths or {})[1],
+          remote_url = info.remote_url,
+        }, function(selected, selection_err)
           if not selected then
             done(nil, selection_err)
             return
@@ -3972,16 +4150,35 @@ function M.open(url, opts, context, lifecycle)
           show_loading_error(loading, err)
           return
         end
-        open_tabs(
+        local function open_selected(selected)
+          open_tabs(
+            selected,
+            loading,
+            resolved.comment,
+            function(_, open_err)
+              active = false
+              if open_err then
+                show_loading_error(loading, open_err)
+                return
+              end
+            end
+          )
+        end
+        if not opts.inspect_select_changed_files then
+          open_selected(inspections)
+          return
+        end
+        select_change_inspections(
           inspections,
-          loading,
-          resolved.comment,
-          function(_, open_err)
-            active = false
-            if open_err then
-              show_loading_error(loading, open_err)
+          resolved,
+          opts,
+          function(selected, selection_err)
+            if not selected then
+              active = false
+              show_loading_error(loading, selection_err)
               return
             end
+            open_selected(selected)
           end
         )
       end
@@ -4008,6 +4205,7 @@ M._find_local_repository = find_local_repository
 M._issue_candidates = issue_candidates
 M._decode_codex_issue_candidates = decode_codex_issue_candidates
 M._codex_issue_prompt = codex_issue_prompt
+M._select_change_inspections = select_change_inspections
 M._parse_hunks = parse_hunks
 M._parse_revision_pairs = parse_revision_pairs
 M._blob_lines = blob_lines
