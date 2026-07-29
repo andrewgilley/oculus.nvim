@@ -28,12 +28,16 @@ file and hunk without altering the working checkout.
 On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
 Pantheon reads each commit and its first parent from Git without changing the
-local checkout. Every changed file opens an adjacent old/new tab pair. Pull
-requests group those file pairs by commit, in commit order. Each tab records
-the standard local repository and original relative source path; no separate
-Pantheon worktree is created. Its tab-local directory is the inspected file's
-immediate parent when that directory exists in the checkout, so opening Oil
-starts beside the file instead of at the project root. The tabs
+local checkout. Every changed file opens an adjacent parent/change tab pair.
+The parent tab uses the parent file as its baseline, while the changed tab
+applies only the currently selected hunk to that same baseline. Consequently,
+switching versions changes only the block being inspected instead of replacing
+the complete file; selecting another hunk rebuilds the focused preview around
+that block. Pull requests group those file pairs by commit, in commit order.
+Each tab records the standard local repository and original relative source
+path; no separate Pantheon worktree is created. Its tab-local directory is the
+inspected file's immediate parent when that directory exists in the checkout,
+so opening Oil starts beside the file instead of at the project root. The tabs
 appear with animated loading indicators and are replaced in place when their
 files are ready. Cursor positions and scroll views remain linked within each
 pair. Both versions retain one standard-width sign column, but only

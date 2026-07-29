@@ -11,6 +11,21 @@ end
 
 local inspect = require("pantheon.inspect")
 
+local highlight_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(
+  highlight_buf,
+  0,
+  -1,
+  false,
+  { "local highlighted = true" }
+)
+vim.bo[highlight_buf].filetype = "lua"
+vim.bo[highlight_buf].syntax = "lua"
+vim.b[highlight_buf].pantheon_inspect = { role = "change" }
+assert(inspect._refresh_buffer_highlighting(highlight_buf))
+assert(vim.bo[highlight_buf].syntax == "lua")
+vim.api.nvim_buf_delete(highlight_buf, { force = true })
+
 local viewport_buf = vim.api.nvim_get_current_buf()
 local viewport_win = vim.api.nvim_get_current_win()
 local viewport_lines = {}
@@ -119,7 +134,7 @@ local shortened_sidebar_row = inspect._sidebar_row(
   24
 )
 assert(shortened_sidebar_row.line:match("^• …"))
-assert(shortened_sidebar_row.line:match(" P C$"))
+assert(shortened_sidebar_row.line:match(" P C $"))
 assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
@@ -330,6 +345,82 @@ assert(hunks[2].old_count == 1)
 assert(hunks[2].new_count == 0)
 assert(hunks[3].old_count == 0)
 assert(hunks[3].new_count == 4)
+local focused_lines, focused_start = inspect._focused_change_lines(
+  { "one", "old first", "middle", "old second", "tail" },
+  { "one", "new first a", "new first b", "middle", "new second", "tail" },
+  {
+    old_start = 4,
+    old_count = 1,
+    new_start = 5,
+    new_count = 1,
+  }
+)
+assert(vim.deep_equal(focused_lines, {
+  "one",
+  "old first",
+  "middle",
+  "new second",
+  "tail",
+}))
+assert(focused_start == 4)
+focused_lines, focused_start = inspect._focused_change_lines(
+  { "one", "old a", "old b", "tail" },
+  { "one", "new a", "new b", "new c", "tail" },
+  {
+    old_start = 2,
+    old_count = 2,
+    new_start = 2,
+    new_count = 3,
+  }
+)
+assert(vim.deep_equal(focused_lines, {
+  "one",
+  "new a",
+  "new b",
+  "new c",
+  "tail",
+}))
+assert(focused_start == 2)
+focused_lines, focused_start = inspect._focused_change_lines(
+  { "one", "tail" },
+  { "one", "inserted", "tail" },
+  {
+    old_start = 1,
+    old_count = 0,
+    new_start = 2,
+    new_count = 1,
+  }
+)
+assert(vim.deep_equal(focused_lines, {
+  "one",
+  "inserted",
+  "tail",
+}))
+assert(focused_start == 2)
+focused_lines, focused_start = inspect._focused_change_lines(
+  { "one", "removed", "tail" },
+  { "one", "tail" },
+  {
+    old_start = 2,
+    old_count = 1,
+    new_start = 2,
+    new_count = 0,
+  }
+)
+assert(vim.deep_equal(focused_lines, { "one", "tail" }))
+assert(focused_start == 2)
+focused_lines, focused_start = inspect._focused_change_lines(
+  { "" },
+  { "new one", "new two" },
+  {
+    old_start = 0,
+    old_count = 0,
+    new_start = 1,
+    new_count = 2,
+  }
+)
+assert(vim.deep_equal(focused_lines, { "new one", "new two" }))
+assert(focused_start == 1)
 local jump_lines = inspect._change_lines(hunks)
 assert(vim.deep_equal(jump_lines, { 10, 25, 31 }))
 assert(vim.deep_equal(
@@ -686,11 +777,11 @@ if integration_root and (integration_sha or integration_url) then
     else
       file_lines[#file_lines + 1] = line_number
       assert(line:match("^• "))
-      assert(line:match(" P C$"))
+      assert(line:match(" P C $"))
       assert(not line:match("^%d+%. "))
       assert(vim.fn.strdisplaywidth(line) == sidebar_width)
       local displayed_file = line
-        :gsub("%s+P C$", "")
+        :gsub("%s+P C%s*$", "")
         :gsub("^• ", "")
         :gsub("^…", "")
       local _, separators = displayed_file:gsub("/", "")
@@ -740,12 +831,12 @@ if integration_root and (integration_sha or integration_url) then
   local change_buf = vim.api.nvim_win_get_buf(change_win)
   if verify_revision_content then
     assert(expected_source_root)
-    local content_state = change_state.status == "D"
-        and parent_state
-      or change_state
-    local content_buf = change_state.status == "D"
-        and parent_buf
-      or change_buf
+    local content_state = change_state.status == "A"
+        and change_state
+      or parent_state
+    local content_buf = change_state.status == "A"
+        and change_buf
+      or parent_buf
     local result = vim.system({
       "git",
       "-C",
