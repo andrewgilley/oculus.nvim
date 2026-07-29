@@ -30,12 +30,10 @@ pair. Both versions retain one standard-width sign column, but only
 changed-version tabs show markers: `+` marks added lines and `-` marks deletion
 locations. The cursor starts at the
 first changed hunk. When that cursor is on line 10 or later, the tab applies
-`zt10<C-y>$` to normalize its view; lines 1–9 retain their existing view. Use
-`<C-Left>` and `<C-Right>` to jump to the previous and next hunks; the same
-line-10-aware view normalization is reapplied after every jump. `<C-s>`
-switches between the parent and changed tabs for the current file from either
-the main pane or the changed-files sidebar; sidebar focus, row, and viewport
-are preserved.
+`zt10<C-y>$` to normalize its view; lines 1–9 retain their existing view.
+`<C-s>` switches between the parent and changed tabs for the current file from
+either the main pane or the changed-files sidebar; sidebar focus, row, and
+viewport are preserved.
 Every Inspect tab includes the same right-hand changed-files sidebar.
 File rows show `•`, the changed filename, and the trailing `P C`. Each file
 expands into a visible tree of

@@ -291,26 +291,6 @@ local function change_lines(hunks, role)
   return lines
 end
 
-local function next_change_line(lines, current, direction)
-  if #lines == 0 then
-    return nil
-  end
-  if direction > 0 then
-    for _, line in ipairs(lines) do
-      if line > current then
-        return line
-      end
-    end
-    return lines[1]
-  end
-  for index = #lines, 1, -1 do
-    if lines[index] < current then
-      return lines[index]
-    end
-  end
-  return lines[#lines]
-end
-
 local function parse_revision_pairs(output)
   local pairs = {}
   for line in (output or ""):gmatch("[^\r\n]+") do
@@ -1229,54 +1209,6 @@ normalize_inspection_view = function(win)
   end)
 end
 
-local function jump_change(session, group, role, direction)
-  local win = vim.api.nvim_get_current_win()
-  local cursor = vim.api.nvim_win_get_cursor(win)
-  local count = #(session.hunks or {})
-  if count == 0 then
-    return
-  end
-  local current = hunk_index_at_line(
-    session,
-    role,
-    cursor[1]
-  ) or session.active_chunk
-  local target
-  if current then
-    target = ((current + direction - 1) % count) + 1
-  else
-    local lines = role == "parent"
-        and session.parent_lines
-      or session.change_lines
-    local line = next_change_line(lines, cursor[1], direction)
-    for index, hunk in ipairs(session.hunks) do
-      if hunk_start(hunk, role) == line then
-        target = index
-        break
-      end
-    end
-  end
-  target = target or 1
-  session.active_chunk = target
-  set_change_cursor(win, hunk_start(session.hunks[target], role))
-  refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
-end
-
-local function map_change_jumps(endpoint, session, group, role)
-  local function map(lhs, direction, description)
-    vim.keymap.set("n", lhs, function()
-      jump_change(session, group, role, direction)
-    end, {
-      buffer = endpoint.buf,
-      nowait = true,
-      silent = true,
-      desc = description,
-    })
-  end
-  map("<C-Left>", -1, "Previous Pantheon change")
-  map("<C-Right>", 1, "Next Pantheon change")
-end
-
 local function select_endpoint(endpoint)
   if not valid_endpoint(endpoint) then
     return
@@ -1311,6 +1243,13 @@ local function sidebar_active_item(group, tab)
       return index, "change"
     end
   end
+end
+
+local function sidebar_target_role(active_index, active_role, entry)
+  if entry and entry.pair_index ~= active_index then
+    return "parent"
+  end
+  return active_role
 end
 
 local function truncate_path(path, width)
@@ -1660,10 +1599,11 @@ local function open_sidebar_selection(group)
     return
   end
   local tab = vim.api.nvim_get_current_tabpage()
-  local _, role = sidebar_active_item(group, tab)
+  local active_index, role = sidebar_active_item(group, tab)
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
+  role = sidebar_target_role(active_index, role, entry)
   local endpoint = session and role and session[role] or nil
   if not valid_endpoint(endpoint) then
     return
@@ -1708,10 +1648,11 @@ focus_sidebar_selection = function(group)
     return
   end
   local tab = vim.api.nvim_get_current_tabpage()
-  local _, role = sidebar_active_item(group, tab)
+  local active_index, role = sidebar_active_item(group, tab)
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
+  role = sidebar_target_role(active_index, role, entry)
   local endpoint = session and role and session[role] or nil
   if not valid_endpoint(endpoint) then
     return
@@ -2312,18 +2253,6 @@ local function open_tabs(
       inspection_sessions[#inspection_sessions + 1] = session
       sessions[next_session] = session
       apply_change_signs(parent.buf, change.buf, paths.hunks)
-      map_change_jumps(
-        parent,
-        session,
-        inspection_sessions,
-        "parent"
-      )
-      map_change_jumps(
-        change,
-        session,
-        inspection_sessions,
-        "change"
-      )
       map_file_navigation(
         parent,
         session,
@@ -2685,11 +2614,11 @@ M._parse_revision_pairs = parse_revision_pairs
 M._blob_lines = blob_lines
 M._oil_entry_status = oil_entry_status
 M._change_lines = change_lines
-M._next_change_line = next_change_line
 M._normalize_inspection_view = normalize_inspection_view
 M._sidebar_row = sidebar_row
 M._sidebar_chunk_row = sidebar_chunk_row
 M._sidebar_file = sidebar_file
+M._sidebar_target_role = sidebar_target_role
 M._comment_float = comment_float
 
 return M
