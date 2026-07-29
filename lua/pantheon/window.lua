@@ -1219,7 +1219,7 @@ local function render_shortcuts()
   })
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
   section("STARTUP USER LIST", {
-    { "/", "Fuzzy-search contributor names and handles" },
+    { "s", "Fuzzy-search contributor names and handles" },
     { "f", "Edit filters for the selected contributor" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
@@ -1855,7 +1855,7 @@ local function map_keys(buf)
   map("q", M.close, "Close Pantheon")
   map("<Esc>", M.close, "Close Pantheon")
   map("?", toggle_shortcuts, "Show Pantheon keyboard shortcuts")
-  map("/", open_search, "Fuzzy-search Pantheon users")
+  map("s", open_search, "Fuzzy-search Pantheon users")
   map("<CR>", select_current, "Select Pantheon item")
   map("l", select_current, "Move right in Pantheon")
   map("<Right>", select_current, "Move right in Pantheon")
