@@ -1,7 +1,7 @@
-# pantheon.nvim
+# oculus.nvim
 
 
-Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
+Oculus is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
 
 In a user's activity feed, press `p` to load the next page of eight activity 
 items and move directly to the first item on that page. Press `r`
@@ -19,7 +19,7 @@ search. Main-list and search-result navigation use a short configurable delay
 (`navigation_delay`, 80 ms by default) to keep held keys from skipping items.
 
 
-<img width="1902" height="1027" alt="pantheon" src="https://github.com/user-attachments/assets/c6de957e-f9ba-4c7f-870f-8fc46754b673" />
+<img width="1902" height="1027" alt="oculus" src="https://github.com/user-attachments/assets/c6de957e-f9ba-4c7f-870f-8fc46754b673" />
 
 
 ## Inspect
@@ -34,12 +34,12 @@ file and hunk without altering the working checkout.
 
 On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
-The selected activity row shows a loading spinner while Pantheon prepares the
+The selected activity row shows a loading spinner while Oculus prepares the
 inspection; tabs appear only after the changed-file sidebar is ready.
-Pantheon reads each commit and its first parent from Git without changing the
+Oculus reads each commit and its first parent from Git without changing the
 local checkout. Every changed file opens an adjacent parent/change tab pair.
 
-Issue activity uses an editable working-tree workflow. Pantheon extracts
+Issue activity uses an editable working-tree workflow. Oculus extracts
 validated file and line references from the public issue text and searches for
 backticked symbols in the local clone. The candidate picker also offers
 **Ask Codex to identify relevant files and sections**, which runs the Codex CLI

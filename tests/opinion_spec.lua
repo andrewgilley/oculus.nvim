@@ -1,7 +1,7 @@
 local root = vim.fn.getcwd()
 vim.opt.runtimepath:prepend(root)
 
-local opinion = require("pantheon.opinion")
+local opinion = require("oculus.opinion")
 
 local context, context_err = opinion.context()
 assert(context, context_err)

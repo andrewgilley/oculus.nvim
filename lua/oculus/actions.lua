@@ -85,8 +85,8 @@ end
 
 local function sentence(event)
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 3 Support provider-normalized activity text
-  if type(event.pantheon_text) == "string" then
-    return event.pantheon_text
+  if type(event.oculus_text) == "string" then
+    return event.oculus_text
   end
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 3
 
@@ -210,8 +210,8 @@ end
 
 local function detail(event)
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 4 Support provider-normalized activity details
-  if event.pantheon_detail ~= nil then
-    return event.pantheon_detail
+  if event.oculus_detail ~= nil then
+    return event.oculus_detail
   end
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 4
 

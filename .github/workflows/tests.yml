@@ -54,12 +54,12 @@ jobs:
       - name: Run inspect tests
         env:
           NVIM_LOG_FILE: ${{ runner.temp }}/nvim.log
-          PANTHEON_INSPECT_TEST_ROOT: ${{ github.workspace }}
-          PANTHEON_INSPECT_TEST_SHA: 925bae937d1b71092b59c2dc0d537ab732f80d20
-          PANTHEON_INSPECT_TEST_REPOSITORY: ${{ github.repository }}
-          PANTHEON_INSPECT_TEST_SOURCE: ${{ github.workspace }}
-          PANTHEON_INSPECT_TEST_OIL: ${{ runner.temp }}/oil.nvim
-          PANTHEON_INSPECT_TEST_PAIR_COUNT: "1"
-          PANTHEON_INSPECT_TEST_NO_WORKTREES: "1"
-          PANTHEON_INSPECT_TEST_VERIFY_CONTENT: "1"
+          OCULUS_INSPECT_TEST_ROOT: ${{ github.workspace }}
+          OCULUS_INSPECT_TEST_SHA: 925bae937d1b71092b59c2dc0d537ab732f80d20
+          OCULUS_INSPECT_TEST_REPOSITORY: ${{ github.repository }}
+          OCULUS_INSPECT_TEST_SOURCE: ${{ github.workspace }}
+          OCULUS_INSPECT_TEST_OIL: ${{ runner.temp }}/oil.nvim
+          OCULUS_INSPECT_TEST_PAIR_COUNT: "1"
+          OCULUS_INSPECT_TEST_NO_WORKTREES: "1"
+          OCULUS_INSPECT_TEST_VERIFY_CONTENT: "1"
         run: nvim --headless -u NONE -l tests/inspect_spec.lua

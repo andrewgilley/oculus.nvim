@@ -1,8 +1,8 @@
 local root = vim.fn.getcwd()
 vim.opt.runtimepath:prepend(root)
 
-local window = require("pantheon.window")
-local inspect = require("pantheon.inspect")
+local window = require("oculus.window")
+local inspect = require("oculus.inspect")
 local contributors = {
   {
     name = "Mitchell Hashimoto",
@@ -98,9 +98,9 @@ local third_page = window._activity_page(page_events, 3, 8)
 assert(#third_page == 4)
 assert(third_page[1].id == "17")
 local search_mapping = vim.fn.maparg("s", "n", false, true)
-assert(search_mapping.desc == "Fuzzy-search Pantheon users")
+assert(search_mapping.desc == "Fuzzy-search Oculus users")
 local slash_search_mapping = vim.fn.maparg("/", "n", false, true)
-assert(slash_search_mapping.desc == "Fuzzy-search Pantheon users")
+assert(slash_search_mapping.desc == "Fuzzy-search Oculus users")
 assert(slash_search_mapping.callback == search_mapping.callback)
 search_mapping.callback()
 vim.wait(10)
@@ -163,11 +163,11 @@ local search_up_mapping =
 local search_up_tab_mapping =
   vim.fn.maparg("<Tab>", "i", false, true)
 assert(search_down_mapping.desc
-  == "Move down in Pantheon user search results")
+  == "Move down in Oculus user search results")
 assert(search_up_mapping.desc
-  == "Move up in Pantheon user search results")
+  == "Move up in Oculus user search results")
 assert(search_up_tab_mapping.desc
-  == "Move up in Pantheon user search results")
+  == "Move up in Oculus user search results")
 search_down_mapping.callback()
 assert(state.search_index == 2)
 assert(state.preview_items[4][1] == state.search_results[2].name)
@@ -216,7 +216,7 @@ assert(state.search_query == nil)
 assert(state.search_win == nil)
 assert(vim.api.nvim_win_is_valid(state.win))
 
-local github = require("pantheon.github")
+local github = require("oculus.github")
 local original_events = github.events
 local original_enrich_pull_requests = github.enrich_pull_requests
 local original_enrich_pushes = github.enrich_pushes
@@ -301,7 +301,7 @@ inspect.open = function(url, _, context, lifecycle)
 end
 local inspect_mapping = vim.fn.maparg("h", "n", false, true)
 assert(inspect_mapping.desc
-  == "Inspect Pantheon change or issue")
+  == "Inspect Oculus change or issue")
 local inspect_activity_line =
   vim.api.nvim_win_get_cursor(state.win)[1]
 local inspect_activity_text = vim.api.nvim_buf_get_lines(
@@ -312,7 +312,7 @@ local inspect_activity_text = vim.api.nvim_buf_get_lines(
 )[1]
 inspect_mapping.callback()
 local inspect_loading_namespace =
-  vim.api.nvim_get_namespaces().pantheon_inspect_activity_loading
+  vim.api.nvim_get_namespaces().oculus_inspect_activity_loading
 assert(inspect_loading_namespace)
 local first_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
@@ -362,7 +362,7 @@ assert(#vim.api.nvim_buf_get_extmarks(
 inspect.open = original_inspect_open
 
 local past_mapping = vim.fn.maparg("p", "n", false, true)
-assert(past_mapping.desc == "Load past Pantheon activity")
+assert(past_mapping.desc == "Load past Oculus activity")
 assert(vim.fn.maparg("b", "n", false, true).callback == nil)
 past_mapping.callback()
 assert(state.view == "activity")
@@ -393,7 +393,7 @@ assert(state.events[1].id == "17")
 assert(requested_per_page[3] == 46)
 
 local recent_mapping = vim.fn.maparg("r", "n", false, true)
-assert(recent_mapping.desc == "Load more recent Pantheon activity")
+assert(recent_mapping.desc == "Load more recent Oculus activity")
 recent_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
@@ -420,13 +420,13 @@ assert(not page_one_footer_text:find("r recent", 1, true))
 
 local issue_picker_choice
 local issue_candidate = {
-  path = "lua/pantheon/window.lua",
+  path = "lua/oculus/window.lua",
   line = 120,
   last_line = 132,
 }
 local issue_file_group = {
-  key = "lua/pantheon/window.lua",
-  path = "lua/pantheon/window.lua",
+  key = "lua/oculus/window.lua",
+  path = "lua/oculus/window.lua",
   candidates = { issue_candidate },
 }
 window.show_issue_picker({
@@ -456,7 +456,7 @@ window.show_issue_picker({
   },
   {
     group = issue_file_group,
-    label = "[ ] lua/pantheon/window.lua",
+    label = "[ ] lua/oculus/window.lua",
   },
   {
     action = "build",
@@ -523,7 +523,7 @@ vim.api.nvim_win_set_cursor(state.win, { issue_candidate_line, 0 })
 select_mapping.callback()
 assert(issue_picker_choice.group == issue_file_group)
 local build_mapping = vim.fn.maparg("b", "n", false, true)
-assert(build_mapping.desc == "Build selected Pantheon inspect files")
+assert(build_mapping.desc == "Build selected Oculus inspect files")
 build_mapping.callback()
 assert(issue_picker_choice.action == "build")
 window.restore_issue_picker_page()
@@ -553,8 +553,8 @@ assert(issue_picker_cancelled)
 assert(state.view == "activity")
 
 local changed_inspection = {
-  change_file = "lua/pantheon/window.lua",
-  parent_file = "lua/pantheon/window.lua",
+  change_file = "lua/oculus/window.lua",
+  parent_file = "lua/oculus/window.lua",
   status = "M",
 }
 local change_picker_choice
@@ -566,10 +566,10 @@ window.show_change_picker({
     owner = "example",
     repo = "repository",
     number = 42,
-    title = "Keep selection inside Pantheon",
+    title = "Keep selection inside Oculus",
   },
   details = {
-    title = "Keep selection inside Pantheon",
+    title = "Keep selection inside Oculus",
     comment = "Only include the files needed for this review.",
   },
   repository = "C:/source/repository",
@@ -578,7 +578,7 @@ window.show_change_picker({
 }, {
   {
     inspection = changed_inspection,
-    label = "[ ] lua/pantheon/window.lua · modified",
+    label = "[ ] lua/oculus/window.lua · modified",
   },
   {
     action = "all",
@@ -601,7 +601,7 @@ assert(change_picker_text:find("CHANGE CONTEXT", 1, true))
 assert(change_picker_text:find("CHANGED FILES", 1, true))
 assert(not change_picker_text:find("a agent suggestion", 1, true))
 assert(change_picker_text:find(
-  "Keep selection inside Pantheon",
+  "Keep selection inside Oculus",
   1,
   true
 ))

@@ -16,7 +16,7 @@ local defaults = {
   height = 0.80,
   row = 1,
   border = "rounded",
-  title = " Pantheon ",
+  title = " Oculus ",
   per_page = 30,
   results_limit = 8,
   contributor_list_limit = 20,
@@ -27,7 +27,7 @@ local defaults = {
   activity_types = nil,
   user_activity_types = {},
   persist_filters = true,
-  state_file = vim.fn.stdpath("state") .. "/pantheon.json",
+  state_file = vim.fn.stdpath("state") .. "/oculus.json",
   browser_command = nil,
   inspect_cache_ttl = 60,
   inspect_repositories = {},
@@ -40,7 +40,7 @@ local defaults = {
     width = 0.64,
     height = 0.70,
     border = "rounded",
-    title = " Pantheon opinion ",
+    title = " Oculus opinion ",
     filetype = "markdown",
   },
   token = nil,
@@ -320,7 +320,7 @@ local defaults = {
     {
       name = "Andrew Gilley",
       username = "andrewgilley",
-      description = "Creator of Pantheon and Reliquary Neovim plugins",
+      description = "Creator of Oculus and Reliquary Neovim plugins",
     },
   },
 }
@@ -358,7 +358,7 @@ function M.setup(opts)
   end
 
   if M.config.persist_filters then
-    local saved = require("pantheon.storage").load(M.config.state_file)
+    local saved = require("oculus.storage").load(M.config.state_file)
     if saved then
       if saved.activity_types ~= nil then
         M.config.activity_types = saved.activity_types
@@ -371,23 +371,23 @@ function M.setup(opts)
 end
 
 function M.open()
-  require("pantheon.window").open(M.config)
+  require("oculus.window").open(M.config)
 end
 
 function M.close()
-  require("pantheon.window").close()
+  require("oculus.window").close()
 end
 
 function M.toggle()
-  require("pantheon.window").toggle(M.config)
+  require("oculus.window").toggle(M.config)
 end
 
 function M.consult(request)
-  return require("pantheon.opinion").consult(request, M.config.opinion)
+  return require("oculus.opinion").consult(request, M.config.opinion)
 end
 
 function M.show_opinion(value, opts)
-  return require("pantheon.opinion").show(
+  return require("oculus.opinion").show(
     value,
     vim.tbl_deep_extend(
       "force",

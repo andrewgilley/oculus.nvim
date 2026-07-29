@@ -1,12 +1,12 @@
 local M = {}
 
-local actions = require("pantheon.actions")
-local browser = require("pantheon.browser")
-local github = require("pantheon.github")
-local inspect = require("pantheon.inspect")
+local actions = require("oculus.actions")
+local browser = require("oculus.browser")
+local github = require("oculus.github")
+local inspect = require("oculus.inspect")
 
 -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 7 Add contributor activity-provider helpers
-local codeberg = require("pantheon.codeberg")
+local codeberg = require("oculus.codeberg")
 
 local function activity_provider(contributor)
   if contributor and contributor.provider == "codeberg" then
@@ -29,16 +29,16 @@ local function contributor_profile_url(contributor)
 end
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 7
 
-local ns = vim.api.nvim_create_namespace("pantheon")
-local preview_ns = vim.api.nvim_create_namespace("pantheon_preview")
+local ns = vim.api.nvim_create_namespace("oculus")
+local preview_ns = vim.api.nvim_create_namespace("oculus_preview")
 local contributor_selection_ns = vim.api.nvim_create_namespace(
-  "pantheon_contributor_selection"
+  "oculus_contributor_selection"
 )
 local inspect_loading_ns = vim.api.nvim_create_namespace(
-  "pantheon_inspect_activity_loading"
+  "oculus_inspect_activity_loading"
 )
 local autocmd_group = vim.api.nvim_create_augroup(
-  "PantheonWindow",
+  "OculusWindow",
   { clear = true }
 )
 
@@ -135,7 +135,7 @@ local function make_win_config(opts)
     col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = opts.border or "rounded",
-    title = opts.title or " Pantheon ",
+    title = opts.title or " Oculus ",
     title_pos = "center",
   }
 end
@@ -145,7 +145,7 @@ local function make_buf()
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "pantheon"
+  vim.bo[buf].filetype = "oculus"
   return buf
 end
 
@@ -165,7 +165,7 @@ local function make_footer_buf()
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "pantheon"
+  vim.bo[buf].filetype = "oculus"
   return buf
 end
 
@@ -226,8 +226,8 @@ local function render_activity_footer()
   vim.wo[M.state.footer_win].wrap = false
   vim.wo[M.state.footer_win].cursorline = false
   vim.wo[M.state.footer_win].winhighlight = table.concat({
-    "Normal:PantheonNormal",
-    "NormalFloat:PantheonNormal",
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
   }, ",")
   vim.wo[M.state.footer_win].number = false
   vim.wo[M.state.footer_win].relativenumber = false
@@ -804,7 +804,7 @@ local function update_contributor_selection()
       {
         end_row = line - 1,
         end_col = #visible_text,
-        hl_group = "PantheonContributorSelected",
+        hl_group = "OculusContributorSelected",
         hl_mode = "replace",
         priority = 10000,
       }
@@ -975,13 +975,13 @@ end
 
 local function persist_filter_config()
   if M.state.opts.persist_filters then
-    local ok, err = require("pantheon.storage").save(
+    local ok, err = require("oculus.storage").save(
       M.state.opts.state_file,
       M.state.opts
     )
     if not ok then
       vim.notify(
-        "Pantheon could not save activity filters: " .. tostring(err),
+        "Oculus could not save activity filters: " .. tostring(err),
         vim.log.levels.ERROR
       )
     end
@@ -1251,9 +1251,9 @@ local function render_activity(events, cached, notice)
     local text = lines[line]
     if text then
       if kind == "preview" then
-        highlight(line, 0, -1, "PantheonActivityPreview")
+        highlight(line, 0, -1, "OculusActivityPreview")
       elseif kind == "main" then
-        highlight(line, 0, 5, "PantheonActivityIcon")
+        highlight(line, 0, 5, "OculusActivityIcon")
       end
     end
   end
@@ -1521,7 +1521,7 @@ local function build_inspect_selection()
     end
   end
   vim.notify(
-    "Pantheon: select at least one file before building tabs",
+    "Oculus: select at least one file before building tabs",
     vim.log.levels.WARN
   )
 end
@@ -1531,7 +1531,7 @@ function M.show_issue_picker(context, choices, callback)
     M.open((context and context.opts) or M.state.opts or {})
   end
   if not is_valid_win(M.state.win) then
-    callback(nil, "Pantheon issue picker could not be opened")
+    callback(nil, "Oculus issue picker could not be opened")
     return
   end
   local previous = M.state.issue_picker
@@ -1550,7 +1550,7 @@ function M.show_issue_picker(context, choices, callback)
     buffer = M.state.buf,
     nowait = true,
     silent = true,
-    desc = "Build selected Pantheon inspect files",
+    desc = "Build selected Oculus inspect files",
   })
   render_issue_picker()
 end
@@ -1597,7 +1597,7 @@ local function render_shortcuts()
   local lines = {
     "",
     "  KEYBOARD SHORTCUTS",
-    "  Commands available throughout Pantheon",
+    "  Commands available throughout Oculus",
   }
   local headings = { 2 }
 
@@ -1643,7 +1643,7 @@ local function render_shortcuts()
   })
   section("GENERAL", {
     { "?", "Open or close this shortcut page" },
-    { "q / <Esc> / <C-c>", "Close Pantheon" },
+    { "q / <Esc> / <C-c>", "Close Oculus" },
   })
 
   lines[#lines + 1] = ""
@@ -1945,7 +1945,7 @@ local function open_search()
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].buftype = "prompt"
   vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "pantheon-search"
+  vim.bo[buf].filetype = "oculus-search"
   vim.fn.prompt_setprompt(buf, "")
 
   local config = search_win_config()
@@ -1962,10 +1962,10 @@ local function open_search()
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
   vim.wo[win].winhighlight = table.concat({
-    "Normal:PantheonNormal",
-    "NormalFloat:PantheonNormal",
-    "FloatBorder:PantheonBorder",
-    "FloatTitle:PantheonBorder",
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+    "FloatBorder:OculusBorder",
+    "FloatTitle:OculusBorder",
   }, ",")
 
   local search_map = function(lhs, rhs, desc)
@@ -1976,30 +1976,30 @@ local function open_search()
       desc = desc,
     })
   end
-  search_map("<Esc>", cancel_search, "Cancel Pantheon user search")
-  search_map("<C-c>", cancel_search, "Cancel Pantheon user search")
-  search_map("<CR>", accept_search, "Open searched Pantheon user")
+  search_map("<Esc>", cancel_search, "Cancel Oculus user search")
+  search_map("<C-c>", cancel_search, "Cancel Oculus user search")
+  search_map("<CR>", accept_search, "Open searched Oculus user")
   search_map("<Down>", function()
     move_search_selection(1)
-  end, "Preview next Pantheon user search result")
+  end, "Preview next Oculus user search result")
   search_map("<Up>", function()
     move_search_selection(-1)
-  end, "Preview previous Pantheon user search result")
+  end, "Preview previous Oculus user search result")
   search_map("<C-n>", function()
     move_search_selection(1)
-  end, "Preview next Pantheon user search result")
+  end, "Preview next Oculus user search result")
   search_map("<C-p>", function()
     move_search_selection(-1)
-  end, "Preview previous Pantheon user search result")
+  end, "Preview previous Oculus user search result")
   search_map("<C-i>", function()
     move_search_selection(-1)
-  end, "Move up in Pantheon user search results")
+  end, "Move up in Oculus user search results")
   search_map("<Tab>", function()
     move_search_selection(-1)
-  end, "Move up in Pantheon user search results")
+  end, "Move up in Oculus user search results")
   search_map("<C-k>", function()
     move_search_selection(1)
-  end, "Move down in Pantheon user search results")
+  end, "Move down in Oculus user search results")
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = autocmd_group,
@@ -2032,7 +2032,7 @@ end
 local function open_url(url)
   local ok, err = browser.open(url, M.state.opts)
   if not ok and err then
-    vim.notify("Pantheon: " .. tostring(err), vim.log.levels.ERROR)
+    vim.notify("Oculus: " .. tostring(err), vim.log.levels.ERROR)
   end
 end
 
@@ -2088,7 +2088,7 @@ end
 local function inspect_current()
   if M.state.view ~= "activity" then
     vim.notify(
-      "Pantheon: select a change or issue to inspect",
+      "Oculus: select a change or issue to inspect",
       vim.log.levels.WARN
     )
     return
@@ -2097,7 +2097,7 @@ local function inspect_current()
   local target = target_on_cursor()
   if type(target) ~= "string" then
     vim.notify(
-      "Pantheon: this activity does not have an inspectable target",
+      "Oculus: this activity does not have an inspectable target",
       vim.log.levels.WARN
     )
     return
@@ -2172,7 +2172,7 @@ local function inspect_current()
         clear_spinner()
         if message then
           vim.notify(
-            "Pantheon: " .. tostring(message),
+            "Oculus: " .. tostring(message),
             vim.log.levels.WARN
           )
         end
@@ -2181,7 +2181,7 @@ local function inspect_current()
   )
   if not ok and err then
     clear_spinner()
-    vim.notify("Pantheon: " .. err, vim.log.levels.WARN)
+    vim.notify("Oculus: " .. err, vim.log.levels.WARN)
   end
 end
 
@@ -2354,23 +2354,23 @@ local function map_keys(buf)
     end
     M.close()
   end
-  map("<C-c>", close_or_cancel, "Close Pantheon")
-  map("q", close_or_cancel, "Close Pantheon")
-  map("<Esc>", close_or_cancel, "Close Pantheon")
-  map("?", toggle_shortcuts, "Show Pantheon keyboard shortcuts")
-  map("s", open_search, "Fuzzy-search Pantheon users")
-  map("/", open_search, "Fuzzy-search Pantheon users")
-  map("<CR>", select_current, "Select Pantheon item")
-  map("l", select_current, "Move right in Pantheon")
-  map("<Right>", select_current, "Move right in Pantheon")
+  map("<C-c>", close_or_cancel, "Close Oculus")
+  map("q", close_or_cancel, "Close Oculus")
+  map("<Esc>", close_or_cancel, "Close Oculus")
+  map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
+  map("s", open_search, "Fuzzy-search Oculus users")
+  map("/", open_search, "Fuzzy-search Oculus users")
+  map("<CR>", select_current, "Select Oculus item")
+  map("l", select_current, "Move right in Oculus")
+  map("<Right>", select_current, "Move right in Oculus")
   map("<Space>", function()
     if M.state.view == "issue_picker" then
       select_current()
       return
     end
     toggle_filter_type()
-  end, "Toggle Pantheon item")
-  map("o", open_current, "Open Pantheon item in browser")
+  end, "Toggle Oculus item")
+  map("o", open_current, "Open Oculus item in browser")
   map("f", function()
     open_filters(false)
   end, "Edit contributor activity types")
@@ -2383,31 +2383,31 @@ local function map_keys(buf)
       return
     end
     set_all_filter_types(true)
-  end, "Run Pantheon agent suggestion or enable all activity types")
+  end, "Run Oculus agent suggestion or enable all activity types")
   map("n", function()
     set_all_filter_types(false)
-  end, "Disable all Pantheon activity filters")
-  map("p", next_activity_page, "Load past Pantheon activity")
-  map("r", previous_activity_page, "Load more recent Pantheon activity")
-  map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
-  map("h", inspect_current, "Inspect Pantheon change or issue")
+  end, "Disable all Oculus activity filters")
+  map("p", next_activity_page, "Load past Oculus activity")
+  map("r", previous_activity_page, "Load more recent Oculus activity")
+  map("d", reset_filter_types_to_default, "Reset Oculus activity types")
+  map("h", inspect_current, "Inspect Oculus change or issue")
   map("k", function()
     move_cursor(1)
-  end, "Move down in Pantheon")
-  map("j", go_back, "Move left in Pantheon")
-  map("<Left>", go_back, "Move left in Pantheon")
+  end, "Move down in Oculus")
+  map("j", go_back, "Move left in Oculus")
+  map("<Left>", go_back, "Move left in Oculus")
   map("<Down>", function()
     move_cursor(1)
-  end, "Select next Pantheon contributor")
+  end, "Select next Oculus contributor")
   map("<Up>", function()
     move_cursor(-1)
-  end, "Select previous Pantheon contributor")
+  end, "Select previous Oculus contributor")
   map("<ScrollWheelDown>", function()
     move_cursor(1)
-  end, "Scroll Pantheon contributors down")
+  end, "Scroll Oculus contributors down")
   map("<ScrollWheelUp>", function()
     move_cursor(-1)
-  end, "Scroll Pantheon contributors up")
+  end, "Scroll Oculus contributors up")
 end
 
 function M.close()
@@ -2483,28 +2483,28 @@ function M.open(opts)
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
-  vim.api.nvim_set_hl(0, "PantheonNormal", { bg = "NONE" })
-  vim.api.nvim_set_hl(0, "PantheonBorder", { fg = "#ffffff", bg = "NONE" })
-  vim.api.nvim_set_hl(0, "PantheonActivityIcon", {
+  vim.api.nvim_set_hl(0, "OculusNormal", { bg = "NONE" })
+  vim.api.nvim_set_hl(0, "OculusBorder", { fg = "#ffffff", bg = "NONE" })
+  vim.api.nvim_set_hl(0, "OculusActivityIcon", {
     fg = "#fbd38d",
     bg = "NONE",
   })
-  vim.api.nvim_set_hl(0, "PantheonActivityPreview", {
+  vim.api.nvim_set_hl(0, "OculusActivityPreview", {
     fg = "#9ae6b4",
     bg = "NONE",
   })
-  vim.api.nvim_set_hl(0, "PantheonContributorSelected", {
+  vim.api.nvim_set_hl(0, "OculusContributorSelected", {
     fg = "#ffffff",
   })
-  vim.api.nvim_set_hl(0, "PantheonCursorLine", {
+  vim.api.nvim_set_hl(0, "OculusCursorLine", {
     bg = "#3a3a3a",
   })
   vim.wo[win].winhighlight = table.concat({
-    "Normal:PantheonNormal",
-    "NormalFloat:PantheonNormal",
-    "CursorLine:PantheonCursorLine",
-    "FloatBorder:PantheonBorder",
-    "FloatTitle:PantheonBorder",
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+    "CursorLine:OculusCursorLine",
+    "FloatBorder:OculusBorder",
+    "FloatTitle:OculusBorder",
   }, ",")
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
