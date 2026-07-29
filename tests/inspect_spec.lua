@@ -504,6 +504,10 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_win_get_width(old_sidebar_win) == sidebar_width)
     assert(vim.api.nvim_win_get_width(new_sidebar_win) == sidebar_width)
     assert(sidebar_width == 28)
+    assert(vim.wo[old_sidebar_win].cursorline)
+    assert(vim.wo[new_sidebar_win].cursorline)
+    assert(vim.wo[old_sidebar_win].cursorlineopt == "line")
+    assert(vim.wo[new_sidebar_win].cursorlineopt == "line")
     assert(vim.api.nvim_win_get_position(old_sidebar_win)[2]
       > vim.api.nvim_win_get_position(old_main_win)[2])
     assert(vim.api.nvim_win_get_position(new_sidebar_win)[2]
