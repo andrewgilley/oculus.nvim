@@ -915,7 +915,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(#sidebar_lines == pair_count + chunk_lines)
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   local first_sidebar_win = assert(sidebar_window(tabs[2]))
-  assert(vim.api.nvim_win_get_cursor(first_sidebar_win)[1] == 1)
+  assert(vim.api.nvim_win_get_cursor(first_sidebar_win)[1]
+    == file_lines[1] + 1)
   assert(vim.api.nvim_win_call(
     first_sidebar_win,
     vim.fn.winsaveview
@@ -1108,6 +1109,10 @@ if integration_root and (integration_sha or integration_url) then
   assert(sidebar_active.role == "parent")
   assert(sidebar_active.chunk_index == 1)
   assert(sidebar_active.chunk_count >= 1)
+  local initial_sidebar_win = assert(sidebar_window(tabs[2]))
+  assert(vim.api.nvim_get_current_win() == parent_win)
+  assert(vim.api.nvim_win_get_cursor(initial_sidebar_win)[1]
+    == file_lines[1] + sidebar_active.chunk_index)
   local sidebar_signs = vim.api.nvim_get_namespaces()
     .pantheon_inspect_sidebar
   assert(sidebar_signs)
@@ -1117,12 +1122,11 @@ if integration_root and (integration_sha or integration_url) then
     0,
     -1,
     {}
-  ) == pair_count * 2 + 1)
+  ) == pair_count * 2)
   local file_line_lookup = {}
   for _, line in ipairs(file_lines) do
     file_line_lookup[line] = true
   end
-  local inactive_file_highlight = false
   for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
     sidebar_buf,
     sidebar_signs,
@@ -1131,18 +1135,12 @@ if integration_root and (integration_sha or integration_url) then
     { details = true }
   )) do
     assert(file_line_lookup[mark[2] + 1])
-    if mark[4].line_hl_group == "CursorLine" then
-      assert(mark[2] + 1 == file_lines[1])
-      inactive_file_highlight = true
-    else
-      assert(mark[4].line_hl_group == nil)
-      assert(mark[4].hl_group
-        ~= "PantheonInspectSidebarChunkActive")
-      assert(mark[4].hl_group
-        ~= "PantheonInspectSidebarCurrent")
-    end
+    assert(mark[4].line_hl_group == nil)
+    assert(mark[4].hl_group
+      ~= "PantheonInspectSidebarChunkActive")
+    assert(mark[4].hl_group
+      ~= "PantheonInspectSidebarCurrent")
   end
-  assert(inactive_file_highlight)
   local normal_hl =
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local parent_hl = vim.api.nvim_get_hl(
@@ -1358,8 +1356,15 @@ if integration_root and (integration_sha or integration_url) then
     end)
     local second_sidebar_win = assert(sidebar_window(tabs[4]))
     assert(vim.api.nvim_get_current_win() == second_sidebar_win)
-    assert(vim.api.nvim_win_get_cursor(second_sidebar_win)[1]
-      == file_lines[2])
+    assert(
+      vim.api.nvim_win_get_cursor(second_sidebar_win)[1]
+        == file_lines[2],
+      ("second sidebar cursor was %d instead of file row %d")
+        :format(
+          vim.api.nvim_win_get_cursor(second_sidebar_win)[1],
+          file_lines[2]
+        )
+    )
     local second_sidebar_view = vim.fn.winsaveview()
     assert(second_sidebar_view.topline == source_sidebar_view.topline)
     if file_lines[2] > source_sidebar_view.topline then
@@ -1380,6 +1385,8 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_get_current_win() == second_main_win)
     assert(vim.api.nvim_win_get_cursor(second_main_win)[1]
       == second_first_parent_line)
+    assert(vim.api.nvim_win_get_cursor(second_sidebar_win)[1]
+      == file_lines[2] + 1)
     vim.api.nvim_set_current_win(second_sidebar_win)
     vim.api.nvim_win_set_cursor(0, { file_lines[1], 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", {
