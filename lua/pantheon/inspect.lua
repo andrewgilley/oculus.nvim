@@ -1259,6 +1259,15 @@ local function apply_change_signs(parent_buf, change_buf, hunks)
 
   for _, hunk in ipairs(hunks or {}) do
     place_range(
+      parent_buf,
+      hunk.old_start,
+      hunk.old_count,
+      hunk.old_count == 0 and "+" or "-",
+      hunk.old_count == 0
+          and "PantheonInspectAdded"
+        or "PantheonInspectRemoved"
+    )
+    place_range(
       change_buf,
       hunk.new_start,
       hunk.new_count,
@@ -1338,6 +1347,8 @@ local function render_focused_chunk(session, chunk_index)
   session.focused_chunks = true
   apply_change_signs(session.parent.buf, session.change.buf, {
     {
+      old_start = hunk.old_start,
+      old_count = hunk.old_count,
       new_start = start,
       new_count = hunk.new_count,
     },

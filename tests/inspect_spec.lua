@@ -882,13 +882,20 @@ if integration_root and (integration_sha or integration_url) then
   local namespaces = vim.api.nvim_get_namespaces()
   local signs = namespaces.pantheon_inspect_changes
   assert(signs)
-  assert(#vim.api.nvim_buf_get_extmarks(
+  local parent_marks = vim.api.nvim_buf_get_extmarks(
     parent_buf,
     signs,
     0,
     -1,
-    {}
-  ) == 0)
+    { details = true }
+  )
+  assert(#parent_marks > 0)
+  assert(parent_marks[1][4].sign_text == "-"
+    or parent_marks[1][4].sign_text == "+")
+  assert(parent_marks[1][4].sign_hl_group
+    == (parent_marks[1][4].sign_text == "-"
+        and "PantheonInspectRemoved"
+      or "PantheonInspectAdded"))
   assert(vim.wo[parent_win].signcolumn == "yes")
   local change_marks = vim.api.nvim_buf_get_extmarks(
     change_buf,
