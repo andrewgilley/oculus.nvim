@@ -726,15 +726,43 @@ pantheon_window.show_issue_picker = original_show_issue_picker
 local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 2)
 local issue_buffers = {}
+local issue_sidebar_test = {
+  main_windows = {},
+  sidebar_windows = {},
+}
 for index = #issue_tabs_before + 1, #issue_tabs_after do
   local tab = issue_tabs_after[index]
   local state = vim.api.nvim_tabpage_get_var(tab, "pantheon_inspect")
   assert(state.kind == "issue")
   assert(state.role == "issue")
-  local win = vim.api.nvim_tabpage_get_win(tab)
+  assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
+  local win
+  local sidebar_win
+  for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    local candidate_buf = vim.api.nvim_win_get_buf(candidate)
+    if vim.bo[candidate_buf].filetype == "pantheon-inspect-files" then
+      sidebar_win = candidate
+      issue_sidebar_test.buf = issue_sidebar_test.buf or candidate_buf
+      assert(candidate_buf == issue_sidebar_test.buf)
+    elseif type(vim.b[candidate_buf].pantheon_inspect) == "table" then
+      win = candidate
+    end
+  end
+  assert(win)
+  assert(sidebar_win)
+  issue_sidebar_test.main_windows[
+    #issue_sidebar_test.main_windows + 1
+  ] = win
+  issue_sidebar_test.sidebar_windows[
+    #issue_sidebar_test.sidebar_windows + 1
+  ] = sidebar_win
   local buf = vim.api.nvim_win_get_buf(win)
   assert(vim.wo[win].number == true)
   assert(vim.wo[win].relativenumber == true)
+  assert(vim.api.nvim_win_get_width(sidebar_win) == 28)
+  assert(vim.wo[sidebar_win].number == false)
+  assert(vim.wo[sidebar_win].relativenumber == false)
+  assert(vim.wo[sidebar_win].cursorline)
   issue_buffers[#issue_buffers + 1] = buf
   assert(vim.bo[buf].modifiable)
   assert(vim.bo[buf].buftype == "")
@@ -750,6 +778,107 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
   assert(marks[1][4].sign_text == "> ")
 end
 assert(vim.api.nvim_win_get_cursor(0)[1] == 10)
+do
+local issue_sidebar_buf = issue_sidebar_test.buf
+local issue_sidebar_lines =
+  vim.api.nvim_buf_get_lines(issue_sidebar_buf, 0, -1, false)
+local issue_file_lines = {}
+local issue_section_lines = {}
+for line_number, line in ipairs(issue_sidebar_lines) do
+  if line:match("^• ") then
+    issue_file_lines[#issue_file_lines + 1] = line_number
+    assert(
+      line:find("pantheon/inspect.lua", 1, true)
+        or line:find("pantheon/window.lua", 1, true)
+    )
+    assert(not line:match(" P C"))
+  elseif line:sub(1, 2) == "  "
+    and line:find("─ ", 1, true)
+  then
+    issue_section_lines[#issue_section_lines + 1] = line_number
+    assert(line:match("%d+%-%d+$"))
+  end
+end
+assert(#issue_file_lines == 2)
+assert(#issue_section_lines >= 2)
+local issue_sidebar_active =
+  vim.b[issue_sidebar_buf].pantheon_inspect_sidebar_active
+assert(issue_sidebar_active.pair_index == 1)
+assert(issue_sidebar_active.role == "issue")
+assert(issue_sidebar_active.chunk_index == 1)
+assert(issue_sidebar_active.chunk_count >= 1)
+
+local issue_toggle_mapping
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
+  issue_buffers[1],
+  "n"
+)) do
+  if mapping.desc == "Toggle Pantheon Inspect sidebar" then
+    issue_toggle_mapping = mapping
+  end
+end
+assert(issue_toggle_mapping)
+assert(issue_toggle_mapping.lhs
+  == (vim.g.mapleader or "\\") .. "pi")
+local issue_open_mapping
+local issue_version_mapping
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
+  issue_sidebar_buf,
+  "n"
+)) do
+  if mapping.desc == "Open Pantheon Inspect sidebar item" then
+    issue_open_mapping = mapping
+  elseif mapping.desc == "Switch Pantheon file version" then
+    issue_version_mapping = mapping
+  end
+end
+assert(issue_open_mapping and issue_open_mapping.lhs == "<CR>")
+assert(not issue_version_mapping)
+
+vim.api.nvim_set_current_win(issue_sidebar_test.sidebar_windows[1])
+vim.api.nvim_win_set_cursor(
+  issue_sidebar_test.sidebar_windows[1],
+  { issue_file_lines[2], 0 }
+)
+vim.api.nvim_exec_autocmds("CursorMoved", {
+  buffer = issue_sidebar_buf,
+})
+assert(vim.wait(1000, function()
+  return vim.api.nvim_get_current_tabpage()
+      == issue_tabs_after[#issue_tabs_before + 2]
+    and vim.api.nvim_get_current_win()
+      == issue_sidebar_test.sidebar_windows[2]
+end), "issue sidebar did not preview the second file")
+local second_issue_state =
+  vim.b[vim.api.nvim_win_get_buf(issue_sidebar_test.main_windows[2])]
+    .pantheon_inspect
+assert(second_issue_state.file == "lua/pantheon/window.lua")
+issue_open_mapping.callback()
+assert(vim.api.nvim_get_current_win()
+  == issue_sidebar_test.main_windows[2])
+assert(vim.api.nvim_win_get_cursor(
+  issue_sidebar_test.main_windows[2]
+)[1] == 20)
+assert(vim.api.nvim_win_get_cursor(
+  issue_sidebar_test.sidebar_windows[2]
+)[1]
+  == issue_file_lines[2])
+
+issue_toggle_mapping.callback()
+for _, tab in ipairs({
+  issue_tabs_after[#issue_tabs_before + 1],
+  issue_tabs_after[#issue_tabs_before + 2],
+}) do
+  assert(#vim.api.nvim_tabpage_list_wins(tab) == 1)
+end
+issue_toggle_mapping.callback()
+for _, tab in ipairs({
+  issue_tabs_after[#issue_tabs_before + 1],
+  issue_tabs_after[#issue_tabs_before + 2],
+}) do
+  assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
+end
+end
 for index = #issue_tabs_after, #issue_tabs_before + 1, -1 do
   local tab = vim.api.nvim_list_tabpages()[index]
   if tab and vim.api.nvim_tabpage_is_valid(tab) then

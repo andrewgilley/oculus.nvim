@@ -1917,12 +1917,41 @@ local function relative_path(root, path)
 end
 
 local function session_directory(session, role, directory)
-  local root = role == "parent"
-      and session.parent_repository
-    or session.change_repository
+  local root
+  if role == "issue" then
+    root = session.repository
+  else
+    root = role == "parent"
+        and session.parent_repository
+      or session.change_repository
+  end
+  if not root then
+    return
+  end
   local relative = relative_path(root, directory)
   if relative ~= nil then
     return session, role, relative
+  end
+end
+
+local function issue_session_for_directory(directory, preferred_tab)
+  for _, group in ipairs(sidebar_groups) do
+    if group.kind == "issue" then
+      for _, session in ipairs(group) do
+        if valid_endpoint(session.issue)
+          and (
+            not preferred_tab
+            or session.issue.tab == preferred_tab
+          )
+        then
+          local found, role, relative =
+            session_directory(session, "issue", directory)
+          if found then
+            return found, role, relative
+          end
+        end
+      end
+    end
   end
 end
 
@@ -1943,6 +1972,11 @@ local function session_for_directory(directory, preferred_tab)
         end
       end
     end
+    local issue_session, issue_role, issue_relative =
+      issue_session_for_directory(directory, preferred_tab)
+    if issue_session then
+      return issue_session, issue_role, issue_relative
+    end
   end
 
   for _, session in pairs(sessions) do
@@ -1957,6 +1991,7 @@ local function session_for_directory(directory, preferred_tab)
       return found, role, relative
     end
   end
+  return issue_session_for_directory(directory)
 end
 
 local function change_path_for_role(change, role)
@@ -2617,20 +2652,39 @@ end
 
 local function sidebar_active_item(group, tab)
   for index, session in ipairs(group) do
-    if session.parent.tab == tab then
+    if group.kind == "issue"
+      and valid_endpoint(session.issue)
+      and session.issue.tab == tab
+    then
+      return index, "issue"
+    end
+    if valid_endpoint(session.parent) and session.parent.tab == tab then
       return index, "parent"
     end
-    if session.change.tab == tab then
+    if valid_endpoint(session.change) and session.change.tab == tab then
       return index, "change"
     end
   end
 end
 
-local function sidebar_target_role(active_index, active_role, entry)
+local function sidebar_target_role(active_index, active_role, entry, group)
+  if group and group.kind == "issue" then
+    return "issue"
+  end
   if entry and entry.pair_index ~= active_index then
     return "parent"
   end
   return active_role
+end
+
+local function sidebar_endpoint(group, session, role)
+  if not session then
+    return nil
+  end
+  if group.kind == "issue" then
+    return session.issue
+  end
+  return role and session[role] or nil
 end
 
 local function truncate_path(path, width)
@@ -2686,6 +2740,17 @@ local function sidebar_row(file, width)
   }
 end
 
+local function issue_sidebar_row(file, width)
+  local prefix = "• "
+  local path_width = math.max(
+    1,
+    width - vim.fn.strdisplaywidth(prefix)
+  )
+  return {
+    line = prefix .. truncate_path(file, path_width),
+  }
+end
+
 local function sidebar_chunk_row(hunk, last)
   local branch = last and "└─" or "├─"
   local first = hunk.new_start
@@ -2700,14 +2765,42 @@ local function sidebar_chunk_row(hunk, last)
   )
 end
 
-local function sidebar_chunk(session, role)
-  local endpoint = role == "parent"
-      and session.parent
-    or session.change
+local function issue_sidebar_section_row(section, last)
+  local branch = last and "└─" or "├─"
+  return ("  %s %d-%d"):format(
+    branch,
+    section.line,
+    section.last_line or section.line
+  )
+end
+
+local function issue_section_at_line(session, line)
+  local closest
+  local closest_distance
+  for index, section in ipairs(session.sections or {}) do
+    local first = section.line
+    local last = section.last_line or first
+    if line >= first and line <= last then
+      return index
+    end
+    local distance = line < first and first - line or line - last
+    if not closest_distance or distance < closest_distance then
+      closest = index
+      closest_distance = distance
+    end
+  end
+  return closest
+end
+
+local function sidebar_chunk(group, session, role)
+  local endpoint = sidebar_endpoint(group, session, role)
   if not valid_endpoint(endpoint) then
     return
   end
   local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+  if group.kind == "issue" then
+    return issue_section_at_line(session, line)
+  end
   local index = hunk_index_at_line(session, role, line)
   if index and index ~= session.active_chunk then
     render_focused_chunk(session, index)
@@ -2750,7 +2843,8 @@ refresh_sidebar = function(group, tab)
     underline = true,
     default = true,
   })
-  local active_chunk = sidebar_chunk(group[active_index], active_role)
+  local active_chunk =
+    sidebar_chunk(group, group[active_index], active_role)
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   local sidebar_win = group.sidebar_windows
       and group.sidebar_windows[tab]
@@ -2800,42 +2894,46 @@ refresh_sidebar = function(group, tab)
       }
     )
   end
-  for index, _ in ipairs(group) do
-    local row = group.sidebar_rows[index]
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      sidebar_ns,
-      row.line_number - 1,
-      row.parent_column,
-      {
-        end_col = row.parent_column + 1,
-        hl_group = index == active_index
-            and active_role == "parent"
-            and "PantheonInspectSidebarParentActive"
-          or "PantheonInspectSidebarParent",
-        priority = 100,
-      }
-    )
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      sidebar_ns,
-      row.line_number - 1,
-      row.change_column,
-      {
-        end_col = row.change_column + 1,
-        hl_group = index == active_index
-            and active_role == "change"
-            and "PantheonInspectSidebarChangeActive"
-          or "PantheonInspectSidebarChange",
-        priority = 100,
-      }
-    )
+  if group.kind ~= "issue" then
+    for index, _ in ipairs(group) do
+      local row = group.sidebar_rows[index]
+      vim.api.nvim_buf_set_extmark(
+        buf,
+        sidebar_ns,
+        row.line_number - 1,
+        row.parent_column,
+        {
+          end_col = row.parent_column + 1,
+          hl_group = index == active_index
+              and active_role == "parent"
+              and "PantheonInspectSidebarParentActive"
+            or "PantheonInspectSidebarParent",
+          priority = 100,
+        }
+      )
+      vim.api.nvim_buf_set_extmark(
+        buf,
+        sidebar_ns,
+        row.line_number - 1,
+        row.change_column,
+        {
+          end_col = row.change_column + 1,
+          hl_group = index == active_index
+              and active_role == "change"
+              and "PantheonInspectSidebarChangeActive"
+            or "PantheonInspectSidebarChange",
+          priority = 100,
+        }
+      )
+    end
   end
   vim.b[buf].pantheon_inspect_sidebar_active = {
     pair_index = active_index,
     role = active_role,
     chunk_index = active_chunk,
-    chunk_count = #(group[active_index].hunks or {}),
+    chunk_count = group.kind == "issue"
+        and #(group[active_index].sections or {})
+      or #(group[active_index].hunks or {}),
   }
 end
 
@@ -2865,7 +2963,7 @@ end
 local function endpoint_for_tab(group, tab)
   local index, role = sidebar_active_item(group, tab)
   local session = index and group[index] or nil
-  return session and role and session[role] or nil
+  return sidebar_endpoint(group, session, role)
 end
 
 close_inspection_sidebar = function(group)
@@ -2904,8 +3002,12 @@ open_inspection_sidebar = function(group)
   group.sidebar_visible = true
   sidebar_navigating = true
   for _, session in ipairs(group) do
-    create_sidebar_window(group, session.parent)
-    create_sidebar_window(group, session.change)
+    if group.kind == "issue" then
+      create_sidebar_window(group, session.issue)
+    else
+      create_sidebar_window(group, session.parent)
+      create_sidebar_window(group, session.change)
+    end
   end
   if vim.api.nvim_tabpage_is_valid(origin_tab)
     and vim.api.nvim_win_is_valid(origin_win)
@@ -2939,7 +3041,10 @@ local function map_inspection_sidebar_toggle(group)
     }))
   end
   for _, session in ipairs(group) do
-    for _, endpoint in ipairs({ session.parent, session.change }) do
+    local endpoints = group.kind == "issue"
+        and { session.issue }
+      or { session.parent, session.change }
+    for _, endpoint in ipairs(endpoints) do
       if valid_endpoint(endpoint) then
         map_buffer(endpoint.buf)
       end
@@ -2954,14 +3059,16 @@ local function map_inspection_sidebar_toggle(group)
     silent = true,
     desc = "Open Pantheon Inspect sidebar item",
   })
-  vim.keymap.set("n", "<C-s>", function()
-    switch_sidebar_version(group)
-  end, {
-    buffer = group.sidebar_buf,
-    nowait = true,
-    silent = true,
-    desc = "Switch Pantheon file version",
-  })
+  if group.kind ~= "issue" then
+    vim.keymap.set("n", "<C-s>", function()
+      switch_sidebar_version(group)
+    end, {
+      buffer = group.sidebar_buf,
+      nowait = true,
+      silent = true,
+      desc = "Switch Pantheon file version",
+    })
+  end
 end
 
 local function prepare_inspection_sidebar(group)
@@ -2978,11 +3085,19 @@ local function prepare_inspection_sidebar(group)
   local lines = {}
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
-    local total = #(session.hunks or {})
-    local row = sidebar_row(
-      sidebar_file(session.file),
-      group.sidebar_width
-    )
+    local chunks = group.kind == "issue"
+        and (session.sections or {})
+      or (session.hunks or {})
+    local total = #chunks
+    local row = group.kind == "issue"
+        and issue_sidebar_row(
+          sidebar_file(session.file),
+          group.sidebar_width
+        )
+      or sidebar_row(
+        sidebar_file(session.file),
+        group.sidebar_width
+      )
     local file_line = #lines + 1
     row.line_number = file_line
     group.sidebar_rows[index] = row
@@ -2991,17 +3106,22 @@ local function prepare_inspection_sidebar(group)
       pair_index = index,
     }
     lines[file_line] = row.line
-    for chunk_index, hunk in ipairs(session.hunks or {}) do
+    for chunk_index, chunk in ipairs(chunks) do
       local chunk_line = #lines + 1
       group.sidebar_chunk_lines[index][chunk_index] = chunk_line
       group.sidebar_entries[chunk_line] = {
         pair_index = index,
         chunk_index = chunk_index,
       }
-      lines[chunk_line] = sidebar_chunk_row(
-        hunk,
-        chunk_index == total
-      )
+      lines[chunk_line] = group.kind == "issue"
+          and issue_sidebar_section_row(
+            chunk,
+            chunk_index == total
+          )
+        or sidebar_chunk_row(
+          chunk,
+          chunk_index == total
+        )
     end
   end
   group.sidebar_lines = lines
@@ -3037,8 +3157,8 @@ local function open_sidebar_selection(group)
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
-  role = sidebar_target_role(active_index, role, entry)
-  local endpoint = session and role and session[role] or nil
+  role = sidebar_target_role(active_index, role, entry, group)
+  local endpoint = sidebar_endpoint(group, session, role)
   if not valid_endpoint(endpoint) then
     return
   end
@@ -3053,12 +3173,17 @@ local function open_sidebar_selection(group)
   group.sidebar_anchor_line = nil
   sidebar_navigating = true
   if entry.chunk_index then
-    local start = render_focused_chunk(session, entry.chunk_index)
-      or focused_hunk_start(session.hunks[entry.chunk_index])
-    set_change_cursor(
-      endpoint.win,
-      start
-    )
+    local start
+    if group.kind == "issue" then
+      local section = session.sections[entry.chunk_index]
+      start = section and section.line
+    else
+      start = render_focused_chunk(session, entry.chunk_index)
+        or focused_hunk_start(session.hunks[entry.chunk_index])
+    end
+    if start then
+      set_change_cursor(endpoint.win, start)
+    end
   end
   show_inspection_path(endpoint.buf)
   if sidebar_win ~= source_win then
@@ -3088,14 +3213,21 @@ focus_sidebar_selection = function(group)
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
-  role = sidebar_target_role(active_index, role, entry)
-  local endpoint = session and role and session[role] or nil
+  role = sidebar_target_role(active_index, role, entry, group)
+  local endpoint = sidebar_endpoint(group, session, role)
   if not valid_endpoint(endpoint) then
     return
   end
 
   local chunk_index = entry.chunk_index or 1
-  local hunk = session.hunks and session.hunks[chunk_index] or nil
+  local hunk = group.kind ~= "issue"
+      and session.hunks
+      and session.hunks[chunk_index]
+    or nil
+  local section = group.kind == "issue"
+      and session.sections
+      and session.sections[chunk_index]
+    or nil
   group.sidebar_anchor_line = line
   sidebar_navigating = true
   group.sidebar_focus_generation =
@@ -3106,6 +3238,8 @@ focus_sidebar_selection = function(group)
     local start = render_focused_chunk(session, chunk_index)
       or focused_hunk_start(hunk)
     set_change_cursor(endpoint.win, start)
+  elseif section then
+    set_change_cursor(endpoint.win, section.line)
   end
   show_inspection_path(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
@@ -3985,9 +4119,21 @@ local function open_issue_tabs(
   local staging_win = vim.api.nvim_get_current_win()
   local previous_lazyredraw = vim.o.lazyredraw
   local loaded = {}
+  local issue_sessions = { kind = "issue" }
+  for index, file in ipairs(files) do
+    issue_sessions[index] = {
+      file = file.path,
+      sections = vim.deepcopy(file.sections),
+      first_line = file.first_line,
+      repository = repository,
+    }
+  end
   inspection_tabs_loading = true
   vim.o.lazyredraw = true
   local ok, err = pcall(function()
+    -- Establish the complete issue file/section list before creating any
+    -- visible inspection tabs, matching the commit inspection lifecycle.
+    prepare_inspection_sidebar(issue_sessions)
     for index, file in ipairs(files) do
       vim.cmd("tabnew")
       vim.cmd("tcd " .. vim.fn.fnameescape(repository))
@@ -4033,12 +4179,15 @@ local function open_issue_tabs(
         math.min(math.max(1, file.first_line or 1), line_count)
       vim.api.nvim_win_set_cursor(win, { first_line, 0 })
       normalize_inspection_view(win)
-      loaded[#loaded + 1] = {
+      local endpoint = {
         tab = tab,
         win = win,
         buf = buf,
       }
+      loaded[#loaded + 1] = endpoint
+      issue_sessions[index].issue = endpoint
     end
+    activate_inspection_sidebar(issue_sessions)
     local first = loaded[1]
     stop_loading(loading)
     require("pantheon.window").close()
