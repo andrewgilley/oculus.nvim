@@ -1823,6 +1823,27 @@ refresh_sidebar = function(group, tab)
   })
   local active_chunk = sidebar_chunk(group[active_index], active_role)
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+  local sidebar_win = group.sidebar_windows
+      and group.sidebar_windows[tab]
+    or nil
+  local sidebar_is_focused = sidebar_win
+    and vim.api.nvim_win_is_valid(sidebar_win)
+    and vim.api.nvim_get_current_win() == sidebar_win
+    and vim.api.nvim_get_current_buf() == buf
+  local active_row = group.sidebar_rows[active_index]
+  if active_row and not sidebar_is_focused then
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      sidebar_ns,
+      active_row.line_number - 1,
+      0,
+      {
+        line_hl_group = "CursorLine",
+        hl_eol = true,
+        priority = 80,
+      }
+    )
+  end
   local anchor_line = group.sidebar_anchor_line
   if anchor_line
     and anchor_line >= 1
@@ -2265,6 +2286,11 @@ vim.api.nvim_create_autocmd("WinEnter", {
         (group.sidebar_focus_generation or 0) + 1
       group.focused_win = current_win
       open_sidebar_selection(group)
+      return
+    end
+    local tab = vim.api.nvim_get_current_tabpage()
+    for _, candidate in ipairs(sidebar_groups) do
+      refresh_sidebar(candidate, tab)
     end
   end,
 })

@@ -1117,11 +1117,12 @@ if integration_root and (integration_sha or integration_url) then
     0,
     -1,
     {}
-  ) == pair_count * 2)
+  ) == pair_count * 2 + 1)
   local file_line_lookup = {}
   for _, line in ipairs(file_lines) do
     file_line_lookup[line] = true
   end
+  local inactive_file_highlight = false
   for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
     sidebar_buf,
     sidebar_signs,
@@ -1130,12 +1131,18 @@ if integration_root and (integration_sha or integration_url) then
     { details = true }
   )) do
     assert(file_line_lookup[mark[2] + 1])
-    assert(mark[4].line_hl_group == nil)
-    assert(mark[4].hl_group
-      ~= "PantheonInspectSidebarChunkActive")
-    assert(mark[4].hl_group
-      ~= "PantheonInspectSidebarCurrent")
+    if mark[4].line_hl_group == "CursorLine" then
+      assert(mark[2] + 1 == file_lines[1])
+      inactive_file_highlight = true
+    else
+      assert(mark[4].line_hl_group == nil)
+      assert(mark[4].hl_group
+        ~= "PantheonInspectSidebarChunkActive")
+      assert(mark[4].hl_group
+        ~= "PantheonInspectSidebarCurrent")
+    end
   end
+  assert(inactive_file_highlight)
   local normal_hl =
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local parent_hl = vim.api.nvim_get_hl(

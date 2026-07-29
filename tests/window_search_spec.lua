@@ -301,19 +301,37 @@ inspect_mapping.callback()
 local inspect_loading_namespace =
   vim.api.nvim_get_namespaces().pantheon_inspect_activity_loading
 assert(inspect_loading_namespace)
-assert(vim.api.nvim_buf_get_lines(
+local first_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_activity_line - 1,
   inspect_activity_line,
   false
-)[1] == inspect_activity_text .. " ⠋")
+)[1]
+assert(
+  vim.fn.strdisplaywidth(first_loading_text)
+    == vim.fn.strdisplaywidth(inspect_activity_text),
+  ("%d ~= %d (%q / %q)"):format(
+    vim.fn.strdisplaywidth(first_loading_text),
+    vim.fn.strdisplaywidth(inspect_activity_text),
+    first_loading_text,
+    inspect_activity_text
+  )
+)
+assert(first_loading_text:find(" ⠋", 1, true))
+assert(first_loading_text:sub(-21)
+  == inspect_activity_text:sub(-21))
 inspect_lifecycle.on_progress("⠙")
-assert(vim.api.nvim_buf_get_lines(
+local second_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_activity_line - 1,
   inspect_activity_line,
   false
-)[1] == inspect_activity_text .. " ⠙")
+)[1]
+assert(vim.fn.strdisplaywidth(second_loading_text)
+  == vim.fn.strdisplaywidth(inspect_activity_text))
+assert(second_loading_text:find(" ⠙", 1, true))
+assert(second_loading_text:sub(-21)
+  == inspect_activity_text:sub(-21))
 inspect_lifecycle.on_complete()
 assert(vim.api.nvim_buf_get_lines(
   state.buf,

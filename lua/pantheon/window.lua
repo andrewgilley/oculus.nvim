@@ -608,6 +608,39 @@ local function activity_item_line(item, timestamp, width)
     .. left_pad_cell(timestamp, timestamp_width)
 end
 
+local function activity_loading_line(line, frame)
+  local timestamp_width = 19
+  local gap_width = 2
+  local tail_width = timestamp_width + gap_width
+  if vim.fn.strdisplaywidth(line) <= tail_width then
+    return line .. " " .. frame, #line + 1
+  end
+  local tail_start = vim.fn.strchars(line)
+  local tail = ""
+  while tail_start > 0
+    and vim.fn.strdisplaywidth(tail) < tail_width
+  do
+    tail_start = tail_start - 1
+    tail = vim.fn.strcharpart(line, tail_start)
+  end
+  local content = vim.fn.strcharpart(line, 0, tail_start)
+  local content_width =
+    vim.fn.strdisplaywidth(line) - vim.fn.strdisplaywidth(tail)
+  local body = content:gsub("%s+$", "")
+  local body_width = math.max(1, content_width - 2)
+  body = trim_to_width(body, body_width)
+  while vim.fn.strdisplaywidth(body) > body_width do
+    body = vim.fn.strcharpart(
+      body,
+      0,
+      math.max(0, vim.fn.strchars(body) - 1)
+    )
+  end
+  local spinner_column = #body + 1
+  return pad_cell(body .. " " .. frame, content_width) .. tail,
+    spinner_column
+end
+
 local function preview_lines(item, width)
   local summary = event_summary(item)
   local detail = event_detail(item)
@@ -1778,14 +1811,16 @@ local function inspect_current()
           return
         end
         clear_spinner()
-        set_loading_line(activity_line .. " " .. frame)
+        local loading_line, spinner_column =
+          activity_loading_line(activity_line, frame)
+        set_loading_line(loading_line)
         vim.api.nvim_buf_add_highlight(
           activity_buf,
           inspect_loading_ns,
           "DiagnosticInfo",
           line - 1,
-          #activity_line + 1,
-          -1
+          spinner_column,
+          spinner_column + #frame
         )
         vim.cmd("redraw")
       end,
