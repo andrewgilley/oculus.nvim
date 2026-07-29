@@ -807,6 +807,25 @@ local function valid_endpoint(endpoint)
     and vim.api.nvim_buf_is_valid(endpoint.buf)
 end
 
+local function prevent_window_dimming(win)
+  if not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+  local mappings = {}
+  for _, mapping in ipairs(vim.split(
+    vim.wo[win].winhighlight,
+    ",",
+    { trimempty = true }
+  )) do
+    if not mapping:match("^NormalNC:") then
+      mappings[#mappings + 1] = mapping
+    end
+  end
+  mappings[#mappings + 1] = "NormalNC:Normal"
+  vim.wo[win].winhighlight = table.concat(mappings, ",")
+  return true
+end
+
 local function update_session_buffer(win, buf)
   for _, session in pairs(sessions) do
     if session.parent.win == win then
@@ -1536,6 +1555,23 @@ refresh_sidebar = function(group, tab)
   })
   local active_chunk = sidebar_chunk(group[active_index], active_role)
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+  local anchor_line = group.sidebar_anchor_line
+  if anchor_line
+    and anchor_line >= 1
+    and anchor_line <= vim.api.nvim_buf_line_count(buf)
+  then
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      sidebar_ns,
+      anchor_line - 1,
+      0,
+      {
+        line_hl_group = "CursorLine",
+        hl_eol = true,
+        priority = 90,
+      }
+    )
+  end
   for index, _ in ipairs(group) do
     local row = group.sidebar_rows[index]
     vim.api.nvim_buf_set_extmark(
@@ -1593,6 +1629,7 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
+  prevent_window_dimming(win)
   group.sidebar_windows[endpoint.tab] = win
   vim.api.nvim_set_current_win(endpoint.win)
 end
@@ -1789,6 +1826,7 @@ local function open_sidebar_selection(group)
   local source_view = vim.api.nvim_win_call(source_win, function()
     return vim.fn.winsaveview()
   end)
+  group.sidebar_anchor_line = nil
   sidebar_navigating = true
   if entry.chunk_index then
     local start = render_focused_chunk(session, entry.chunk_index)
@@ -1834,6 +1872,7 @@ focus_sidebar_selection = function(group)
 
   local chunk_index = entry.chunk_index or 1
   local hunk = session.hunks and session.hunks[chunk_index] or nil
+  group.sidebar_anchor_line = line
   sidebar_navigating = true
   group.sidebar_focus_generation =
     (group.sidebar_focus_generation or 0) + 1
@@ -2390,6 +2429,7 @@ local function load_tab(
   }
   vim.wo[loaded.win].signcolumn = "yes"
   vim.wo[loaded.win].wrap = false
+  prevent_window_dimming(loaded.win)
   return loaded
 end
 
@@ -2814,6 +2854,7 @@ M._blob_lines = blob_lines
 M._oil_entry_status = oil_entry_status
 M._change_lines = change_lines
 M._focused_change_lines = focused_change_lines
+M._prevent_window_dimming = prevent_window_dimming
 M._refresh_buffer_highlighting = refresh_buffer_highlighting
 M._normalize_inspection_view = normalize_inspection_view
 M._sidebar_row = sidebar_row

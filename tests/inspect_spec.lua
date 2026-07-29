@@ -11,6 +11,15 @@ end
 
 local inspect = require("pantheon.inspect")
 
+local dimming_win = vim.api.nvim_get_current_win()
+local original_winhighlight = vim.wo[dimming_win].winhighlight
+vim.wo[dimming_win].winhighlight =
+  "NormalNC:Comment,CursorLine:Visual"
+assert(inspect._prevent_window_dimming(dimming_win))
+assert(vim.wo[dimming_win].winhighlight
+  == "CursorLine:Visual,NormalNC:Normal")
+vim.wo[dimming_win].winhighlight = original_winhighlight
+
 local highlight_buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(
   highlight_buf,
@@ -676,6 +685,26 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.wo[new_sidebar_win].cursorline)
     assert(vim.wo[old_sidebar_win].cursorlineopt == "line")
     assert(vim.wo[new_sidebar_win].cursorlineopt == "line")
+    assert(vim.wo[old_main_win].winhighlight:find(
+      "NormalNC:Normal",
+      1,
+      true
+    ))
+    assert(vim.wo[new_main_win].winhighlight:find(
+      "NormalNC:Normal",
+      1,
+      true
+    ))
+    assert(vim.wo[old_sidebar_win].winhighlight:find(
+      "NormalNC:Normal",
+      1,
+      true
+    ))
+    assert(vim.wo[new_sidebar_win].winhighlight:find(
+      "NormalNC:Normal",
+      1,
+      true
+    ))
     assert(vim.api.nvim_win_get_position(old_sidebar_win)[2]
       > vim.api.nvim_win_get_position(old_main_win)[2])
     assert(vim.api.nvim_win_get_position(new_sidebar_win)[2]
@@ -1151,6 +1180,22 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(vim.api.nvim_win_get_cursor(parent_win)[1]
     == selected_parent_line)
+  assert(vim.api.nvim_win_get_cursor(sidebar_parent_win)[1]
+    == selected_chunk_line)
+  local anchored_selection = false
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    sidebar_buf,
+    sidebar_signs,
+    { selected_chunk_line - 1, 0 },
+    { selected_chunk_line - 1, -1 },
+    { details = true }
+  )) do
+    if mark[4].line_hl_group == "CursorLine" then
+      anchored_selection = true
+      break
+    end
+  end
+  assert(anchored_selection)
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
     "x",

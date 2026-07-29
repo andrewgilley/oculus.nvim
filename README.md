@@ -8,7 +8,7 @@ activity items and move directly to the first item on that page. Press `r`
 from a later page to move one page back toward recent activity.
 <!-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 15 -->
 
-From the startup user list, press `/` to fuzzy-search contributor names and
+From the startup user list, press `s` to fuzzy-search contributor names and
 handles. Results and the contributor preview update as you type. Use
 `<C-i>` to move up or `<C-k>` to move down (`<Up>`/`<Down>` and
 `<C-p>`/`<C-n>` also work), `<CR>` to open a match, and `<Esc>` to cancel the
