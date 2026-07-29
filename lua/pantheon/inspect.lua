@@ -19,6 +19,8 @@ local refresh_sidebar
 local focus_sidebar_selection
 local switch_sidebar_version
 local close_inspection_sidebar
+local open_inspection_sidebar
+local restore_inspection_sidebar_for_buffer
 
 local function git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
@@ -972,6 +974,11 @@ vim.api.nvim_create_autocmd("BufEnter", {
   callback = function(args)
     update_session_buffer(vim.api.nvim_get_current_win(), args.buf)
     show_inspection_path(args.buf)
+    vim.schedule(function()
+      if restore_inspection_sidebar_for_buffer then
+        restore_inspection_sidebar_for_buffer(args.buf)
+      end
+    end)
   end,
 })
 
@@ -1235,6 +1242,37 @@ local function focus_oil_origin(buf, context, oil)
   end
 end
 
+local function activate_oil_context(context)
+  if context.active then
+    return
+  end
+  context.active = true
+  local group = context.group
+  context.restore_sidebar =
+    group and group.sidebar_visible == true or false
+  if context.restore_sidebar and close_inspection_sidebar then
+    close_inspection_sidebar(group)
+  end
+end
+
+restore_inspection_sidebar_for_buffer = function(buf)
+  for _, context in pairs(oil_contexts) do
+    if context.source_buf == buf and context.active then
+      context.active = false
+      local group = context.group
+      if context.restore_sidebar
+        and group
+        and not group.sidebar_visible
+        and open_inspection_sidebar
+      then
+        context.restore_sidebar = false
+        open_inspection_sidebar(group)
+      end
+      return
+    end
+  end
+end
+
 local function configure_inspection_oil_buffer(buf)
   if not vim.api.nvim_buf_is_valid(buf)
     or vim.bo[buf].filetype ~= "oil"
@@ -1247,6 +1285,7 @@ local function configure_inspection_oil_buffer(buf)
   end
   if oil_contexts[buf] then
     local context = oil_contexts[buf]
+    activate_oil_context(context)
     focus_oil_origin(buf, context, oil)
     map_oil_origin_selection(buf, context, oil)
     return
@@ -1282,13 +1321,12 @@ local function configure_inspection_oil_buffer(buf)
     filename = vim.fs.basename(source_path),
     source_buf = endpoint.buf,
   }
-  oil_contexts[buf] = context
   vim.b[buf].pantheon_inspect_oil_origin = vim.deepcopy(context)
 
   local group = sidebar_group_for_session(session)
-  if group and group.sidebar_visible and close_inspection_sidebar then
-    close_inspection_sidebar(group)
-  end
+  context.group = group
+  oil_contexts[buf] = context
+  activate_oil_context(context)
 
   focus_oil_origin(buf, context, oil)
   map_oil_origin_selection(buf, context, oil)
@@ -1899,7 +1937,7 @@ close_inspection_sidebar = function(group)
   sidebar_navigating = false
 end
 
-local function open_inspection_sidebar(group)
+open_inspection_sidebar = function(group)
   local origin_tab = vim.api.nvim_get_current_tabpage()
   local origin_win = vim.api.nvim_get_current_win()
   group.sidebar_windows = {}
