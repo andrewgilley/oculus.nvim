@@ -2,6 +2,7 @@ local M = {}
 
 local github = require("pantheon.github")
 local codeberg = require("pantheon.codeberg")
+local summary = require("pantheon.summary")
 
 local active = false
 local change_ns = vim.api.nvim_create_namespace("pantheon_inspect_changes")
@@ -149,6 +150,51 @@ end
 
 local function parse_target_url(url)
   return parse_commit_url(url) or parse_pull_request_url(url)
+end
+
+local function activity_comment(event)
+  if type(event) ~= "table" then
+    return nil
+  end
+  if
+    event.type ~= "PullRequestReviewCommentEvent"
+    and event.type ~= "CommitCommentEvent"
+  then
+    return nil
+  end
+  local comment = event.payload and event.payload.comment or nil
+  if type(comment) ~= "table" then
+    return nil
+  end
+  local body = type(comment.body) == "string"
+      and vim.trim(comment.body)
+    or ""
+  local path = type(comment.path) == "string"
+      and comment.path
+    or nil
+  local side = comment.side == "LEFT" and "parent" or "change"
+  local line = side == "parent"
+      and (
+        tonumber(comment.original_start_line)
+        or tonumber(comment.original_line)
+      )
+    or (
+      tonumber(comment.start_line)
+      or tonumber(comment.line)
+      or tonumber(comment.original_line)
+    )
+  if body == "" or not path or path == "" or not line then
+    return nil
+  end
+  return {
+    body = body,
+    path = path:gsub("\\", "/"),
+    line = math.max(1, line),
+    side = side,
+    commit = side == "parent"
+        and (comment.original_commit_id or comment.commit_id)
+      or comment.commit_id,
+  }
 end
 
 local function first_changed_paths(output)
@@ -1473,6 +1519,7 @@ local function close_inspection_sidebar(group)
     vim.api.nvim_set_current_win(focus_win)
   end
   sidebar_navigating = false
+  summary.refresh(group)
 end
 
 local function open_inspection_sidebar(group)
@@ -1493,6 +1540,7 @@ local function open_inspection_sidebar(group)
   end
   sidebar_navigating = false
   refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  summary.refresh(group)
 end
 
 local function toggle_inspection_sidebar(group)
@@ -1805,6 +1853,121 @@ vim.api.nvim_create_autocmd("WinLeave", {
   end,
 })
 
+local function comment_session(group, comment)
+  local role = comment.side == "parent" and "parent" or "change"
+  local fallback
+  for _, session in ipairs(group) do
+    local file = role == "parent"
+        and session.parent_file
+      or session.change_file
+    if file
+      and comparable_path(file) == comparable_path(comment.path)
+      and valid_endpoint(session[role])
+    then
+      fallback = session
+      local revision = role == "parent"
+          and session.parent_commit
+        or session.change_commit
+      if
+        comment.commit
+        and revision
+        and revision:lower() == comment.commit:lower()
+      then
+        return session, session[role], role
+      end
+    end
+  end
+  return fallback, fallback and fallback[role] or nil, role
+end
+
+local function comment_float(endpoint, comment)
+  if not valid_endpoint(endpoint) then
+    return nil
+  end
+  local main_width = vim.api.nvim_win_get_width(endpoint.win)
+  local main_height = vim.api.nvim_win_get_height(endpoint.win)
+  local width = math.max(1, math.min(50, main_width - 4))
+  local lines = vim.split(comment.body, "\n", { plain = true })
+  if #lines == 0 then
+    lines = { "" }
+  end
+  for index, line in ipairs(lines) do
+    lines[index] = line:gsub("\r$", "")
+  end
+  local display_rows = 0
+  for _, line in ipairs(lines) do
+    display_rows = display_rows
+      + math.max(
+        1,
+        math.ceil(vim.fn.strdisplaywidth(line) / width)
+      )
+  end
+  local height = math.max(
+    1,
+    math.min(8, display_rows, main_height - 2)
+  )
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "markdown"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = "win",
+    win = endpoint.win,
+    anchor = "SW",
+    bufpos = { comment.line - 1, 0 },
+    row = 0,
+    col = math.max(0, main_width - width - 2),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " Comment ",
+    title_pos = "left",
+    focusable = false,
+    noautocmd = true,
+    zindex = 80,
+  })
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.b[buf].pantheon_inspect_comment = vim.deepcopy(comment)
+  endpoint.comment_buf = buf
+  endpoint.comment_win = win
+  return {
+    buf = buf,
+    win = win,
+    line = comment.line,
+  }
+end
+
+local function setup_inspection_comment(group, comment)
+  if not comment then
+    return
+  end
+  local session, endpoint, role = comment_session(group, comment)
+  if not session or not valid_endpoint(endpoint) then
+    return
+  end
+  local line_count = vim.api.nvim_buf_line_count(endpoint.buf)
+  comment.line = math.min(math.max(1, comment.line), line_count)
+  sidebar_navigating = true
+  vim.api.nvim_set_current_win(endpoint.win)
+  set_change_cursor(endpoint.win, comment.line)
+  show_inspection_path(endpoint.buf)
+  session.active_chunk =
+    hunk_index_at_line(session, role, comment.line)
+      or session.active_chunk
+  session.comment = comment_float(endpoint, comment)
+  refresh_sidebar(group, endpoint.tab)
+  sidebar_navigating = false
+end
+
 local spinner_frames = {
   "⠋",
   "⠙",
@@ -2102,7 +2265,14 @@ local function load_tab(
   return loaded
 end
 
-local function open_tabs(inspections, loading, done)
+local function open_tabs(
+  inspections,
+  loading,
+  comment,
+  info,
+  opts,
+  done
+)
   stop_loading(loading)
   local ok, err = pcall(function()
     if #loading.pairs ~= #inspections then
@@ -2132,6 +2302,10 @@ local function open_tabs(inspections, loading, done)
         parent = parent,
         change = change,
         file = paths.change_file or paths.parent_file,
+        parent_file = paths.parent_file,
+        change_file = paths.change_file,
+        parent_commit = paths.parent,
+        change_commit = paths.commit,
         parent_repository = paths.repository,
         change_repository = paths.repository,
         changes = paths.changes,
@@ -2176,6 +2350,8 @@ local function open_tabs(inspections, loading, done)
       normalize_inspection_view(session.parent.win)
       normalize_inspection_view(session.change.win)
     end
+    summary.start(inspection_sessions, inspections, info, opts)
+    setup_inspection_comment(inspection_sessions, comment)
   end)
   if not ok then
     done(nil, "could not open inspection tabs: " .. tostring(err))
@@ -2435,7 +2611,7 @@ local function resolve_target(info, opts, callback)
   )
 end
 
-function M.open(url, opts)
+function M.open(url, opts, context)
   opts = opts or {}
   local info = parse_target_url(url)
   if not info then
@@ -2448,6 +2624,10 @@ function M.open(url, opts)
   end
   if active then
     return nil, "an inspection is already being prepared"
+  end
+  local comment = context and (context.comment or context) or nil
+  if comment then
+    info.comment = vim.deepcopy(comment)
   end
 
   active = true
@@ -2476,13 +2656,20 @@ function M.open(url, opts)
           show_loading_error(loading, err)
           return
         end
-        open_tabs(inspections, loading, function(_, open_err)
-          active = false
-          if open_err then
-            show_loading_error(loading, open_err)
-            return
+        open_tabs(
+          inspections,
+          loading,
+          resolved.comment,
+          resolved,
+          opts,
+          function(_, open_err)
+            active = false
+            if open_err then
+              show_loading_error(loading, open_err)
+              return
+            end
           end
-        end)
+        )
       end
     )
   end)
@@ -2492,6 +2679,7 @@ end
 M._parse_commit_url = parse_commit_url
 M._parse_pull_request_url = parse_pull_request_url
 M._parse_target_url = parse_target_url
+M.activity_comment = activity_comment
 M._apply_pull_request = apply_pull_request
 M._first_changed_paths = first_changed_paths
 M._parse_changed_files = parse_changed_files
@@ -2510,5 +2698,6 @@ M._normalize_inspection_view = normalize_inspection_view
 M._sidebar_row = sidebar_row
 M._sidebar_chunk_row = sidebar_chunk_row
 M._sidebar_file = sidebar_file
+M._comment_float = comment_float
 
 return M

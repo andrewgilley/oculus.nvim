@@ -188,7 +188,29 @@ local original_enrich_pushes = github.enrich_pushes
 local requested_per_page = {}
 local activity_events = {}
 for index = 1, 20 do
-  activity_events[index] = {
+  activity_events[index] = index == 1 and {
+    id = tostring(index),
+    type = "PullRequestReviewCommentEvent",
+    created_at = "2026-07-01T12:00:00Z",
+    actor = { login = "mitchellh" },
+    repo = { name = "example/repository" },
+    payload = {
+      pull_request = {
+        number = 42,
+        title = "Keep review comments visible",
+        html_url = "https://github.com/example/repository/pull/42",
+      },
+      comment = {
+        body = "Please keep this branch explicit.",
+        path = "lua/example.lua",
+        line = 15,
+        side = "RIGHT",
+        commit_id = "aaaaaaaa",
+        html_url =
+          "https://github.com/example/repository/pull/42#discussion_r1",
+      },
+    },
+  } or {
     id = tostring(index),
     type = "CreateEvent",
     created_at = ("2026-07-%02dT12:00:00Z"):format(index),
@@ -219,6 +241,15 @@ assert(#state.events == 8)
 assert(state.events[1].id == "1")
 assert(state.events[8].id == "8")
 assert(requested_per_page[1] == 30)
+local review_context
+for _, context in pairs(state.inspect_targets) do
+  review_context = context or review_context
+end
+assert(review_context)
+assert(review_context.body == "Please keep this branch explicit.")
+assert(review_context.path == "lua/example.lua")
+assert(review_context.line == 15)
+assert(review_context.side == "change")
 
 local past_mapping = vim.fn.maparg("p", "n", false, true)
 assert(past_mapping.desc == "Load past Pantheon activity")

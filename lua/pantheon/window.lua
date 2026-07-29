@@ -48,6 +48,7 @@ M.state = {
   contributor = nil,
   events = nil,
   line_targets = {},
+  inspect_targets = {},
   request_id = 0,
   preview_key = nil,
   preview_items = nil,
@@ -1086,6 +1087,7 @@ local function render_activity(events, cached, notice)
   M.state.activity_loaded = true
   M.state.activity_error = nil
   M.state.line_targets = {}
+  M.state.inspect_targets = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 12 Label activity feeds with their forge
@@ -1112,6 +1114,7 @@ local function render_activity(events, cached, notice)
   local activity_line_kinds = {}
   for _, event in ipairs(events) do
     local item = actions.describe(event)
+    local inspect_context = inspect.activity_comment(event)
     local event_line = #lines + 1
     first_event_line = first_event_line or event_line
     activity_line_kinds[event_line] = "main"
@@ -1129,6 +1132,7 @@ local function render_activity(events, cached, notice)
           M.state.line_targets[#lines] = vim.trim(detail_line) == "..."
               and (item.group_url or item.url)
             or item.url
+          M.state.inspect_targets[#lines] = inspect_context
           activity_line_kinds[#lines] = "preview"
         end
       end
@@ -1145,6 +1149,7 @@ local function render_activity(events, cached, notice)
       scroll_limit_line = #lines
     end
     M.state.line_targets[event_line] = item.url
+    M.state.inspect_targets[event_line] = inspect_context
   end
 
   if #events == 0 then
@@ -1690,7 +1695,12 @@ local function inspect_current()
     return
   end
 
-  local ok, err = inspect.open(target, M.state.opts)
+  local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  local ok, err = inspect.open(
+    target,
+    M.state.opts,
+    M.state.inspect_targets[line]
+  )
   if not ok and err then
     vim.notify("Pantheon: " .. err, vim.log.levels.WARN)
   end
@@ -1900,6 +1910,7 @@ function M.close()
   M.state.buf = nil
   M.state.win = nil
   M.state.line_targets = {}
+  M.state.inspect_targets = {}
   M.state.preview_key = nil
   M.state.preview_items = nil
   M.state.contributors = {}
