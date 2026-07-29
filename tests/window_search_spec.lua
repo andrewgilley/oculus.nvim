@@ -483,6 +483,12 @@ assert(issue_picker_text:find("ISSUE INSPECT", 1, true))
 assert(issue_picker_text:find("REPOSITORY LOCATIONS", 1, true))
 assert(issue_picker_text:find("RELEVANT FILES", 1, true))
 assert(not issue_picker_text:find("120-132", 1, true))
+assert(issue_picker_text:find("a agent suggestion", 1, true))
+assert(not issue_picker_text:find(
+  "Ask Codex to identify relevant files and sections",
+  1,
+  true
+))
 assert(issue_picker_text:find("C:/source/repository", 1, true))
 assert(issue_picker_text:find("C:/source", 1, true))
 assert(issue_picker_text:find(
@@ -500,6 +506,11 @@ assert(issue_picker_text:find(
   1,
   true
 ))
+local agent_suggestion_mapping = vim.fn.maparg("a", "n", false, true)
+assert(agent_suggestion_mapping.callback)
+agent_suggestion_mapping.callback()
+assert(issue_picker_choice.action == "codex")
+issue_picker_choice = nil
 local issue_candidate_line
 for line, target in pairs(state.line_targets) do
   if target.group == issue_file_group then
@@ -588,6 +599,7 @@ local change_picker_text = table.concat(
 assert(change_picker_text:find("PULL REQUEST INSPECT", 1, true))
 assert(change_picker_text:find("CHANGE CONTEXT", 1, true))
 assert(change_picker_text:find("CHANGED FILES", 1, true))
+assert(not change_picker_text:find("a agent suggestion", 1, true))
 assert(change_picker_text:find(
   "Keep selection inside Pantheon",
   1,

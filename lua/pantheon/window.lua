@@ -1419,18 +1419,26 @@ local function render_issue_picker()
   end
   local choices = picker.choices or {}
   local selectable_lines = {}
+  local has_agent_suggestion = false
   for _, choice in ipairs(choices) do
-    local line = #lines + 1
-    lines[line] = "  " .. tostring(choice.label or "")
-    M.state.line_targets[line] = choice
-    selectable_lines[#selectable_lines + 1] = line
+    if choice.action == "codex" then
+      has_agent_suggestion = true
+    else
+      local line = #lines + 1
+      lines[line] = "  " .. tostring(choice.label or "")
+      M.state.line_targets[line] = choice
+      selectable_lines[#selectable_lines + 1] = line
+    end
   end
-  if #choices == 0 then
+  if #selectable_lines == 0 and not has_agent_suggestion then
     lines[#lines + 1] = "  No candidates are available."
   end
   lines[#lines + 1] = ""
-  lines[#lines + 1] =
-    "  <CR>/l toggle   b build   j/←/q cancel"
+  local footer = "  <CR>/l toggle"
+  if not change_mode and has_agent_suggestion then
+    footer = footer .. "   a agent suggestion"
+  end
+  lines[#lines + 1] = footer .. "   b build   j/←/q cancel"
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   vim.wo[M.state.win].scrolloff = 2
@@ -1455,9 +1463,7 @@ local function render_issue_picker()
   end
   for _, line in ipairs(selectable_lines) do
     local choice = M.state.line_targets[line]
-    if choice.action == "codex" then
-      highlight(line, 2, -1, "DiagnosticInfo")
-    elseif choice.action == "build" then
+    if choice.action == "build" then
       highlight(line, 2, -1, "DiagnosticOk")
     elseif choice.action == "cancel" then
       highlight(line, 2, -1, "Comment")
@@ -1475,6 +1481,28 @@ local function render_issue_picker()
       M.state.win,
       { selectable_lines[cursor_index], 0 }
     )
+  end
+end
+
+local function request_issue_agent_suggestion()
+  if M.state.view ~= "issue_picker" then
+    return
+  end
+  local picker = M.state.issue_picker
+  if not picker
+    or (
+      picker.context
+      and picker.context.kind == "change"
+    )
+    or type(picker.callback) ~= "function"
+  then
+    return
+  end
+  for _, choice in ipairs(picker.choices or {}) do
+    if choice.action == "codex" then
+      picker.callback(choice)
+      return
+    end
   end
 end
 
@@ -2350,8 +2378,12 @@ local function map_keys(buf)
     open_filters(true)
   end, "Edit global activity types")
   map("a", function()
+    if M.state.view == "issue_picker" then
+      request_issue_agent_suggestion()
+      return
+    end
     set_all_filter_types(true)
-  end, "Enable all Pantheon activity types")
+  end, "Run Pantheon agent suggestion or enable all activity types")
   map("n", function()
     set_all_filter_types(false)
   end, "Disable all Pantheon activity filters")
