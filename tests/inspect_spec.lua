@@ -135,6 +135,16 @@ assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
 ) == "file.lua")
 assert(inspect._sidebar_file("README.md") == "README.md")
+assert(inspect._sidebar_target_role(
+  1,
+  "change",
+  { pair_index = 2 }
+) == "parent")
+assert(inspect._sidebar_target_role(
+  1,
+  "change",
+  { pair_index = 1 }
+) == "change")
 
 assert(inspect._inspection_directory(
   root,
@@ -323,10 +333,6 @@ assert(vim.deep_equal(
   inspect._change_lines(hunks, "parent"),
   { 10, 24, 30 }
 ))
-assert(inspect._next_change_line(jump_lines, 10, 1) == 25)
-assert(inspect._next_change_line(jump_lines, 31, 1) == 10)
-assert(inspect._next_change_line(jump_lines, 25, -1) == 10)
-assert(inspect._next_change_line(jump_lines, 10, -1) == 31)
 
 local missing_root = vim.env.PANTHEON_INSPECT_TEST_MISSING_ROOT
 if missing_root then
@@ -802,8 +808,8 @@ if integration_root and (integration_sha or integration_url) then
       end
     end
   end
-  assert(previous_mapped)
-  assert(next_mapped)
+  assert(not previous_mapped)
+  assert(not next_mapped)
   assert(not toggle_mapped)
   assert(switch_mapped)
   assert(not next_file_mapped)
@@ -994,30 +1000,6 @@ if integration_root and (integration_sha or integration_url) then
     assert(initial_parent_view.topline
       == math.max(1, initial_parent_cursor[1] - 10))
   end
-  vim.api.nvim_set_current_win(parent_win)
-  vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes("<C-Right>", true, false, true),
-    "x",
-    false
-  )
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
-  local expected_chunk = sidebar_active.chunk_count > 1 and 2 or 1
-  assert(sidebar_active.chunk_index == expected_chunk)
-  local jumped_cursor = vim.api.nvim_win_get_cursor(parent_win)
-  local jumped_view = vim.api.nvim_win_call(
-    parent_win,
-    vim.fn.winsaveview
-  )
-  if jumped_cursor[1] >= 10 then
-    assert(jumped_view.topline == jumped_cursor[1] - 10)
-  end
-  vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes("<C-Left>", true, false, true),
-    "x",
-    false
-  )
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
-  assert(sidebar_active.chunk_index == 1)
   local sidebar_parent_win = assert(sidebar_window(tabs[2]))
   vim.api.nvim_set_current_win(sidebar_parent_win)
   local selected_chunk =
@@ -1106,8 +1088,8 @@ if integration_root and (integration_sha or integration_url) then
     == vim.fs.normalize(change_state.source_path):lower())
   assert(vim.api.nvim_buf_get_name(parent_buf) == "")
   if pair_count > 1 then
-    vim.api.nvim_set_current_tabpage(tabs[2])
-    vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
+    vim.api.nvim_set_current_tabpage(tabs[3])
+    vim.api.nvim_set_current_win(assert(sidebar_window(tabs[3])))
     vim.api.nvim_win_set_cursor(0, { file_lines[2], 0 })
     local source_sidebar_view = vim.fn.winsaveview()
     vim.api.nvim_exec_autocmds("CursorMoved", {

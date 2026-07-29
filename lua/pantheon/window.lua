@@ -1229,7 +1229,6 @@ local function render_shortcuts()
     { "h", "Inspect a commit or pull request" },
     { "p", "Load the next eight past activity items" },
     { "r", "Load the previous page of recent activity" },
-    { "<C-Left> / <C-Right>", "Jump through inspection changes" },
     { "o", "Open the selected activity" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
