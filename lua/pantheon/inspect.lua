@@ -13,6 +13,7 @@ local sidebar_groups = {}
 local next_session = 0
 local syncing = false
 local sidebar_navigating = false
+local inspection_tabs_loading = false
 local oil_contexts = {}
 local normalize_inspection_view
 local refresh_sidebar
@@ -1444,13 +1445,31 @@ local function place_range(buf, start, count, text, highlight)
 end
 
 local function set_change_highlights()
+  local normal =
+    vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  local diff_delete =
+    vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
+  local diff_add =
+    vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
+  local diagnostic_error = vim.api.nvim_get_hl(
+    0,
+    { name = "DiagnosticError", link = false }
+  )
+  local diagnostic_ok =
+    vim.api.nvim_get_hl(0, { name = "DiagnosticOk", link = false })
   vim.api.nvim_set_hl(0, "PantheonInspectRemoved", {
-    link = "DiffDelete",
-    default = true,
+    fg = diff_delete.fg
+      or diff_delete.bg
+      or diagnostic_error.fg
+      or 0xe06c75,
+    bg = normal.bg,
   })
   vim.api.nvim_set_hl(0, "PantheonInspectAdded", {
-    link = "DiffAdd",
-    default = true,
+    fg = diff_add.fg
+      or diff_add.bg
+      or diagnostic_ok.fg
+      or 0x00c853,
+    bg = normal.bg,
   })
 end
 
@@ -1527,7 +1546,9 @@ local function refresh_buffer_highlighting(buf)
     end
   end
 
-  vim.cmd("redraw")
+  if not inspection_tabs_loading then
+    vim.cmd("redraw")
+  end
   vim.b[buf].pantheon_inspect_highlighting_refreshed = true
   return true
 end
@@ -2041,7 +2062,7 @@ local function prepare_inspection_sidebar(group)
   group.sidebar_windows = {}
   group.sidebar_visible = false
   group.sidebar_width =
-    math.min(30, math.max(20, vim.o.columns - 20))
+    math.min(28, math.max(20, vim.o.columns - 20))
   group.sidebar_rows = {}
   group.sidebar_chunk_lines = {}
   group.sidebar_entries = {}
@@ -2088,12 +2109,7 @@ end
 local function activate_inspection_sidebar(group)
   map_inspection_sidebar_toggle(group)
   sidebar_groups[#sidebar_groups + 1] = group
-  local first = group[1] and group[1].parent or nil
-  if valid_endpoint(first) then
-    vim.api.nvim_set_current_win(first.win)
-    show_inspection_path(first.buf)
-    open_inspection_sidebar(group)
-  end
+  open_inspection_sidebar(group)
 end
 
 local function sidebar_group_for_buffer(buf)
@@ -2592,6 +2608,19 @@ local function open_tabs(
   comment,
   done
 )
+  local staging_tab = vim.api.nvim_get_current_tabpage()
+  local staging_win = vim.api.nvim_get_current_win()
+  local previous_lazyredraw = vim.o.lazyredraw
+  inspection_tabs_loading = true
+  vim.o.lazyredraw = true
+  local function restore_staging_window()
+    if vim.api.nvim_tabpage_is_valid(staging_tab) then
+      vim.api.nvim_set_current_tabpage(staging_tab)
+    end
+    if vim.api.nvim_win_is_valid(staging_win) then
+      vim.api.nvim_set_current_win(staging_win)
+    end
+  end
   local ok, err = pcall(function()
     local inspection_sessions = {}
     for index, paths in ipairs(inspections) do
@@ -2616,8 +2645,6 @@ local function open_tabs(
     -- Build the complete changed-file list before the first Inspect tab is
     -- created, so the first visible tab already has a ready sidebar.
     prepare_inspection_sidebar(inspection_sessions)
-    stop_loading(loading)
-    require("pantheon.window").close()
 
     for index, paths in ipairs(inspections) do
       local session = inspection_sessions[index]
@@ -2667,17 +2694,35 @@ local function open_tabs(
         sync_window(parent.win)
       end
     end
+    restore_staging_window()
     activate_inspection_sidebar(inspection_sessions)
     for _, session in ipairs(inspection_sessions) do
       normalize_inspection_view(session.parent.win)
       normalize_inspection_view(session.change.win)
     end
     setup_inspection_comment(inspection_sessions, comment)
+    restore_staging_window()
+
+    local first = inspection_sessions[1]
+      and inspection_sessions[1].parent
+    if not valid_endpoint(first) then
+      error("the first inspection tab was not created")
+    end
+    stop_loading(loading)
+    require("pantheon.window").close()
+    vim.api.nvim_set_current_tabpage(first.tab)
+    vim.api.nvim_set_current_win(first.win)
+    show_inspection_path(first.buf)
   end)
+  inspection_tabs_loading = false
+  vim.o.lazyredraw = previous_lazyredraw
   if not ok then
+    restore_staging_window()
+    vim.cmd("redraw")
     done(nil, "could not open inspection tabs: " .. tostring(err))
     return
   end
+  vim.cmd("redraw")
   emit_loading(loading, "on_complete")
   done(inspections)
 end

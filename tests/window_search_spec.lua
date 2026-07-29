@@ -317,9 +317,14 @@ assert(
     inspect_activity_text
   )
 )
-assert(first_loading_text:find(" ⠋", 1, true))
+assert(first_loading_text:find(" ⠋⠋⠋", 1, true))
 assert(first_loading_text:sub(-21)
   == inspect_activity_text:sub(-21))
+local loading_highlight = vim.api.nvim_get_hl(
+  0,
+  { name = "PantheonInspectLoading", link = false }
+)
+assert(loading_highlight.bold == true)
 inspect_lifecycle.on_progress("⠙")
 local second_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
@@ -329,7 +334,7 @@ local second_loading_text = vim.api.nvim_buf_get_lines(
 )[1]
 assert(vim.fn.strdisplaywidth(second_loading_text)
   == vim.fn.strdisplaywidth(inspect_activity_text))
-assert(second_loading_text:find(" ⠙", 1, true))
+assert(second_loading_text:find(" ⠙⠙⠙", 1, true))
 assert(second_loading_text:sub(-21)
   == inspect_activity_text:sub(-21))
 inspect_lifecycle.on_complete()

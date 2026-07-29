@@ -37,6 +37,18 @@ local contributor_selection_ns = vim.api.nvim_create_namespace(
 local inspect_loading_ns = vim.api.nvim_create_namespace(
   "pantheon_inspect_activity_loading"
 )
+
+local function set_inspect_loading_highlight()
+  local info =
+    vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
+  local special =
+    vim.api.nvim_get_hl(0, { name = "Special", link = false })
+  vim.api.nvim_set_hl(0, "PantheonInspectLoading", {
+    fg = info.fg or special.fg or 0x61afef,
+    bold = true,
+  })
+end
+
 local autocmd_group = vim.api.nvim_create_augroup(
   "PantheonWindow",
   { clear = true }
@@ -627,7 +639,8 @@ local function activity_loading_line(line, frame)
   local content_width =
     vim.fn.strdisplaywidth(line) - vim.fn.strdisplaywidth(tail)
   local body = content:gsub("%s+$", "")
-  local body_width = math.max(1, content_width - 2)
+  local loading_width = vim.fn.strdisplaywidth(frame) + 1
+  local body_width = math.max(1, content_width - loading_width)
   body = trim_to_width(body, body_width)
   while vim.fn.strdisplaywidth(body) > body_width do
     body = vim.fn.strcharpart(
@@ -1811,16 +1824,18 @@ local function inspect_current()
           return
         end
         clear_spinner()
+        local display_frame = frame:rep(3)
         local loading_line, spinner_column =
-          activity_loading_line(activity_line, frame)
+          activity_loading_line(activity_line, display_frame)
         set_loading_line(loading_line)
+        set_inspect_loading_highlight()
         vim.api.nvim_buf_add_highlight(
           activity_buf,
           inspect_loading_ns,
-          "DiagnosticInfo",
+          "PantheonInspectLoading",
           line - 1,
           spinner_column,
-          spinner_column + #frame
+          spinner_column + #display_frame
         )
         vim.cmd("redraw")
       end,
