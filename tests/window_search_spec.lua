@@ -289,35 +289,38 @@ end
 local inspect_mapping = vim.fn.maparg("h", "n", false, true)
 assert(inspect_mapping.desc
   == "Inspect Pantheon commit or pull request")
+local inspect_activity_line =
+  vim.api.nvim_win_get_cursor(state.win)[1]
+local inspect_activity_text = vim.api.nvim_buf_get_lines(
+  state.buf,
+  inspect_activity_line - 1,
+  inspect_activity_line,
+  false
+)[1]
 inspect_mapping.callback()
 local inspect_loading_namespace =
   vim.api.nvim_get_namespaces().pantheon_inspect_activity_loading
 assert(inspect_loading_namespace)
-local inspect_loading_marks = vim.api.nvim_buf_get_extmarks(
+assert(vim.api.nvim_buf_get_lines(
   state.buf,
-  inspect_loading_namespace,
-  0,
-  -1,
-  { details = true }
-)
-assert(#inspect_loading_marks == 1)
-assert(inspect_loading_marks[1][2] + 1
-  == vim.api.nvim_win_get_cursor(state.win)[1])
-assert(inspect_loading_marks[1][3] == 0)
-assert(inspect_loading_marks[1][4].virt_text_pos == "eol")
-assert(inspect_loading_marks[1][4].virt_text[1][1] == " ⠋")
+  inspect_activity_line - 1,
+  inspect_activity_line,
+  false
+)[1] == inspect_activity_text .. " ⠋")
 inspect_lifecycle.on_progress("⠙")
-inspect_loading_marks = vim.api.nvim_buf_get_extmarks(
+assert(vim.api.nvim_buf_get_lines(
   state.buf,
-  inspect_loading_namespace,
-  0,
-  -1,
-  { details = true }
-)
-assert(#inspect_loading_marks == 1)
-assert(inspect_loading_marks[1][4].virt_text_pos == "eol")
-assert(inspect_loading_marks[1][4].virt_text[1][1] == " ⠙")
+  inspect_activity_line - 1,
+  inspect_activity_line,
+  false
+)[1] == inspect_activity_text .. " ⠙")
 inspect_lifecycle.on_complete()
+assert(vim.api.nvim_buf_get_lines(
+  state.buf,
+  inspect_activity_line - 1,
+  inspect_activity_line,
+  false
+)[1] == inspect_activity_text)
 assert(#vim.api.nvim_buf_get_extmarks(
   state.buf,
   inspect_loading_namespace,

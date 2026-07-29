@@ -1504,5 +1504,15 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_get_current_buf() == change_buf)
     assert(#vim.api.nvim_list_tabpages() == tabs_before_oil)
     assert(vim.bo[vim.api.nvim_get_current_buf()].filetype ~= "oil")
+    assert(vim.wait(10000, function()
+      for pair_index = 1, pair_count do
+        if not sidebar_window(tabs[pair_index * 2])
+          or not sidebar_window(tabs[pair_index * 2 + 1])
+        then
+          return false
+        end
+      end
+      return true
+    end), "Inspect sidebar was not restored after closing Oil")
   end
 end

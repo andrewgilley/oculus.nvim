@@ -1728,8 +1728,34 @@ local function inspect_current()
 
   local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
   local activity_buf = M.state.buf
+  local activity_line = vim.api.nvim_buf_get_lines(
+    activity_buf,
+    line - 1,
+    line,
+    false
+  )[1] or ""
+  local function set_loading_line(text)
+    if not is_valid_buf(activity_buf) then
+      return
+    end
+    local modifiable = vim.bo[activity_buf].modifiable
+    vim.bo[activity_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(
+      activity_buf,
+      line - 1,
+      line,
+      false,
+      { text }
+    )
+    vim.bo[activity_buf].modifiable = modifiable
+  end
   local function clear_spinner()
-    if is_valid_buf(activity_buf) then
+    if is_valid_buf(activity_buf)
+      and M.state.buf == activity_buf
+      and M.state.view == "activity"
+      and M.state.line_targets[line] == target
+    then
+      set_loading_line(activity_line)
       vim.api.nvim_buf_clear_namespace(
         activity_buf,
         inspect_loading_ns,
@@ -1752,17 +1778,16 @@ local function inspect_current()
           return
         end
         clear_spinner()
-        vim.api.nvim_buf_set_extmark(
+        set_loading_line(activity_line .. " " .. frame)
+        vim.api.nvim_buf_add_highlight(
           activity_buf,
           inspect_loading_ns,
+          "DiagnosticInfo",
           line - 1,
-          0,
-          {
-            virt_text = { { " " .. frame, "DiagnosticInfo" } },
-            virt_text_pos = "eol",
-            priority = 200,
-          }
+          #activity_line + 1,
+          -1
         )
+        vim.cmd("redraw")
       end,
       on_complete = function(message)
         clear_spinner()
