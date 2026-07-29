@@ -592,19 +592,25 @@ github.issue = function(repo, number, _, callback)
   callback({
     number = number,
     title = "Issue inspect fixture",
-    body = "Review lua/pantheon/inspect.lua:10-12.",
+    body = table.concat({
+      "Review lua/pantheon/inspect.lua:10-12.",
+      "The behavior also appears around `open_issue`.",
+    }, "\n"),
   })
 end
 local issue_selection_targets = {
   "codex",
-  "lua/pantheon/inspect.lua:10-12",
-  "lua/pantheon/window.lua:20",
+  "lua/pantheon/inspect.lua",
+  "lua/pantheon/window.lua",
 }
 local issue_selection_index = 1
 pantheon_window.show_issue_picker = function(context, items, callback)
   assert(context.details.title == "Issue inspect fixture")
-  assert(context.details.body
-    == "Review lua/pantheon/inspect.lua:10-12.")
+  assert(context.details.body:find(
+    "Review lua/pantheon/inspect.lua:10-12.",
+    1,
+    true
+  ))
   assert(context.details.comment
     == "The referenced sections should become editable tabs.")
   assert(vim.fs.normalize(context.repository) == vim.fs.normalize(root))
@@ -615,6 +621,17 @@ pantheon_window.show_issue_picker = function(context, items, callback)
     assert(context.status:find("Codex", 1, true))
     assert(#items == 1 and items[1].action == "cancel")
     return
+  end
+  local offered_paths = {}
+  for _, item in ipairs(items) do
+    if item.group then
+      assert(not offered_paths[item.group.path])
+      offered_paths[item.group.path] = true
+    end
+  end
+  if next(offered_paths) then
+    assert(items[1].action == "all")
+    assert(items[1].label == "[+] Show all files")
   end
   local target = issue_selection_targets[issue_selection_index]
   if target then
@@ -629,7 +646,7 @@ pantheon_window.show_issue_picker = function(context, items, callback)
       error("issue selection did not offer Codex analysis")
     end
     for _, item in ipairs(items) do
-      if item.label:find(target, 1, true) then
+      if item.group and item.group.path == target then
         callback(item)
         return
       end
@@ -712,7 +729,7 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
   issue_buffers[#issue_buffers + 1] = buf
   assert(vim.bo[buf].modifiable)
   assert(vim.bo[buf].buftype == "")
-  assert(#vim.b[buf].pantheon_issue_sections == 1)
+  assert(#vim.b[buf].pantheon_issue_sections >= 1)
   local marks = vim.api.nvim_buf_get_extmarks(
     buf,
     vim.api.nvim_get_namespaces().pantheon_inspect_issue,
@@ -720,7 +737,7 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
     -1,
     { details = true }
   )
-  assert(#marks == 1)
+  assert(#marks == #vim.b[buf].pantheon_issue_sections)
   assert(marks[1][4].sign_text == "> ")
 end
 assert(vim.api.nvim_win_get_cursor(0)[1] == 10)

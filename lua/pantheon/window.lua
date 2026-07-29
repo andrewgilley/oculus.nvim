@@ -1409,7 +1409,7 @@ local function render_issue_picker()
   lines[#lines + 1] = ""
   lines[#lines + 1] = change_mode
       and "  CHANGED FILES"
-    or "  RELEVANT LOCATIONS"
+    or "  RELEVANT FILES"
   local status_line
   if context.status and context.status ~= "" then
     status_line = #lines + 1
@@ -1428,7 +1428,7 @@ local function render_issue_picker()
   end
   lines[#lines + 1] = ""
   lines[#lines + 1] =
-    "  <CR>/l select   <Space> toggle   j/←/q cancel"
+    "  <CR>/l toggle   b build   j/←/q cancel"
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   vim.wo[M.state.win].scrolloff = 2
@@ -1443,7 +1443,7 @@ local function render_issue_picker()
   for index, line in ipairs(lines) do
     if line == "  ISSUE CONTEXT"
       or line == "  CHANGE CONTEXT"
-      or line == "  RELEVANT FILES AND SECTIONS"
+      or line == "  RELEVANT FILES"
       or line == "  CHANGED FILES"
     then
       highlight(index, 2, -1, "Special")
@@ -1476,6 +1476,26 @@ local function render_issue_picker()
   end
 end
 
+local function build_inspect_selection()
+  if M.state.view ~= "issue_picker" then
+    return
+  end
+  local picker = M.state.issue_picker
+  if not picker or type(picker.callback) ~= "function" then
+    return
+  end
+  for _, choice in ipairs(picker.choices or {}) do
+    if choice.action == "build" then
+      picker.callback(choice)
+      return
+    end
+  end
+  vim.notify(
+    "Pantheon: select at least one file before building tabs",
+    vim.log.levels.WARN
+  )
+end
+
 function M.show_issue_picker(context, choices, callback)
   if not is_valid_win(M.state.win) then
     M.open((context and context.opts) or M.state.opts or {})
@@ -1496,6 +1516,12 @@ function M.show_issue_picker(context, choices, callback)
     cursor_index = previous and previous.cursor_index or 1,
     return_cursor = return_cursor,
   }
+  vim.keymap.set("n", "b", build_inspect_selection, {
+    buffer = M.state.buf,
+    nowait = true,
+    silent = true,
+    desc = "Build selected Pantheon inspect files",
+  })
   render_issue_picker()
 end
 
@@ -1507,6 +1533,9 @@ function M.restore_issue_picker_page()
   local picker = M.state.issue_picker
   local return_cursor = picker and picker.return_cursor
   M.state.issue_picker = nil
+  if is_valid_buf(M.state.buf) then
+    pcall(vim.keymap.del, "n", "b", { buffer = M.state.buf })
+  end
   if M.state.contributor and M.state.activity_loaded and M.state.events then
     render_activity(
       M.state.events,
@@ -1579,6 +1608,7 @@ local function render_shortcuts()
   })
   section("INSPECT SELECTION", {
     { "<Space> / l / <CR>", "Select or toggle the current choice" },
+    { "b", "Build tabs from the selected files" },
     { "j / <Left>", "Cancel and return to activity" },
   })
   section("GENERAL", {
