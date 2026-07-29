@@ -1,12 +1,15 @@
 # pantheon.nvim
 
-<!-- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 15 Describe multi-forge activity support -->
+
 Pantheon is a small Neovim browser for viewing public GitHub and Codeberg activity of community members.
+
+<img width="1917" height="1061" alt="pan" src="https://github.com/user-attachments/assets/d75e4a85-a02c-410d-ad4f-62fce8f361da" />
 
 In a user's activity feed, press `p` to load the next page of eight past
 activity items and move directly to the first item on that page. Press `r`
 from a later page to move one page back toward recent activity.
-<!-- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 15 -->
+
+<img width="1902" height="1027" alt="pantheon" src="https://github.com/user-attachments/assets/c6de957e-f9ba-4c7f-870f-8fc46754b673" />
 
 From the startup user list, press `s` to fuzzy-search contributor names and
 handles. Results and the contributor preview update as you type. Use
