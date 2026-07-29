@@ -3,6 +3,7 @@ local M = {}
 
 local cache = {}
 local inspect_pull_request_cache = {}
+local inspect_issue_cache = {}
 local base_url = "https://codeberg.org"
 
 local function decode_response(stdout)
@@ -434,6 +435,45 @@ function M.pull_request(repo, number, opts, callback)
         or ("refs/pull/%d/head"):format(number),
     }
     inspect_pull_request_cache[key] = {
+      details = details,
+      fetched_at = os.time(),
+    }
+    callback(vim.deepcopy(details))
+  end)
+end
+
+function M.issue(repo, number, opts, callback)
+  opts = opts or {}
+  local key = ("%s#%s"):format(repo, number)
+  local cached = inspect_issue_cache[key]
+  local ttl = opts.inspect_cache_ttl or 60
+  if
+    cached
+    and not opts.force
+    and os.time() - cached.fetched_at < ttl
+  then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.details))
+    end)
+    return
+  end
+  local url = ("%s/api/v1/repos/%s/issues/%s"):format(
+    base_url,
+    repo,
+    number
+  )
+  request_json(url, opts, function(issue, err)
+    if not issue then
+      callback(nil, err)
+      return
+    end
+    local details = {
+      number = issue.number or number,
+      title = issue.title,
+      body = issue.body,
+      html_url = issue.html_url,
+    }
+    inspect_issue_cache[key] = {
       details = details,
       fetched_at = os.time(),
     }

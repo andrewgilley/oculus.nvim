@@ -308,14 +308,28 @@ assert(pull_request.kind == "pull_request")
 assert(pull_request.owner == "neovim")
 assert(pull_request.repo == "neovim")
 assert(pull_request.number == 123)
-local pull_request_comment = inspect._parse_pull_request_url(
+assert(inspect._parse_pull_request_url(
   "https://github.com/neovim/neovim/issues/123#issuecomment-456"
-)
-assert(pull_request_comment)
-assert(pull_request_comment.via_issue)
+) == nil)
 assert(inspect._parse_pull_request_url(
   "https://github.com/neovim/neovim/issues/not-a-number"
 ) == nil)
+local issue = inspect._parse_issue_url(
+  "https://github.com/neovim/neovim/issues/123#issuecomment-456"
+)
+assert(issue)
+assert(issue.kind == "issue")
+assert(issue.forge == "github")
+assert(issue.owner == "neovim")
+assert(issue.repo == "neovim")
+assert(issue.number == 123)
+local codeberg_issue = inspect._parse_issue_url(
+  "https://codeberg.org/ziglang/zig/issues/42"
+)
+assert(codeberg_issue)
+assert(codeberg_issue.kind == "issue")
+assert(codeberg_issue.forge == "codeberg")
+assert(codeberg_issue.number == 42)
 local codeberg_pull_request = inspect._parse_pull_request_url(
   "https://codeberg.org/ziglang/zig/pulls/35754#issuecomment-1"
 )
@@ -341,6 +355,25 @@ assert(resolved_pull_request.head_ref == "feature")
 assert(resolved_pull_request.base_sha:match("^a+$"))
 assert(resolved_pull_request.head_sha:match("^b+$"))
 assert(resolved_pull_request.commit_count == 3)
+
+local issue_context = inspect.activity_context({
+  type = "IssueCommentEvent",
+  payload = {
+    issue = {
+      number = 123,
+      title = "Inspection loses focus",
+      body = "The problem is in lua/pantheon/inspect.lua:10.",
+    },
+    comment = {
+      body = "Also check `open_issue`.",
+    },
+  },
+})
+assert(issue_context)
+assert(issue_context.issue.number == 123)
+assert(issue_context.issue.title == "Inspection loses focus")
+assert(issue_context.issue.body:find("inspect.lua:10", 1, true))
+assert(issue_context.issue.comment == "Also check `open_issue`.")
 
 local revision_pairs = inspect._parse_revision_pairs(table.concat({
   "1111111 aaaaaaa",
@@ -378,6 +411,316 @@ forge, repository = inspect._forge_repository(
 )
 assert(forge == "codeberg")
 assert(repository == "ziglang/zig")
+
+local renamed_search_root = vim.fn.tempname()
+local renamed_repository = vim.fs.joinpath(
+  renamed_search_root,
+  "mirrors",
+  "editor-source"
+)
+assert(vim.fn.mkdir(renamed_repository, "p") == 1)
+local init_result = vim.system({
+  "git",
+  "-C",
+  renamed_repository,
+  "init",
+}, { text = true }):wait()
+assert(init_result.code == 0, init_result.stderr)
+local remote_result = vim.system({
+  "git",
+  "-C",
+  renamed_repository,
+  "remote",
+  "add",
+  "upstream",
+  "https://github.com/neovim/neovim.git",
+}, { text = true }):wait()
+assert(remote_result.code == 0, remote_result.stderr)
+local found_renamed_repository
+local found_renamed_remote
+inspect._find_local_repository({
+  kind = "commit",
+  forge = "github",
+  owner = "neovim",
+  repo = "neovim",
+  sha = "0123456789abcdef0123456789abcdef01234567",
+  remote_url = "https://github.com/neovim/neovim.git",
+}, {
+  inspect_repositories = {},
+  inspect_search_paths = { renamed_search_root },
+}, function(path, remote)
+  found_renamed_repository = path
+  found_renamed_remote = remote
+end)
+assert(vim.wait(10000, function()
+  return found_renamed_repository ~= nil
+end), "renamed local repository was not found")
+assert(vim.fs.normalize(found_renamed_repository)
+  == vim.fs.normalize(renamed_repository))
+assert(found_renamed_remote == "upstream")
+
+local commit_result = vim.system({
+  "git",
+  "-C",
+  renamed_repository,
+  "-c",
+  "user.name=Pantheon Test",
+  "-c",
+  "user.email=pantheon@example.invalid",
+  "commit",
+  "--allow-empty",
+  "-m",
+  "local identity fixture",
+}, { text = true }):wait()
+assert(commit_result.code == 0, commit_result.stderr)
+local fixture_sha_result = vim.system({
+  "git",
+  "-C",
+  renamed_repository,
+  "rev-parse",
+  "HEAD",
+}, { text = true }):wait()
+assert(fixture_sha_result.code == 0, fixture_sha_result.stderr)
+local fixture_sha = vim.trim(fixture_sha_result.stdout)
+local alias_result = vim.system({
+  "git",
+  "-C",
+  renamed_repository,
+  "remote",
+  "set-url",
+  "upstream",
+  "git@github-work:neovim/neovim.git",
+}, { text = true }):wait()
+assert(alias_result.code == 0, alias_result.stderr)
+local found_alias_repository
+local found_alias_fetch_source
+inspect._find_local_repository({
+  kind = "commit",
+  forge = "github",
+  owner = "neovim",
+  repo = "neovim",
+  sha = fixture_sha,
+  remote_url = "https://github.com/neovim/neovim.git",
+}, {
+  inspect_repositories = {},
+  inspect_search_paths = { renamed_search_root },
+}, function(path, fetch_source)
+  found_alias_repository = path
+  found_alias_fetch_source = fetch_source
+end)
+assert(vim.wait(10000, function()
+  return found_alias_repository ~= nil
+end), "repository with a custom remote alias was not found")
+assert(vim.fs.normalize(found_alias_repository)
+  == vim.fs.normalize(renamed_repository))
+assert(found_alias_fetch_source
+  == "https://github.com/neovim/neovim.git")
+assert(vim.fn.delete(renamed_search_root, "rf") == 0)
+
+local extracted_issue_candidates
+local extracted_issue_error
+inspect._issue_candidates(root, {
+  title = "Inspect navigation",
+  body = table.concat({
+    "The main reference is lua/pantheon/inspect.lua:10-12.",
+    "The behavior appears around `open_issue`.",
+  }, "\n"),
+}, function(candidates, err)
+  extracted_issue_candidates = candidates
+  extracted_issue_error = err
+end)
+assert(vim.wait(10000, function()
+  return extracted_issue_candidates ~= nil
+    or extracted_issue_error ~= nil
+end), "issue candidate extraction did not finish")
+assert(extracted_issue_candidates, extracted_issue_error)
+local found_direct_issue_section = false
+local found_symbol_issue_section = false
+for _, candidate in ipairs(extracted_issue_candidates) do
+  if candidate.path == "lua/pantheon/inspect.lua"
+    and candidate.line == 10
+    and candidate.last_line == 12
+  then
+    found_direct_issue_section = true
+  end
+  if candidate.reason == "matches `open_issue`" then
+    found_symbol_issue_section = true
+  end
+end
+assert(found_direct_issue_section)
+assert(found_symbol_issue_section)
+
+local decoded_codex_candidates, decoded_codex_error =
+  inspect._decode_codex_issue_candidates({
+    candidates = {
+      {
+        path = "LUA\\PANTHEON\\window.lua",
+        line = 20,
+        last_line = 24,
+        reason = "activity selection and inspect dispatch",
+        confidence = 91,
+        whole_file = false,
+      },
+      {
+        path = "../outside.lua",
+        line = 1,
+        last_line = 1,
+        reason = "must be rejected",
+        confidence = 100,
+        whole_file = false,
+      },
+    },
+  }, {
+    "lua/pantheon/window.lua",
+    "lua/pantheon/inspect.lua",
+  })
+assert(decoded_codex_candidates, decoded_codex_error)
+assert(#decoded_codex_candidates == 1)
+assert(decoded_codex_candidates[1].path == "lua/pantheon/window.lua")
+assert(decoded_codex_candidates[1].line == 20)
+assert(decoded_codex_candidates[1].last_line == 24)
+assert(decoded_codex_candidates[1].reason
+  == "Codex: activity selection and inspect dispatch")
+
+local github = require("pantheon.github")
+local original_issue = github.issue
+local original_ui_select = vim.ui.select
+github.issue = function(repo, number, _, callback)
+  assert(repo == "andrewgilley/pantheon.nvim")
+  assert(number == 77)
+  callback({
+    number = number,
+    title = "Issue inspect fixture",
+    body = "Review lua/pantheon/inspect.lua:10-12.",
+  })
+end
+local issue_selection_targets = {
+  "codex",
+  "lua/pantheon/inspect.lua:10-12",
+  "lua/pantheon/window.lua:20",
+}
+local issue_selection_index = 1
+vim.ui.select = function(items, _, callback)
+  local target = issue_selection_targets[issue_selection_index]
+  if target then
+    issue_selection_index = issue_selection_index + 1
+    if target == "codex" then
+      for _, item in ipairs(items) do
+        if item.action == "codex" then
+          callback(item)
+          return
+        end
+      end
+      error("issue selection did not offer Codex analysis")
+    end
+    for _, item in ipairs(items) do
+      if item.label:find(target, 1, true) then
+        callback(item)
+        return
+      end
+    end
+    error("issue selection did not offer " .. target)
+  end
+  for _, item in ipairs(items) do
+    if item.action == "build" then
+      callback(item)
+      return
+    end
+  end
+  error("issue selection did not offer a build action")
+end
+local issue_tabs_before = vim.api.nvim_list_tabpages()
+local issue_lifecycle_complete = false
+local issue_lifecycle_error
+local issue_ok, issue_err = inspect.open(
+  "https://github.com/andrewgilley/pantheon.nvim/issues/77",
+  {
+    inspect_repositories = {
+      ["andrewgilley/pantheon.nvim"] = root,
+    },
+    inspect_search_paths = { vim.fs.dirname(root) },
+    inspect_issue_codex_runner = function(request, callback)
+      assert(vim.fs.normalize(request.repository) == vim.fs.normalize(root))
+      assert(request.prompt:find("Issue inspect fixture", 1, true))
+      callback({
+        candidates = {
+          {
+            path = "lua/pantheon/window.lua",
+            line = 20,
+            last_line = 20,
+            reason = "dispatches issue inspection",
+            confidence = 92,
+            whole_file = false,
+          },
+          {
+            path = "../outside.lua",
+            line = 1,
+            last_line = 1,
+            reason = "outside the repository",
+            confidence = 100,
+            whole_file = false,
+          },
+        },
+      })
+    end,
+  },
+  {
+    issue = {
+      comment = "The referenced sections should become editable tabs.",
+    },
+  },
+  {
+    on_progress = function() end,
+    on_complete = function(message)
+      issue_lifecycle_error = message
+      issue_lifecycle_complete = true
+    end,
+  }
+)
+assert(issue_ok, issue_err)
+assert(vim.wait(30000, function()
+  return issue_lifecycle_complete
+end), "issue inspect tabs were not opened")
+assert(not issue_lifecycle_error, issue_lifecycle_error)
+github.issue = original_issue
+vim.ui.select = original_ui_select
+local issue_tabs_after = vim.api.nvim_list_tabpages()
+assert(#issue_tabs_after == #issue_tabs_before + 2)
+local issue_buffers = {}
+for index = #issue_tabs_before + 1, #issue_tabs_after do
+  local tab = issue_tabs_after[index]
+  local state = vim.api.nvim_tabpage_get_var(tab, "pantheon_inspect")
+  assert(state.kind == "issue")
+  assert(state.role == "issue")
+  local win = vim.api.nvim_tabpage_get_win(tab)
+  local buf = vim.api.nvim_win_get_buf(win)
+  issue_buffers[#issue_buffers + 1] = buf
+  assert(vim.bo[buf].modifiable)
+  assert(vim.bo[buf].buftype == "")
+  assert(#vim.b[buf].pantheon_issue_sections == 1)
+  local marks = vim.api.nvim_buf_get_extmarks(
+    buf,
+    vim.api.nvim_get_namespaces().pantheon_inspect_issue,
+    0,
+    -1,
+    { details = true }
+  )
+  assert(#marks == 1)
+  assert(marks[1][4].sign_text == "> ")
+end
+assert(vim.api.nvim_win_get_cursor(0)[1] == 10)
+for index = #issue_tabs_after, #issue_tabs_before + 1, -1 do
+  local tab = vim.api.nvim_list_tabpages()[index]
+  if tab and vim.api.nvim_tabpage_is_valid(tab) then
+    vim.api.nvim_set_current_tabpage(tab)
+    vim.cmd("tabclose")
+  end
+end
+for _, buf in ipairs(issue_buffers) do
+  if vim.api.nvim_buf_is_valid(buf) then
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+end
 
 local parent, change = inspect._first_changed_paths("M\tlua/pantheon/init.lua")
 assert(parent == "lua/pantheon/init.lua")

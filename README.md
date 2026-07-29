@@ -39,6 +39,16 @@ inspection; tabs appear only after the changed-file sidebar is ready.
 Pantheon reads each commit and its first parent from Git without changing the
 local checkout. Every changed file opens an adjacent parent/change tab pair.
 
+Issue activity uses an editable working-tree workflow. Pantheon extracts
+validated file and line references from the public issue text and searches for
+backticked symbols in the local clone. The candidate picker also offers
+**Ask Codex to identify relevant files and sections**, which runs the Codex CLI
+in an ephemeral, read-only sandbox and accepts only tracked repository paths.
+Select one or more proposed files or sections, then choose **Build tabs from
+selected sections** to open one source tab per selected file. Selected sections
+are marked in the sign column and the first tab opens at its first selected
+section, ready for later patching.
+
 When an inspection tab is opened with
 [oil.nvim](https://github.com/stevearc/oil.nvim), a single foreground-only
 symbol marks each relevant entry: `+` added, `~` modified, `-` deleted, `→`
