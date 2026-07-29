@@ -1769,13 +1769,11 @@ local function map_inspection_sidebar_toggle(group)
     desc = "Toggle Pantheon Inspect sidebar",
   }
   local function map_buffer(buf)
-    for _, lhs in ipairs({ "<C-i>", "<Tab>" }) do
-      vim.keymap.set("n", lhs, function()
-        toggle_inspection_sidebar(group)
-      end, vim.tbl_extend("force", opts, {
-        buffer = buf,
-      }))
-    end
+    vim.keymap.set("n", "<leader>pi", function()
+      toggle_inspection_sidebar(group)
+    end, vim.tbl_extend("force", opts, {
+      buffer = buf,
+    }))
   end
   for _, session in ipairs(group) do
     for _, endpoint in ipairs({ session.parent, session.change }) do

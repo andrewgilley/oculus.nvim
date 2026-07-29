@@ -729,13 +729,14 @@ if integration_root and (integration_sha or integration_url) then
     "n"
   )) do
     if mapping.desc == "Toggle Pantheon Inspect sidebar"
-      and mapping.lhs == "<C-I>"
     then
       initial_sidebar_toggle = mapping
       break
     end
   end
   assert(initial_sidebar_toggle)
+  assert(initial_sidebar_toggle.lhs
+    == (vim.g.mapleader or "\\") .. "pi")
   for pair_index = 1, pair_count do
     local old_tab = tabs[pair_index * 2]
     local new_tab = tabs[pair_index * 2 + 1]
@@ -991,8 +992,9 @@ if integration_root and (integration_sha or integration_url) then
   local toggle_mapped = false
   local switch_mapped = false
   local next_file_mapped = false
-  local sidebar_toggle
-  local sidebar_tab_toggle
+  local sidebar_ctrl_i_mapped = false
+  local sidebar_tab_mapped = false
+  local sidebar_leader_toggle
   for _, mapping in ipairs(jump_maps) do
     if mapping.desc == "Previous Pantheon change" then
       previous_mapped = mapping.lhs == "<C-Left>"
@@ -1006,9 +1008,11 @@ if integration_root and (integration_sha or integration_url) then
       next_file_mapped = mapping.lhs == "<C-N>"
     elseif mapping.desc == "Toggle Pantheon Inspect sidebar" then
       if mapping.lhs == "<C-I>" then
-        sidebar_toggle = mapping
+        sidebar_ctrl_i_mapped = true
       elseif mapping.lhs == "<Tab>" then
-        sidebar_tab_toggle = mapping
+        sidebar_tab_mapped = true
+      else
+        sidebar_leader_toggle = mapping
       end
     end
   end
@@ -1017,11 +1021,15 @@ if integration_root and (integration_sha or integration_url) then
   assert(not toggle_mapped)
   assert(switch_mapped)
   assert(not next_file_mapped)
-  assert(sidebar_toggle and sidebar_toggle.lhs == "<C-I>")
-  assert(sidebar_tab_toggle and sidebar_tab_toggle.lhs == "<Tab>")
+  assert(not sidebar_ctrl_i_mapped)
+  assert(not sidebar_tab_mapped)
+  assert(sidebar_leader_toggle
+    and sidebar_leader_toggle.lhs
+      == (vim.g.mapleader or "\\") .. "pi")
 
-  local sidebar_toggle_from_sidebar
-  local sidebar_tab_toggle_from_sidebar
+  local sidebar_ctrl_i_from_sidebar = false
+  local sidebar_tab_from_sidebar = false
+  local sidebar_leader_toggle_from_sidebar
   local sidebar_open_mapping
   local sidebar_switch_mapping
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
@@ -1030,9 +1038,11 @@ if integration_root and (integration_sha or integration_url) then
   )) do
     if mapping.desc == "Toggle Pantheon Inspect sidebar" then
       if mapping.lhs == "<C-I>" then
-        sidebar_toggle_from_sidebar = mapping
+        sidebar_ctrl_i_from_sidebar = true
       elseif mapping.lhs == "<Tab>" then
-        sidebar_tab_toggle_from_sidebar = mapping
+        sidebar_tab_from_sidebar = true
+      else
+        sidebar_leader_toggle_from_sidebar = mapping
       end
     elseif mapping.desc == "Open Pantheon Inspect sidebar item" then
       sidebar_open_mapping = mapping
@@ -1040,20 +1050,17 @@ if integration_root and (integration_sha or integration_url) then
       sidebar_switch_mapping = mapping
     end
   end
-  assert(
-    sidebar_toggle_from_sidebar
-      and sidebar_toggle_from_sidebar.lhs == "<C-I>"
-  )
-  assert(
-    sidebar_tab_toggle_from_sidebar
-      and sidebar_tab_toggle_from_sidebar.lhs == "<Tab>"
-  )
+  assert(not sidebar_ctrl_i_from_sidebar)
+  assert(not sidebar_tab_from_sidebar)
+  assert(sidebar_leader_toggle_from_sidebar
+    and sidebar_leader_toggle_from_sidebar.lhs
+      == (vim.g.mapleader or "\\") .. "pi")
   assert(sidebar_open_mapping
     and sidebar_open_mapping.lhs == "<CR>")
   assert(sidebar_switch_mapping
     and sidebar_switch_mapping.lhs == "<C-S>")
   vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
-  sidebar_tab_toggle_from_sidebar.callback()
+  sidebar_leader_toggle_from_sidebar.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
   for pair_index = 1, pair_count do
     assert(#vim.api.nvim_tabpage_list_wins(
@@ -1063,7 +1070,7 @@ if integration_root and (integration_sha or integration_url) then
       tabs[pair_index * 2 + 1]
     ) == 1)
   end
-  sidebar_toggle.callback()
+  sidebar_leader_toggle.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
   for pair_index = 1, pair_count do
     for _, tab in ipairs({
