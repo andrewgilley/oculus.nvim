@@ -4,18 +4,18 @@ vim.api.nvim_set_hl(0, "Normal", {
   fg = 0xd0d0d0,
   bg = 0x101820,
 })
-local oil_runtime = vim.env.PANTHEON_INSPECT_TEST_OIL
+local oil_runtime = vim.env.OCULUS_INSPECT_TEST_OIL
 if oil_runtime then
   vim.opt.runtimepath:append(oil_runtime)
 end
 
-local inspect = require("pantheon.inspect")
+local inspect = require("oculus.inspect")
 
 local normal_highlight =
   vim.api.nvim_get_hl(0, { name = "Normal", link = false })
 for _, group in ipairs({
-  "PantheonInspectRemoved",
-  "PantheonInspectAdded",
+  "OculusInspectRemoved",
+  "OculusInspectAdded",
 }) do
   local sign_highlight =
     vim.api.nvim_get_hl(0, { name = group, link = false })
@@ -41,7 +41,7 @@ vim.api.nvim_buf_set_lines(
 )
 vim.bo[highlight_buf].filetype = "lua"
 vim.bo[highlight_buf].syntax = "lua"
-vim.b[highlight_buf].pantheon_inspect = { role = "change" }
+vim.b[highlight_buf].oculus_inspect = { role = "change" }
 local fake_highlighter = {}
 local invalidated = false
 local parsed = false
@@ -98,7 +98,7 @@ vim.api.nvim_buf_set_lines(
   { "print('inspected python')" }
 )
 vim.bo[filetype_buf].filetype = "lua"
-vim.b[filetype_buf].pantheon_inspect = {
+vim.b[filetype_buf].oculus_inspect = {
   role = "parent",
   source_path = vim.fs.joinpath(root, "src", "inspection.py"),
 }
@@ -158,7 +158,7 @@ local comment = inspect.activity_comment({
   payload = {
     comment = {
       body = "Please keep this branch explicit.",
-      path = "lua/pantheon/inspect.lua",
+      path = "lua/oculus/inspect.lua",
       start_line = 15,
       line = 17,
       side = "RIGHT",
@@ -168,7 +168,7 @@ local comment = inspect.activity_comment({
 })
 assert(comment)
 assert(comment.body == "Please keep this branch explicit.")
-assert(comment.path == "lua/pantheon/inspect.lua")
+assert(comment.path == "lua/oculus/inspect.lua")
 assert(comment.line == 15)
 assert(comment.side == "change")
 assert(comment.commit == "aaaaaaaa")
@@ -177,7 +177,7 @@ local left_comment = inspect.activity_comment({
   payload = {
     comment = {
       body = "This was removed.",
-      path = "lua/pantheon/inspect.lua",
+      path = "lua/oculus/inspect.lua",
       original_line = 12,
       side = "LEFT",
       original_commit_id = "bbbbbbbb",
@@ -249,8 +249,8 @@ assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
 ) == "changed/file.lua")
 assert(inspect._sidebar_file(
-  "lua\\pantheon\\inspect.lua"
-) == "pantheon/inspect.lua")
+  "lua\\oculus\\inspect.lua"
+) == "oculus/inspect.lua")
 assert(inspect._sidebar_file("README.md") == "README.md")
 assert(inspect._sidebar_target_role(
   1,
@@ -265,8 +265,8 @@ assert(inspect._sidebar_target_role(
 
 assert(inspect._inspection_directory(
   root,
-  "lua/pantheon/inspect.lua"
-) == vim.fs.joinpath(root, "lua", "pantheon"))
+  "lua/oculus/inspect.lua"
+) == vim.fs.joinpath(root, "lua", "oculus"))
 assert(inspect._inspection_directory(
   root,
   "not-present/inspect.lua"
@@ -362,7 +362,7 @@ local issue_context = inspect.activity_context({
     issue = {
       number = 123,
       title = "Inspection loses focus",
-      body = "The problem is in lua/pantheon/inspect.lua:10.",
+      body = "The problem is in lua/oculus/inspect.lua:10.",
     },
     comment = {
       body = "Also check `open_issue`.",
@@ -464,9 +464,9 @@ local commit_result = vim.system({
   "-C",
   renamed_repository,
   "-c",
-  "user.name=Pantheon Test",
+  "user.name=Oculus Test",
   "-c",
-  "user.email=pantheon@example.invalid",
+  "user.email=oculus@example.invalid",
   "commit",
   "--allow-empty",
   "-m",
@@ -522,7 +522,7 @@ local extracted_issue_error
 inspect._issue_candidates(root, {
   title = "Inspect navigation",
   body = table.concat({
-    "The main reference is lua/pantheon/inspect.lua:10-12.",
+    "The main reference is lua/oculus/inspect.lua:10-12.",
     "The behavior appears around `open_issue`.",
   }, "\n"),
 }, function(candidates, err)
@@ -537,7 +537,7 @@ assert(extracted_issue_candidates, extracted_issue_error)
 local found_direct_issue_section = false
 local found_symbol_issue_section = false
 for _, candidate in ipairs(extracted_issue_candidates) do
-  if candidate.path == "lua/pantheon/inspect.lua"
+  if candidate.path == "lua/oculus/inspect.lua"
     and candidate.line == 10
     and candidate.last_line == 12
   then
@@ -554,7 +554,7 @@ local decoded_codex_candidates, decoded_codex_error =
   inspect._decode_codex_issue_candidates({
     candidates = {
       {
-        path = "LUA\\PANTHEON\\window.lua",
+        path = "LUA\\OCULUS\\window.lua",
         line = 20,
         last_line = 24,
         reason = "activity selection and inspect dispatch",
@@ -571,43 +571,43 @@ local decoded_codex_candidates, decoded_codex_error =
       },
     },
   }, {
-    "lua/pantheon/window.lua",
-    "lua/pantheon/inspect.lua",
+    "lua/oculus/window.lua",
+    "lua/oculus/inspect.lua",
   })
 assert(decoded_codex_candidates, decoded_codex_error)
 assert(#decoded_codex_candidates == 1)
-assert(decoded_codex_candidates[1].path == "lua/pantheon/window.lua")
+assert(decoded_codex_candidates[1].path == "lua/oculus/window.lua")
 assert(decoded_codex_candidates[1].line == 20)
 assert(decoded_codex_candidates[1].last_line == 24)
 assert(decoded_codex_candidates[1].reason
   == "Codex: activity selection and inspect dispatch")
 
-local github = require("pantheon.github")
-local pantheon_window = require("pantheon.window")
+local github = require("oculus.github")
+local oculus_window = require("oculus.window")
 local original_issue = github.issue
-local original_show_issue_picker = pantheon_window.show_issue_picker
+local original_show_issue_picker = oculus_window.show_issue_picker
 github.issue = function(repo, number, _, callback)
-  assert(repo == "andrewgilley/pantheon.nvim")
+  assert(repo == "andrewgilley/oculus.nvim")
   assert(number == 77)
   callback({
     number = number,
     title = "Issue inspect fixture",
     body = table.concat({
-      "Review lua/pantheon/inspect.lua:10-12.",
+      "Review lua/oculus/inspect.lua:10-12.",
       "The behavior also appears around `open_issue`.",
     }, "\n"),
   })
 end
 local issue_selection_targets = {
   "codex",
-  "lua/pantheon/inspect.lua",
-  "lua/pantheon/window.lua",
+  "lua/oculus/inspect.lua",
+  "lua/oculus/window.lua",
 }
 local issue_selection_index = 1
-pantheon_window.show_issue_picker = function(context, items, callback)
+oculus_window.show_issue_picker = function(context, items, callback)
   assert(context.details.title == "Issue inspect fixture")
   assert(context.details.body:find(
-    "Review lua/pantheon/inspect.lua:10-12.",
+    "Review lua/oculus/inspect.lua:10-12.",
     1,
     true
   ))
@@ -616,7 +616,7 @@ pantheon_window.show_issue_picker = function(context, items, callback)
   assert(vim.fs.normalize(context.repository) == vim.fs.normalize(root))
   assert(context.default_source == vim.fs.dirname(root))
   assert(context.remote_url
-    == "https://github.com/andrewgilley/pantheon.nvim.git")
+    == "https://github.com/andrewgilley/oculus.nvim.git")
   if context.status then
     assert(context.status:find("Codex", 1, true))
     assert(#items == 1 and items[1].action == "cancel")
@@ -664,18 +664,18 @@ end
 local issue_tabs_before = vim.api.nvim_list_tabpages()
 local issue_lifecycle_complete = false
 local issue_lifecycle_error
-vim.g.pantheon_test_issue_origin_win = vim.api.nvim_get_current_win()
-vim.g.pantheon_test_issue_origin_number =
-  vim.wo[vim.g.pantheon_test_issue_origin_win].number
-vim.g.pantheon_test_issue_origin_relativenumber =
-  vim.wo[vim.g.pantheon_test_issue_origin_win].relativenumber
-vim.wo[vim.g.pantheon_test_issue_origin_win].number = true
-vim.wo[vim.g.pantheon_test_issue_origin_win].relativenumber = true
+vim.g.oculus_test_issue_origin_win = vim.api.nvim_get_current_win()
+vim.g.oculus_test_issue_origin_number =
+  vim.wo[vim.g.oculus_test_issue_origin_win].number
+vim.g.oculus_test_issue_origin_relativenumber =
+  vim.wo[vim.g.oculus_test_issue_origin_win].relativenumber
+vim.wo[vim.g.oculus_test_issue_origin_win].number = true
+vim.wo[vim.g.oculus_test_issue_origin_win].relativenumber = true
 local issue_ok, issue_err = inspect.open(
-  "https://github.com/andrewgilley/pantheon.nvim/issues/77",
+  "https://github.com/andrewgilley/oculus.nvim/issues/77",
   {
     inspect_repositories = {
-      ["andrewgilley/pantheon.nvim"] = root,
+      ["andrewgilley/oculus.nvim"] = root,
     },
     inspect_search_paths = { vim.fs.dirname(root) },
     inspect_issue_codex_runner = function(request, callback)
@@ -684,7 +684,7 @@ local issue_ok, issue_err = inspect.open(
       callback({
         candidates = {
           {
-            path = "lua/pantheon/window.lua",
+            path = "lua/oculus/window.lua",
             line = 20,
             last_line = 20,
             reason = "dispatches issue inspection",
@@ -722,7 +722,7 @@ assert(vim.wait(30000, function()
 end), "issue inspect tabs were not opened")
 assert(not issue_lifecycle_error, issue_lifecycle_error)
 github.issue = original_issue
-pantheon_window.show_issue_picker = original_show_issue_picker
+oculus_window.show_issue_picker = original_show_issue_picker
 local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 2)
 local issue_buffers = {}
@@ -732,7 +732,7 @@ local issue_sidebar_test = {
 }
 for index = #issue_tabs_before + 1, #issue_tabs_after do
   local tab = issue_tabs_after[index]
-  local state = vim.api.nvim_tabpage_get_var(tab, "pantheon_inspect")
+  local state = vim.api.nvim_tabpage_get_var(tab, "oculus_inspect")
   assert(state.kind == "issue")
   assert(state.role == "issue")
   assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
@@ -741,11 +741,11 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
   local issue_file_window_count = 0
   for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
     local candidate_buf = vim.api.nvim_win_get_buf(candidate)
-    if vim.bo[candidate_buf].filetype == "pantheon-inspect-files" then
+    if vim.bo[candidate_buf].filetype == "oculus-inspect-files" then
       sidebar_win = candidate
       issue_sidebar_test.buf = issue_sidebar_test.buf or candidate_buf
       assert(candidate_buf == issue_sidebar_test.buf)
-    elseif type(vim.b[candidate_buf].pantheon_inspect) == "table" then
+    elseif type(vim.b[candidate_buf].oculus_inspect) == "table" then
       win = candidate
       issue_file_window_count = issue_file_window_count + 1
     end
@@ -769,15 +769,15 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
   issue_buffers[#issue_buffers + 1] = buf
   assert(vim.bo[buf].modifiable)
   assert(vim.bo[buf].buftype == "")
-  assert(#vim.b[buf].pantheon_issue_sections >= 1)
+  assert(#vim.b[buf].oculus_issue_sections >= 1)
   local marks = vim.api.nvim_buf_get_extmarks(
     buf,
-    vim.api.nvim_get_namespaces().pantheon_inspect_issue,
+    vim.api.nvim_get_namespaces().oculus_inspect_issue,
     0,
     -1,
     { details = true }
   )
-  assert(#marks == #vim.b[buf].pantheon_issue_sections)
+  assert(#marks == #vim.b[buf].oculus_issue_sections)
   assert(marks[1][4].sign_text == "> ")
 end
 assert(vim.api.nvim_win_get_cursor(0)[1] == 10)
@@ -791,8 +791,8 @@ for line_number, line in ipairs(issue_sidebar_lines) do
   if line:match("^• ") then
     issue_file_lines[#issue_file_lines + 1] = line_number
     assert(
-      line:find("pantheon/inspect.lua", 1, true)
-        or line:find("pantheon/window.lua", 1, true)
+      line:find("oculus/inspect.lua", 1, true)
+        or line:find("oculus/window.lua", 1, true)
     )
     assert(not line:match(" P C"))
   elseif line:sub(1, 2) == "  "
@@ -805,7 +805,7 @@ end
 assert(#issue_file_lines == 2)
 assert(#issue_section_lines >= 2)
 local issue_sidebar_active =
-  vim.b[issue_sidebar_buf].pantheon_inspect_sidebar_active
+  vim.b[issue_sidebar_buf].oculus_inspect_sidebar_active
 assert(issue_sidebar_active.pair_index == 1)
 assert(issue_sidebar_active.role == "issue")
 assert(issue_sidebar_active.chunk_index == 1)
@@ -816,7 +816,7 @@ for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
   issue_buffers[1],
   "n"
 )) do
-  if mapping.desc == "Toggle Pantheon Inspect sidebar" then
+  if mapping.desc == "Toggle Oculus Inspect sidebar" then
     issue_toggle_mapping = mapping
   end
 end
@@ -829,9 +829,9 @@ for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
   issue_sidebar_buf,
   "n"
 )) do
-  if mapping.desc == "Open Pantheon Inspect sidebar item" then
+  if mapping.desc == "Open Oculus Inspect sidebar item" then
     issue_open_mapping = mapping
-  elseif mapping.desc == "Switch Pantheon file version" then
+  elseif mapping.desc == "Switch Oculus file version" then
     issue_version_mapping = mapping
   end
 end
@@ -854,8 +854,8 @@ assert(vim.wait(1000, function()
 end), "issue sidebar did not preview the second file")
 local second_issue_state =
   vim.b[vim.api.nvim_win_get_buf(issue_sidebar_test.main_windows[2])]
-    .pantheon_inspect
-assert(second_issue_state.file == "lua/pantheon/window.lua")
+    .oculus_inspect
+assert(second_issue_state.file == "lua/oculus/window.lua")
 issue_open_mapping.callback()
 assert(vim.api.nvim_get_current_win()
   == issue_sidebar_test.main_windows[2])
@@ -894,33 +894,33 @@ for _, buf in ipairs(issue_buffers) do
     vim.api.nvim_buf_delete(buf, { force = true })
   end
 end
-vim.wo[vim.g.pantheon_test_issue_origin_win].number =
-  vim.g.pantheon_test_issue_origin_number
-vim.wo[vim.g.pantheon_test_issue_origin_win].relativenumber =
-  vim.g.pantheon_test_issue_origin_relativenumber
-vim.g.pantheon_test_issue_origin_win = nil
-vim.g.pantheon_test_issue_origin_number = nil
-vim.g.pantheon_test_issue_origin_relativenumber = nil
+vim.wo[vim.g.oculus_test_issue_origin_win].number =
+  vim.g.oculus_test_issue_origin_number
+vim.wo[vim.g.oculus_test_issue_origin_win].relativenumber =
+  vim.g.oculus_test_issue_origin_relativenumber
+vim.g.oculus_test_issue_origin_win = nil
+vim.g.oculus_test_issue_origin_number = nil
+vim.g.oculus_test_issue_origin_relativenumber = nil
 
-local original_show_change_picker = pantheon_window.show_change_picker
+local original_show_change_picker = oculus_window.show_change_picker
 local selectable_change_one = {
   commit_index = 1,
-  parent_file = "lua/pantheon/inspect.lua",
-  change_file = "lua/pantheon/inspect.lua",
+  parent_file = "lua/oculus/inspect.lua",
+  change_file = "lua/oculus/inspect.lua",
   status = "M",
   repository = root,
 }
 local selectable_change_two = {
   commit_index = 2,
-  parent_file = "lua/pantheon/old.lua",
-  change_file = "lua/pantheon/new.lua",
+  parent_file = "lua/oculus/old.lua",
+  change_file = "lua/oculus/new.lua",
   status = "R",
   repository = root,
 }
 local selected_change_inspections
 local selected_change_error
 local change_picker_stage = 1
-pantheon_window.show_change_picker = function(context, choices, callback)
+oculus_window.show_change_picker = function(context, choices, callback)
   assert(context.kind == "change")
   assert(context.info.kind == "pull_request")
   if change_picker_stage == 1 then
@@ -929,7 +929,7 @@ pantheon_window.show_change_picker = function(context, choices, callback)
       if choice.inspection == selectable_change_two then
         assert(choice.label:find("commit 2", 1, true))
         assert(choice.label:find(
-          "lua/pantheon/old.lua → lua/pantheon/new.lua",
+          "lua/oculus/old.lua → lua/oculus/new.lua",
           1,
           true
         ))
@@ -953,57 +953,57 @@ inspect._select_change_inspections({
 }, {
   kind = "pull_request",
   owner = "andrewgilley",
-  repo = "pantheon.nvim",
+  repo = "oculus.nvim",
   number = 77,
   title = "Select changed files",
-  remote_url = "https://github.com/andrewgilley/pantheon.nvim.git",
+  remote_url = "https://github.com/andrewgilley/oculus.nvim.git",
 }, {
   inspect_search_paths = { vim.fs.dirname(root) },
 }, function(selected, err)
   selected_change_inspections = selected
   selected_change_error = err
 end)
-pantheon_window.show_change_picker = original_show_change_picker
+oculus_window.show_change_picker = original_show_change_picker
 assert(selected_change_inspections, selected_change_error)
 assert(#selected_change_inspections == 1)
 assert(selected_change_inspections[1] == selectable_change_two)
 
-local parent, change = inspect._first_changed_paths("M\tlua/pantheon/init.lua")
-assert(parent == "lua/pantheon/init.lua")
-assert(change == "lua/pantheon/init.lua")
+local parent, change = inspect._first_changed_paths("M\tlua/oculus/init.lua")
+assert(parent == "lua/oculus/init.lua")
+assert(change == "lua/oculus/init.lua")
 
 parent, change = inspect._first_changed_paths(
-  "R100\tlua/pantheon/old.lua\tlua/pantheon/new.lua"
+  "R100\tlua/oculus/old.lua\tlua/oculus/new.lua"
 )
-assert(parent == "lua/pantheon/old.lua")
-assert(change == "lua/pantheon/new.lua")
+assert(parent == "lua/oculus/old.lua")
+assert(change == "lua/oculus/new.lua")
 
 parent, change = inspect._first_changed_paths("")
 assert(parent == nil)
 assert(change == nil)
 
 local changed_files = inspect._parse_changed_files(table.concat({
-  "M\tlua/pantheon/inspect.lua",
-  "A\tlua/pantheon/new.lua",
-  "D\tlua/pantheon/old.lua",
+  "M\tlua/oculus/inspect.lua",
+  "A\tlua/oculus/new.lua",
+  "D\tlua/oculus/old.lua",
   "R100\tREADME.old.md\tREADME.md",
 }, "\n"))
 assert(#changed_files == 4)
 assert(changed_files[1].status == "M")
-assert(changed_files[2].new_path == "lua/pantheon/new.lua")
+assert(changed_files[2].new_path == "lua/oculus/new.lua")
 assert(changed_files[4].old_path == "README.old.md")
 assert(changed_files[4].new_path == "README.md")
 local oil_session = { changes = changed_files }
 assert(inspect._oil_entry_status(
   oil_session,
   "change",
-  "lua/pantheon/new.lua",
+  "lua/oculus/new.lua",
   false
 ) == "A")
 assert(inspect._oil_entry_status(
   oil_session,
   "parent",
-  "lua/pantheon/old.lua",
+  "lua/oculus/old.lua",
   false
 ) == "D")
 assert(inspect._oil_entry_status(
@@ -1015,7 +1015,7 @@ assert(inspect._oil_entry_status(
 assert(inspect._oil_entry_status(
   oil_session,
   "parent",
-  "lua/pantheon/new.lua",
+  "lua/oculus/new.lua",
   false
 ) == nil)
 
@@ -1116,7 +1116,7 @@ assert(vim.deep_equal(
   { 10, 24, 30 }
 ))
 
-local missing_root = vim.env.PANTHEON_INSPECT_TEST_MISSING_ROOT
+local missing_root = vim.env.OCULUS_INSPECT_TEST_MISSING_ROOT
 if missing_root then
   local original_select = vim.ui.select
   local prompted = false
@@ -1130,7 +1130,7 @@ if missing_root then
   local missing_error
   local missing_progress = 0
   local ok, err = inspect.open(
-    "https://github.com/pantheon/missing/commit/"
+    "https://github.com/oculus/missing/commit/"
       .. "0123456789abcdef0123456789abcdef01234567",
     {
       inspect_search_paths = { source_root },
@@ -1159,8 +1159,8 @@ if missing_root then
   assert(vim.uv.fs_stat(vim.fs.joinpath(missing_root, "repositories")) == nil)
 end
 
-local download_root = vim.env.PANTHEON_INSPECT_TEST_DOWNLOAD_ROOT
-local download_source = vim.env.PANTHEON_INSPECT_TEST_DOWNLOAD_SOURCE
+local download_root = vim.env.OCULUS_INSPECT_TEST_DOWNLOAD_ROOT
+local download_source = vim.env.OCULUS_INSPECT_TEST_DOWNLOAD_SOURCE
 
 local existing_repository = vim.fs.normalize(vim.fn.getcwd())
 local existing_repository_result
@@ -1168,7 +1168,7 @@ local existing_repository_error
 inspect._offer_repository_download({
   owner = "andrewgilley",
   repo = vim.fs.basename(existing_repository),
-  remote_url = "https://github.com/andrewgilley/pantheon.nvim.git",
+  remote_url = "https://github.com/andrewgilley/oculus.nvim.git",
 }, {
   inspect_search_paths = { vim.fs.dirname(existing_repository) },
 }, function(path, err)
@@ -1189,7 +1189,7 @@ if download_root and download_source then
   local downloaded
   local download_err
   inspect._offer_repository_download({
-    owner = "pantheon",
+    owner = "oculus",
     repo = "downloaded",
     remote_url = download_source,
   }, {
@@ -1208,33 +1208,33 @@ if download_root and download_source then
   assert(vim.uv.fs_stat(vim.fs.joinpath(downloaded, ".git")))
 end
 
-local integration_root = vim.env.PANTHEON_INSPECT_TEST_ROOT
-local integration_sha = vim.env.PANTHEON_INSPECT_TEST_SHA
-local integration_url = vim.env.PANTHEON_INSPECT_TEST_URL
+local integration_root = vim.env.OCULUS_INSPECT_TEST_ROOT
+local integration_sha = vim.env.OCULUS_INSPECT_TEST_SHA
+local integration_url = vim.env.OCULUS_INSPECT_TEST_URL
 local expected_pair_count = tonumber(
-  vim.env.PANTHEON_INSPECT_TEST_PAIR_COUNT
+  vim.env.OCULUS_INSPECT_TEST_PAIR_COUNT
 )
 local expected_commit_count = tonumber(
-  vim.env.PANTHEON_INSPECT_TEST_COMMIT_COUNT
+  vim.env.OCULUS_INSPECT_TEST_COMMIT_COUNT
 )
 if integration_root and (integration_sha or integration_url) then
   local integration_repository =
-    vim.env.PANTHEON_INSPECT_TEST_REPOSITORY or "pantheon/test"
-  local integration_source = vim.env.PANTHEON_INSPECT_TEST_SOURCE
+    vim.env.OCULUS_INSPECT_TEST_REPOSITORY or "oculus/test"
+  local integration_source = vim.env.OCULUS_INSPECT_TEST_SOURCE
   local integration_search_root =
-    vim.env.PANTHEON_INSPECT_TEST_SEARCH_ROOT
+    vim.env.OCULUS_INSPECT_TEST_SEARCH_ROOT
   local expected_source_root =
-    vim.env.PANTHEON_INSPECT_TEST_EXPECT_SOURCE_ROOT
+    vim.env.OCULUS_INSPECT_TEST_EXPECT_SOURCE_ROOT
       or integration_source
   local expect_no_worktrees =
-    vim.env.PANTHEON_INSPECT_TEST_NO_WORKTREES == "1"
+    vim.env.OCULUS_INSPECT_TEST_NO_WORKTREES == "1"
   local expect_no_external_state =
-    vim.env.PANTHEON_INSPECT_TEST_NO_EXTERNAL_STATE == "1"
+    vim.env.OCULUS_INSPECT_TEST_NO_EXTERNAL_STATE == "1"
   local verify_revision_content =
-    vim.env.PANTHEON_INSPECT_TEST_VERIFY_CONTENT == "1"
+    vim.env.OCULUS_INSPECT_TEST_VERIFY_CONTENT == "1"
   local select_changed_files =
-    vim.env.PANTHEON_INSPECT_TEST_SELECT_FILES == "1"
-  local integration_cwd = vim.env.PANTHEON_INSPECT_TEST_CWD
+    vim.env.OCULUS_INSPECT_TEST_SELECT_FILES == "1"
+  local integration_cwd = vim.env.OCULUS_INSPECT_TEST_CWD
   local repositories = {}
   local integration_is_pull_request = integration_url
     and integration_url:match("/pulls?/%d+")
@@ -1248,11 +1248,11 @@ if integration_root and (integration_sha or integration_url) then
   local initial_tab_count = #vim.api.nvim_list_tabpages()
   local initial_lazyredraw = vim.o.lazyredraw
   local activity_closed_after_tabs_ready = false
-  local pantheon_window = require("pantheon.window")
-  local original_window_close = pantheon_window.close
-  local original_show_change_picker = pantheon_window.show_change_picker
+  local oculus_window = require("oculus.window")
+  local original_window_close = oculus_window.close
+  local original_show_change_picker = oculus_window.show_change_picker
   local change_picker_opened = false
-  pantheon_window.show_change_picker = function(context, choices, callback)
+  oculus_window.show_change_picker = function(context, choices, callback)
     assert(
       select_changed_files,
       "changed-file picker opened without explicit opt-in"
@@ -1285,9 +1285,9 @@ if integration_root and (integration_sha or integration_url) then
     assert(select_all)
     callback(select_all)
   end
-  pantheon_window.close = function(...)
-    pantheon_window.close = original_window_close
-    pantheon_window.show_change_picker = original_show_change_picker
+  oculus_window.close = function(...)
+    oculus_window.close = original_window_close
+    oculus_window.show_change_picker = original_show_change_picker
     local ready_tabs = vim.api.nvim_list_tabpages()
     assert(vim.api.nvim_get_current_tabpage() == initial_tab)
     assert(#ready_tabs > initial_tab_count)
@@ -1296,7 +1296,7 @@ if integration_root and (integration_sha or integration_url) then
     for index = initial_tab_count + 1, #ready_tabs do
       local state = vim.api.nvim_tabpage_get_var(
         ready_tabs[index],
-        "pantheon_inspect"
+        "oculus_inspect"
       )
       assert(state.loading == false)
       assert(#vim.api.nvim_tabpage_list_wins(ready_tabs[index]) == 2)
@@ -1349,7 +1349,7 @@ if integration_root and (integration_sha or integration_url) then
       local state_ok, state = pcall(
         vim.api.nvim_tabpage_get_var,
         current_tabs[index],
-        "pantheon_inspect"
+        "oculus_inspect"
       )
       if state_ok and state.error then
         inspection_error = state.error
@@ -1366,7 +1366,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(not inspection_error, inspection_error)
   assert(activity_closed_after_tabs_ready)
   assert(change_picker_opened == select_changed_files)
-  pantheon_window.show_change_picker = original_show_change_picker
+  oculus_window.show_change_picker = original_show_change_picker
   assert(vim.o.lazyredraw == initial_lazyredraw)
 
   local tabs = vim.api.nvim_list_tabpages()
@@ -1383,7 +1383,7 @@ if integration_root and (integration_sha or integration_url) then
   local function inspection_window(tab)
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
       local buf = vim.api.nvim_win_get_buf(win)
-      if type(vim.b[buf].pantheon_inspect) == "table" then
+      if type(vim.b[buf].oculus_inspect) == "table" then
         return win
       end
     end
@@ -1391,7 +1391,7 @@ if integration_root and (integration_sha or integration_url) then
   local function sidebar_window(tab)
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
       local buf = vim.api.nvim_win_get_buf(win)
-      if vim.bo[buf].filetype == "pantheon-inspect-files" then
+      if vim.bo[buf].filetype == "oculus-inspect-files" then
         return win
       end
     end
@@ -1414,7 +1414,7 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_win_get_buf(initial_parent_win),
     "n"
   )) do
-    if mapping.desc == "Toggle Pantheon Inspect sidebar"
+    if mapping.desc == "Toggle Oculus Inspect sidebar"
     then
       initial_sidebar_toggle = mapping
       break
@@ -1476,11 +1476,11 @@ if integration_root and (integration_sha or integration_url) then
       > vim.api.nvim_win_get_position(new_main_win)[2])
     local old_state = vim.api.nvim_tabpage_get_var(
       old_tab,
-      "pantheon_inspect"
+      "oculus_inspect"
     )
     local new_state = vim.api.nvim_tabpage_get_var(
       new_tab,
-      "pantheon_inspect"
+      "oculus_inspect"
     )
     assert(old_state.role == (integration_is_pull_request and "old" or "parent"))
     assert(new_state.role == "change")
@@ -1519,14 +1519,14 @@ if integration_root and (integration_sha or integration_url) then
     buffers[new_buf] = true
     local old_name = vim.api.nvim_buf_get_name(old_buf)
     local new_name = vim.api.nvim_buf_get_name(new_buf)
-    assert(not old_name:lower():match("pantheon%-inspect"))
-    assert(not new_name:lower():match("pantheon%-inspect"))
+    assert(not old_name:lower():match("oculus%-inspect"))
+    assert(not new_name:lower():match("oculus%-inspect"))
     assert(not old_name:match(" Old "))
     assert(not old_name:match(" New "))
     assert(not new_name:match(" Old "))
     assert(not new_name:match(" New "))
-    assert(vim.b[old_buf].pantheon_inspect_repository)
-    assert(vim.b[new_buf].pantheon_inspect_repository)
+    assert(vim.b[old_buf].oculus_inspect_repository)
+    assert(vim.b[new_buf].oculus_inspect_repository)
     if expected_source_root then
       local old_cwd = vim.fn.getcwd(
         -1,
@@ -1607,11 +1607,11 @@ if integration_root and (integration_sha or integration_url) then
   end
   local parent_state = vim.api.nvim_tabpage_get_var(
     tabs[2],
-    "pantheon_inspect"
+    "oculus_inspect"
   )
   local change_state = vim.api.nvim_tabpage_get_var(
     tabs[3],
-    "pantheon_inspect"
+    "oculus_inspect"
   )
   assert(parent_state.role
     == (integration_is_pull_request and "old" or "parent"))
@@ -1646,7 +1646,7 @@ if integration_root and (integration_sha or integration_url) then
     ))
   end
   local namespaces = vim.api.nvim_get_namespaces()
-  local signs = namespaces.pantheon_inspect_changes
+  local signs = namespaces.oculus_inspect_changes
   assert(signs)
   local parent_marks = vim.api.nvim_buf_get_extmarks(
     parent_buf,
@@ -1660,8 +1660,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(parent_sign == "-" or parent_sign == "+")
   assert(parent_marks[1][4].sign_hl_group
     == (parent_sign == "-"
-        and "PantheonInspectRemoved"
-      or "PantheonInspectAdded"))
+        and "OculusInspectRemoved"
+      or "OculusInspectAdded"))
   assert(vim.wo[parent_win].signcolumn == "yes")
   local change_marks = vim.api.nvim_buf_get_extmarks(
     change_buf,
@@ -1687,17 +1687,17 @@ if integration_root and (integration_sha or integration_url) then
   local sidebar_tab_mapped = false
   local sidebar_leader_toggle
   for _, mapping in ipairs(jump_maps) do
-    if mapping.desc == "Previous Pantheon change" then
+    if mapping.desc == "Previous Oculus change" then
       previous_mapped = mapping.lhs == "<C-Left>"
-    elseif mapping.desc == "Next Pantheon change" then
+    elseif mapping.desc == "Next Oculus change" then
       next_mapped = mapping.lhs == "<C-Right>"
-    elseif mapping.desc == "Toggle Pantheon file version" then
+    elseif mapping.desc == "Toggle Oculus file version" then
       toggle_mapped = mapping.lhs == "<Tab>"
-    elseif mapping.desc == "Switch Pantheon file version" then
+    elseif mapping.desc == "Switch Oculus file version" then
       switch_mapped = mapping.lhs == "<C-S>"
-    elseif mapping.desc == "Next Pantheon changed file" then
+    elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapped = mapping.lhs == "<C-N>"
-    elseif mapping.desc == "Toggle Pantheon Inspect sidebar" then
+    elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
       if mapping.lhs == "<C-I>" then
         sidebar_ctrl_i_mapped = true
       elseif mapping.lhs == "<Tab>" then
@@ -1727,7 +1727,7 @@ if integration_root and (integration_sha or integration_url) then
     sidebar_buf,
     "n"
   )) do
-    if mapping.desc == "Toggle Pantheon Inspect sidebar" then
+    if mapping.desc == "Toggle Oculus Inspect sidebar" then
       if mapping.lhs == "<C-I>" then
         sidebar_ctrl_i_from_sidebar = true
       elseif mapping.lhs == "<Tab>" then
@@ -1735,9 +1735,9 @@ if integration_root and (integration_sha or integration_url) then
       else
         sidebar_leader_toggle_from_sidebar = mapping
       end
-    elseif mapping.desc == "Open Pantheon Inspect sidebar item" then
+    elseif mapping.desc == "Open Oculus Inspect sidebar item" then
       sidebar_open_mapping = mapping
-    elseif mapping.desc == "Switch Pantheon file version" then
+    elseif mapping.desc == "Switch Oculus file version" then
       sidebar_switch_mapping = mapping
     end
   end
@@ -1776,7 +1776,7 @@ if integration_root and (integration_sha or integration_url) then
 
   vim.api.nvim_set_current_tabpage(tabs[2])
   local sidebar_active = vim.b[sidebar_buf]
-    .pantheon_inspect_sidebar_active
+    .oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "parent")
   assert(sidebar_active.chunk_index == 1)
@@ -1786,7 +1786,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_win_get_cursor(initial_sidebar_win)[1]
     == file_lines[1] + sidebar_active.chunk_index)
   local sidebar_signs = vim.api.nvim_get_namespaces()
-    .pantheon_inspect_sidebar
+    .oculus_inspect_sidebar
   assert(sidebar_signs)
   assert(#vim.api.nvim_buf_get_extmarks(
     sidebar_buf,
@@ -1809,19 +1809,19 @@ if integration_root and (integration_sha or integration_url) then
     assert(file_line_lookup[mark[2] + 1])
     assert(mark[4].line_hl_group == nil)
     assert(mark[4].hl_group
-      ~= "PantheonInspectSidebarChunkActive")
+      ~= "OculusInspectSidebarChunkActive")
     assert(mark[4].hl_group
-      ~= "PantheonInspectSidebarCurrent")
+      ~= "OculusInspectSidebarCurrent")
   end
   local normal_hl =
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local parent_hl = vim.api.nvim_get_hl(
     0,
-    { name = "PantheonInspectSidebarParent", link = false }
+    { name = "OculusInspectSidebarParent", link = false }
   )
   local change_hl = vim.api.nvim_get_hl(
     0,
-    { name = "PantheonInspectSidebarChange", link = false }
+    { name = "OculusInspectSidebarChange", link = false }
   )
   assert(parent_hl.fg
     == vim.api.nvim_get_hl(
@@ -1833,11 +1833,11 @@ if integration_root and (integration_sha or integration_url) then
   assert(change_hl.bg == normal_hl.bg)
   local parent_active_hl = vim.api.nvim_get_hl(
     0,
-    { name = "PantheonInspectSidebarParentActive", link = false }
+    { name = "OculusInspectSidebarParentActive", link = false }
   )
   local change_active_hl = vim.api.nvim_get_hl(
     0,
-    { name = "PantheonInspectSidebarChangeActive", link = false }
+    { name = "OculusInspectSidebarChangeActive", link = false }
   )
   assert(parent_active_hl.underline == true)
   assert(change_active_hl.underline == true)
@@ -1865,9 +1865,9 @@ if integration_root and (integration_sha or integration_url) then
     return groups
   end
   local visible_role_groups = sidebar_role_groups(file_lines[1])
-  assert(visible_role_groups.PantheonInspectSidebarParentActive)
-  assert(visible_role_groups.PantheonInspectSidebarChange)
-  assert(not visible_role_groups.PantheonInspectSidebarChangeActive)
+  assert(visible_role_groups.OculusInspectSidebarParentActive)
+  assert(visible_role_groups.OculusInspectSidebarChange)
+  assert(not visible_role_groups.OculusInspectSidebarChangeActive)
   assert(vim.fs.normalize(vim.api.nvim_buf_get_name(parent_buf)):lower()
     == vim.fs.normalize(parent_state.source_path):lower())
   local initial_cursor = vim.api.nvim_win_get_cursor(change_win)
@@ -1920,14 +1920,14 @@ if integration_root and (integration_sha or integration_url) then
   })
   assert(vim.wait(1000, function()
     local active = vim.b[sidebar_buf]
-      .pantheon_inspect_sidebar_active
+      .oculus_inspect_sidebar_active
     return vim.api.nvim_get_current_tabpage() == tabs[2]
       and vim.api.nvim_get_current_win() == sidebar_parent_win
       and active.chunk_index == selected_chunk
   end), "sidebar chunk did not open in the main pane")
   local selected_parent_line =
     vim.api.nvim_win_get_cursor(parent_win)[1]
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.chunk_index == selected_chunk)
   local selected_view = vim.api.nvim_win_call(
     parent_win,
@@ -1950,7 +1950,7 @@ if integration_root and (integration_sha or integration_url) then
     == selected_chunk_line)
   assert(vim.fn.winsaveview().topline
     == parent_sidebar_view.topline)
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")
   sidebar_switch_mapping.callback()
@@ -1958,7 +1958,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
   assert(vim.api.nvim_win_get_cursor(sidebar_parent_win)[1]
     == selected_chunk_line)
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
   sidebar_open_mapping.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
@@ -1986,20 +1986,20 @@ if integration_root and (integration_sha or integration_url) then
     false
   )
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")
   visible_role_groups = sidebar_role_groups(file_lines[1])
-  assert(visible_role_groups.PantheonInspectSidebarParent)
-  assert(visible_role_groups.PantheonInspectSidebarChangeActive)
-  assert(not visible_role_groups.PantheonInspectSidebarParentActive)
+  assert(visible_role_groups.OculusInspectSidebarParent)
+  assert(visible_role_groups.OculusInspectSidebarChangeActive)
+  assert(not visible_role_groups.OculusInspectSidebarParentActive)
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
     "x",
     false
   )
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
-  sidebar_active = vim.b[sidebar_buf].pantheon_inspect_sidebar_active
+  sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
   vim.api.nvim_feedkeys(
     vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
@@ -2048,7 +2048,7 @@ if integration_root and (integration_sha or integration_url) then
     })
     assert(vim.api.nvim_get_current_win() == second_sidebar_win)
     sidebar_active = vim.b[sidebar_buf]
-      .pantheon_inspect_sidebar_active
+      .oculus_inspect_sidebar_active
     assert(sidebar_active.pair_index == 2)
     assert(sidebar_active.role == "parent")
     local second_first_parent_line =
@@ -2125,7 +2125,7 @@ if integration_root and (integration_sha or integration_url) then
         return false
       end
       local oil_signs = vim.api.nvim_get_namespaces()
-        .pantheon_inspect_oil
+        .oculus_inspect_oil
       return oil_signs
         and #vim.api.nvim_buf_get_extmarks(
           oil_buf,
@@ -2134,13 +2134,13 @@ if integration_root and (integration_sha or integration_url) then
           -1,
           {}
         ) > 0
-        and type(vim.b[oil_buf].pantheon_inspect_oil_origin)
+        and type(vim.b[oil_buf].oculus_inspect_oil_origin)
           == "table"
     end), "Oil entries were not decorated")
     local oil_buf = vim.api.nvim_get_current_buf()
     assert(vim.fs.normalize(oil.get_current_dir()):lower()
       == vim.fs.normalize(change_state.directory):lower())
-    local oil_origin = vim.b[oil_buf].pantheon_inspect_oil_origin
+    local oil_origin = vim.b[oil_buf].oculus_inspect_oil_origin
     assert(type(oil_origin) == "table")
     assert(oil_origin.source_buf == change_buf)
     assert(oil_origin.filename == vim.fs.basename(
@@ -2157,7 +2157,7 @@ if integration_root and (integration_sha or integration_url) then
       assert(not sidebar_window(tabs[pair_index * 2]))
       assert(not sidebar_window(tabs[pair_index * 2 + 1]))
     end
-    local oil_signs = vim.api.nvim_get_namespaces().pantheon_inspect_oil
+    local oil_signs = vim.api.nvim_get_namespaces().oculus_inspect_oil
     local oil_marks = vim.api.nvim_buf_get_extmarks(
       oil_buf,
       oil_signs,
@@ -2182,7 +2182,7 @@ if integration_root and (integration_sha or integration_url) then
       vim.fn.maparg("l", "n", false, true)
     assert(
       oil_select_mapping.desc
-        == "Select Pantheon Inspect Oil entry",
+        == "Select Oculus Inspect Oil entry",
       "unexpected Oil select mapping: "
         .. vim.inspect(oil_select_mapping)
     )

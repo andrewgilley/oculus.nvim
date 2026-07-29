@@ -1,14 +1,14 @@
 local M = {}
 
-local github = require("pantheon.github")
-local codeberg = require("pantheon.codeberg")
+local github = require("oculus.github")
+local codeberg = require("oculus.codeberg")
 
 local active = false
-local change_ns = vim.api.nvim_create_namespace("pantheon_inspect_changes")
-local issue_ns = vim.api.nvim_create_namespace("pantheon_inspect_issue")
-local oil_ns = vim.api.nvim_create_namespace("pantheon_inspect_oil")
+local change_ns = vim.api.nvim_create_namespace("oculus_inspect_changes")
+local issue_ns = vim.api.nvim_create_namespace("oculus_inspect_issue")
+local oil_ns = vim.api.nvim_create_namespace("oculus_inspect_oil")
 local sidebar_ns =
-  vim.api.nvim_create_namespace("pantheon_inspect_sidebar")
+  vim.api.nvim_create_namespace("oculus_inspect_sidebar")
 local sessions = {}
 local sidebar_groups = {}
 local next_session = 0
@@ -1277,7 +1277,7 @@ local function select_issue_candidates(
   local selected = {}
   local codex_requested = false
   local finished = false
-  local window = require("pantheon.window")
+  local window = require("oculus.window")
   page_context = vim.deepcopy(page_context or {})
   local function cancel(message)
     if finished then
@@ -1414,7 +1414,7 @@ local function select_issue_candidates(
           page_context.status = nil
           if not additions then
             vim.notify(
-              "Pantheon: " .. tostring(codex_err),
+              "Oculus: " .. tostring(codex_err),
               vim.log.levels.WARN
             )
             prompt()
@@ -1460,7 +1460,7 @@ local function select_change_inspections(
 )
   local selected = {}
   local finished = false
-  local window = require("pantheon.window")
+  local window = require("oculus.window")
   local commit_indices = {}
   for _, inspection in ipairs(inspections) do
     commit_indices[inspection.commit_index or 1] = true
@@ -1735,7 +1735,7 @@ end
 local function update_session_buffer(win, buf)
   local name = vim.api.nvim_buf_get_name(buf)
   if vim.bo[buf].filetype == "oil"
-    or vim.bo[buf].filetype == "pantheon-inspect-files"
+    or vim.bo[buf].filetype == "oculus-inspect-files"
     or name:match("^oil://")
   then
     return
@@ -1753,7 +1753,7 @@ local function show_inspection_path(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local state = vim.b[buf].pantheon_inspect
+  local state = vim.b[buf].oculus_inspect
   if type(state) ~= "table"
     or type(state.source_path) ~= "string"
     or state.source_path == ""
@@ -1763,7 +1763,7 @@ local function show_inspection_path(buf)
   for _, other in ipairs(vim.api.nvim_list_bufs()) do
     if other ~= buf
       and vim.api.nvim_buf_is_valid(other)
-      and type(vim.b[other].pantheon_inspect) == "table"
+      and type(vim.b[other].oculus_inspect) == "table"
       and vim.api.nvim_buf_get_name(other) ~= ""
     then
       pcall(vim.api.nvim_buf_set_name, other, "")
@@ -1861,7 +1861,7 @@ local function sync_window(source_win)
 end
 
 local sync_group = vim.api.nvim_create_augroup(
-  "PantheonInspectSync",
+  "OculusInspectSync",
   { clear = true }
 )
 
@@ -2032,15 +2032,15 @@ local function oil_entry_status(session, role, path, directory)
 end
 
 local oil_status = {
-  A = { sign = "+", highlight = "PantheonOilAdded" },
-  C = { sign = "+", highlight = "PantheonOilAdded" },
-  D = { sign = "-", highlight = "PantheonOilDeleted" },
-  M = { sign = "~", highlight = "PantheonOilModified" },
-  R = { sign = "→", highlight = "PantheonOilRenamed" },
-  T = { sign = "~", highlight = "PantheonOilModified" },
+  A = { sign = "+", highlight = "OculusOilAdded" },
+  C = { sign = "+", highlight = "OculusOilAdded" },
+  D = { sign = "-", highlight = "OculusOilDeleted" },
+  M = { sign = "~", highlight = "OculusOilModified" },
+  R = { sign = "→", highlight = "OculusOilRenamed" },
+  T = { sign = "~", highlight = "OculusOilModified" },
   directory = {
     sign = "•",
-    highlight = "PantheonOilDirectory",
+    highlight = "OculusOilDirectory",
   },
 }
 
@@ -2135,7 +2135,7 @@ local function map_oil_origin_selection(buf, context, oil)
       return vim.fn.maparg(lhs, "n", false, true)
     end)
     if original.buffer == 1
-      and original.desc ~= "Select Pantheon Inspect Oil entry"
+      and original.desc ~= "Select Oculus Inspect Oil entry"
     then
       vim.keymap.set("n", lhs, function()
         local entry = oil.get_cursor_entry()
@@ -2155,7 +2155,7 @@ local function map_oil_origin_selection(buf, context, oil)
         buffer = buf,
         nowait = true,
         silent = true,
-        desc = "Select Pantheon Inspect Oil entry",
+        desc = "Select Oculus Inspect Oil entry",
       })
     end
   end
@@ -2245,7 +2245,7 @@ local function configure_inspection_oil_buffer(buf)
   if not endpoint or not vim.api.nvim_buf_is_valid(endpoint.buf) then
     return
   end
-  local state = vim.b[endpoint.buf].pantheon_inspect
+  local state = vim.b[endpoint.buf].oculus_inspect
   local source_path = type(state) == "table" and state.source_path or nil
   if type(source_path) ~= "string" or source_path == "" then
     return
@@ -2259,7 +2259,7 @@ local function configure_inspection_oil_buffer(buf)
     filename = vim.fs.basename(source_path),
     source_buf = endpoint.buf,
   }
-  vim.b[buf].pantheon_inspect_oil_origin = vim.deepcopy(context)
+  vim.b[buf].oculus_inspect_oil_origin = vim.deepcopy(context)
 
   local group = sidebar_group_for_session(session)
   context.group = group
@@ -2293,23 +2293,23 @@ end
 
 local function set_oil_highlights()
   local background = highlight_background("Normal")
-  vim.api.nvim_set_hl(0, "PantheonOilAdded", {
+  vim.api.nvim_set_hl(0, "OculusOilAdded", {
     fg = highlight_foreground("DiagnosticOk", 0x9ae6b4),
     bg = background,
   })
-  vim.api.nvim_set_hl(0, "PantheonOilDeleted", {
+  vim.api.nvim_set_hl(0, "OculusOilDeleted", {
     fg = highlight_foreground("DiagnosticError", 0xf87171),
     bg = background,
   })
-  vim.api.nvim_set_hl(0, "PantheonOilModified", {
+  vim.api.nvim_set_hl(0, "OculusOilModified", {
     fg = highlight_foreground("DiagnosticWarn", 0xfbd38d),
     bg = background,
   })
-  vim.api.nvim_set_hl(0, "PantheonOilRenamed", {
+  vim.api.nvim_set_hl(0, "OculusOilRenamed", {
     fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
     bg = background,
   })
-  vim.api.nvim_set_hl(0, "PantheonOilDirectory", {
+  vim.api.nvim_set_hl(0, "OculusOilDirectory", {
     fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
     bg = background,
   })
@@ -2318,7 +2318,7 @@ end
 set_oil_highlights()
 
 local oil_group = vim.api.nvim_create_augroup(
-  "PantheonInspectOil",
+  "OculusInspectOil",
   { clear = true }
 )
 
@@ -2396,21 +2396,21 @@ local function set_change_highlights()
     vim.api.nvim_get_hl(0, { name = "DiagnosticOk", link = false })
   local diagnostic_info =
     vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
-  vim.api.nvim_set_hl(0, "PantheonInspectRemoved", {
+  vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
     fg = diff_delete.fg
       or diff_delete.bg
       or diagnostic_error.fg
       or 0xe06c75,
     bg = normal.bg,
   })
-  vim.api.nvim_set_hl(0, "PantheonInspectAdded", {
+  vim.api.nvim_set_hl(0, "OculusInspectAdded", {
     fg = diff_add.fg
       or diff_add.bg
       or diagnostic_ok.fg
       or 0x00c853,
     bg = normal.bg,
   })
-  vim.api.nvim_set_hl(0, "PantheonIssueSection", {
+  vim.api.nvim_set_hl(0, "OculusIssueSection", {
     fg = diagnostic_info.fg or 0x61afef,
     bg = normal.bg,
   })
@@ -2435,8 +2435,8 @@ local function apply_change_signs(parent_buf, change_buf, hunks)
       hunk.old_count,
       hunk.old_count == 0 and "+" or "-",
       hunk.old_count == 0
-          and "PantheonInspectAdded"
-        or "PantheonInspectRemoved"
+          and "OculusInspectAdded"
+        or "OculusInspectRemoved"
     )
     place_range(
       change_buf,
@@ -2444,19 +2444,19 @@ local function apply_change_signs(parent_buf, change_buf, hunks)
       hunk.new_count,
       hunk.new_count == 0 and "-" or "+",
       hunk.new_count == 0
-          and "PantheonInspectRemoved"
-        or "PantheonInspectAdded"
+          and "OculusInspectRemoved"
+        or "OculusInspectAdded"
     )
   end
 end
 
 local function refresh_buffer_highlighting(buf)
   if not vim.api.nvim_buf_is_valid(buf)
-    or type(vim.b[buf].pantheon_inspect) ~= "table"
+    or type(vim.b[buf].oculus_inspect) ~= "table"
   then
     return false
   end
-  if vim.b[buf].pantheon_inspect_highlighting_refreshed then
+  if vim.b[buf].oculus_inspect_highlighting_refreshed then
     return true
   end
 
@@ -2492,7 +2492,7 @@ local function refresh_buffer_highlighting(buf)
   if not inspection_tabs_loading then
     vim.cmd("redraw")
   end
-  vim.b[buf].pantheon_inspect_highlighting_refreshed = true
+  vim.b[buf].oculus_inspect_highlighting_refreshed = true
   return true
 end
 
@@ -2500,7 +2500,7 @@ local function apply_inspection_filetype(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local state = vim.b[buf].pantheon_inspect
+  local state = vim.b[buf].oculus_inspect
   if type(state) ~= "table" then
     return
   end
@@ -2519,7 +2519,7 @@ local function apply_inspection_filetype(buf)
     return
   end
   if vim.bo[buf].filetype ~= filetype then
-    vim.b[buf].pantheon_inspect_highlighting_refreshed = false
+    vim.b[buf].oculus_inspect_highlighting_refreshed = false
     vim.bo[buf].filetype = filetype
   end
   local reliquary_ok, reliquary = pcall(require, "reliquary")
@@ -2535,7 +2535,7 @@ end
 
 local function replace_inspection_lines(endpoint, lines)
   if not valid_endpoint(endpoint)
-    or type(vim.b[endpoint.buf].pantheon_inspect) ~= "table"
+    or type(vim.b[endpoint.buf].oculus_inspect) ~= "table"
   then
     return false
   end
@@ -2646,7 +2646,7 @@ local function map_file_navigation(endpoint, session, role)
     buffer = endpoint.buf,
     nowait = true,
     silent = true,
-    desc = "Switch Pantheon file version",
+    desc = "Switch Oculus file version",
   })
 end
 
@@ -2821,23 +2821,23 @@ refresh_sidebar = function(group, tab)
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local parent_hl =
     vim.api.nvim_get_hl(0, { name = "DiagnosticError", link = false })
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarParent", {
+  vim.api.nvim_set_hl(0, "OculusInspectSidebarParent", {
     fg = parent_hl.fg or 0xe06c75,
     bg = normal_hl.bg,
     default = true,
   })
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarParentActive", {
+  vim.api.nvim_set_hl(0, "OculusInspectSidebarParentActive", {
     fg = parent_hl.fg or 0xe06c75,
     bg = normal_hl.bg,
     underline = true,
     default = true,
   })
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarChange", {
+  vim.api.nvim_set_hl(0, "OculusInspectSidebarChange", {
     fg = 0x00c853,
     bg = normal_hl.bg,
     default = true,
   })
-  vim.api.nvim_set_hl(0, "PantheonInspectSidebarChangeActive", {
+  vim.api.nvim_set_hl(0, "OculusInspectSidebarChangeActive", {
     fg = 0x00c853,
     bg = normal_hl.bg,
     underline = true,
@@ -2906,8 +2906,8 @@ refresh_sidebar = function(group, tab)
           end_col = row.parent_column + 1,
           hl_group = index == active_index
               and active_role == "parent"
-              and "PantheonInspectSidebarParentActive"
-            or "PantheonInspectSidebarParent",
+              and "OculusInspectSidebarParentActive"
+            or "OculusInspectSidebarParent",
           priority = 100,
         }
       )
@@ -2920,14 +2920,14 @@ refresh_sidebar = function(group, tab)
           end_col = row.change_column + 1,
           hl_group = index == active_index
               and active_role == "change"
-              and "PantheonInspectSidebarChangeActive"
-            or "PantheonInspectSidebarChange",
+              and "OculusInspectSidebarChangeActive"
+            or "OculusInspectSidebarChange",
           priority = 100,
         }
       )
     end
   end
-  vim.b[buf].pantheon_inspect_sidebar_active = {
+  vim.b[buf].oculus_inspect_sidebar_active = {
     pair_index = active_index,
     role = active_role,
     chunk_index = active_chunk,
@@ -3031,7 +3031,7 @@ local function map_inspection_sidebar_toggle(group)
   local opts = {
     nowait = true,
     silent = true,
-    desc = "Toggle Pantheon Inspect sidebar",
+    desc = "Toggle Oculus Inspect sidebar",
   }
   local function map_buffer(buf)
     vim.keymap.set("n", "<leader>pi", function()
@@ -3057,7 +3057,7 @@ local function map_inspection_sidebar_toggle(group)
     buffer = group.sidebar_buf,
     nowait = true,
     silent = true,
-    desc = "Open Pantheon Inspect sidebar item",
+    desc = "Open Oculus Inspect sidebar item",
   })
   if group.kind ~= "issue" then
     vim.keymap.set("n", "<C-s>", function()
@@ -3066,7 +3066,7 @@ local function map_inspection_sidebar_toggle(group)
       buffer = group.sidebar_buf,
       nowait = true,
       silent = true,
-      desc = "Switch Pantheon file version",
+      desc = "Switch Oculus file version",
     })
   end
 end
@@ -3131,7 +3131,7 @@ local function prepare_inspection_sidebar(group)
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
-  vim.bo[buf].filetype = "pantheon-inspect-files"
+  vim.bo[buf].filetype = "oculus-inspect-files"
 end
 
 local function activate_inspection_sidebar(group)
@@ -3458,7 +3458,7 @@ local function comment_float(endpoint, comment)
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
-  vim.b[buf].pantheon_inspect_comment = vim.deepcopy(comment)
+  vim.b[buf].oculus_inspect_comment = vim.deepcopy(comment)
   endpoint.comment_buf = buf
   endpoint.comment_win = win
   return {
@@ -3557,7 +3557,7 @@ local function show_loading_error(loading, message)
   if not emit_loading(loading, "on_complete", message) then
     vim.schedule(function()
       vim.notify(
-        "Pantheon: " .. tostring(message),
+        "Oculus: " .. tostring(message),
         vim.log.levels.WARN
       )
     end)
@@ -3596,9 +3596,9 @@ local function load_tab(
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = false
   vim.bo[buf].readonly = true
-  vim.b[buf].pantheon_inspect_repository = path
-  vim.b[buf].pantheon_inspect_directory = working_directory
-  vim.b[buf].pantheon_inspect_source_path =
+  vim.b[buf].oculus_inspect_repository = path
+  vim.b[buf].oculus_inspect_directory = working_directory
+  vim.b[buf].oculus_inspect_source_path =
     file and vim.fs.joinpath(path, file) or nil
   local state = {
     kind = inspection.kind,
@@ -3621,8 +3621,8 @@ local function load_tab(
     change_file = inspection.change_file,
     status = inspection.status,
   }
-  vim.t.pantheon_inspect = state
-  vim.b[buf].pantheon_inspect = vim.deepcopy(state)
+  vim.t.oculus_inspect = state
+  vim.b[buf].oculus_inspect = vim.deepcopy(state)
   show_inspection_path(buf)
   local loaded = {
     tab = vim.api.nvim_get_current_tabpage(),
@@ -3766,7 +3766,7 @@ local function open_tabs(
       error("the first inspection tab was not created")
     end
     stop_loading(loading)
-    require("pantheon.window").close()
+    require("oculus.window").close()
     vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
     show_inspection_path(first.buf)
@@ -4156,12 +4156,12 @@ local function open_issue_tabs(
         file_index = index,
         file_count = #files,
       }
-      vim.t.pantheon_inspect = vim.deepcopy(state)
-      vim.b[buf].pantheon_inspect = vim.deepcopy(state)
-      vim.b[buf].pantheon_inspect_repository = repository
-      vim.b[buf].pantheon_inspect_directory = state.directory
-      vim.b[buf].pantheon_inspect_source_path = source_path
-      vim.b[buf].pantheon_issue_sections = vim.deepcopy(file.sections)
+      vim.t.oculus_inspect = vim.deepcopy(state)
+      vim.b[buf].oculus_inspect = vim.deepcopy(state)
+      vim.b[buf].oculus_inspect_repository = repository
+      vim.b[buf].oculus_inspect_directory = state.directory
+      vim.b[buf].oculus_inspect_source_path = source_path
+      vim.b[buf].oculus_issue_sections = vim.deepcopy(file.sections)
       vim.wo[win].signcolumn = "yes"
       vim.wo[win].wrap = false
       apply_inspection_number_options(win, number_options)
@@ -4171,7 +4171,7 @@ local function open_issue_tabs(
         local line = math.min(math.max(1, section.line), line_count)
         vim.api.nvim_buf_set_extmark(buf, issue_ns, line - 1, 0, {
           sign_text = ">",
-          sign_hl_group = "PantheonIssueSection",
+          sign_hl_group = "OculusIssueSection",
           priority = 55,
         })
       end
@@ -4190,7 +4190,7 @@ local function open_issue_tabs(
     activate_inspection_sidebar(issue_sessions)
     local first = loaded[1]
     stop_loading(loading)
-    require("pantheon.window").close()
+    require("oculus.window").close()
     vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
     show_inspection_path(first.buf)
@@ -4293,7 +4293,7 @@ function M.open(url, opts, context, lifecycle)
     number = vim.wo.number,
     relativenumber = vim.wo.relativenumber,
   }
-  local window_ok, window = pcall(require, "pantheon.window")
+  local window_ok, window = pcall(require, "oculus.window")
   if window_ok and type(window.inspection_window_options) == "function" then
     number_options = window.inspection_window_options() or number_options
   end

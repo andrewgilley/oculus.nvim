@@ -31,7 +31,7 @@ end
 local function request_json(url, opts, callback)
   if vim.fn.executable("curl") ~= 1 then
     vim.schedule(function()
-      callback(nil, "Pantheon requires curl to load Codeberg activity")
+      callback(nil, "Oculus requires curl to load Codeberg activity")
     end)
     return
   end
@@ -45,7 +45,7 @@ local function request_json(url, opts, callback)
     "-H",
     "Accept: application/json",
     "-H",
-    "User-Agent: pantheon.nvim",
+    "User-Agent: oculus.nvim",
     "-w",
     "\n%{http_code}",
   }
@@ -324,7 +324,7 @@ function M.normalize_activity(activity)
   local operation = tostring(activity.op_type or "activity")
     :gsub("_", " ")
     :gsub("^%l", string.upper)
-  normalized.pantheon_text = operation .. " in " .. normalized.repo.name
+  normalized.oculus_text = operation .. " in " .. normalized.repo.name
   return normalized
 end
 

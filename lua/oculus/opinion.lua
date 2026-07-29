@@ -4,7 +4,7 @@ local defaults = {
   width = 0.64,
   height = 0.70,
   border = "rounded",
-  title = " Pantheon opinion ",
+  title = " Oculus opinion ",
   filetype = "markdown",
 }
 
@@ -121,7 +121,7 @@ local function open_view(opts)
     pending = false,
     opts = opts,
   }
-  vim.api.nvim_buf_set_name(buf, ("pantheon-opinion://%d"):format(view.id))
+  vim.api.nvim_buf_set_name(buf, ("oculus-opinion://%d"):format(view.id))
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
@@ -142,7 +142,7 @@ local function open_view(opts)
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Close Pantheon opinion",
+    desc = "Close Oculus opinion",
   })
   vim.keymap.set("n", "<Esc>", function()
     close_view(view)
@@ -150,7 +150,7 @@ local function open_view(opts)
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Close Pantheon opinion",
+    desc = "Close Oculus opinion",
   })
   view.close = function()
     close_view(view)
@@ -179,7 +179,7 @@ local function resolve_opts(opts)
 end
 
 local function inspection_state(buf)
-  local value = vim.b[buf].pantheon_inspect
+  local value = vim.b[buf].oculus_inspect
   if type(value) == "table" then
     return vim.deepcopy(value)
   end
@@ -189,7 +189,7 @@ local function inspection_state(buf)
   local ok, state = pcall(
     vim.api.nvim_tabpage_get_var,
     vim.api.nvim_get_current_tabpage(),
-    "pantheon_inspect"
+    "oculus_inspect"
   )
   return ok and type(state) == "table" and state or nil
 end
@@ -202,7 +202,7 @@ function M.context(buf, win)
   end
 
   local inspection = inspection_state(buf)
-  local source_path = vim.b[buf].pantheon_inspect_source_path
+  local source_path = vim.b[buf].oculus_inspect_source_path
   local buffer_name = vim.api.nvim_buf_get_name(buf)
   if
     not source_path
@@ -291,7 +291,7 @@ function M.consult(request, opts)
     "  Consulting model…",
     "",
     "  The result will appear here when it is ready.",
-  }, "pantheon-opinion")
+  }, "oculus-opinion")
 
   local responded = false
   local function respond(result, err)
@@ -311,7 +311,7 @@ function M.consult(request, opts)
           "  Model consultation failed",
           "",
           "  " .. tostring(err),
-        }, "pantheon-opinion")
+        }, "oculus-opinion")
         return
       end
       local lines = text_lines(result)
@@ -321,7 +321,7 @@ function M.consult(request, opts)
           "  Model consultation failed",
           "",
           "  The provider returned no displayable opinion.",
-        }, "pantheon-opinion")
+        }, "oculus-opinion")
         return
       end
       local filetype = type(result) == "table"

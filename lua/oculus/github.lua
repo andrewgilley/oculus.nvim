@@ -28,7 +28,7 @@ end
 local function request_json(url, opts, callback)
   if vim.fn.executable("curl") ~= 1 then
     vim.schedule(function()
-      callback(nil, "Pantheon requires curl to load GitHub activity")
+      callback(nil, "Oculus requires curl to load GitHub activity")
     end)
     return
   end
@@ -42,7 +42,7 @@ local function request_json(url, opts, callback)
     "-H",
     "Accept: application/vnd.github+json",
     "-H",
-    "User-Agent: pantheon.nvim",
+    "User-Agent: oculus.nvim",
     "-w",
     "\n%{http_code}",
   }
