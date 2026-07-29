@@ -218,13 +218,17 @@ assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
 assert(inspect._sidebar_chunk_row(
-  { new_start = 25, new_count = 4 },
+  { old_count = 1, new_start = 25, new_count = 4 },
   false
-) == "  ├─ 25-28")
+) == "  ├─ 25-28 (+3)")
 assert(inspect._sidebar_chunk_row(
-  { new_start = 31, new_count = 0 },
+  { old_count = 2, new_start = 31, new_count = 0 },
   true
-) == "  └─ 31-31")
+) == "  └─ 31-31 (-2)")
+assert(inspect._sidebar_chunk_row(
+  { old_count = 2, new_start = 40, new_count = 2 },
+  true
+) == "  └─ 40-41 (0)")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
 ) == "changed/file.lua")
@@ -869,8 +873,8 @@ if integration_root and (integration_sha or integration_url) then
   local chunk_lines = 0
   for line_number, line in ipairs(sidebar_lines) do
     local branch =
-      line:match("^  ├─ %d+%-%d+$")
-        or line:match("^  └─ %d+%-%d+$")
+      line:match("^  ├─ %d+%-%d+ %([+-]?%d+%)$")
+        or line:match("^  └─ %d+%-%d+ %([+-]?%d+%)$")
     if branch then
       chunk_lines = chunk_lines + 1
     else

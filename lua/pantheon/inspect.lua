@@ -1558,10 +1558,13 @@ local function sidebar_chunk_row(hunk, last)
   local branch = last and "└─" or "├─"
   local first = hunk.new_start
   local last_line = first + math.max(0, (hunk.new_count or 0) - 1)
-  return ("  %s %d-%d"):format(
+  local delta = (hunk.new_count or 0) - (hunk.old_count or 0)
+  local delta_text = delta > 0 and ("+" .. delta) or tostring(delta)
+  return ("  %s %d-%d (%s)"):format(
     branch,
     first,
-    last_line
+    last_line,
+    delta_text
   )
 end
 
