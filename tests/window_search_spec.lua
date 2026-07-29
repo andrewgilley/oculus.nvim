@@ -31,6 +31,9 @@ assert(matches[1].username == "ThePrimeagen")
 matches = window._fuzzy_contributors(contributors, "@andrk")
 assert(matches[1].username == "andrewrk")
 
+local origin_win = vim.api.nvim_get_current_win()
+vim.wo[origin_win].number = true
+vim.wo[origin_win].relativenumber = true
 window.open({
   width = 0.8,
   height = 0.8,
@@ -41,6 +44,11 @@ window.open({
 })
 
 local state = window.state
+local inspection_window_options = window.inspection_window_options()
+assert(inspection_window_options.number == true)
+assert(inspection_window_options.relativenumber == true)
+assert(vim.wo[state.win].number == false)
+assert(vim.wo[state.win].relativenumber == false)
 local initial_window_height = vim.api.nvim_win_get_height(state.win)
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)

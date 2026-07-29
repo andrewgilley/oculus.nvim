@@ -81,6 +81,8 @@ M.state = {
   last_contributor_move = nil,
   last_search_move = nil,
   issue_picker = nil,
+  origin_win = nil,
+  origin_window_options = nil,
   opts = {},
 }
 
@@ -2408,6 +2410,20 @@ function M.close()
   M.state.last_search_move = nil
 end
 
+function M.inspection_window_options()
+  if not is_valid_win(M.state.win) then
+    return nil
+  end
+  local origin = M.state.origin_win
+  if is_valid_win(origin) then
+    return {
+      number = vim.wo[origin].number,
+      relativenumber = vim.wo[origin].relativenumber,
+    }
+  end
+  return vim.deepcopy(M.state.origin_window_options)
+end
+
 function M.open(opts)
   M.state.opts = opts or {}
   if is_valid_win(M.state.win) then
@@ -2418,6 +2434,12 @@ function M.open(opts)
     return
   end
 
+  local origin_win = vim.api.nvim_get_current_win()
+  M.state.origin_win = origin_win
+  M.state.origin_window_options = {
+    number = vim.wo[origin_win].number,
+    relativenumber = vim.wo[origin_win].relativenumber,
+  }
   local buf = make_buf()
   local win = vim.api.nvim_open_win(buf, true, make_win_config(M.state.opts))
   M.state.last_contributor_move = nil
