@@ -303,7 +303,9 @@ local inspect_loading_marks = vim.api.nvim_buf_get_extmarks(
 assert(#inspect_loading_marks == 1)
 assert(inspect_loading_marks[1][2] + 1
   == vim.api.nvim_win_get_cursor(state.win)[1])
-assert(inspect_loading_marks[1][4].virt_text[1][1] == "⠋")
+assert(inspect_loading_marks[1][3] == 0)
+assert(inspect_loading_marks[1][4].virt_text_pos == "eol")
+assert(inspect_loading_marks[1][4].virt_text[1][1] == " ⠋")
 inspect_lifecycle.on_progress("⠙")
 inspect_loading_marks = vim.api.nvim_buf_get_extmarks(
   state.buf,
@@ -313,7 +315,8 @@ inspect_loading_marks = vim.api.nvim_buf_get_extmarks(
   { details = true }
 )
 assert(#inspect_loading_marks == 1)
-assert(inspect_loading_marks[1][4].virt_text[1][1] == "⠙")
+assert(inspect_loading_marks[1][4].virt_text_pos == "eol")
+assert(inspect_loading_marks[1][4].virt_text[1][1] == " ⠙")
 inspect_lifecycle.on_complete()
 assert(#vim.api.nvim_buf_get_extmarks(
   state.buf,

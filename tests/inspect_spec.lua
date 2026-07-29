@@ -67,6 +67,11 @@ assert(invalidated)
 assert(parsed)
 assert(vim.treesitter.highlighter.active[highlight_buf]
   == fake_highlighter)
+invalidated = false
+parsed = false
+assert(inspect._refresh_buffer_highlighting(highlight_buf))
+assert(not invalidated)
+assert(not parsed)
 vim.treesitter.highlighter.active[highlight_buf] = original_highlighter
 vim.treesitter.get_parser = original_get_parser
 vim.treesitter.stop = original_stop
