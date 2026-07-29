@@ -40,8 +40,9 @@ Every Inspect tab includes the same right-hand changed-files sidebar.
 File rows show `•`, the changed filename, and the trailing `P C`. Each file
 expands into a visible tree of
 unnumbered hunks labeled with their changed-side start and end lines, such as
-`├─ 25-31`, without highlighting file or hunk rows. The sidebar is 28 columns
-wide.
+`├─ 25-31`, without semantic file or hunk highlighting. The cursor row uses
+the active colorscheme’s native `CursorLine` background. The sidebar is 28
+columns wide.
 The trailing `P C` always remains visible: parent `P` is red, changed `C` is
 green, and the symbol for the visible version is underlined. Inspect opens on the
 parent version of the first file. Moving the cursor onto a file row opens that

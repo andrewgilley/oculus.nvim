@@ -1434,7 +1434,8 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].signcolumn = "no"
   vim.wo[win].foldcolumn = "0"
   vim.wo[win].wrap = false
-  vim.wo[win].cursorline = false
+  vim.wo[win].cursorline = true
+  vim.wo[win].cursorlineopt = "line"
   group.sidebar_windows[endpoint.tab] = win
   vim.api.nvim_set_current_win(endpoint.win)
 end
