@@ -41,6 +41,11 @@ window.open({
 })
 
 local state = window.state
+local initial_window_height = vim.api.nvim_win_get_height(state.win)
+local initial_user_lines =
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
+assert(initial_user_lines[initial_window_height]
+  == "  s /: search  ?: shortcuts  q: quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local first_list_line
@@ -288,7 +293,7 @@ inspect.open = function(url, _, context, lifecycle)
 end
 local inspect_mapping = vim.fn.maparg("h", "n", false, true)
 assert(inspect_mapping.desc
-  == "Inspect Pantheon commit or pull request")
+  == "Inspect Pantheon change or issue")
 local inspect_activity_line =
   vim.api.nvim_win_get_cursor(state.win)[1]
 local inspect_activity_text = vim.api.nvim_buf_get_lines(
@@ -317,14 +322,9 @@ assert(
     inspect_activity_text
   )
 )
-assert(first_loading_text:find(" ⠋⠋⠋", 1, true))
+assert(first_loading_text:find(" ⠋", 1, true))
 assert(first_loading_text:sub(-21)
   == inspect_activity_text:sub(-21))
-local loading_highlight = vim.api.nvim_get_hl(
-  0,
-  { name = "PantheonInspectLoading", link = false }
-)
-assert(loading_highlight.bold == true)
 inspect_lifecycle.on_progress("⠙")
 local second_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
@@ -334,7 +334,7 @@ local second_loading_text = vim.api.nvim_buf_get_lines(
 )[1]
 assert(vim.fn.strdisplaywidth(second_loading_text)
   == vim.fn.strdisplaywidth(inspect_activity_text))
-assert(second_loading_text:find(" ⠙⠙⠙", 1, true))
+assert(second_loading_text:find(" ⠙", 1, true))
 assert(second_loading_text:sub(-21)
   == inspect_activity_text:sub(-21))
 inspect_lifecycle.on_complete()
@@ -409,6 +409,17 @@ local page_one_footer_text = table.concat(
 )
 assert(page_one_footer_text:find("p past", 1, true))
 assert(not page_one_footer_text:find("r recent", 1, true))
+
+local back_mapping = vim.fn.maparg("j", "n", false, true)
+back_mapping.callback()
+assert(state.view == "contributors")
+assert(state.footer_win == nil)
+assert(state.footer_buf == nil)
+local returned_window_height = vim.api.nvim_win_get_height(state.win)
+local returned_user_lines =
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
+assert(returned_user_lines[returned_window_height]
+  == "  s /: search  ?: shortcuts  q: quit")
 
 window.close()
 github.events = original_events

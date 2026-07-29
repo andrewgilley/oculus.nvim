@@ -37,18 +37,6 @@ local contributor_selection_ns = vim.api.nvim_create_namespace(
 local inspect_loading_ns = vim.api.nvim_create_namespace(
   "pantheon_inspect_activity_loading"
 )
-
-local function set_inspect_loading_highlight()
-  local info =
-    vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
-  local special =
-    vim.api.nvim_get_hl(0, { name = "Special", link = false })
-  vim.api.nvim_set_hl(0, "PantheonInspectLoading", {
-    fg = info.fg or special.fg or 0x61afef,
-    bold = true,
-  })
-end
-
 local autocmd_group = vim.api.nvim_create_augroup(
   "PantheonWindow",
   { clear = true }
@@ -639,8 +627,7 @@ local function activity_loading_line(line, frame)
   local content_width =
     vim.fn.strdisplaywidth(line) - vim.fn.strdisplaywidth(tail)
   local body = content:gsub("%s+$", "")
-  local loading_width = vim.fn.strdisplaywidth(frame) + 1
-  local body_width = math.max(1, content_width - loading_width)
+  local body_width = math.max(1, content_width - 2)
   body = trim_to_width(body, body_width)
   while vim.fn.strdisplaywidth(body) > body_width do
     body = vim.fn.strcharpart(
@@ -872,6 +859,11 @@ local function render_contributors()
     1,
     math.floor(tonumber(M.state.opts.contributor_list_limit) or 20)
   )
+  local window_height = vim.api.nvim_win_get_height(M.state.win)
+  list_limit = math.min(
+    list_limit,
+    math.max(1, window_height - 7)
+  )
   local max_offset = math.max(1, #contributors - list_limit + 1)
   local offset = math.min(
     math.max(1, M.state.contributor_offset or 1),
@@ -902,15 +894,15 @@ local function render_contributors()
         and "  No matching users."
       or "  No contributors configured."
   end
+  while #lines < window_height - 2 do
+    lines[#lines + 1] = ""
+  end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
   lines[#lines + 1] = searching
       and "  Keep typing to refine · esc cancel"
     or "  s /: search  ?: shortcuts  q: quit"
   local commands_line = #lines
-  while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
-    lines[#lines + 1] = ""
-  end
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
 
@@ -1192,7 +1184,7 @@ local function render_activity(events, cached, notice)
   local activity_line_kinds = {}
   for _, event in ipairs(events) do
     local item = actions.describe(event)
-    local inspect_context = inspect.activity_comment(event)
+    local inspect_context = inspect.activity_context(event)
     local event_line = #lines + 1
     first_event_line = first_event_line or event_line
     activity_line_kinds[event_line] = "main"
@@ -1757,7 +1749,7 @@ end
 local function inspect_current()
   if M.state.view ~= "activity" then
     vim.notify(
-      "Pantheon: select a commit or pull request to inspect",
+      "Pantheon: select a change or issue to inspect",
       vim.log.levels.WARN
     )
     return
@@ -1766,7 +1758,7 @@ local function inspect_current()
   local target = target_on_cursor()
   if type(target) ~= "string" then
     vim.notify(
-      "Pantheon: this activity does not have an inspectable change",
+      "Pantheon: this activity does not have an inspectable target",
       vim.log.levels.WARN
     )
     return
@@ -1824,18 +1816,16 @@ local function inspect_current()
           return
         end
         clear_spinner()
-        local display_frame = frame:rep(3)
         local loading_line, spinner_column =
-          activity_loading_line(activity_line, display_frame)
+          activity_loading_line(activity_line, frame)
         set_loading_line(loading_line)
-        set_inspect_loading_highlight()
         vim.api.nvim_buf_add_highlight(
           activity_buf,
           inspect_loading_ns,
-          "PantheonInspectLoading",
+          "DiagnosticInfo",
           line - 1,
           spinner_column,
-          spinner_column + #display_frame
+          spinner_column + #frame
         )
         vim.cmd("redraw")
       end,
@@ -2028,7 +2018,7 @@ local function map_keys(buf)
   map("p", next_activity_page, "Load past Pantheon activity")
   map("r", previous_activity_page, "Load more recent Pantheon activity")
   map("d", reset_filter_types_to_default, "Reset Pantheon activity types")
-  map("h", inspect_current, "Inspect Pantheon commit or pull request")
+  map("h", inspect_current, "Inspect Pantheon change or issue")
   map("k", function()
     move_cursor(1)
   end, "Move down in Pantheon")
@@ -2158,11 +2148,7 @@ function M.open(opts)
       if is_valid_win(M.state.win) then
         vim.api.nvim_win_set_config(M.state.win, make_win_config(M.state.opts))
         if M.state.view == "contributors" then
-          if M.state.search_query ~= nil then
-            render_contributors()
-          elseif M.state.preview_items then
-            render_preview_panel(M.state.preview_items)
-          end
+          render_contributors()
           if is_valid_win(M.state.search_win) then
             local config = search_win_config()
             if config then
