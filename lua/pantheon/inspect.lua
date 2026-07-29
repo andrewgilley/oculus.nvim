@@ -2,7 +2,6 @@ local M = {}
 
 local github = require("pantheon.github")
 local codeberg = require("pantheon.codeberg")
-local summary = require("pantheon.summary")
 
 local active = false
 local change_ns = vim.api.nvim_create_namespace("pantheon_inspect_changes")
@@ -1519,7 +1518,6 @@ local function close_inspection_sidebar(group)
     vim.api.nvim_set_current_win(focus_win)
   end
   sidebar_navigating = false
-  summary.refresh(group)
 end
 
 local function open_inspection_sidebar(group)
@@ -1540,7 +1538,6 @@ local function open_inspection_sidebar(group)
   end
   sidebar_navigating = false
   refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
-  summary.refresh(group)
 end
 
 local function toggle_inspection_sidebar(group)
@@ -2269,8 +2266,6 @@ local function open_tabs(
   inspections,
   loading,
   comment,
-  info,
-  opts,
   done
 )
   stop_loading(loading)
@@ -2350,7 +2345,6 @@ local function open_tabs(
       normalize_inspection_view(session.parent.win)
       normalize_inspection_view(session.change.win)
     end
-    summary.start(inspection_sessions, inspections, info, opts)
     setup_inspection_comment(inspection_sessions, comment)
   end)
   if not ok then
@@ -2660,8 +2654,6 @@ function M.open(url, opts, context)
           inspections,
           loading,
           resolved.comment,
-          resolved,
-          opts,
           function(_, open_err)
             active = false
             if open_err then

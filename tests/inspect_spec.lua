@@ -456,9 +456,8 @@ if integration_root and (integration_sha or integration_url) then
       or (
         "https://github.com/" .. integration_repository
         .. "/commit/" .. integration_sha
-      ),
+    ),
     {
-      inspect_summary = false,
       inspect_repositories = repositories,
       inspect_search_paths = integration_search_root
           and { integration_search_root }
