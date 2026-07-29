@@ -133,7 +133,10 @@ assert(inspect._sidebar_chunk_row(
 ) == "  └─ 31-31")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
-) == "file.lua")
+) == "changed/file.lua")
+assert(inspect._sidebar_file(
+  "lua\\pantheon\\inspect.lua"
+) == "pantheon/inspect.lua")
 assert(inspect._sidebar_file("README.md") == "README.md")
 assert(inspect._sidebar_target_role(
   1,
@@ -691,7 +694,7 @@ if integration_root and (integration_sha or integration_url) then
         :gsub("^• ", "")
         :gsub("^…", "")
       local _, separators = displayed_file:gsub("/", "")
-      assert(separators == 0)
+      assert(separators <= 1)
     end
   end
   assert(#file_lines == pair_count)
