@@ -857,7 +857,7 @@ local function render_contributors()
   local separator_line = #lines
   lines[#lines + 1] = searching
       and "  Keep typing to refine · esc cancel"
-    or "  s: search  ?: shortcuts  q: quit"
+    or "  s /: search  ?: shortcuts  q: quit"
   local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
@@ -1248,7 +1248,7 @@ local function render_shortcuts()
   })
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
   section("STARTUP USER LIST", {
-    { "s", "Fuzzy-search contributor names and handles" },
+    { "s /", "Fuzzy-search contributor names and handles" },
     { "f", "Edit filters for the selected contributor" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
@@ -1885,6 +1885,7 @@ local function map_keys(buf)
   map("<Esc>", M.close, "Close Pantheon")
   map("?", toggle_shortcuts, "Show Pantheon keyboard shortcuts")
   map("s", open_search, "Fuzzy-search Pantheon users")
+  map("/", open_search, "Fuzzy-search Pantheon users")
   map("<CR>", select_current, "Select Pantheon item")
   map("l", select_current, "Move right in Pantheon")
   map("<Right>", select_current, "Move right in Pantheon")
