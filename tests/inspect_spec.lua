@@ -583,8 +583,9 @@ assert(decoded_codex_candidates[1].reason
   == "Codex: activity selection and inspect dispatch")
 
 local github = require("pantheon.github")
+local pantheon_window = require("pantheon.window")
 local original_issue = github.issue
-local original_ui_select = vim.ui.select
+local original_show_issue_picker = pantheon_window.show_issue_picker
 github.issue = function(repo, number, _, callback)
   assert(repo == "andrewgilley/pantheon.nvim")
   assert(number == 77)
@@ -600,7 +601,21 @@ local issue_selection_targets = {
   "lua/pantheon/window.lua:20",
 }
 local issue_selection_index = 1
-vim.ui.select = function(items, _, callback)
+pantheon_window.show_issue_picker = function(context, items, callback)
+  assert(context.details.title == "Issue inspect fixture")
+  assert(context.details.body
+    == "Review lua/pantheon/inspect.lua:10-12.")
+  assert(context.details.comment
+    == "The referenced sections should become editable tabs.")
+  assert(vim.fs.normalize(context.repository) == vim.fs.normalize(root))
+  assert(context.default_source == vim.fs.dirname(root))
+  assert(context.remote_url
+    == "https://github.com/andrewgilley/pantheon.nvim.git")
+  if context.status then
+    assert(context.status:find("Codex", 1, true))
+    assert(#items == 1 and items[1].action == "cancel")
+    return
+  end
   local target = issue_selection_targets[issue_selection_index]
   if target then
     issue_selection_index = issue_selection_index + 1
@@ -683,7 +698,7 @@ assert(vim.wait(30000, function()
 end), "issue inspect tabs were not opened")
 assert(not issue_lifecycle_error, issue_lifecycle_error)
 github.issue = original_issue
-vim.ui.select = original_ui_select
+pantheon_window.show_issue_picker = original_show_issue_picker
 local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 2)
 local issue_buffers = {}
@@ -721,6 +736,72 @@ for _, buf in ipairs(issue_buffers) do
     vim.api.nvim_buf_delete(buf, { force = true })
   end
 end
+
+local original_show_change_picker = pantheon_window.show_change_picker
+local selectable_change_one = {
+  commit_index = 1,
+  parent_file = "lua/pantheon/inspect.lua",
+  change_file = "lua/pantheon/inspect.lua",
+  status = "M",
+  repository = root,
+}
+local selectable_change_two = {
+  commit_index = 2,
+  parent_file = "lua/pantheon/old.lua",
+  change_file = "lua/pantheon/new.lua",
+  status = "R",
+  repository = root,
+}
+local selected_change_inspections
+local selected_change_error
+local change_picker_stage = 1
+pantheon_window.show_change_picker = function(context, choices, callback)
+  assert(context.kind == "change")
+  assert(context.info.kind == "pull_request")
+  if change_picker_stage == 1 then
+    change_picker_stage = 2
+    for _, choice in ipairs(choices) do
+      if choice.inspection == selectable_change_two then
+        assert(choice.label:find("commit 2", 1, true))
+        assert(choice.label:find(
+          "lua/pantheon/old.lua → lua/pantheon/new.lua",
+          1,
+          true
+        ))
+        callback(choice)
+        return
+      end
+    end
+    error("second pull-request file was not selectable")
+  end
+  for _, choice in ipairs(choices) do
+    if choice.action == "build" then
+      callback(choice)
+      return
+    end
+  end
+  error("selected pull-request file could not be built")
+end
+inspect._select_change_inspections({
+  selectable_change_one,
+  selectable_change_two,
+}, {
+  kind = "pull_request",
+  owner = "andrewgilley",
+  repo = "pantheon.nvim",
+  number = 77,
+  title = "Select changed files",
+  remote_url = "https://github.com/andrewgilley/pantheon.nvim.git",
+}, {
+  inspect_search_paths = { vim.fs.dirname(root) },
+}, function(selected, err)
+  selected_change_inspections = selected
+  selected_change_error = err
+end)
+pantheon_window.show_change_picker = original_show_change_picker
+assert(selected_change_inspections, selected_change_error)
+assert(#selected_change_inspections == 1)
+assert(selected_change_inspections[1] == selectable_change_two)
 
 local parent, change = inspect._first_changed_paths("M\tlua/pantheon/init.lua")
 assert(parent == "lua/pantheon/init.lua")
@@ -986,6 +1067,8 @@ if integration_root and (integration_sha or integration_url) then
     vim.env.PANTHEON_INSPECT_TEST_NO_EXTERNAL_STATE == "1"
   local verify_revision_content =
     vim.env.PANTHEON_INSPECT_TEST_VERIFY_CONTENT == "1"
+  local select_changed_files =
+    vim.env.PANTHEON_INSPECT_TEST_SELECT_FILES == "1"
   local integration_cwd = vim.env.PANTHEON_INSPECT_TEST_CWD
   local repositories = {}
   local integration_is_pull_request = integration_url
@@ -1002,8 +1085,44 @@ if integration_root and (integration_sha or integration_url) then
   local activity_closed_after_tabs_ready = false
   local pantheon_window = require("pantheon.window")
   local original_window_close = pantheon_window.close
+  local original_show_change_picker = pantheon_window.show_change_picker
+  local change_picker_opened = false
+  pantheon_window.show_change_picker = function(context, choices, callback)
+    assert(
+      select_changed_files,
+      "changed-file picker opened without explicit opt-in"
+    )
+    change_picker_opened = true
+    assert(context.kind == "change")
+    if expected_source_root then
+      assert(vim.fs.normalize(context.repository)
+        == vim.fs.normalize(expected_source_root))
+    end
+    local candidate_count = 0
+    local select_all
+    local build
+    for _, choice in ipairs(choices) do
+      if choice.inspection then
+        candidate_count = candidate_count + 1
+      elseif choice.action == "all" then
+        select_all = choice
+      elseif choice.action == "build" then
+        build = choice
+      end
+    end
+    if expected_pair_count then
+      assert(candidate_count == expected_pair_count)
+    end
+    if build then
+      callback(build)
+      return
+    end
+    assert(select_all)
+    callback(select_all)
+  end
   pantheon_window.close = function(...)
     pantheon_window.close = original_window_close
+    pantheon_window.show_change_picker = original_show_change_picker
     local ready_tabs = vim.api.nvim_list_tabpages()
     assert(vim.api.nvim_get_current_tabpage() == initial_tab)
     assert(#ready_tabs > initial_tab_count)
@@ -1034,6 +1153,7 @@ if integration_root and (integration_sha or integration_url) then
       inspect_search_paths = integration_search_root
           and { integration_search_root }
         or {},
+      inspect_select_changed_files = select_changed_files,
     },
     nil,
     {
@@ -1078,6 +1198,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(not lifecycle_error, lifecycle_error)
   assert(not inspection_error, inspection_error)
   assert(activity_closed_after_tabs_ready)
+  assert(change_picker_opened == select_changed_files)
+  pantheon_window.show_change_picker = original_show_change_picker
   assert(vim.o.lazyredraw == initial_lazyredraw)
 
   local tabs = vim.api.nvim_list_tabpages()
