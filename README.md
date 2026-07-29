@@ -15,6 +15,16 @@ handles. Results and the contributor preview update as you type. Use
 search. Main-list and search-result navigation use a short configurable delay
 (`navigation_delay`, 80 ms by default) to keep held keys from skipping items.
 
+## Inspect
+
+Inspect turns GitHub and Codeberg commit and pull-request activity into a
+local file-by-file review inside the current Neovim instance. Press `h` on a
+supported activity item to open parent and changed revisions as tab pairs,
+using an existing clone from the configured source directory when available;
+linked cursors and scroll views, change signs, an Oil-aware directory view,
+and a shared changed-files sidebar make it possible to move through every
+file and hunk without altering the working checkout.
+
 On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
 Pantheon reads each commit and its first parent from Git without changing the
@@ -35,8 +45,8 @@ first changed hunk. When that cursor is on line 10 or later, the tab applies
 either the main pane or the changed-files sidebar; sidebar focus, row, and
 viewport are preserved.
 Every Inspect tab includes the same right-hand changed-files sidebar.
-File rows show `•`, the changed filename, and the trailing `P C`. Each file
-expands into a visible tree of
+File rows show `•`, the changed file's parent directory and filename, and the
+trailing `P C`. Each file expands into a visible tree of
 unnumbered hunks labeled with their changed-side start and end lines, such as
 `├─ 25-31`, without semantic file or hunk highlighting. The cursor row uses
 the active colorscheme’s native `CursorLine` background. The sidebar is 28

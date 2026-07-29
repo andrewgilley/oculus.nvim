@@ -1271,7 +1271,11 @@ end
 
 local function sidebar_file(file)
   local normalized = file:gsub("\\", "/"):gsub("/+$", "")
-  return normalized:match("([^/]+)$") or normalized
+  local parent, name = normalized:match("([^/]+)/([^/]+)$")
+  if parent and name then
+    return parent .. "/" .. name
+  end
+  return normalized
 end
 
 local function sidebar_row(file, width)
