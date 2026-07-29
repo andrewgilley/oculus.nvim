@@ -269,6 +269,35 @@ local function update_activity_cursorline()
   vim.wo[M.state.win].cursorline = cursor_row <= visible_rows
 end
 
+local function clamp_list_cursor()
+  if not is_valid_win(M.state.win) then
+    return
+  end
+
+  local min_line
+  local max_line
+  if M.state.view == "activity" then
+    min_line = M.state.activity_cursor_min_line
+    max_line = M.state.activity_scroll_limit_line
+  elseif M.state.view == "contributors" or M.state.view == "filters" then
+    for line, target in pairs(M.state.line_targets) do
+      if type(target) == "table" then
+        min_line = math.min(min_line or line, line)
+        max_line = math.max(max_line or line, line)
+      end
+    end
+  end
+
+  if not min_line or not max_line then
+    return
+  end
+  local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+  local line = math.min(math.max(cursor[1], min_line), max_line)
+  if line ~= cursor[1] then
+    vim.api.nvim_win_set_cursor(M.state.win, { line, 0 })
+  end
+end
+
 local function set_lines(lines)
   if not is_valid_buf(M.state.buf) then
     return
@@ -828,7 +857,7 @@ local function render_contributors()
   local separator_line = #lines
   lines[#lines + 1] = searching
       and "  Keep typing to refine · esc cancel"
-    or "  /: search  ?: shortcuts  q: quit"
+    or "  s: search  ?: shortcuts  q: quit"
   local commands_line = #lines
   while #lines < math.min(vim.api.nvim_win_get_height(M.state.win), 25) do
     lines[#lines + 1] = ""
@@ -2024,6 +2053,7 @@ function M.open(opts)
       if not is_valid_win(M.state.win) then
         return
       end
+      clamp_list_cursor()
       if M.state.view == "activity" then
         update_activity_cursorline()
         return

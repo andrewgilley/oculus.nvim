@@ -42,6 +42,24 @@ window.open({
 local state = window.state
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
+local first_list_line
+local last_list_line
+for line, target in pairs(state.line_targets) do
+  if type(target) == "table" then
+    first_list_line = math.min(first_list_line or line, line)
+    last_list_line = math.max(last_list_line or line, line)
+  end
+end
+assert(first_list_line and last_list_line)
+vim.api.nvim_win_set_cursor(state.win, { 1, 0 })
+vim.api.nvim_exec_autocmds("CursorMoved", { buffer = state.buf })
+assert(vim.api.nvim_win_get_cursor(state.win)[1] == first_list_line)
+vim.api.nvim_win_set_cursor(
+  state.win,
+  { vim.api.nvim_buf_line_count(state.buf), 0 }
+)
+vim.api.nvim_exec_autocmds("CursorMoved", { buffer = state.buf })
+assert(vim.api.nvim_win_get_cursor(state.win)[1] == last_list_line)
 local first_username = state.selected_username
 main_down_mapping.callback()
 local second_username = state.selected_username
