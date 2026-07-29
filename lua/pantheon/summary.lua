@@ -100,7 +100,7 @@ end
 
 local function float_dimensions(endpoint, text)
   local main_width = vim.api.nvim_win_get_width(endpoint.win)
-  local width = math.max(1, math.min(56, main_width - 4))
+  local width = math.max(1, math.min(42, main_width - 4))
   local rows = math.max(
     1,
     math.ceil(vim.fn.strdisplaywidth(text) / width)
@@ -120,8 +120,6 @@ local function float_config(endpoint, width, height)
     height = height,
     style = "minimal",
     border = "rounded",
-    title = " Codex Summary ",
-    title_pos = "left",
     focusable = false,
     noautocmd = true,
     zindex = 70,
@@ -153,6 +151,8 @@ local function create_float(group, endpoint)
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
+  vim.wo[win].winhighlight =
+    "FloatBorder:PantheonInspectSummaryBorder"
   group.summary_windows[endpoint.tab] = {
     endpoint = endpoint,
     win = win,
@@ -307,6 +307,9 @@ function M.start(group, inspections, info, opts)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "Asking Codex…" })
   vim.bo[buf].modifiable = false
   vim.b[buf].pantheon_inspect_summary = true
+  vim.api.nvim_set_hl(0, "PantheonInspectSummaryBorder", {
+    fg = 0xffffff,
+  })
   for _, session in ipairs(group) do
     create_float(group, session.parent)
     create_float(group, session.change)

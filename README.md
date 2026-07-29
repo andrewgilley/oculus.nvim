@@ -64,8 +64,9 @@ in a non-focusable Markdown float on the right of the main pane, anchored
 above that line. Ordinary issue and pull-request conversation comments do not
 create annotations because they are not attached to a file location.
 
-Inspect also opens a shared `Codex Summary` float at the upper-right of every
-parent and changed-file tab. It runs the authenticated local Codex CLI
+Inspect also opens an untitled summary float at the upper-right of every
+parent and changed-file tab. Its compact 42-column maximum width and white
+border keep it visually separate from the file. It runs the authenticated local Codex CLI
 ephemerally with a read-only sandbox, grounding the request in the PR title or
 commit message, base/head revisions, and changed-file list. The loading text
 is replaced with a one- or two-sentence description of what the change
