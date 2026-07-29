@@ -119,9 +119,17 @@ for _, view in pairs(group.summary_windows) do
   assert(config.anchor == "NE")
   assert(config.row == 1)
   assert(config.focusable == false)
+  assert(config.width <= 42)
+  assert(config.title == nil or config.title == "")
   assert(config.col
     == vim.api.nvim_win_get_width(view.endpoint.win) - 1)
+  assert(vim.wo[view.win].winhighlight
+    == "FloatBorder:PantheonInspectSummaryBorder")
 end
+assert(vim.api.nvim_get_hl(
+  0,
+  { name = "PantheonInspectSummaryBorder", link = false }
+).fg == 0xffffff)
 
 vim.api.nvim_set_current_tabpage(first_tab)
 vim.cmd("tabonly")
