@@ -738,6 +738,7 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
   assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
   local win
   local sidebar_win
+  local issue_file_window_count = 0
   for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
     local candidate_buf = vim.api.nvim_win_get_buf(candidate)
     if vim.bo[candidate_buf].filetype == "pantheon-inspect-files" then
@@ -746,10 +747,12 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
       assert(candidate_buf == issue_sidebar_test.buf)
     elseif type(vim.b[candidate_buf].pantheon_inspect) == "table" then
       win = candidate
+      issue_file_window_count = issue_file_window_count + 1
     end
   end
   assert(win)
   assert(sidebar_win)
+  assert(issue_file_window_count == 1)
   issue_sidebar_test.main_windows[
     #issue_sidebar_test.main_windows + 1
   ] = win
