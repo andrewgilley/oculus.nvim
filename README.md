@@ -11,7 +11,7 @@ from a later page to move one page back toward recent activity.
 <img width="1917" height="1061" alt="pan" src="https://github.com/user-attachments/assets/d75e4a85-a02c-410d-ad4f-62fce8f361da" />
 
 
-From the startup user list, press `s` to fuzzy-search contributor names and
+From the startup user list, press `s` or `/` to fuzzy-search contributor names and
 handles. Results and the contributor preview update as you type. Use
 `<C-i>` to move up or `<C-k>` to move down (`<Up>`/`<Down>` and
 `<C-p>`/`<C-n>` also work), `<CR>` to open a match, and `<Esc>` to cancel the
