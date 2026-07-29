@@ -1409,7 +1409,7 @@ local function render_issue_picker()
   lines[#lines + 1] = ""
   lines[#lines + 1] = change_mode
       and "  CHANGED FILES"
-    or "  RELEVANT FILES AND SECTIONS"
+    or "  RELEVANT LOCATIONS"
   local status_line
   if context.status and context.status ~= "" then
     status_line = #lines + 1
