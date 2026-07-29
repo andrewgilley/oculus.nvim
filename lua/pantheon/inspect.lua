@@ -5,7 +5,6 @@ local codeberg = require("pantheon.codeberg")
 
 local active = false
 local change_ns = vim.api.nvim_create_namespace("pantheon_inspect_changes")
-local loading_ns = vim.api.nvim_create_namespace("pantheon_inspect_loading")
 local oil_ns = vim.api.nvim_create_namespace("pantheon_inspect_oil")
 local sidebar_ns =
   vim.api.nvim_create_namespace("pantheon_inspect_sidebar")
@@ -1801,7 +1800,7 @@ local function map_inspection_sidebar_toggle(group)
   })
 end
 
-local function setup_inspection_sidebar(group)
+local function prepare_inspection_sidebar(group)
   local buf = vim.api.nvim_create_buf(false, true)
   group.sidebar_buf = buf
   group.sidebar_windows = {}
@@ -1849,6 +1848,9 @@ local function setup_inspection_sidebar(group)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   vim.bo[buf].filetype = "pantheon-inspect-files"
+end
+
+local function activate_inspection_sidebar(group)
   map_inspection_sidebar_toggle(group)
   sidebar_groups[#sidebar_groups + 1] = group
   local first = group[1] and group[1].parent or nil
@@ -2211,29 +2213,6 @@ local spinner_frames = {
   "⠏",
 }
 
-local function update_loading_buffer(endpoint, frame)
-  if not vim.api.nvim_buf_is_valid(endpoint.buf) then
-    return
-  end
-  vim.bo[endpoint.buf].modifiable = true
-  vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, {
-    "",
-    ("  %s  Loading %s…"):format(frame, endpoint.description),
-    "",
-    "  Preparing repository and revisions",
-  })
-  vim.bo[endpoint.buf].modifiable = false
-  vim.api.nvim_buf_clear_namespace(endpoint.buf, loading_ns, 0, -1)
-  vim.api.nvim_buf_add_highlight(
-    endpoint.buf,
-    loading_ns,
-    "DiagnosticInfo",
-    1,
-    0,
-    -1
-  )
-end
-
 local function stop_loading(loading)
   if not loading or loading.stopped then
     return
@@ -2245,183 +2224,45 @@ local function stop_loading(loading)
   end
 end
 
-local function make_loading_tab(role, description)
-  vim.cmd("tabnew")
-  local endpoint = {
-    role = role,
-    description = description,
-    tab = vim.api.nvim_get_current_tabpage(),
-    win = vim.api.nvim_get_current_win(),
-    buf = vim.api.nvim_get_current_buf(),
-  }
-  vim.bo[endpoint.buf].buftype = "nofile"
-  vim.bo[endpoint.buf].bufhidden = "wipe"
-  vim.bo[endpoint.buf].swapfile = false
-  vim.t.pantheon_inspect = {
-    role = role,
-    loading = true,
-  }
-  update_loading_buffer(endpoint, spinner_frames[1])
-  return endpoint
-end
-
-local function loading_endpoints(loading)
-  local endpoints = {}
-  for _, pair in ipairs(loading.pairs or {}) do
-    endpoints[#endpoints + 1] = pair.parent
-    endpoints[#endpoints + 1] = pair.change
+local function emit_loading(loading, event, ...)
+  local lifecycle = loading and loading.lifecycle
+  local callback = lifecycle and lifecycle[event]
+  if type(callback) == "function" then
+    pcall(callback, ...)
+    return true
   end
-  return endpoints
+  return false
 end
 
-local function loading_pair_labels(info, inspection, index)
-  local commit_index = inspection and inspection.commit_index or index
-  local file_index = inspection and inspection.file_index or 1
-  local file = inspection
-      and (inspection.change_file or inspection.parent_file)
-    or nil
-  local prefix = info.kind == "pull_request"
-      and ("Commit %d File %d"):format(commit_index, file_index)
-    or ("File %d"):format(file_index)
-  local suffix = file and (" (" .. file .. ")") or ""
-  return {
-    parent_description = prefix:lower() .. " old version" .. suffix,
-    change_description = prefix:lower() .. " new version" .. suffix,
-  }
-end
-
-local function configure_loading_pair(loading, info, pair, inspection, index)
-  local labels = loading_pair_labels(info, inspection, index)
-  pair.parent.description = labels.parent_description
-  pair.change.description = labels.change_description
-  for _, endpoint in ipairs({ pair.parent, pair.change }) do
-    if vim.api.nvim_tabpage_is_valid(endpoint.tab) then
-      vim.api.nvim_tabpage_set_var(endpoint.tab, "pantheon_inspect", {
-        role = endpoint.role,
-        loading = true,
-        pair_index = index,
-        commit_index = inspection and inspection.commit_index or nil,
-        file_index = inspection and inspection.file_index or nil,
-        file = inspection
-            and (inspection.change_file or inspection.parent_file)
-          or nil,
-      })
-    end
-    update_loading_buffer(
-      endpoint,
-      spinner_frames[loading.frame] or spinner_frames[1]
-    )
-  end
-end
-
-local function add_loading_pair(loading, info, index, inspection)
-  local pair = {
-    parent = make_loading_tab(
-      info.kind == "pull_request" and "old" or "parent",
-      "old file version"
-    ),
-    change = make_loading_tab(
-      "change",
-      "new file version"
-    ),
-  }
-  loading.pairs[#loading.pairs + 1] = pair
-  configure_loading_pair(loading, info, pair, inspection, index)
-  loading.parent = loading.pairs[1].parent
-  loading.change = loading.pairs[1].change
-end
-
-local function sync_loading_tabs(loading, info, inspections)
-  for index, inspection in ipairs(inspections) do
-    if not loading.pairs[index] then
-      add_loading_pair(loading, info, index, inspection)
-    else
-      configure_loading_pair(
-        loading,
-        info,
-        loading.pairs[index],
-        inspection,
-        index
-      )
-    end
-  end
-end
-
-local function start_loading_tabs(info)
-  require("pantheon.window").close()
+local function start_loading(lifecycle)
   local loading = {
     frame = 1,
     stopped = false,
-    pairs = {},
+    lifecycle = lifecycle,
   }
-  add_loading_pair(loading, info, 1)
+  emit_loading(loading, "on_progress", spinner_frames[1])
 
   loading.timer = vim.uv.new_timer()
   loading.timer:start(120, 120, vim.schedule_wrap(function()
     if loading.stopped then
       return
     end
-    local endpoints = loading_endpoints(loading)
-    local valid = false
-    for _, endpoint in ipairs(endpoints) do
-      valid = valid or vim.api.nvim_buf_is_valid(endpoint.buf)
-    end
-    if not valid then
-      stop_loading(loading)
-      return
-    end
     loading.frame = (loading.frame % #spinner_frames) + 1
     local frame = spinner_frames[loading.frame]
-    for _, endpoint in ipairs(endpoints) do
-      update_loading_buffer(endpoint, frame)
-    end
-    vim.cmd.redrawtabline()
+    emit_loading(loading, "on_progress", frame)
   end))
   return loading
 end
 
 local function show_loading_error(loading, message)
   stop_loading(loading)
-  for _, endpoint in ipairs(loading_endpoints(loading)) do
-    if vim.api.nvim_buf_is_valid(endpoint.buf) then
-      vim.bo[endpoint.buf].modifiable = true
-      local error_lines = {
-        "",
-        "  Inspection failed",
-        "",
-      }
-      for _, line in ipairs(vim.split(
-        tostring(message),
-        "\n",
-        { plain = true }
-      )) do
-        error_lines[#error_lines + 1] = "  " .. line:gsub("\r$", "")
-      end
-      vim.api.nvim_buf_set_lines(
-        endpoint.buf,
-        0,
-        -1,
-        false,
-        error_lines
+  if not emit_loading(loading, "on_complete", message) then
+    vim.schedule(function()
+      vim.notify(
+        "Pantheon: " .. tostring(message),
+        vim.log.levels.WARN
       )
-      vim.bo[endpoint.buf].modifiable = false
-      vim.api.nvim_buf_clear_namespace(endpoint.buf, loading_ns, 0, -1)
-      vim.api.nvim_buf_add_highlight(
-        endpoint.buf,
-        loading_ns,
-        "DiagnosticError",
-        1,
-        0,
-        -1
-      )
-      if vim.api.nvim_tabpage_is_valid(endpoint.tab) then
-        vim.api.nvim_tabpage_set_var(endpoint.tab, "pantheon_inspect", {
-          role = endpoint.role,
-          loading = false,
-          error = message,
-        })
-      end
-    end
+    end)
   end
 end
 
@@ -2434,7 +2275,7 @@ local function load_tab(
   pair_index
 )
   if not vim.api.nvim_tabpage_is_valid(endpoint.tab) then
-    error("a loading tab was closed before inspection completed")
+    error("an inspection tab was closed before it finished opening")
   end
   vim.api.nvim_set_current_tabpage(endpoint.tab)
   if vim.api.nvim_win_is_valid(endpoint.win) then
@@ -2496,40 +2337,25 @@ local function load_tab(
   return loaded
 end
 
+local function make_inspection_tab()
+  vim.cmd("tabnew")
+  return {
+    tab = vim.api.nvim_get_current_tabpage(),
+    win = vim.api.nvim_get_current_win(),
+    buf = vim.api.nvim_get_current_buf(),
+  }
+end
+
 local function open_tabs(
   inspections,
   loading,
   comment,
   done
 )
-  stop_loading(loading)
   local ok, err = pcall(function()
-    if #loading.pairs ~= #inspections then
-      error("loading tab count does not match inspection file count")
-    end
     local inspection_sessions = {}
     for index, paths in ipairs(inspections) do
-      local loading_pair = loading.pairs[index]
-      local parent = load_tab(
-        loading_pair.parent,
-        paths.repository,
-        paths.parent_file,
-        paths.parent_role or "parent",
-        paths,
-        index
-      )
-      local change = load_tab(
-        loading_pair.change,
-        paths.repository,
-        paths.change_file,
-        "change",
-        paths,
-        index
-      )
-      next_session = next_session + 1
-      local session = {
-        parent = parent,
-        change = change,
+      inspection_sessions[index] = {
         file = paths.change_file or paths.parent_file,
         parent_file = paths.parent_file,
         change_file = paths.change_file,
@@ -2545,7 +2371,37 @@ local function open_tabs(
         change_lines = change_lines(paths.hunks),
         active_chunk = paths.hunks[1] and 1 or nil,
       }
-      inspection_sessions[#inspection_sessions + 1] = session
+    end
+
+    -- Build the complete changed-file list before the first Inspect tab is
+    -- created, so the first visible tab already has a ready sidebar.
+    prepare_inspection_sidebar(inspection_sessions)
+    stop_loading(loading)
+    require("pantheon.window").close()
+
+    for index, paths in ipairs(inspections) do
+      local session = inspection_sessions[index]
+      local parent_tab = make_inspection_tab()
+      local parent = load_tab(
+        parent_tab,
+        paths.repository,
+        paths.parent_file,
+        paths.parent_role or "parent",
+        paths,
+        index
+      )
+      local change_tab = make_inspection_tab()
+      local change = load_tab(
+        change_tab,
+        paths.repository,
+        paths.change_file,
+        "change",
+        paths,
+        index
+      )
+      next_session = next_session + 1
+      session.parent = parent
+      session.change = change
       sessions[next_session] = session
       local focused_start = session.active_chunk
           and render_focused_chunk(session, session.active_chunk)
@@ -2571,7 +2427,7 @@ local function open_tabs(
         sync_window(parent.win)
       end
     end
-    setup_inspection_sidebar(inspection_sessions)
+    activate_inspection_sidebar(inspection_sessions)
     for _, session in ipairs(inspection_sessions) do
       normalize_inspection_view(session.parent.win)
       normalize_inspection_view(session.change.win)
@@ -2582,6 +2438,7 @@ local function open_tabs(
     done(nil, "could not open inspection tabs: " .. tostring(err))
     return
   end
+  emit_loading(loading, "on_complete")
   done(inspections)
 end
 
@@ -2836,7 +2693,7 @@ local function resolve_target(info, opts, callback)
   )
 end
 
-function M.open(url, opts, context)
+function M.open(url, opts, context, lifecycle)
   opts = opts or {}
   local info = parse_target_url(url)
   if not info then
@@ -2856,10 +2713,13 @@ function M.open(url, opts, context)
   end
 
   active = true
-  local loading_ok, loading = pcall(start_loading_tabs, info)
+  local loading_ok, loading = pcall(
+    start_loading,
+    lifecycle
+  )
   if not loading_ok then
     active = false
-    return nil, "could not open inspection loading tabs: "
+    return nil, "could not start inspection loading state: "
       .. tostring(loading)
   end
   resolve_target(info, opts, function(resolved, resolve_err)
@@ -2872,9 +2732,7 @@ function M.open(url, opts, context)
     prepare(
       resolved,
       opts,
-      function(inspections)
-        sync_loading_tabs(loading, resolved, inspections)
-      end,
+      function() end,
       function(inspections, err)
         if err then
           active = false
