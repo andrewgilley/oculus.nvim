@@ -13,10 +13,12 @@ local sidebar_groups = {}
 local next_session = 0
 local syncing = false
 local sidebar_navigating = false
+local oil_contexts = {}
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
 local switch_sidebar_version
+local close_inspection_sidebar
 
 local function git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
@@ -826,6 +828,13 @@ local function prevent_window_dimming(win)
 end
 
 local function update_session_buffer(win, buf)
+  local name = vim.api.nvim_buf_get_name(buf)
+  if vim.bo[buf].filetype == "oil"
+    or vim.bo[buf].filetype == "pantheon-inspect-files"
+    or name:match("^oil://")
+  then
+    return
+  end
   for _, session in pairs(sessions) do
     if session.parent.win == win then
       session.parent.buf = buf
@@ -1141,6 +1150,150 @@ local function decorate_oil_buffer(buf)
   end
 end
 
+local function sidebar_group_for_session(session)
+  for _, group in ipairs(sidebar_groups) do
+    for _, candidate in ipairs(group) do
+      if candidate == session then
+        return group
+      end
+    end
+  end
+end
+
+local function matching_oil_entry_name(left, right)
+  if vim.uv.os_uname().sysname == "Windows_NT" then
+    return left:lower() == right:lower()
+  end
+  return left == right
+end
+
+local function invoke_oil_mapping(mapping)
+  if type(mapping.callback) == "function" then
+    mapping.callback()
+  elseif type(mapping.rhs) == "string" and mapping.rhs ~= "" then
+    vim.api.nvim_feedkeys(
+      vim.api.nvim_replace_termcodes(
+        mapping.rhs,
+        true,
+        false,
+        true
+      ),
+      "m",
+      false
+    )
+  end
+end
+
+local function map_oil_origin_selection(buf, context, oil)
+  for _, lhs in ipairs({ "l", "<CR>" }) do
+    local original = vim.api.nvim_buf_call(buf, function()
+      return vim.fn.maparg(lhs, "n", false, true)
+    end)
+    if original.buffer == 1
+      and original.desc ~= "Select Pantheon Inspect Oil entry"
+    then
+      vim.keymap.set("n", lhs, function()
+        local entry = oil.get_cursor_entry()
+        local directory = oil.get_current_dir()
+        if entry
+          and entry.type ~= "directory"
+          and directory
+          and comparable_path(directory)
+            == comparable_path(context.directory)
+          and matching_oil_entry_name(entry.name, context.filename)
+        then
+          oil.close()
+          return
+        end
+        invoke_oil_mapping(original)
+      end, {
+        buffer = buf,
+        nowait = true,
+        silent = true,
+        desc = "Select Pantheon Inspect Oil entry",
+      })
+    end
+  end
+end
+
+local function focus_oil_origin(buf, context, oil)
+  local wins = vim.fn.win_findbuf(buf)
+  local win = vim.api.nvim_get_current_buf() == buf
+      and vim.api.nvim_get_current_win()
+    or wins[1]
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  for line = 1, vim.api.nvim_buf_line_count(buf) do
+    local entry = oil.get_entry_on_line(buf, line)
+    if entry
+      and matching_oil_entry_name(entry.name, context.filename)
+    then
+      vim.api.nvim_win_set_cursor(win, { line, 0 })
+      return true
+    end
+  end
+end
+
+local function configure_inspection_oil_buffer(buf)
+  if not vim.api.nvim_buf_is_valid(buf)
+    or vim.bo[buf].filetype ~= "oil"
+  then
+    return
+  end
+  local ok, oil = pcall(require, "oil")
+  if not ok then
+    return
+  end
+  if oil_contexts[buf] then
+    local context = oil_contexts[buf]
+    focus_oil_origin(buf, context, oil)
+    map_oil_origin_selection(buf, context, oil)
+    return
+  end
+  local directory = oil.get_current_dir(buf)
+  if not directory then
+    return
+  end
+  local wins = vim.fn.win_findbuf(buf)
+  local win = vim.api.nvim_get_current_buf() == buf
+      and vim.api.nvim_get_current_win()
+    or wins[1]
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  local tab = vim.api.nvim_win_get_tabpage(win)
+  local session, role = session_for_directory(directory, tab)
+  local endpoint = session and session[role] or nil
+  if not endpoint or not vim.api.nvim_buf_is_valid(endpoint.buf) then
+    return
+  end
+  local state = vim.b[endpoint.buf].pantheon_inspect
+  local source_path = type(state) == "table" and state.source_path or nil
+  if type(source_path) ~= "string" or source_path == "" then
+    return
+  end
+  local source_directory = vim.fs.dirname(source_path)
+  if comparable_path(directory) ~= comparable_path(source_directory) then
+    return
+  end
+  local context = {
+    directory = source_directory,
+    filename = vim.fs.basename(source_path),
+    source_buf = endpoint.buf,
+  }
+  oil_contexts[buf] = context
+  vim.b[buf].pantheon_inspect_oil_origin = vim.deepcopy(context)
+
+  local group = sidebar_group_for_session(session)
+  if group and group.sidebar_visible and close_inspection_sidebar then
+    close_inspection_sidebar(group)
+  end
+
+  focus_oil_origin(buf, context, oil)
+  map_oil_origin_selection(buf, context, oil)
+end
+
 local function highlight_foreground(name, fallback)
   local ok, highlight = pcall(
     vim.api.nvim_get_hl,
@@ -1200,6 +1353,7 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 
 local function queue_oil_decorations(buf)
   vim.schedule(function()
+    configure_inspection_oil_buffer(buf)
     decorate_oil_buffer(buf)
   end)
 end
@@ -1218,6 +1372,13 @@ vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter", "TextChanged" }, {
   pattern = "oil://*",
   callback = function(args)
     queue_oil_decorations(args.buf)
+  end,
+})
+
+vim.api.nvim_create_autocmd("BufWipeout", {
+  group = oil_group,
+  callback = function(args)
+    oil_contexts[args.buf] = nil
   end,
 })
 
@@ -1709,7 +1870,7 @@ local function endpoint_for_tab(group, tab)
   return session and role and session[role] or nil
 end
 
-local function close_inspection_sidebar(group)
+close_inspection_sidebar = function(group)
   local origin_tab = vim.api.nvim_get_current_tabpage()
   local origin_win = vim.api.nvim_get_current_win()
   local sidebar_focused =
@@ -2299,7 +2460,7 @@ local function load_tab(
     vim.bo[buf].filetype = filetype
   end
   vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = false
   vim.bo[buf].readonly = true

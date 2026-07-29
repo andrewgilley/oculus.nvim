@@ -1417,8 +1417,21 @@ if integration_root and (integration_sha or integration_url) then
 
   if oil_runtime then
     local oil = require("oil")
-    oil.setup({ watch_for_changes = false })
+    oil.setup({
+      watch_for_changes = false,
+      keymaps = {
+        ["<CR>"] = false,
+        ["l"] = {
+          callback = function()
+            oil.select({ tab = true, close = true })
+          end,
+          desc = "Open file in a tab",
+        },
+      },
+    })
     vim.api.nvim_set_current_tabpage(tabs[3])
+    vim.api.nvim_set_current_win(change_win)
+    local tabs_before_oil = #vim.api.nvim_list_tabpages()
     oil.open()
     assert(vim.wait(10000, function()
       local oil_buf = vim.api.nvim_get_current_buf()
@@ -1435,10 +1448,29 @@ if integration_root and (integration_sha or integration_url) then
           -1,
           {}
         ) > 0
+        and type(vim.b[oil_buf].pantheon_inspect_oil_origin)
+          == "table"
     end), "Oil entries were not decorated")
     local oil_buf = vim.api.nvim_get_current_buf()
     assert(vim.fs.normalize(oil.get_current_dir()):lower()
       == vim.fs.normalize(change_state.directory):lower())
+    local oil_origin = vim.b[oil_buf].pantheon_inspect_oil_origin
+    assert(type(oil_origin) == "table")
+    assert(oil_origin.source_buf == change_buf)
+    assert(oil_origin.filename == vim.fs.basename(
+      change_state.source_path
+    ))
+    local cursor_entry = oil.get_cursor_entry()
+    assert(cursor_entry)
+    assert(
+      cursor_entry.name == oil_origin.filename,
+      ("Oil cursor stayed on %s instead of %s")
+        :format(cursor_entry.name, oil_origin.filename)
+    )
+    for pair_index = 1, pair_count do
+      assert(not sidebar_window(tabs[pair_index * 2]))
+      assert(not sidebar_window(tabs[pair_index * 2 + 1]))
+    end
     local oil_signs = vim.api.nvim_get_namespaces().pantheon_inspect_oil
     local oil_marks = vim.api.nvim_buf_get_extmarks(
       oil_buf,
@@ -1460,5 +1492,17 @@ if integration_root and (integration_sha or integration_url) then
       link = false,
     })
     assert(oil_highlight.bg == normal_highlight.bg)
+    local oil_select_mapping =
+      vim.fn.maparg("l", "n", false, true)
+    assert(
+      oil_select_mapping.desc
+        == "Select Pantheon Inspect Oil entry",
+      "unexpected Oil select mapping: "
+        .. vim.inspect(oil_select_mapping)
+    )
+    oil_select_mapping.callback()
+    assert(vim.api.nvim_get_current_buf() == change_buf)
+    assert(#vim.api.nvim_list_tabpages() == tabs_before_oil)
+    assert(vim.bo[vim.api.nvim_get_current_buf()].filetype ~= "oil")
   end
 end
