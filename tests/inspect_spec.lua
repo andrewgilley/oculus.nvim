@@ -31,9 +31,79 @@ vim.api.nvim_buf_set_lines(
 vim.bo[highlight_buf].filetype = "lua"
 vim.bo[highlight_buf].syntax = "lua"
 vim.b[highlight_buf].pantheon_inspect = { role = "change" }
+local fake_highlighter = {}
+local invalidated = false
+local parsed = false
+local parser = {
+  invalidate = function(_, reload)
+    assert(reload == true)
+    invalidated = true
+  end,
+  parse = function(_, range, callback)
+    assert(range == true)
+    parsed = true
+    callback()
+  end,
+}
+local original_highlighter =
+  vim.treesitter.highlighter.active[highlight_buf]
+local original_get_parser = vim.treesitter.get_parser
+local original_stop = vim.treesitter.stop
+local original_start = vim.treesitter.start
+vim.treesitter.highlighter.active[highlight_buf] = fake_highlighter
+vim.treesitter.get_parser = function(buf)
+  assert(buf == highlight_buf)
+  return parser
+end
+vim.treesitter.stop = function()
+  error("refresh must preserve the active highlighter")
+end
+vim.treesitter.start = function()
+  error("refresh must preserve the active highlighter")
+end
 assert(inspect._refresh_buffer_highlighting(highlight_buf))
 assert(vim.bo[highlight_buf].syntax == "lua")
+assert(invalidated)
+assert(parsed)
+assert(vim.treesitter.highlighter.active[highlight_buf]
+  == fake_highlighter)
+vim.treesitter.highlighter.active[highlight_buf] = original_highlighter
+vim.treesitter.get_parser = original_get_parser
+vim.treesitter.stop = original_stop
+vim.treesitter.start = original_start
 vim.api.nvim_buf_delete(highlight_buf, { force = true })
+
+local filetype_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(
+  filetype_buf,
+  0,
+  -1,
+  false,
+  { "print('inspected python')" }
+)
+vim.bo[filetype_buf].filetype = "lua"
+vim.b[filetype_buf].pantheon_inspect = {
+  role = "parent",
+  source_path = vim.fs.joinpath(root, "src", "inspection.py"),
+}
+local original_reliquary = package.loaded.reliquary
+local reliquary_buf
+local reliquary_filetype
+package.loaded.reliquary = {
+  apply = function(buf)
+    reliquary_buf = buf
+    reliquary_filetype = vim.bo[buf].filetype
+    return "st"
+  end,
+}
+local filetype_current_buf = vim.api.nvim_get_current_buf()
+assert(inspect._apply_inspection_filetype(filetype_buf) == "python")
+assert(vim.bo[filetype_buf].filetype == "python")
+assert(reliquary_buf == filetype_buf)
+assert(reliquary_filetype == "python")
+assert(vim.api.nvim_get_current_buf() == filetype_current_buf)
+package.loaded.reliquary = original_reliquary
+vim.api.nvim_buf_delete(filetype_buf, { force = true })
 
 local viewport_buf = vim.api.nvim_get_current_buf()
 local viewport_win = vim.api.nvim_get_current_win()
@@ -680,7 +750,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(new_sidebar_buf == sidebar_buf)
     assert(vim.api.nvim_win_get_width(old_sidebar_win) == sidebar_width)
     assert(vim.api.nvim_win_get_width(new_sidebar_win) == sidebar_width)
-    assert(sidebar_width == 28)
+    assert(sidebar_width == 30)
     assert(vim.wo[old_sidebar_win].cursorline)
     assert(vim.wo[new_sidebar_win].cursorline)
     assert(vim.wo[old_sidebar_win].cursorlineopt == "line")

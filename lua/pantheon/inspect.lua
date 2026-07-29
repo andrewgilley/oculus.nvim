@@ -1245,7 +1245,7 @@ local function place_range(buf, start, count, text, highlight)
   end
 end
 
-local function apply_change_signs(parent_buf, change_buf, hunks)
+local function set_change_highlights()
   vim.api.nvim_set_hl(0, "PantheonInspectRemoved", {
     link = "DiffDelete",
     default = true,
@@ -1254,6 +1254,17 @@ local function apply_change_signs(parent_buf, change_buf, hunks)
     link = "DiffAdd",
     default = true,
   })
+end
+
+set_change_highlights()
+
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = oil_group,
+  callback = set_change_highlights,
+})
+
+local function apply_change_signs(parent_buf, change_buf, hunks)
+  set_change_highlights()
   vim.api.nvim_buf_clear_namespace(parent_buf, change_ns, 0, -1)
   vim.api.nvim_buf_clear_namespace(change_buf, change_ns, 0, -1)
 
@@ -1288,8 +1299,6 @@ local function refresh_buffer_highlighting(buf)
 
   local syntax = vim.bo[buf].syntax
   if syntax ~= "" then
-    vim.bo[buf].syntax = ""
-    vim.bo[buf].syntax = syntax
     for _, win in ipairs(vim.fn.win_findbuf(buf)) do
       vim.api.nvim_win_call(win, function()
         vim.cmd("syntax sync fromstart")
@@ -1302,17 +1311,59 @@ local function refresh_buffer_highlighting(buf)
       and vim.treesitter.highlighter.active
     or nil
   if highlighters and highlighters[buf] then
-    local language
     local parser_ok, parser = pcall(vim.treesitter.get_parser, buf)
-    if parser_ok then
-      language = parser:lang()
+    if parser_ok and parser then
+      pcall(parser.invalidate, parser, true)
+      pcall(parser.parse, parser, true, function()
+        if vim.api.nvim_buf_is_valid(buf) then
+          vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(buf) then
+              vim.cmd("redraw")
+            end
+          end)
+        end
+      end)
     end
-    pcall(vim.treesitter.stop, buf)
-    pcall(vim.treesitter.start, buf, language)
   end
 
   vim.cmd("redraw")
   return true
+end
+
+local function apply_inspection_filetype(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local state = vim.b[buf].pantheon_inspect
+  if type(state) ~= "table" then
+    return
+  end
+  local filename = type(state.source_path) == "string"
+      and state.source_path ~= ""
+      and state.source_path
+    or state.file
+  if type(filename) ~= "string" or filename == "" then
+    return
+  end
+  local ok, filetype = pcall(vim.filetype.match, {
+    buf = buf,
+    filename = filename,
+  })
+  if not ok or type(filetype) ~= "string" or filetype == "" then
+    return
+  end
+  if vim.bo[buf].filetype ~= filetype then
+    vim.bo[buf].filetype = filetype
+  end
+  local reliquary_ok, reliquary = pcall(require, "reliquary")
+  if reliquary_ok
+    and type(reliquary) == "table"
+    and type(reliquary.apply) == "function"
+  then
+    pcall(reliquary.apply, buf)
+  end
+  refresh_buffer_highlighting(buf)
+  return filetype
 end
 
 local function replace_inspection_lines(endpoint, lines)
@@ -1755,7 +1806,7 @@ local function setup_inspection_sidebar(group)
   group.sidebar_windows = {}
   group.sidebar_visible = false
   group.sidebar_width =
-    math.min(28, math.max(20, vim.o.columns - 20))
+    math.min(30, math.max(20, vim.o.columns - 20))
   group.sidebar_rows = {}
   group.sidebar_chunk_lines = {}
   group.sidebar_entries = {}
@@ -1950,7 +2001,7 @@ vim.api.nvim_create_autocmd("TabEnter", {
     for _, group in ipairs(sidebar_groups) do
       local endpoint = endpoint_for_tab(group, tab)
       if endpoint then
-        refresh_buffer_highlighting(endpoint.buf)
+        apply_inspection_filetype(endpoint.buf)
       end
       refresh_sidebar(group, tab)
     end
@@ -2867,6 +2918,7 @@ M._change_lines = change_lines
 M._focused_change_lines = focused_change_lines
 M._prevent_window_dimming = prevent_window_dimming
 M._refresh_buffer_highlighting = refresh_buffer_highlighting
+M._apply_inspection_filetype = apply_inspection_filetype
 M._normalize_inspection_view = normalize_inspection_view
 M._sidebar_row = sidebar_row
 M._sidebar_chunk_row = sidebar_chunk_row
