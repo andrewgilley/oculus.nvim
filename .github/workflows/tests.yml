@@ -1,0 +1,65 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Neovim stable
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Neovim stable
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/nvim.tar.gz" \
+            https://github.com/neovim/neovim/releases/download/stable/nvim-linux-x86_64.tar.gz
+          tar --extract --gzip \
+            --file "$RUNNER_TEMP/nvim.tar.gz" \
+            --directory "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Install Oil test dependency
+        shell: bash
+        run: |
+          git clone --depth 1 \
+            https://github.com/stevearc/oil.nvim.git \
+            "$RUNNER_TEMP/oil.nvim"
+
+      - name: Show Neovim version
+        run: nvim --version
+
+      - name: Run opinion tests
+        run: nvim --headless -u NONE -l tests/opinion_spec.lua
+
+      - name: Run window and search tests
+        run: nvim --headless -u NONE -l tests/window_search_spec.lua
+
+      - name: Run inspect tests
+        env:
+          NVIM_LOG_FILE: ${{ runner.temp }}/nvim.log
+          PANTHEON_INSPECT_TEST_ROOT: ${{ github.workspace }}
+          PANTHEON_INSPECT_TEST_SHA: 925bae937d1b71092b59c2dc0d537ab732f80d20
+          PANTHEON_INSPECT_TEST_REPOSITORY: ${{ github.repository }}
+          PANTHEON_INSPECT_TEST_SOURCE: ${{ github.workspace }}
+          PANTHEON_INSPECT_TEST_OIL: ${{ runner.temp }}/oil.nvim
+          PANTHEON_INSPECT_TEST_PAIR_COUNT: "1"
+          PANTHEON_INSPECT_TEST_NO_WORKTREES: "1"
+          PANTHEON_INSPECT_TEST_VERIFY_CONTENT: "1"
+        run: nvim --headless -u NONE -l tests/inspect_spec.lua

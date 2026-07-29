@@ -1831,18 +1831,28 @@ refresh_sidebar = function(group, tab)
     and vim.api.nvim_get_current_win() == sidebar_win
     and vim.api.nvim_get_current_buf() == buf
   local active_row = group.sidebar_rows[active_index]
-  if active_row and not sidebar_is_focused then
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      sidebar_ns,
-      active_row.line_number - 1,
-      0,
-      {
-        line_hl_group = "CursorLine",
-        hl_eol = true,
-        priority = 80,
-      }
+  local active_chunk_line = active_chunk
+      and group.sidebar_chunk_lines[active_index]
+      and group.sidebar_chunk_lines[active_index][active_chunk]
+    or nil
+  local sidebar_cursor_line = active_chunk_line
+    or (active_row and active_row.line_number)
+  if sidebar_cursor_line
+    and sidebar_win
+    and vim.api.nvim_win_is_valid(sidebar_win)
+    and vim.api.nvim_win_get_buf(sidebar_win) == buf
+    and not sidebar_navigating
+    and not sidebar_is_focused
+    and vim.api.nvim_win_get_cursor(sidebar_win)[1]
+      ~= sidebar_cursor_line
+  then
+    local was_navigating = sidebar_navigating
+    sidebar_navigating = true
+    vim.api.nvim_win_set_cursor(
+      sidebar_win,
+      { sidebar_cursor_line, 0 }
     )
+    sidebar_navigating = was_navigating
   end
   local anchor_line = group.sidebar_anchor_line
   if anchor_line
