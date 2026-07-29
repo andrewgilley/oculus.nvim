@@ -58,6 +58,20 @@ revisions are resolved or fetched through the project's own `.git` directory.
 Inspect does not create a separate Pantheon repository, object cache, or
 worktree, and it does not alter the working checkout.
 
+Inspecting a GitHub review-comment or commit-comment activity item opens the
+commented file and side at the referenced line. The full comment body appears
+in a non-focusable Markdown float on the right of the main pane, anchored
+above that line. Ordinary issue and pull-request conversation comments do not
+create annotations because they are not attached to a file location.
+
+Inspect also opens a shared `Codex Summary` float at the upper-right of every
+parent and changed-file tab. It runs the authenticated local Codex CLI
+ephemerally with a read-only sandbox, grounding the request in the PR title or
+commit message, base/head revisions, and changed-file list. The loading text
+is replaced with a one- or two-sentence description of what the change
+accomplishes. Set `inspect_summary = false` to disable it, or change
+`inspect_summary_timeout` from its 120-second default.
+
 When an inspection tab is opened with
 [oil.nvim](https://github.com/stevearc/oil.nvim), a single foreground-only
 symbol marks each relevant entry: `+` added, `~` modified, `-` deleted, `→`
@@ -75,6 +89,8 @@ elsewhere can be configured explicitly:
 
 ```lua
 require("pantheon").setup({
+  inspect_summary = true,
+  inspect_summary_timeout = 120,
   inspect_search_paths = {
     "C:/Users/andre/Desktop/Dev/code/source",
   },

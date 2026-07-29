@@ -42,6 +42,74 @@ for _, expected in ipairs({
   assert(view.topline == expected.topline)
   assert(cursor[2] == expected.column)
 end
+
+local comment = inspect.activity_comment({
+  type = "PullRequestReviewCommentEvent",
+  payload = {
+    comment = {
+      body = "Please keep this branch explicit.",
+      path = "lua/pantheon/inspect.lua",
+      start_line = 15,
+      line = 17,
+      side = "RIGHT",
+      commit_id = "aaaaaaaa",
+    },
+  },
+})
+assert(comment)
+assert(comment.body == "Please keep this branch explicit.")
+assert(comment.path == "lua/pantheon/inspect.lua")
+assert(comment.line == 15)
+assert(comment.side == "change")
+assert(comment.commit == "aaaaaaaa")
+local left_comment = inspect.activity_comment({
+  type = "PullRequestReviewCommentEvent",
+  payload = {
+    comment = {
+      body = "This was removed.",
+      path = "lua/pantheon/inspect.lua",
+      original_line = 12,
+      side = "LEFT",
+      original_commit_id = "bbbbbbbb",
+    },
+  },
+})
+assert(left_comment)
+assert(left_comment.line == 12)
+assert(left_comment.side == "parent")
+assert(left_comment.commit == "bbbbbbbb")
+assert(inspect.activity_comment({
+  type = "IssueCommentEvent",
+  payload = {
+    comment = {
+      body = "Not attached to code.",
+      path = "README.md",
+      line = 1,
+    },
+  },
+}) == nil)
+
+local comment_view = assert(inspect._comment_float({
+  tab = vim.api.nvim_get_current_tabpage(),
+  win = viewport_win,
+  buf = viewport_buf,
+}, comment))
+assert(vim.api.nvim_get_current_win() == viewport_win)
+local comment_config = vim.api.nvim_win_get_config(comment_view.win)
+assert(comment_config.relative == "win")
+assert(comment_config.win == viewport_win)
+assert(comment_config.anchor == "SW")
+assert(comment_config.bufpos[1] == comment.line - 1)
+assert(comment_config.col > 0)
+assert(comment_config.focusable == false)
+assert(vim.api.nvim_buf_get_lines(
+  comment_view.buf,
+  0,
+  -1,
+  false
+)[1] == comment.body)
+vim.api.nvim_win_close(comment_view.win, true)
+
 vim.api.nvim_buf_set_lines(viewport_buf, 0, -1, false, { "" })
 vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
 vim.bo[viewport_buf].modified = false
@@ -390,6 +458,7 @@ if integration_root and (integration_sha or integration_url) then
         .. "/commit/" .. integration_sha
       ),
     {
+      inspect_summary = false,
       inspect_repositories = repositories,
       inspect_search_paths = integration_search_root
           and { integration_search_root }
