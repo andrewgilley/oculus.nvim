@@ -34,6 +34,8 @@ file and hunk without altering the working checkout.
 
 On a GitHub or Codeberg commit or pull-request activity, press `h` to inspect
 the change.
+The selected activity row shows a loading spinner while Pantheon prepares the
+inspection; tabs appear only after the changed-file sidebar is ready.
 Pantheon reads each commit and its first parent from Git without changing the
 local checkout. Every changed file opens an adjacent parent/change tab pair.
 

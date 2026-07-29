@@ -521,32 +521,35 @@ if missing_root then
     on_choice(items[2])
   end
   local source_root = vim.fs.joinpath(missing_root, "source")
+  local tabs_before_missing = #vim.api.nvim_list_tabpages()
+  local missing_error
+  local missing_progress = 0
   local ok, err = inspect.open(
     "https://github.com/pantheon/missing/commit/"
       .. "0123456789abcdef0123456789abcdef01234567",
     {
       inspect_search_paths = { source_root },
       inspect_repositories = {},
+    },
+    nil,
+    {
+      on_progress = function()
+        missing_progress = missing_progress + 1
+      end,
+      on_complete = function(message)
+        missing_error = message
+      end,
     }
   )
   assert(ok, err)
   assert(vim.wait(10000, function()
-    local tabs = vim.api.nvim_list_tabpages()
-    if #tabs ~= 3 then
-      return false
-    end
-    local state_ok, state = pcall(
-      vim.api.nvim_tabpage_get_var,
-      tabs[3],
-      "pantheon_inspect"
-    )
-    return state_ok and state.error ~= nil
+    return missing_error ~= nil
   end), "missing local repository did not stop inspection")
   vim.ui.select = original_select
   assert(prompted)
-  local tabs = vim.api.nvim_list_tabpages()
-  local state = vim.api.nvim_tabpage_get_var(tabs[3], "pantheon_inspect")
-  assert(state.error:match("download was declined"))
+  assert(missing_progress > 0)
+  assert(#vim.api.nvim_list_tabpages() == tabs_before_missing)
+  assert(missing_error:match("download was declined"))
   assert(vim.uv.fs_stat(vim.fs.joinpath(source_root, "missing")) == nil)
   assert(vim.uv.fs_stat(vim.fs.joinpath(missing_root, "repositories")) == nil)
 end
@@ -634,6 +637,10 @@ if integration_root and (integration_sha or integration_url) then
   if integration_cwd then
     vim.api.nvim_set_current_dir(integration_cwd)
   end
+  local initial_tab_count = #vim.api.nvim_list_tabpages()
+  local loading_frames = 0
+  local lifecycle_complete = false
+  local lifecycle_error
   local ok, err = inspect.open(
     integration_url
       or (
@@ -645,23 +652,28 @@ if integration_root and (integration_sha or integration_url) then
       inspect_search_paths = integration_search_root
           and { integration_search_root }
         or {},
+    },
+    nil,
+    {
+      on_progress = function()
+        loading_frames = loading_frames + 1
+      end,
+      on_complete = function(message)
+        lifecycle_error = message
+        lifecycle_complete = true
+      end,
     }
   )
   assert(ok, err)
-  local loading_tabs = vim.api.nvim_list_tabpages()
-  assert(#loading_tabs == 3)
-  assert(#vim.api.nvim_tabpage_list_wins(loading_tabs[2]) == 1)
-  assert(#vim.api.nvim_tabpage_list_wins(loading_tabs[3]) == 1)
-  local loading_state = vim.api.nvim_tabpage_get_var(
-    loading_tabs[3],
-    "pantheon_inspect"
-  )
-  assert(loading_state.loading)
+  assert(#vim.api.nvim_list_tabpages() == initial_tab_count)
+  assert(loading_frames > 0)
 
   local inspection_error
   local inspection_finished = vim.wait(180000, function()
     local current_tabs = vim.api.nvim_list_tabpages()
-    if #current_tabs < 3 or #current_tabs % 2 ~= 1 then
+    if #current_tabs <= initial_tab_count
+      or (#current_tabs - initial_tab_count) % 2 ~= 0
+    then
       return false
     end
     for index = 2, #current_tabs do
@@ -678,9 +690,10 @@ if integration_root and (integration_sha or integration_url) then
         return false
       end
     end
-    return true
+    return lifecycle_complete
   end)
   assert(inspection_finished, "inspection tabs were not opened")
+  assert(not lifecycle_error, lifecycle_error)
   assert(not inspection_error, inspection_error)
 
   local tabs = vim.api.nvim_list_tabpages()
@@ -965,10 +978,10 @@ if integration_root and (integration_sha or integration_url) then
     { details = true }
   )
   assert(#parent_marks > 0)
-  assert(parent_marks[1][4].sign_text == "-"
-    or parent_marks[1][4].sign_text == "+")
+  local parent_sign = vim.trim(parent_marks[1][4].sign_text)
+  assert(parent_sign == "-" or parent_sign == "+")
   assert(parent_marks[1][4].sign_hl_group
-    == (parent_marks[1][4].sign_text == "-"
+    == (parent_sign == "-"
         and "PantheonInspectRemoved"
       or "PantheonInspectAdded"))
   assert(vim.wo[parent_win].signcolumn == "yes")
@@ -1239,7 +1252,8 @@ if integration_root and (integration_sha or integration_url) then
     vim.fn.winsaveview
   )
   if selected_parent_line >= 10 then
-    assert(selected_view.topline == selected_parent_line - 10)
+    assert(selected_view.topline
+      == math.max(1, selected_parent_line - 10))
   end
   vim.api.nvim_exec_autocmds("WinScrolled", {
     pattern = tostring(parent_win),

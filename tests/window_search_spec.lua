@@ -2,6 +2,7 @@ local root = vim.fn.getcwd()
 vim.opt.runtimepath:prepend(root)
 
 local window = require("pantheon.window")
+local inspect = require("pantheon.inspect")
 local contributors = {
   {
     name = "Mitchell Hashimoto",
@@ -271,6 +272,57 @@ assert(review_context.body == "Please keep this branch explicit.")
 assert(review_context.path == "lua/example.lua")
 assert(review_context.line == 15)
 assert(review_context.side == "change")
+
+local original_inspect_open = inspect.open
+local inspect_lifecycle
+inspect.open = function(url, _, context, lifecycle)
+  assert(url:find(
+    "https://github.com/example/repository/pull/42",
+    1,
+    true
+  ) == 1)
+  assert(context == review_context)
+  inspect_lifecycle = lifecycle
+  lifecycle.on_progress("⠋")
+  return true
+end
+local inspect_mapping = vim.fn.maparg("h", "n", false, true)
+assert(inspect_mapping.desc
+  == "Inspect Pantheon commit or pull request")
+inspect_mapping.callback()
+local inspect_loading_namespace =
+  vim.api.nvim_get_namespaces().pantheon_inspect_activity_loading
+assert(inspect_loading_namespace)
+local inspect_loading_marks = vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  inspect_loading_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#inspect_loading_marks == 1)
+assert(inspect_loading_marks[1][2] + 1
+  == vim.api.nvim_win_get_cursor(state.win)[1])
+assert(inspect_loading_marks[1][4].virt_text[1][1] == "⠋")
+inspect_lifecycle.on_progress("⠙")
+inspect_loading_marks = vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  inspect_loading_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#inspect_loading_marks == 1)
+assert(inspect_loading_marks[1][4].virt_text[1][1] == "⠙")
+inspect_lifecycle.on_complete()
+assert(#vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  inspect_loading_namespace,
+  0,
+  -1,
+  {}
+) == 0)
+inspect.open = original_inspect_open
 
 local past_mapping = vim.fn.maparg("p", "n", false, true)
 assert(past_mapping.desc == "Load past Pantheon activity")

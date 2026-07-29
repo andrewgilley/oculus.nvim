@@ -34,6 +34,9 @@ local preview_ns = vim.api.nvim_create_namespace("pantheon_preview")
 local contributor_selection_ns = vim.api.nvim_create_namespace(
   "pantheon_contributor_selection"
 )
+local inspect_loading_ns = vim.api.nvim_create_namespace(
+  "pantheon_inspect_activity_loading"
+)
 local autocmd_group = vim.api.nvim_create_augroup(
   "PantheonWindow",
   { clear = true }
@@ -1724,12 +1727,56 @@ local function inspect_current()
   end
 
   local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  local activity_buf = M.state.buf
+  local function clear_spinner()
+    if is_valid_buf(activity_buf) then
+      vim.api.nvim_buf_clear_namespace(
+        activity_buf,
+        inspect_loading_ns,
+        0,
+        -1
+      )
+    end
+  end
   local ok, err = inspect.open(
     target,
     M.state.opts,
-    M.state.inspect_targets[line]
+    M.state.inspect_targets[line],
+    {
+      on_progress = function(frame)
+        if not is_valid_buf(activity_buf)
+          or M.state.buf ~= activity_buf
+          or M.state.view ~= "activity"
+          or M.state.line_targets[line] ~= target
+        then
+          return
+        end
+        clear_spinner()
+        vim.api.nvim_buf_set_extmark(
+          activity_buf,
+          inspect_loading_ns,
+          line - 1,
+          2,
+          {
+            virt_text = { { frame, "DiagnosticInfo" } },
+            virt_text_pos = "overlay",
+            priority = 200,
+          }
+        )
+      end,
+      on_complete = function(message)
+        clear_spinner()
+        if message then
+          vim.notify(
+            "Pantheon: " .. tostring(message),
+            vim.log.levels.WARN
+          )
+        end
+      end,
+    }
   )
   if not ok and err then
+    clear_spinner()
     vim.notify("Pantheon: " .. err, vim.log.levels.WARN)
   end
 end
@@ -1929,6 +1976,14 @@ end
 function M.close()
   M.state.request_id = M.state.request_id + 1
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
+  if is_valid_buf(M.state.buf) then
+    vim.api.nvim_buf_clear_namespace(
+      M.state.buf,
+      inspect_loading_ns,
+      0,
+      -1
+    )
+  end
   close_activity_footer()
   clear_search_window()
   clear_search_state()
