@@ -11,6 +11,17 @@ end
 
 local inspect = require("pantheon.inspect")
 
+local normal_highlight =
+  vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+for _, group in ipairs({
+  "PantheonInspectRemoved",
+  "PantheonInspectAdded",
+}) do
+  local sign_highlight =
+    vim.api.nvim_get_hl(0, { name = group, link = false })
+  assert(sign_highlight.bg == normal_highlight.bg)
+end
+
 local dimming_win = vim.api.nvim_get_current_win()
 local original_winhighlight = vim.wo[dimming_win].winhighlight
 vim.wo[dimming_win].winhighlight =
@@ -642,7 +653,30 @@ if integration_root and (integration_sha or integration_url) then
   if integration_cwd then
     vim.api.nvim_set_current_dir(integration_cwd)
   end
+  local initial_tab = vim.api.nvim_get_current_tabpage()
   local initial_tab_count = #vim.api.nvim_list_tabpages()
+  local initial_lazyredraw = vim.o.lazyredraw
+  local activity_closed_after_tabs_ready = false
+  local pantheon_window = require("pantheon.window")
+  local original_window_close = pantheon_window.close
+  pantheon_window.close = function(...)
+    pantheon_window.close = original_window_close
+    local ready_tabs = vim.api.nvim_list_tabpages()
+    assert(vim.api.nvim_get_current_tabpage() == initial_tab)
+    assert(#ready_tabs > initial_tab_count)
+    assert((#ready_tabs - initial_tab_count) % 2 == 0)
+    assert(vim.o.lazyredraw)
+    for index = initial_tab_count + 1, #ready_tabs do
+      local state = vim.api.nvim_tabpage_get_var(
+        ready_tabs[index],
+        "pantheon_inspect"
+      )
+      assert(state.loading == false)
+      assert(#vim.api.nvim_tabpage_list_wins(ready_tabs[index]) == 2)
+    end
+    activity_closed_after_tabs_ready = true
+    return original_window_close(...)
+  end
   local loading_frames = 0
   local lifecycle_complete = false
   local lifecycle_error
@@ -700,6 +734,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(inspection_finished, "inspection tabs were not opened")
   assert(not lifecycle_error, lifecycle_error)
   assert(not inspection_error, inspection_error)
+  assert(activity_closed_after_tabs_ready)
+  assert(vim.o.lazyredraw == initial_lazyredraw)
 
   local tabs = vim.api.nvim_list_tabpages()
   local pair_count = (#tabs - 1) / 2
@@ -773,7 +809,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(new_sidebar_buf == sidebar_buf)
     assert(vim.api.nvim_win_get_width(old_sidebar_win) == sidebar_width)
     assert(vim.api.nvim_win_get_width(new_sidebar_win) == sidebar_width)
-    assert(sidebar_width == 30)
+    assert(sidebar_width == 28)
     assert(vim.wo[old_sidebar_win].cursorline)
     assert(vim.wo[new_sidebar_win].cursorline)
     assert(vim.wo[old_sidebar_win].cursorlineopt == "line")
