@@ -664,6 +664,13 @@ end
 local issue_tabs_before = vim.api.nvim_list_tabpages()
 local issue_lifecycle_complete = false
 local issue_lifecycle_error
+vim.g.pantheon_test_issue_origin_win = vim.api.nvim_get_current_win()
+vim.g.pantheon_test_issue_origin_number =
+  vim.wo[vim.g.pantheon_test_issue_origin_win].number
+vim.g.pantheon_test_issue_origin_relativenumber =
+  vim.wo[vim.g.pantheon_test_issue_origin_win].relativenumber
+vim.wo[vim.g.pantheon_test_issue_origin_win].number = true
+vim.wo[vim.g.pantheon_test_issue_origin_win].relativenumber = true
 local issue_ok, issue_err = inspect.open(
   "https://github.com/andrewgilley/pantheon.nvim/issues/77",
   {
@@ -726,6 +733,8 @@ for index = #issue_tabs_before + 1, #issue_tabs_after do
   assert(state.role == "issue")
   local win = vim.api.nvim_tabpage_get_win(tab)
   local buf = vim.api.nvim_win_get_buf(win)
+  assert(vim.wo[win].number == true)
+  assert(vim.wo[win].relativenumber == true)
   issue_buffers[#issue_buffers + 1] = buf
   assert(vim.bo[buf].modifiable)
   assert(vim.bo[buf].buftype == "")
@@ -753,6 +762,13 @@ for _, buf in ipairs(issue_buffers) do
     vim.api.nvim_buf_delete(buf, { force = true })
   end
 end
+vim.wo[vim.g.pantheon_test_issue_origin_win].number =
+  vim.g.pantheon_test_issue_origin_number
+vim.wo[vim.g.pantheon_test_issue_origin_win].relativenumber =
+  vim.g.pantheon_test_issue_origin_relativenumber
+vim.g.pantheon_test_issue_origin_win = nil
+vim.g.pantheon_test_issue_origin_number = nil
+vim.g.pantheon_test_issue_origin_relativenumber = nil
 
 local original_show_change_picker = pantheon_window.show_change_picker
 local selectable_change_one = {
@@ -1159,6 +1175,8 @@ if integration_root and (integration_sha or integration_url) then
   local loading_frames = 0
   local lifecycle_complete = false
   local lifecycle_error
+  vim.wo.number = true
+  vim.wo.relativenumber = true
   local ok, err = inspect.open(
     integration_url
       or (
@@ -1280,6 +1298,10 @@ if integration_root and (integration_sha or integration_url) then
     assert(#vim.api.nvim_tabpage_list_wins(new_tab) == 2)
     local old_main_win = assert(inspection_window(old_tab))
     local new_main_win = assert(inspection_window(new_tab))
+    assert(vim.wo[old_main_win].number == true)
+    assert(vim.wo[old_main_win].relativenumber == true)
+    assert(vim.wo[new_main_win].number == true)
+    assert(vim.wo[new_main_win].relativenumber == true)
     local old_sidebar_win = assert(sidebar_window(old_tab))
     local new_sidebar_win = assert(sidebar_window(new_tab))
     local old_sidebar_buf = vim.api.nvim_win_get_buf(old_sidebar_win)

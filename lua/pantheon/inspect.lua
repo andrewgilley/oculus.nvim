@@ -3510,10 +3510,23 @@ local function make_inspection_tab()
   }
 end
 
+local function apply_inspection_number_options(win, options)
+  if not vim.api.nvim_win_is_valid(win) or type(options) ~= "table" then
+    return
+  end
+  if type(options.number) == "boolean" then
+    vim.wo[win].number = options.number
+  end
+  if type(options.relativenumber) == "boolean" then
+    vim.wo[win].relativenumber = options.relativenumber
+  end
+end
+
 local function open_tabs(
   inspections,
   loading,
   comment,
+  number_options,
   done
 )
   local staging_tab = vim.api.nvim_get_current_tabpage()
@@ -3565,6 +3578,7 @@ local function open_tabs(
         paths,
         index
       )
+      apply_inspection_number_options(parent.win, number_options)
       local change_tab = make_inspection_tab()
       local change = load_tab(
         change_tab,
@@ -3574,6 +3588,7 @@ local function open_tabs(
         paths,
         index
       )
+      apply_inspection_number_options(change.win, number_options)
       next_session = next_session + 1
       session.parent = parent
       session.change = change
@@ -3927,6 +3942,7 @@ local function open_issue_tabs(
   details,
   selected,
   loading,
+  number_options,
   done
 )
   local files = {}
@@ -4002,6 +4018,7 @@ local function open_issue_tabs(
       vim.b[buf].pantheon_issue_sections = vim.deepcopy(file.sections)
       vim.wo[win].signcolumn = "yes"
       vim.wo[win].wrap = false
+      apply_inspection_number_options(win, number_options)
       prevent_window_dimming(win)
       vim.api.nvim_buf_clear_namespace(buf, issue_ns, 0, -1)
       for _, section in ipairs(file.sections) do
@@ -4047,7 +4064,14 @@ local function open_issue_tabs(
   done(loaded)
 end
 
-local function open_issue(info, opts, context, loading, done)
+local function open_issue(
+  info,
+  opts,
+  context,
+  loading,
+  number_options,
+  done
+)
   resolve_issue_details(info, opts, context, function(details, details_err)
     if not details then
       done(nil, details_err)
@@ -4093,6 +4117,7 @@ local function open_issue(info, opts, context, loading, done)
             details,
             selected,
             loading,
+            number_options,
             done
           )
         end)
@@ -4115,6 +4140,14 @@ function M.open(url, opts, context, lifecycle)
   if active then
     return nil, "an inspection is already being prepared"
   end
+  local number_options = {
+    number = vim.wo.number,
+    relativenumber = vim.wo.relativenumber,
+  }
+  local window_ok, window = pcall(require, "pantheon.window")
+  if window_ok and type(window.inspection_window_options) == "function" then
+    number_options = window.inspection_window_options() or number_options
+  end
   local comment = context and (context.comment or context) or nil
   if comment then
     info.comment = vim.deepcopy(comment)
@@ -4131,12 +4164,19 @@ function M.open(url, opts, context, lifecycle)
       .. tostring(loading)
   end
   if info.kind == "issue" then
-    open_issue(info, opts, context, loading, function(_, issue_err)
-      active = false
-      if issue_err then
-        show_loading_error(loading, issue_err)
+    open_issue(
+      info,
+      opts,
+      context,
+      loading,
+      number_options,
+      function(_, issue_err)
+        active = false
+        if issue_err then
+          show_loading_error(loading, issue_err)
+        end
       end
-    end)
+    )
     return true
   end
   resolve_target(info, opts, function(resolved, resolve_err)
@@ -4161,6 +4201,7 @@ function M.open(url, opts, context, lifecycle)
             selected,
             loading,
             resolved.comment,
+            number_options,
             function(_, open_err)
               active = false
               if open_err then
