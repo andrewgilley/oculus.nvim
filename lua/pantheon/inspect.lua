@@ -1319,8 +1319,11 @@ local function select_issue_candidates(
   end
   local function selected_count()
     local count = 0
+    local seen = {}
     for _, candidate in ipairs(candidates) do
-      if selected[candidate] then
+      local key = candidate.path:lower()
+      if selected[key] and not seen[key] then
+        seen[key] = true
         count = count + 1
       end
     end
@@ -1330,46 +1333,49 @@ local function select_issue_candidates(
     if finished then
       return
     end
-    local choices = {
-      {
-        action = "codex",
-        label = codex_requested
-            and "Ask Codex to analyze the issue again"
-          or "Ask Codex to identify relevant files and sections",
-      },
-    }
+    local groups = {}
+    local groups_by_path = {}
     for _, candidate in ipairs(candidates) do
-      local location = candidate.whole_file
-          and candidate.path
-        or (
-          candidate.line == candidate.last_line
-              and ("%s:%d"):format(candidate.path, candidate.line)
-            or ("%s:%d-%d"):format(
-              candidate.path,
-              candidate.line,
-              candidate.last_line
-            )
-        )
-      choices[#choices + 1] = {
-        candidate = candidate,
-        label = ("%s %s · %s"):format(
-          selected[candidate] and "[x]" or "[ ]",
-          location,
-          candidate.reason
-        ),
-      }
+      local key = candidate.path:lower()
+      local group = groups_by_path[key]
+      if not group then
+        group = {
+          key = key,
+          path = candidate.path,
+          candidates = {},
+        }
+        groups_by_path[key] = group
+        groups[#groups + 1] = group
+      end
+      group.candidates[#group.candidates + 1] = candidate
     end
-    if #candidates > 0 then
+    local choices = {}
+    if #groups > 0 then
       choices[#choices + 1] = {
         action = "all",
-        label = "[+] Select all candidates",
+        label = "[+] Show all files",
       }
     end
     local count = selected_count()
     if count > 0 then
       choices[#choices + 1] = {
         action = "build",
-        label = ("Build tabs from selected sections (%d)"):format(count),
+        label = ("Build tabs from selected files (%d)"):format(count),
+      }
+    end
+    choices[#choices + 1] = {
+      action = "codex",
+      label = codex_requested
+          and "Ask Codex to analyze the issue again"
+        or "Ask Codex to identify relevant files and sections",
+    }
+    for _, group in ipairs(groups) do
+      choices[#choices + 1] = {
+        group = group,
+        label = ("%s %s"):format(
+          selected[group.key] and "[x]" or "[ ]",
+          group.path
+        ),
       }
     end
     choices[#choices + 1] = {
@@ -1420,8 +1426,8 @@ local function select_issue_candidates(
         return
       end
       if choice.action == "all" then
-        for _, candidate in ipairs(candidates) do
-          selected[candidate] = true
+        for _, group in ipairs(groups) do
+          selected[group.key] = true
         end
         prompt()
         return
@@ -1430,15 +1436,15 @@ local function select_issue_candidates(
         finished = true
         local result = {}
         for _, candidate in ipairs(candidates) do
-          if selected[candidate] then
+          if selected[candidate.path:lower()] then
             result[#result + 1] = candidate
           end
         end
         callback(result)
         return
       end
-      if choice.candidate then
-        selected[choice.candidate] = not selected[choice.candidate]
+      if choice.group then
+        selected[choice.group.key] = not selected[choice.group.key]
       end
       prompt()
     end)

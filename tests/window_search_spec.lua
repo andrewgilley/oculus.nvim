@@ -416,6 +416,11 @@ local issue_candidate = {
   line = 120,
   last_line = 132,
 }
+local issue_file_group = {
+  key = "lua/pantheon/window.lua",
+  path = "lua/pantheon/window.lua",
+  candidates = { issue_candidate },
+}
 window.show_issue_picker({
   opts = state.opts,
   info = {
@@ -434,12 +439,20 @@ window.show_issue_picker({
   remote_url = "https://github.com/example/repository.git",
 }, {
   {
+    action = "all",
+    label = "[+] Show all files",
+  },
+  {
     action = "codex",
     label = "Ask Codex to identify relevant files and sections",
   },
   {
-    candidate = issue_candidate,
-    label = "[ ] lua/pantheon/window.lua:120-132 · direct reference",
+    group = issue_file_group,
+    label = "[ ] lua/pantheon/window.lua",
+  },
+  {
+    action = "build",
+    label = "Build tabs from selected files (1)",
   },
   {
     action = "cancel",
@@ -451,12 +464,17 @@ end)
 assert(state.view == "issue_picker")
 assert(state.footer_win == nil)
 assert(state.footer_buf == nil)
+assert(state.line_targets[
+  vim.api.nvim_win_get_cursor(state.win)[1]
+].action == "all")
 local issue_picker_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
 assert(issue_picker_text:find("ISSUE INSPECT", 1, true))
 assert(issue_picker_text:find("REPOSITORY LOCATIONS", 1, true))
+assert(issue_picker_text:find("RELEVANT FILES", 1, true))
+assert(not issue_picker_text:find("120-132", 1, true))
 assert(issue_picker_text:find("C:/source/repository", 1, true))
 assert(issue_picker_text:find("C:/source", 1, true))
 assert(issue_picker_text:find(
@@ -476,7 +494,7 @@ assert(issue_picker_text:find(
 ))
 local issue_candidate_line
 for line, target in pairs(state.line_targets) do
-  if target.candidate == issue_candidate then
+  if target.group == issue_file_group then
     issue_candidate_line = line
     break
   end
@@ -484,10 +502,15 @@ end
 assert(issue_candidate_line)
 vim.api.nvim_win_set_cursor(state.win, { issue_candidate_line, 0 })
 select_mapping.callback()
-assert(issue_picker_choice.candidate == issue_candidate)
+assert(issue_picker_choice.group == issue_file_group)
+local build_mapping = vim.fn.maparg("b", "n", false, true)
+assert(build_mapping.desc == "Build selected Pantheon inspect files")
+build_mapping.callback()
+assert(issue_picker_choice.action == "build")
 window.restore_issue_picker_page()
 assert(state.view == "activity")
 assert(vim.api.nvim_win_is_valid(state.footer_win))
+assert(vim.fn.maparg("b", "n", false, true).callback == nil)
 
 local back_mapping = vim.fn.maparg("j", "n", false, true)
 local issue_picker_cancelled = false
