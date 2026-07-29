@@ -1756,10 +1756,10 @@ local function inspect_current()
           activity_buf,
           inspect_loading_ns,
           line - 1,
-          2,
+          0,
           {
-            virt_text = { { frame, "DiagnosticInfo" } },
-            virt_text_pos = "overlay",
+            virt_text = { { " " .. frame, "DiagnosticInfo" } },
+            virt_text_pos = "eol",
             priority = 200,
           }
         )

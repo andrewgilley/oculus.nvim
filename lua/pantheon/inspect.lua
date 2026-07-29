@@ -1295,6 +1295,9 @@ local function refresh_buffer_highlighting(buf)
   then
     return false
   end
+  if vim.b[buf].pantheon_inspect_highlighting_refreshed then
+    return true
+  end
 
   local syntax = vim.bo[buf].syntax
   if syntax ~= "" then
@@ -1326,6 +1329,7 @@ local function refresh_buffer_highlighting(buf)
   end
 
   vim.cmd("redraw")
+  vim.b[buf].pantheon_inspect_highlighting_refreshed = true
   return true
 end
 
@@ -1352,6 +1356,7 @@ local function apply_inspection_filetype(buf)
     return
   end
   if vim.bo[buf].filetype ~= filetype then
+    vim.b[buf].pantheon_inspect_highlighting_refreshed = false
     vim.bo[buf].filetype = filetype
   end
   local reliquary_ok, reliquary = pcall(require, "reliquary")
