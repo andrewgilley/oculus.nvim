@@ -335,6 +335,24 @@ assert(review_context.body == "Please keep this branch explicit.")
 assert(review_context.path == "lua/example.lua")
 assert(review_context.line == 15)
 assert(review_context.side == "change")
+local inspect_source_line
+for line, title_line in pairs(state.activity_title_lines) do
+  if
+    line ~= title_line
+    and state.inspect_targets[line] == review_context
+  then
+    inspect_source_line = line
+    break
+  end
+end
+assert(inspect_source_line)
+vim.api.nvim_win_set_cursor(state.win, { inspect_source_line, 0 })
+local inspect_description_text = vim.api.nvim_buf_get_lines(
+  state.buf,
+  inspect_source_line - 1,
+  inspect_source_line,
+  false
+)[1]
 
 local original_inspect_open = inspect.open
 local inspect_lifecycle
@@ -352,8 +370,8 @@ end
 local inspect_mapping = vim.fn.maparg("h", "n", false, true)
 assert(inspect_mapping.desc
   == "Inspect Oculus change or issue")
-local inspect_activity_line =
-  vim.api.nvim_win_get_cursor(state.win)[1]
+local inspect_activity_line = state.activity_title_lines[inspect_source_line]
+assert(inspect_activity_line ~= inspect_source_line)
 local inspect_activity_text = vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_activity_line - 1,
@@ -383,6 +401,12 @@ assert(
 assert(first_loading_text:find(" ⠋", 1, true))
 assert(first_loading_text:sub(-21)
   == inspect_activity_text:sub(-21))
+assert(vim.api.nvim_buf_get_lines(
+  state.buf,
+  inspect_source_line - 1,
+  inspect_source_line,
+  false
+)[1] == inspect_description_text)
 inspect_lifecycle.on_progress("⠙")
 local second_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
