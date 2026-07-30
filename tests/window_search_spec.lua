@@ -483,7 +483,8 @@ local activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(activity_text:find("GitHub · page 2", 1, true))
+assert(activity_text:find("GitHub (2/3)", 1, true))
+assert(not activity_text:find("page 2", 1, true))
 assert(vim.api.nvim_win_get_cursor(state.win)[1]
   == state.activity_cursor_min_line)
 local footer_text = table.concat(
@@ -500,6 +501,11 @@ assert(state.activity_page == 3)
 assert(#state.events == 4)
 assert(state.events[1].id == "17")
 assert(requested_per_page[3] == 46)
+local last_activity_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(last_activity_text:find("GitHub (3/3)", 1, true))
 
 local recent_mapping = vim.fn.maparg("r", "n", false, true)
 assert(recent_mapping.desc == "Load more recent Oculus activity")
