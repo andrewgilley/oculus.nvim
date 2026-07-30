@@ -279,7 +279,7 @@ assert(inspect._sidebar_chunk_row(
 assert(inspect._sidebar_chunk_row(
   { old_count = 2, new_start = 40, new_count = 2 },
   true
-) == "  └─ 40-41 (0)")
+) == "  └─ 40-41")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
 ) == "changed/file.lua")

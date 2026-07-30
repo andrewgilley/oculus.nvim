@@ -23,7 +23,7 @@ local default_next_chunk = "<Tab>"
 local default_previous_chunk = "<S-Tab>"
 local inspection_statusline_option =
   "%!v:lua.require('oculus.inspect')._inspection_statusline()"
-local inspection_sidebar_statusline_option = " [oculus] "
+local inspection_sidebar_statusline_option = "[oculus] "
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
@@ -2467,11 +2467,12 @@ local function sidebar_chunk_row(hunk, last)
   local last_line = first + math.max(0, (hunk.new_count or 0) - 1)
   local delta = (hunk.new_count or 0) - (hunk.old_count or 0)
   local delta_text = delta > 0 and ("+" .. delta) or tostring(delta)
-  return ("  %s %d-%d (%s)"):format(
+  local suffix = delta ~= 0 and (" (" .. delta_text .. ")") or ""
+  return ("  %s %d-%d%s"):format(
     branch,
     first,
     last_line,
-    delta_text
+    suffix
   )
 end
 
