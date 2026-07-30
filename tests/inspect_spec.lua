@@ -417,18 +417,18 @@ assert(pull_request_overview_text:find(
   1,
   true
 ))
-assert(pull_request_overview_text:find("\n• Title\n", 1, true))
-assert(pull_request_overview_text:find("\n• Description\n", 1, true))
-assert(pull_request_overview_text:find("\n• Author\n", 1, true))
-assert(pull_request_overview_text:find("\n• URL\n", 1, true))
-assert(pull_request_overview_text:find("\n• PR number\n", 1, true))
-assert(pull_request_overview_text:find("\n• Status\n", 1, true))
+assert(pull_request_overview_text:find("\n  Title\n", 1, true))
+assert(pull_request_overview_text:find("\n  Description\n", 1, true))
+assert(pull_request_overview_text:find("\n  Author\n", 1, true))
+assert(pull_request_overview_text:find("\n  URL\n", 1, true))
+assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
+assert(pull_request_overview_text:find("\n  Status\n", 1, true))
 assert(not pull_request_overview_text:find("Repository", 1, true))
 assert(not pull_request_overview_text:find("Branches", 1, true))
 assert(not pull_request_overview_text:find("Changes", 1, true))
 assert(not pull_request_overview_text:find("Created", 1, true))
 assert(not pull_request_overview_text:find("Updated", 1, true))
-assert(pull_request_overview_text:find("o changed files", 1, true))
+assert(not pull_request_overview_text:find("changed files", 1, true))
 
 local parsed_commit_overview = inspect._parse_commit_overview(
   table.concat({
@@ -472,14 +472,35 @@ assert(commit_overview_text:find(
   true
 ))
 assert(commit_overview_text:find("Ada Lovelace", 1, true))
-assert(commit_overview_text:find("\n• Title\n", 1, true))
-assert(commit_overview_text:find("\n• Description\n", 1, true))
-assert(commit_overview_text:find("\n• Author\n", 1, true))
-assert(commit_overview_text:find("\n• URL\n", 1, true))
+assert(commit_overview_text:find("\n  Title\n", 1, true))
+assert(commit_overview_text:find("\n  Description\n", 1, true))
+assert(commit_overview_text:find("\n  Author\n", 1, true))
+assert(commit_overview_text:find("\n  URL\n", 1, true))
 assert(not commit_overview_text:find("Repository", 1, true))
 assert(not commit_overview_text:find("\nCommit\n", 1, true))
 assert(not commit_overview_text:find("Authored", 1, true))
 assert(not commit_overview_text:find("Changes", 1, true))
+do
+  local main_config = require("oculus.window").window_config({})
+  local compact_config = inspect._overview_window_config(
+    main_config,
+    { kind = "commit" }
+  )
+  assert(compact_config.width
+    == math.max(20, math.floor(main_config.width * 0.75)))
+  assert(compact_config.height
+    == math.max(8, math.floor(main_config.height * 0.75)))
+  assert(compact_config.col > main_config.col)
+  assert(compact_config.row > main_config.row)
+  local pull_request_config = inspect._overview_window_config(
+    main_config,
+    { kind = "pull_request" }
+  )
+  assert(pull_request_config.width == main_config.width)
+  assert(pull_request_config.height == main_config.height)
+  assert(pull_request_config.col == main_config.col)
+  assert(pull_request_config.row == main_config.row)
+end
 
 local issue_context = inspect.activity_context({
   type = "IssueCommentEvent",
@@ -1682,6 +1703,10 @@ if integration_root and (integration_sha or integration_url) then
   overview_saved.buf = vim.api.nvim_get_current_buf()
   overview_saved.config =
     vim.api.nvim_win_get_config(overview_sidebar_win)
+  overview_saved.close_mapping =
+    vim.fn.maparg("q", "n", false, true)
+  assert(overview_saved.close_mapping.desc
+    == "Close Oculus Inspect overview")
   assert(
     overview_sidebar_win ~= overview_saved.sidebar_win,
     vim.inspect({
@@ -1697,29 +1722,45 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_win_get_width(overview_saved.sidebar_win)
     == sidebar_width)
   assert(overview_saved.config.relative == "editor")
-  assert(overview_saved.config.width
-    == require("oculus.window").window_config({}).width)
-  assert(overview_saved.config.height
-    == require("oculus.window").window_config({}).height)
-  assert(overview_saved.config.row
-    == require("oculus.window").window_config({}).row)
-  assert(overview_saved.config.col
-    == require("oculus.window").window_config({}).col)
+  do
+    local main_overview_config =
+      require("oculus.window").window_config({})
+    local expected_overview_width = integration_is_pull_request
+        and main_overview_config.width
+      or math.max(20, math.floor(main_overview_config.width * 0.75))
+    local expected_overview_height = integration_is_pull_request
+        and main_overview_config.height
+      or math.max(8, math.floor(main_overview_config.height * 0.75))
+    assert(overview_saved.config.width
+      == expected_overview_width)
+    assert(overview_saved.config.height
+      == expected_overview_height)
+    assert(overview_saved.config.row
+      == main_overview_config.row
+        + math.floor(
+          (main_overview_config.height - expected_overview_height) / 2
+        ))
+    assert(overview_saved.config.col
+      == main_overview_config.col
+        + math.floor(
+          (main_overview_config.width - expected_overview_width) / 2
+        ))
+  end
   assert(overview_saved.config.title == nil
     or overview_saved.config.title == "")
   local overview_text = table.concat(
     vim.api.nvim_buf_get_lines(overview_saved.buf, 0, -1, false),
     "\n"
   )
-  assert(overview_text:match("^• Title\n"))
-  assert(overview_text:find("\n• Description\n", 1, true))
-  assert(overview_text:find("\n• Author\n", 1, true))
-  assert(overview_text:find("\n• URL\n", 1, true))
+  assert(overview_text:match("^  Title\n"))
+  assert(overview_text:find("\n  Description\n", 1, true))
+  assert(overview_text:find("\n  Author\n", 1, true))
+  assert(overview_text:find("\n  URL\n", 1, true))
   assert(not overview_text:find("Repository", 1, true))
   assert(not overview_text:find("\nCommit\n", 1, true))
   assert(not overview_text:find("Authored", 1, true))
   assert(not overview_text:find("Changes", 1, true))
-  assert(overview_text:find("gO changed files", 1, true))
+  assert(not overview_text:find("changed files", 1, true))
   overview_saved.section_marks = vim.api.nvim_buf_get_extmarks(
     overview_saved.buf,
     vim.api.nvim_get_namespaces().oculus_inspect_sidebar,
@@ -1729,9 +1770,14 @@ if integration_root and (integration_sha or integration_url) then
   )
   assert(#overview_saved.section_marks >= 4)
   for _, mark in ipairs(overview_saved.section_marks) do
-    assert(mark[4].line_hl_group
+    assert(mark[3] == 2)
+    assert(mark[4].hl_group
       == "OculusInspectOverviewSection")
   end
+  assert(vim.api.nvim_get_hl(
+    0,
+    { name = "OculusInspectOverviewSection", link = false }
+  ).underline == true)
   local overview_line_count =
     vim.api.nvim_buf_line_count(overview_saved.buf)
   vim.api.nvim_win_set_cursor(
@@ -1755,7 +1801,7 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_win_call(change_win, vim.fn.winsaveview),
     overview_saved.main_view
   ))
-  sidebar_overview_mapping.callback()
+  overview_saved.close_mapping.callback()
   assert(not vim.api.nvim_win_is_valid(overview_sidebar_win))
   assert(not vim.api.nvim_buf_is_valid(overview_saved.buf))
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "files")
