@@ -1055,6 +1055,20 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.wo[old_main_win].relativenumber == true)
     assert(vim.wo[new_main_win].number == true)
     assert(vim.wo[new_main_win].relativenumber == true)
+    assert(vim.wo[old_main_win].cursorline)
+    assert(vim.wo[new_main_win].cursorline)
+    assert(vim.wo[old_main_win].cursorlineopt == "line")
+    assert(vim.wo[new_main_win].cursorlineopt == "line")
+    assert(not vim.wo[old_main_win].winhighlight:find(
+      "CursorLine:OculusCursorLine",
+      1,
+      true
+    ))
+    assert(not vim.wo[new_main_win].winhighlight:find(
+      "CursorLine:OculusCursorLine",
+      1,
+      true
+    ))
     local old_sidebar_win = assert(sidebar_window(old_tab))
     local new_sidebar_win = assert(sidebar_window(new_tab))
     local old_sidebar_buf = vim.api.nvim_win_get_buf(old_sidebar_win)
