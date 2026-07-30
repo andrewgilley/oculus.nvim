@@ -39,7 +39,6 @@ window.open({
   height = 0.8,
   border = "rounded",
   contributor_list_limit = 20,
-  navigation_delay = 50,
   contributors = contributors,
 })
 
@@ -79,12 +78,11 @@ main_down_mapping.callback()
 local second_username = state.selected_username
 assert(second_username ~= first_username)
 main_down_mapping.callback()
-assert(state.selected_username == second_username)
-vim.wait(70, function()
-  return false
-end)
-main_down_mapping.callback()
 assert(state.selected_username ~= second_username)
+local third_username = state.selected_username
+main_down_mapping.callback()
+assert(state.selected_username ~= third_username)
+assert(state.selected_username == first_username)
 
 local page_events = {}
 for index = 1, 20 do
@@ -172,18 +170,12 @@ search_down_mapping.callback()
 assert(state.search_index == 2)
 assert(state.preview_items[4][1] == state.search_results[2].name)
 search_up_mapping.callback()
-assert(state.search_index == 2)
-vim.wait(70, function()
-  return false
-end)
-search_up_mapping.callback()
 assert(state.search_index == 1)
 assert(state.preview_items[4][1] == state.search_results[1].name)
-vim.wait(70, function()
-  return false
-end)
-search_down_mapping.callback()
+search_up_mapping.callback()
 assert(state.search_index == 2)
+search_down_mapping.callback()
+assert(state.search_index == 1)
 
 vim.api.nvim_buf_set_lines(
   state.search_buf,
