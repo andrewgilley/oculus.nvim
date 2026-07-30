@@ -1654,9 +1654,14 @@ local function search_win_config()
   local position = vim.api.nvim_win_get_position(M.state.win)
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(parent_width)
-  local divider_col = position[2] + left_width - 1
-  local search_col = position[2] + 1
-  local search_width = math.max(1, divider_col - search_col - 10)
+  local right_col = position[2] + left_width + 1
+  local right_width = math.max(1, parent_width - left_width - 1)
+  local search_width = math.max(
+    1,
+    math.min(left_width - 12, right_width - 2)
+  )
+  local search_col = right_col
+    + math.floor((right_width - search_width - 2) / 2)
   return {
     relative = "editor",
     width = search_width,

@@ -30,6 +30,7 @@ assert(inspect._inspect_sidebar_width(
 assert(oculus.config.inspect_overview_toggle == "o")
 assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
+assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
 assert(oculus.config.inspect_next_file == nil)
 
 for group, expected in pairs({
@@ -416,12 +417,12 @@ assert(pull_request_overview_text:find(
   1,
   true
 ))
-assert(pull_request_overview_text:find("Title", 1, true))
-assert(pull_request_overview_text:find("Description", 1, true))
-assert(pull_request_overview_text:find("Author", 1, true))
-assert(pull_request_overview_text:find("URL", 1, true))
-assert(pull_request_overview_text:find("PR number", 1, true))
-assert(pull_request_overview_text:find("Status", 1, true))
+assert(pull_request_overview_text:find("\n• Title\n", 1, true))
+assert(pull_request_overview_text:find("\n• Description\n", 1, true))
+assert(pull_request_overview_text:find("\n• Author\n", 1, true))
+assert(pull_request_overview_text:find("\n• URL\n", 1, true))
+assert(pull_request_overview_text:find("\n• PR number\n", 1, true))
+assert(pull_request_overview_text:find("\n• Status\n", 1, true))
 assert(not pull_request_overview_text:find("Repository", 1, true))
 assert(not pull_request_overview_text:find("Branches", 1, true))
 assert(not pull_request_overview_text:find("Changes", 1, true))
@@ -471,10 +472,10 @@ assert(commit_overview_text:find(
   true
 ))
 assert(commit_overview_text:find("Ada Lovelace", 1, true))
-assert(commit_overview_text:find("Title", 1, true))
-assert(commit_overview_text:find("Description", 1, true))
-assert(commit_overview_text:find("Author", 1, true))
-assert(commit_overview_text:find("URL", 1, true))
+assert(commit_overview_text:find("\n• Title\n", 1, true))
+assert(commit_overview_text:find("\n• Description\n", 1, true))
+assert(commit_overview_text:find("\n• Author\n", 1, true))
+assert(commit_overview_text:find("\n• URL\n", 1, true))
 assert(not commit_overview_text:find("Repository", 1, true))
 assert(not commit_overview_text:find("\nCommit\n", 1, true))
 assert(not commit_overview_text:find("Authored", 1, true))
@@ -1454,6 +1455,8 @@ if integration_root and (integration_sha or integration_url) then
   for _, mapping in ipairs(jump_maps) do
     if mapping.desc == "Previous Oculus change" then
       previous_mapped = mapping.lhs == "<C-Left>"
+    elseif mapping.desc == "Previous Oculus changed chunk" then
+      previous_mapped = mapping
     elseif mapping.desc == "Next Oculus change" then
       next_mapped = mapping.lhs == "<C-Right>"
     elseif mapping.desc == "Toggle Oculus file version" then
@@ -1474,7 +1477,7 @@ if integration_root and (integration_sha or integration_url) then
       end
     end
   end
-  assert(not previous_mapped)
+  assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
   assert(not next_mapped)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
   assert(switch_mapped)
@@ -1522,6 +1525,14 @@ if integration_root and (integration_sha or integration_url) then
         ~= vim.g.oculus_test_sidebar_cursor
     )
   end
+  vim.fn.maparg("<S-Tab>", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == change_win)
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index == 1)
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
+      == vim.g.oculus_test_chunk_count
+  )
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
   vim.g.oculus_test_sidebar_cursor = nil
@@ -1554,6 +1565,8 @@ if integration_root and (integration_sha or integration_url) then
       next_file_mapping = mapping
     elseif mapping.desc == "Next Oculus changed chunk" then
       toggle_mapped = mapping
+    elseif mapping.desc == "Previous Oculus changed chunk" then
+      previous_mapped = mapping
     end
   end
   assert(not sidebar_ctrl_i_from_sidebar)
@@ -1569,6 +1582,7 @@ if integration_root and (integration_sha or integration_url) then
     and sidebar_overview_mapping.lhs == "gO")
   assert(not next_file_mapping)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
+  assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
 
   vim.api.nvim_set_current_tabpage(tabs[pair_count * 2 + 1])
   local overview_sidebar_win =
@@ -1599,6 +1613,21 @@ if integration_root and (integration_sha or integration_url) then
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
       == 1
   )
+  previous_mapped.callback()
+  assert(vim.api.nvim_get_current_tabpage()
+    == tabs[pair_count * 2 + 1])
+  assert(vim.api.nvim_get_current_win()
+    == assert(sidebar_window(tabs[pair_count * 2 + 1])))
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
+      == pair_count
+  )
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
+      == vim.g.oculus_test_chunk_count
+  )
+  toggle_mapped.callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
   overview_sidebar_win = assert(sidebar_window(tabs[3]))
@@ -1612,15 +1641,17 @@ if integration_root and (integration_sha or integration_url) then
   sidebar_overview_mapping.callback()
   assert(vim.api.nvim_get_current_win() == overview_sidebar_win)
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "overview")
+  assert(vim.api.nvim_win_get_width(overview_sidebar_win)
+    == sidebar_width + 10)
   local overview_text = table.concat(
     vim.api.nvim_buf_get_lines(sidebar_buf, 0, -1, false),
     "\n"
   )
   assert(overview_text:match("^OVERVIEW\n"))
-  assert(overview_text:find("Title", 1, true))
-  assert(overview_text:find("Description", 1, true))
-  assert(overview_text:find("Author", 1, true))
-  assert(overview_text:find("URL", 1, true))
+  assert(overview_text:find("\n• Title\n", 1, true))
+  assert(overview_text:find("\n• Description\n", 1, true))
+  assert(overview_text:find("\n• Author\n", 1, true))
+  assert(overview_text:find("\n• URL\n", 1, true))
   assert(not overview_text:find("Repository", 1, true))
   assert(not overview_text:find("\nCommit\n", 1, true))
   assert(not overview_text:find("Authored", 1, true))
@@ -1653,6 +1684,8 @@ if integration_root and (integration_sha or integration_url) then
   sidebar_overview_mapping.callback()
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "files")
   assert(vim.api.nvim_get_current_win() == overview_sidebar_win)
+  assert(vim.api.nvim_win_get_width(overview_sidebar_win)
+    == sidebar_width)
   assert(vim.deep_equal(
     vim.api.nvim_win_get_cursor(overview_sidebar_win),
     overview_saved.sidebar_cursor
