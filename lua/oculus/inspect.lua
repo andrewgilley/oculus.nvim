@@ -23,6 +23,7 @@ local default_next_chunk = "<Tab>"
 local default_previous_chunk = "<S-Tab>"
 local inspection_statusline_option =
   "%!v:lua.require('oculus.inspect')._inspection_statusline()"
+local inspection_sidebar_statusline_option = " [oculus] "
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
@@ -2810,7 +2811,7 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
   if group.kind ~= "issue" then
-    vim.wo[win].statusline = inspection_statusline_option
+    vim.wo[win].statusline = inspection_sidebar_statusline_option
   end
   prevent_window_dimming(win)
   group.sidebar_windows[endpoint.tab] = win
@@ -3262,26 +3263,14 @@ local function inspection_statusline(win)
   end
   local buf = vim.api.nvim_win_get_buf(win)
   local state = vim.b[buf].oculus_inspect
-  local code_win = win
-  if type(state) ~= "table" then
-    local group = sidebar_group_for_buffer(buf)
-    local tab = vim.api.nvim_win_get_tabpage(win)
-    local endpoint = group and endpoint_for_tab(group, tab) or nil
-    if not valid_endpoint(endpoint) then
-      return ""
-    end
-    code_win = endpoint.win
-    buf = endpoint.buf
-    state = vim.b[buf].oculus_inspect
-  end
   if type(state) ~= "table" then
     return ""
   end
   local path = vim.b[buf].oculus_inspect_statusline_path
     or inspection_statusline_path(state)
     or ""
-  local cursor = vim.api.nvim_win_get_cursor(code_win)
-  return (" %s%%= %d:%d "):format(
+  local cursor = vim.api.nvim_win_get_cursor(win)
+  return (" %s%%= %d, %d "):format(
     path:gsub("%%", "%%%%"),
     cursor[1],
     cursor[2] + 1
@@ -4609,6 +4598,8 @@ M._inspection_statusline_path = inspection_statusline_path
 M._inspection_buffer_name = inspection_buffer_name
 M._inspection_statusline = inspection_statusline
 M._inspection_statusline_option = inspection_statusline_option
+M._inspection_sidebar_statusline_option =
+  inspection_sidebar_statusline_option
 M._sort_inspections = sort_inspections
 M._sidebar_row = sidebar_row
 M._inspect_sidebar_width = inspect_sidebar_width
