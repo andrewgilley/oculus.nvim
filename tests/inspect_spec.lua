@@ -1608,11 +1608,15 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   assert(vim.api.nvim_get_current_win()
     == assert(sidebar_window(tabs[3])))
+  assert(vim.api.nvim_win_get_cursor(
+    assert(sidebar_window(tabs[3]))
+  )[1] == file_lines[1])
+  assert(vim.api.nvim_win_get_cursor(change_win)[1] == 1)
+  assert(vim.api.nvim_win_call(
+    change_win,
+    vim.fn.winsaveview
+  ).topline == 1)
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index == 1)
-  assert(
-    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
-      == 1
-  )
   previous_mapped.callback()
   assert(vim.api.nvim_get_current_tabpage()
     == tabs[pair_count * 2 + 1])
@@ -1633,22 +1637,48 @@ if integration_root and (integration_sha or integration_url) then
   overview_sidebar_win = assert(sidebar_window(tabs[3]))
   vim.api.nvim_set_current_win(overview_sidebar_win)
   local overview_saved = {
+    sidebar_win = overview_sidebar_win,
     sidebar_cursor = vim.api.nvim_win_get_cursor(overview_sidebar_win),
     sidebar_view = vim.fn.winsaveview(),
     main_cursor = vim.api.nvim_win_get_cursor(change_win),
     main_view = vim.api.nvim_win_call(change_win, vim.fn.winsaveview),
   }
+  assert(vim.api.nvim_get_current_buf() == sidebar_buf)
   sidebar_overview_mapping.callback()
-  assert(vim.api.nvim_get_current_win() == overview_sidebar_win)
-  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "overview")
-  assert(vim.api.nvim_win_get_width(overview_sidebar_win)
-    == sidebar_width + 10)
+  overview_sidebar_win = vim.api.nvim_get_current_win()
+  overview_saved.buf = vim.api.nvim_get_current_buf()
+  overview_saved.config =
+    vim.api.nvim_win_get_config(overview_sidebar_win)
+  assert(
+    overview_sidebar_win ~= overview_saved.sidebar_win,
+    vim.inspect({
+      current_win = overview_sidebar_win,
+      sidebar_win = overview_saved.sidebar_win,
+      current_buf = overview_saved.buf,
+      sidebar_buf = sidebar_buf,
+    })
+  )
+  assert(overview_saved.buf ~= sidebar_buf)
+  assert(vim.b[overview_saved.buf].oculus_inspect_overview == true)
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "files")
+  assert(vim.api.nvim_win_get_width(overview_saved.sidebar_win)
+    == sidebar_width)
+  assert(overview_saved.config.relative == "editor")
+  assert(overview_saved.config.width
+    == require("oculus.window").window_config({}).width)
+  assert(overview_saved.config.height
+    == require("oculus.window").window_config({}).height)
+  assert(overview_saved.config.row
+    == require("oculus.window").window_config({}).row)
+  assert(overview_saved.config.col
+    == require("oculus.window").window_config({}).col)
+  assert(overview_saved.config.title[1][1] == "OVERVIEW")
+  assert(overview_saved.config.title_pos == "center")
   local overview_text = table.concat(
-    vim.api.nvim_buf_get_lines(sidebar_buf, 0, -1, false),
+    vim.api.nvim_buf_get_lines(overview_saved.buf, 0, -1, false),
     "\n"
   )
-  assert(overview_text:match("^OVERVIEW\n"))
-  assert(overview_text:find("\n• Title\n", 1, true))
+  assert(overview_text:match("^• Title\n"))
   assert(overview_text:find("\n• Description\n", 1, true))
   assert(overview_text:find("\n• Author\n", 1, true))
   assert(overview_text:find("\n• URL\n", 1, true))
@@ -1657,18 +1687,17 @@ if integration_root and (integration_sha or integration_url) then
   assert(not overview_text:find("Authored", 1, true))
   assert(not overview_text:find("Changes", 1, true))
   assert(overview_text:find("gO changed files", 1, true))
-  local overview_line_count = vim.api.nvim_buf_line_count(sidebar_buf)
+  local overview_line_count =
+    vim.api.nvim_buf_line_count(overview_saved.buf)
   vim.api.nvim_win_set_cursor(
     overview_sidebar_win,
     {
-      overview_saved.sidebar_cursor[1] == 1
-          and math.min(overview_line_count, 2)
-        or 1,
+      math.min(overview_line_count, 2),
       0,
     }
   )
   vim.api.nvim_exec_autocmds("CursorMoved", {
-    buffer = sidebar_buf,
+    buffer = overview_saved.buf,
   })
   vim.wait(50, function()
     return false
@@ -1682,12 +1711,14 @@ if integration_root and (integration_sha or integration_url) then
     overview_saved.main_view
   ))
   sidebar_overview_mapping.callback()
+  assert(not vim.api.nvim_win_is_valid(overview_sidebar_win))
+  assert(not vim.api.nvim_buf_is_valid(overview_saved.buf))
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "files")
-  assert(vim.api.nvim_get_current_win() == overview_sidebar_win)
-  assert(vim.api.nvim_win_get_width(overview_sidebar_win)
+  assert(vim.api.nvim_get_current_win() == overview_saved.sidebar_win)
+  assert(vim.api.nvim_win_get_width(overview_saved.sidebar_win)
     == sidebar_width)
   assert(vim.deep_equal(
-    vim.api.nvim_win_get_cursor(overview_sidebar_win),
+    vim.api.nvim_win_get_cursor(overview_saved.sidebar_win),
     overview_saved.sidebar_cursor
   ))
   assert(vim.fn.winsaveview().topline
@@ -1732,12 +1763,11 @@ if integration_root and (integration_sha or integration_url) then
     .oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "parent")
-  assert(sidebar_active.chunk_index == 1)
   assert(sidebar_active.chunk_count >= 1)
   local initial_sidebar_win = assert(sidebar_window(tabs[2]))
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(vim.api.nvim_win_get_cursor(initial_sidebar_win)[1]
-    == file_lines[1] + sidebar_active.chunk_index)
+    == file_lines[1])
   local sidebar_signs = vim.api.nvim_get_namespaces()
     .oculus_inspect_sidebar
   assert(sidebar_signs)
@@ -1861,6 +1891,22 @@ if integration_root and (integration_sha or integration_url) then
   end
   local sidebar_parent_win = assert(sidebar_window(tabs[2]))
   vim.api.nvim_set_current_win(sidebar_parent_win)
+  vim.api.nvim_win_set_cursor(
+    sidebar_parent_win,
+    { file_lines[1], 0 }
+  )
+  vim.api.nvim_exec_autocmds("CursorMoved", {
+    buffer = sidebar_buf,
+  })
+  assert(vim.wait(1000, function()
+    return vim.api.nvim_get_current_tabpage() == tabs[2]
+      and vim.api.nvim_get_current_win() == sidebar_parent_win
+      and vim.api.nvim_win_get_cursor(parent_win)[1] == 1
+      and vim.api.nvim_win_call(
+        parent_win,
+        vim.fn.winsaveview
+      ).topline == 1
+  end), "sidebar file did not open at the top in the main pane")
   local selected_chunk =
     sidebar_active.chunk_count > 1 and 2 or 1
   local selected_chunk_line = file_lines[1] + selected_chunk
@@ -2011,7 +2057,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_win_get_cursor(second_main_win)[1]
       == second_first_parent_line)
     assert(vim.api.nvim_win_get_cursor(second_sidebar_win)[1]
-      == file_lines[2] + 1)
+      == file_lines[2])
     vim.api.nvim_set_current_win(second_sidebar_win)
     vim.api.nvim_win_set_cursor(0, { file_lines[1], 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", {
@@ -2031,8 +2077,9 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_buf_line_count(change_buf)
   )
   vim.api.nvim_win_set_cursor(change_win, { linked_line, 0 })
-  vim.api.nvim_set_current_win(change_win)
-  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = change_buf })
+  vim.api.nvim_win_call(change_win, function()
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = change_buf })
+  end)
   assert(
     vim.api.nvim_win_get_cursor(parent_win)[1] == linked_line,
     ("paired cursor stayed at %d instead of %d (current win %d, change %d)")
