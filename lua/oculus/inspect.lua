@@ -1904,37 +1904,6 @@ local function map_file_navigation(endpoint, session, role, group)
       desc = "Switch Oculus file version",
     })
   end
-  local next_file_lhs = group.next_file
-  if next_file_lhs == nil then
-    next_file_lhs = default_next_file
-  end
-  if type(next_file_lhs) == "string" and next_file_lhs ~= "" then
-    vim.keymap.set("n", next_file_lhs, function()
-      local current_index
-      for index, candidate in ipairs(group) do
-        if candidate == session then
-          current_index = index
-          break
-        end
-      end
-      if not current_index then
-        return
-      end
-      for offset = 1, #group do
-        local next_index = ((current_index + offset - 1) % #group) + 1
-        local target = group[next_index][role]
-        if valid_endpoint(target) then
-          select_endpoint(target)
-          return
-        end
-      end
-    end, {
-      buffer = endpoint.buf,
-      nowait = true,
-      silent = true,
-      desc = "Next Oculus changed file",
-    })
-  end
 end
 
 local function sidebar_active_item(group, tab)
@@ -1950,6 +1919,42 @@ local function sidebar_active_item(group, tab)
     end
     if valid_endpoint(session.change) and session.change.tab == tab then
       return index, "change"
+    end
+  end
+end
+
+local function select_next_sidebar_file(group)
+  if
+    group.kind == "issue"
+    or group.sidebar_mode == "overview"
+    or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
+  then
+    return
+  end
+  local current_index, role =
+    sidebar_active_item(group, vim.api.nvim_get_current_tabpage())
+  if not current_index or not role then
+    return
+  end
+  for offset = 1, #group do
+    local next_index = ((current_index + offset - 1) % #group) + 1
+    local endpoint = group[next_index][role]
+    if valid_endpoint(endpoint) then
+      local sidebar_win = group.sidebar_windows[endpoint.tab]
+      if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
+        return
+      end
+      sidebar_navigating = true
+      vim.api.nvim_set_current_tabpage(endpoint.tab)
+      vim.api.nvim_set_current_win(sidebar_win)
+      local row = group.sidebar_rows[next_index]
+      if row then
+        vim.api.nvim_win_set_cursor(sidebar_win, { row.line_number, 0 })
+      end
+      group.focused_win = sidebar_win
+      refresh_sidebar(group, endpoint.tab)
+      sidebar_navigating = false
+      return
     end
   end
 end
@@ -2635,6 +2640,20 @@ local function map_inspection_sidebar_toggle(group)
         nowait = true,
         silent = true,
         desc = "Switch Oculus file version",
+      })
+    end
+    local next_file_lhs = group.next_file
+    if next_file_lhs == nil then
+      next_file_lhs = default_next_file
+    end
+    if type(next_file_lhs) == "string" and next_file_lhs ~= "" then
+      vim.keymap.set("n", next_file_lhs, function()
+        select_next_sidebar_file(group)
+      end, {
+        buffer = group.sidebar_buf,
+        nowait = true,
+        silent = true,
+        desc = "Next Oculus changed file",
       })
     end
   end

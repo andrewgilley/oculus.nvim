@@ -26,6 +26,7 @@ local defaults = {
   activity_types = nil,
   user_activity_types = {},
   persist_filters = true,
+  persist_contributors = true,
   state_file = vim.fn.stdpath("state") .. "/oculus.json",
   browser_command = nil,
   inspect_cache_ttl = 60,
@@ -46,7 +47,8 @@ local defaults = {
   },
   token = nil,
 
-  contributors = {
+  contributors = {},
+  suggested_contributors = {
     {
       name = "Mitchell Hashimoto",
       username = "mitchellh",
@@ -327,7 +329,7 @@ local defaults = {
 }
 
 M.config = vim.deepcopy(defaults)
-local randomized_default_contributors
+local randomized_suggested_contributors
 
 local function shuffle_contributors(contributors)
   local result = vim.deepcopy(contributors)
@@ -339,33 +341,79 @@ local function shuffle_contributors(contributors)
   return result
 end
 
-local function default_contributors()
-  if not randomized_default_contributors then
-    randomized_default_contributors = shuffle_contributors(
-      defaults.contributors
+local function default_suggested_contributors()
+  if not randomized_suggested_contributors then
+    randomized_suggested_contributors = shuffle_contributors(
+      defaults.suggested_contributors
     )
   end
-  return vim.deepcopy(randomized_default_contributors)
+  return vim.deepcopy(randomized_suggested_contributors)
+end
+
+local function contributor_key(contributor)
+  if type(contributor) ~= "table" or not contributor.username then
+    return nil
+  end
+  return ("%s:%s"):format(
+    contributor.provider == "codeberg" and "codeberg" or "github",
+    contributor.username:lower()
+  )
+end
+
+local function merge_contributors(configured, saved)
+  local result = vim.deepcopy(configured or {})
+  local present = {}
+  for _, contributor in ipairs(result) do
+    local key = contributor_key(contributor)
+    if key then
+      present[key] = true
+    end
+  end
+  for _, contributor in ipairs(saved or {}) do
+    local key = contributor_key(contributor)
+    if key and not present[key] then
+      result[#result + 1] = vim.deepcopy(contributor)
+      present[key] = true
+    end
+  end
+  return result
 end
 
 function M.setup(opts)
   opts = opts or {}
   M.config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts)
 
-  if opts.contributors then
+  if opts.contributors ~= nil then
     M.config.contributors = vim.deepcopy(opts.contributors)
   else
-    M.config.contributors = default_contributors()
+    M.config.contributors = {}
+  end
+  if opts.suggested_contributors ~= nil then
+    M.config.suggested_contributors =
+      vim.deepcopy(opts.suggested_contributors)
+  else
+    M.config.suggested_contributors = default_suggested_contributors()
   end
 
-  if M.config.persist_filters then
+  if M.config.persist_filters or M.config.persist_contributors then
     local saved = require("oculus.storage").load(M.config.state_file)
     if saved then
-      if saved.activity_types ~= nil then
-        M.config.activity_types = saved.activity_types
+      if M.config.persist_filters then
+        if saved.activity_types ~= nil then
+          M.config.activity_types = saved.activity_types
+        end
+        if type(saved.user_activity_types) == "table" then
+          M.config.user_activity_types = saved.user_activity_types
+        end
       end
-      if type(saved.user_activity_types) == "table" then
-        M.config.user_activity_types = saved.user_activity_types
+      if
+        M.config.persist_contributors
+        and type(saved.contributors) == "table"
+      then
+        M.config.contributors = merge_contributors(
+          M.config.contributors,
+          saved.contributors
+        )
       end
     end
   end
