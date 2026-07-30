@@ -746,12 +746,9 @@ end
 -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 9 Show each contributor's forge in previews
 local function preview_items(contributor)
   return {
-    [2] = { "PREVIEW", "Title" },
-    [4] = { contributor.name or contributor.username, "Function" },
-    [5] = {
-      "@" .. contributor.username .. " · " .. provider_name(contributor),
-      "Identifier",
-    },
+    [2] = { "USER", "Title" },
+    [4] = { "@" .. contributor.username, "Identifier" },
+    [5] = { provider_name(contributor), "Comment" },
   }
 end
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 9
@@ -857,21 +854,13 @@ local function render_contributors()
 
   local contributors = visible_contributors()
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
-  local name_width = 4
-  local username_width = 6
+  local username_width = 4
   for _, contributor in ipairs(contributors) do
-    local contributor_name = contributor.name or contributor.username
-    name_width = math.max(name_width, #contributor_name)
     username_width = math.max(username_width, #(contributor.username) + 1)
   end
-  username_width = math.min(username_width, 14)
-  local available_name_width = left_width - username_width - 5
-  name_width = math.min(name_width, math.max(10, available_name_width))
+  username_width = math.min(username_width, math.max(4, left_width - 2))
 
-  lines[#lines + 1] = ("  %s  %s"):format(
-    pad_cell("USER", name_width),
-    pad_cell("HANDLE", username_width)
-  )
+  lines[#lines + 1] = "  " .. pad_cell("USER", username_width)
 
   local selected_index = 1
   for index, contributor in ipairs(contributors) do
@@ -905,10 +894,7 @@ local function render_contributors()
     local contributor = contributors[index]
     local line = #lines + 1
     local handle = "@" .. contributor.username
-    local prefix = ("  %s  %s"):format(
-      pad_cell(contributor.name or contributor.username, name_width),
-      pad_cell(handle, username_width)
-    )
+    local prefix = "  " .. pad_cell(handle, username_width)
     lines[line] = pad_cell(prefix, left_width)
     M.state.line_targets[line] = contributor
   end
@@ -938,21 +924,7 @@ local function render_contributors()
   highlight(3, 2, -1, "Comment")
   highlight(5, 2, -1, "Comment")
   for line, _ in pairs(M.state.line_targets) do
-    local username_start = lines[line]:find("@", 1, true)
-    highlight(
-      line,
-      2,
-      username_start and (username_start - 2) or -1,
-      "Function"
-    )
-    if username_start then
-      highlight(
-        line,
-        username_start - 1,
-        username_start + username_width,
-        "Identifier"
-      )
-    end
+    highlight(line, 2, 2 + username_width, "Identifier")
   end
   highlight(separator_line, 2, -1, "WinSeparator")
   highlight(commands_line, 2, -1, "Comment")
@@ -988,7 +960,7 @@ local function render_contributors()
       queue_preview(preview_contributor)
     else
       render_preview_panel({
-        [2] = { "PREVIEW", "Title" },
+        [2] = { "USER", "Title" },
       })
     end
   end
@@ -1072,7 +1044,7 @@ local function render_filters(scope, selected_type)
   M.state.line_targets = {}
 
   local scope_name = scope.global and "All contributors"
-    or ((scope.name or scope.username) .. " · @" .. scope.username)
+    or ("@" .. scope.username)
   local enabled = filter_type_set(scope)
   local lines = {
     "",
@@ -1179,7 +1151,7 @@ local function render_loading(contributor)
     )
   local lines = {
     "",
-    "  " .. (contributor.name or contributor.username),
+    "  USER",
     "  @" .. contributor.username,
     "",
     "  " .. loading_text,
@@ -1204,7 +1176,7 @@ local function render_error(message)
   local contributor = M.state.contributor
   local lines = {
     "",
-    "  " .. (contributor.name or contributor.username),
+    "  USER",
     "  @" .. contributor.username,
     "",
     "  Could not load activity",
@@ -1259,7 +1231,7 @@ local function render_activity(events, cached, notice, opts)
     )
   local lines = {
     "",
-    "  " .. (contributor.name or contributor.username),
+    "  USER",
     ("  %s · %s%s%s"):format(
       "@" .. contributor.username,
       provider_name(contributor),
