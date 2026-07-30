@@ -1255,7 +1255,7 @@ local function render_activity(events, cached, notice, opts)
   local first_event_line
   local scroll_limit_line
   local activity_line_kinds = {}
-  for _, event in ipairs(events) do
+  for event_index, event in ipairs(events) do
     local item = actions.describe(event, {
       omit_single_commit_count = M.state.activity_commit_page,
     })
@@ -1305,7 +1305,6 @@ local function render_activity(events, cached, notice, opts)
         end
       end
       scroll_limit_line = #lines
-      lines[#lines + 1] = pad_cell("", item_width)
     else
       lines[event_line] = activity_item_line(
         item,
@@ -1313,12 +1312,12 @@ local function render_activity(events, cached, notice, opts)
         item_width
       )
       scroll_limit_line = event_line
-      lines[#lines + 1] = pad_cell("", item_width)
-      M.state.line_targets[#lines] = item.url
-      M.state.activity_title_lines[#lines] = event_line
     end
     M.state.line_targets[event_line] = item.url
     M.state.inspect_targets[event_line] = inspect_context
+    if event_index < #events then
+      lines[#lines + 1] = pad_cell("", item_width)
+    end
   end
 
   if #events == 0 then
@@ -1326,11 +1325,8 @@ local function render_activity(events, cached, notice, opts)
         and "  No past public activity was returned."
       or "  No recent public activity was returned."
     scroll_limit_line = #lines
-    lines[#lines + 1] = ""
   end
   M.state.activity_scroll_limit_line = scroll_limit_line
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = ""
   set_lines(lines)
   render_activity_footer()
   vim.wo[M.state.win].scrolloff = 3
