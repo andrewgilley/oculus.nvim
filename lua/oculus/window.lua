@@ -781,7 +781,7 @@ local function update_contributor_selection()
         end_row = line - 1,
         end_col = #visible_text,
         hl_group = "OculusContributorSelected",
-        hl_mode = "replace",
+        hl_mode = "combine",
         priority = 10000,
       }
     )
@@ -886,7 +886,7 @@ local function render_contributors()
     or "  s /: search  ?: shortcuts  q: quit"
   local commands_line = #lines
   set_lines(lines)
-  vim.wo[M.state.win].cursorline = false
+  vim.wo[M.state.win].cursorline = true
 
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
@@ -2049,6 +2049,7 @@ function M.inspection_window_options()
     return {
       number = vim.wo[origin].number,
       relativenumber = vim.wo[origin].relativenumber,
+      winhighlight = vim.wo[origin].winhighlight,
     }
   end
   return vim.deepcopy(M.state.origin_window_options)
@@ -2069,6 +2070,7 @@ function M.open(opts)
   M.state.origin_window_options = {
     number = vim.wo[origin_win].number,
     relativenumber = vim.wo[origin_win].relativenumber,
+    winhighlight = vim.wo[origin_win].winhighlight,
   }
   local buf = make_buf()
   local win = vim.api.nvim_open_win(buf, true, make_win_config(M.state.opts))
@@ -2092,13 +2094,9 @@ function M.open(opts)
   vim.api.nvim_set_hl(0, "OculusContributorSelected", {
     fg = "#ffffff",
   })
-  vim.api.nvim_set_hl(0, "OculusCursorLine", {
-    bg = "#3a3a3a",
-  })
   vim.wo[win].winhighlight = table.concat({
     "Normal:OculusNormal",
     "NormalFloat:OculusNormal",
-    "CursorLine:OculusCursorLine",
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
   }, ",")

@@ -50,6 +50,17 @@ assert(
 local inspection_window_options = window.inspection_window_options()
 assert(inspection_window_options.number == true)
 assert(inspection_window_options.relativenumber == true)
+assert(
+  inspection_window_options.winhighlight
+    == vim.wo[origin_win].winhighlight
+)
+assert(vim.wo[state.win].cursorline == true)
+assert(vim.wo[state.win].cursorlineopt == "line")
+assert(not vim.wo[state.win].winhighlight:find(
+  "CursorLine:OculusCursorLine",
+  1,
+  true
+))
 assert(vim.wo[state.win].number == false)
 assert(vim.wo[state.win].relativenumber == false)
 local initial_window_height = vim.api.nvim_win_get_height(state.win)

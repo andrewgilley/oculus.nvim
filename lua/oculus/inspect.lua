@@ -2877,7 +2877,6 @@ local function load_tab(
   }
   vim.wo[loaded.win].signcolumn = "yes"
   vim.wo[loaded.win].wrap = false
-  prevent_window_dimming(loaded.win)
   return loaded
 end
 
@@ -2890,7 +2889,7 @@ local function make_inspection_tab()
   }
 end
 
-local function apply_inspection_number_options(win, options)
+local function apply_inspection_window_options(win, options)
   if not vim.api.nvim_win_is_valid(win) or type(options) ~= "table" then
     return
   end
@@ -2900,6 +2899,12 @@ local function apply_inspection_number_options(win, options)
   if type(options.relativenumber) == "boolean" then
     vim.wo[win].relativenumber = options.relativenumber
   end
+  if type(options.winhighlight) == "string" then
+    vim.wo[win].winhighlight = options.winhighlight
+  end
+  vim.wo[win].cursorline = true
+  vim.wo[win].cursorlineopt = "line"
+  prevent_window_dimming(win)
 end
 
 local function open_tabs(
@@ -2961,7 +2966,7 @@ local function open_tabs(
         paths,
         index
       )
-      apply_inspection_number_options(parent.win, number_options)
+      apply_inspection_window_options(parent.win, number_options)
       local change_tab = make_inspection_tab()
       local change = load_tab(
         change_tab,
@@ -2971,7 +2976,7 @@ local function open_tabs(
         paths,
         index
       )
-      apply_inspection_number_options(change.win, number_options)
+      apply_inspection_window_options(change.win, number_options)
       next_session = next_session + 1
       session.parent = parent
       session.change = change
@@ -3420,10 +3425,8 @@ local function open_issue_page(
     vim.b[buf].oculus_inspect = vim.deepcopy(state)
     vim.wo[win].wrap = true
     vim.wo[win].linebreak = true
-    vim.wo[win].cursorline = false
     vim.wo[win].signcolumn = "no"
-    apply_inspection_number_options(win, number_options)
-    prevent_window_dimming(win)
+    apply_inspection_window_options(win, number_options)
     page = {
       tab = tab,
       win = win,
