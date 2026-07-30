@@ -65,9 +65,11 @@ local initial_window_height = vim.api.nvim_win_get_height(state.win)
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(initial_user_lines[initial_window_height]
-  == "  a add  g suggested  / search  ?: help  q quit")
+  == "  a add  / search  ?: help  q quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
+local main_up_mapping =
+  vim.fn.maparg("<Up>", "n", false, true)
 local first_list_line
 local last_list_line
 for line, target in pairs(state.line_targets) do
@@ -96,6 +98,10 @@ local third_username = state.selected_username
 main_down_mapping.callback()
 assert(state.selected_username ~= third_username)
 assert(state.selected_username == first_username)
+main_down_mapping.callback()
+assert(state.selected_username == contributors[1].username)
+main_up_mapping.callback()
+assert(state.selected_username == contributors[#contributors].username)
 
 local page_events = {}
 for index = 1, 20 do
@@ -551,7 +557,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  a add  g suggested  / search  ?: help  q quit")
+  == "  a add  / search  ?: help  q quit")
 
 window.close()
 github.events = original_events

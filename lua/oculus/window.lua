@@ -58,11 +58,8 @@ M.state = {
   preview_items = nil,
   preview_contributor = nil,
   contributors = {},
-  suggested_contributors = {},
   selected_username = nil,
-  selected_suggestion = nil,
   contributor_offset = 1,
-  suggestion_offset = 1,
   filter_scope = nil,
   activity_cached = nil,
   activity_notice = nil,
@@ -273,7 +270,6 @@ local function clamp_list_cursor()
     min_line = M.state.activity_cursor_min_line
     max_line = M.state.activity_scroll_limit_line
   elseif M.state.view == "contributors"
-    or M.state.view == "suggestions"
     or M.state.view == "filters"
   then
     for line, target in pairs(M.state.line_targets) do
@@ -710,7 +706,6 @@ end
 local function render_preview_panel(items)
   if
     M.state.view ~= "contributors"
-      and M.state.view ~= "suggestions"
     or not is_valid_buf(M.state.buf)
     or not is_valid_win(M.state.win)
   then
@@ -768,10 +763,7 @@ end
 local function queue_preview(contributor)
   if
     not contributor
-    or (
-      M.state.view ~= "contributors"
-      and M.state.view ~= "suggestions"
-    )
+    or M.state.view ~= "contributors"
   then
     return
   end
@@ -796,10 +788,7 @@ local function update_contributor_selection()
     -1
   )
   if
-    (
-      M.state.view ~= "contributors"
-      and M.state.view ~= "suggestions"
-    )
+    M.state.view ~= "contributors"
     or not is_valid_win(M.state.win)
   then
     return
@@ -921,7 +910,7 @@ local function render_contributors()
       lines[#lines + 1] = "  No matching users."
     else
       lines[#lines + 1] = "  No users added."
-      lines[#lines + 1] = "  a add account · g browse suggestions"
+      lines[#lines + 1] = "  a add account"
     end
   end
   while #lines < window_height - 2 do
@@ -931,7 +920,7 @@ local function render_contributors()
   local separator_line = #lines
   lines[#lines + 1] = searching
       and "  esc cancel"
-    or "  a add  g suggested  / search  ?: help  q quit"
+    or "  a add  / search  ?: help  q quit"
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
@@ -993,134 +982,6 @@ local function render_contributors()
         [2] = { "PREVIEW", "Title" },
       })
     end
-  end
-end
-
-local function render_suggestions()
-  close_activity_footer()
-  M.state.view = "suggestions"
-  M.state.contributor = nil
-  M.state.events = nil
-  M.state.line_targets = {}
-  M.state.preview_key = nil
-
-  local lines = {
-    "",
-    "  SUGGESTED USERS",
-    "  Select community accounts to follow",
-    "",
-  }
-  local suggestions = M.state.suggested_contributors
-  local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
-  local username_width = 6
-  local name_width = 4
-  for _, contributor in ipairs(suggestions) do
-    username_width = math.max(username_width, #(contributor.username or "") + 1)
-    name_width = math.max(
-      name_width,
-      #(contributor.name or contributor.username or "")
-    )
-  end
-  username_width = math.min(username_width, 14)
-  name_width = math.min(
-    name_width,
-    math.max(8, left_width - username_width - 9)
-  )
-  lines[#lines + 1] = ("  %s %s  %s"):format(
-    "ADD",
-    pad_cell("USER", name_width),
-    pad_cell("HANDLE", username_width)
-  )
-
-  local selected_index = 1
-  for index, contributor in ipairs(suggestions) do
-    if contributor_key(contributor) == M.state.selected_suggestion then
-      selected_index = index
-      break
-    end
-  end
-  local list_limit = math.max(
-    1,
-    math.floor(tonumber(M.state.opts.contributor_list_limit) or 20)
-  )
-  local window_height = vim.api.nvim_win_get_height(M.state.win)
-  list_limit = math.min(list_limit, math.max(1, window_height - 7))
-  local max_offset = math.max(1, #suggestions - list_limit + 1)
-  local offset = math.min(
-    math.max(1, M.state.suggestion_offset or 1),
-    max_offset
-  )
-  if selected_index < offset then
-    offset = selected_index
-  elseif selected_index >= offset + list_limit then
-    offset = selected_index - list_limit + 1
-  end
-  M.state.suggestion_offset = offset
-
-  for index = offset, math.min(#suggestions, offset + list_limit - 1) do
-    local contributor = suggestions[index]
-    local line = #lines + 1
-    local marker = has_contributor(M.state.contributors, contributor)
-        and "[x]"
-      or "[ ]"
-    local text = ("  %s %s  %s"):format(
-      marker,
-      pad_cell(contributor.name or contributor.username, name_width),
-      pad_cell("@" .. contributor.username, username_width)
-    )
-    lines[line] = pad_cell(text, left_width)
-    M.state.line_targets[line] = contributor
-  end
-
-  if #suggestions == 0 then
-    lines[#lines + 1] = "  No suggested users configured."
-  end
-  while #lines < window_height - 2 do
-    lines[#lines + 1] = ""
-  end
-  lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-  local separator_line = #lines
-  lines[#lines + 1] =
-    "  space toggle  enter done  j/← back  q quit"
-  local commands_line = #lines
-  set_lines(lines)
-  vim.wo[M.state.win].cursorline = false
-
-  highlight(2, 2, -1, "Title")
-  highlight(3, 2, -1, "Comment")
-  highlight(5, 2, -1, "Comment")
-  for line, contributor in pairs(M.state.line_targets) do
-    local marker_group = has_contributor(M.state.contributors, contributor)
-        and "DiffAdd"
-      or "Comment"
-    highlight(line, 2, 5, marker_group)
-    local username_start = lines[line]:find("@", 1, true)
-    if username_start then
-      highlight(
-        line,
-        username_start - 1,
-        username_start + username_width,
-        "Identifier"
-      )
-    end
-  end
-  highlight(separator_line, 2, -1, "WinSeparator")
-  highlight(commands_line, 2, -1, "Comment")
-
-  local selected_line
-  for line, contributor in pairs(M.state.line_targets) do
-    if contributor_key(contributor) == M.state.selected_suggestion then
-      selected_line = line
-      break
-    end
-  end
-  selected_line = selected_line or (M.state.line_targets[6] and 6)
-  if selected_line and is_valid_win(M.state.win) then
-    local contributor = M.state.line_targets[selected_line]
-    M.state.selected_suggestion = contributor_key(contributor)
-    vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
-    queue_preview(contributor)
-    update_contributor_selection()
   end
 end
 
@@ -1507,10 +1368,6 @@ local function render_shortcuts()
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
     { "o", "Open the selected contributor profile" },
-  })
-  section("SUGGESTED USERS", {
-    { "<Space>", "Add or remove the selected suggestion" },
-    { "<CR>", "Return to your user list" },
   })
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
@@ -1984,37 +1841,6 @@ local function prompt_add_account()
   )
 end
 
-local function open_suggestions()
-  if M.state.view ~= "contributors" then
-    return
-  end
-  M.state.selected_suggestion = M.state.selected_suggestion
-    or contributor_key(M.state.suggested_contributors[1])
-  render_suggestions()
-end
-
-local function toggle_suggested_contributor()
-  if M.state.view ~= "suggestions" then
-    return
-  end
-  local contributor = target_on_cursor()
-  if type(contributor) ~= "table" then
-    return
-  end
-  local key = contributor_key(contributor)
-  for index, added in ipairs(M.state.contributors) do
-    if contributor_key(added) == key then
-      table.remove(M.state.contributors, index)
-      persist_contributors()
-      render_suggestions()
-      return
-    end
-  end
-  add_contributor(contributor)
-  M.state.selected_suggestion = key
-  render_suggestions()
-end
-
 local function remove_current_contributor()
   if M.state.view ~= "contributors" then
     return
@@ -2057,8 +1883,6 @@ local function select_current()
   if M.state.view == "contributors" and type(target) == "table" then
     M.state.selected_username = target.username
     load_activity(target, false)
-  elseif M.state.view == "suggestions" then
-    render_contributors()
   elseif M.state.view == "filters" then
     toggle_filter_type()
   end
@@ -2274,8 +2098,6 @@ local function move_cursor(direction)
   local target = M.state.line_targets[selected]
   if M.state.view == "contributors" and type(target) == "table" then
     M.state.selected_username = target.username
-  elseif M.state.view == "suggestions" and type(target) == "table" then
-    M.state.selected_suggestion = contributor_key(target)
   end
   queue_preview(target)
 end
@@ -2298,8 +2120,6 @@ local function go_back()
       end
     elseif return_state.view == "filters" and M.state.filter_scope then
       render_filters(M.state.filter_scope, return_state.selected_type)
-    elseif return_state.view == "suggestions" then
-      render_suggestions()
     else
       render_contributors()
     end
@@ -2313,7 +2133,6 @@ local function go_back()
   elseif
     M.state.view == "activity"
     or M.state.view == "filters"
-    or M.state.view == "suggestions"
   then
     M.state.request_id = M.state.request_id + 1
     render_contributors()
@@ -2362,13 +2181,7 @@ local function map_keys(buf)
   map("<CR>", select_current, "Select Oculus item")
   map("l", select_current, "Move right in Oculus")
   map("<Right>", select_current, "Move right in Oculus")
-  map("<Space>", function()
-    if M.state.view == "suggestions" then
-      toggle_suggested_contributor()
-    else
-      toggle_filter_type()
-    end
-  end, "Toggle Oculus item")
+  map("<Space>", toggle_filter_type, "Toggle Oculus item")
   map("o", open_current, "Open Oculus contributor profile")
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
   map("f", function()
@@ -2384,7 +2197,6 @@ local function map_keys(buf)
       set_all_filter_types(true)
     end
   end, "Add an Oculus user or enable all filters")
-  map("g", open_suggestions, "Browse suggested Oculus users")
   map("x", remove_current_contributor, "Remove selected Oculus user")
   map("n", function()
     set_all_filter_types(false)
@@ -2439,7 +2251,6 @@ function M.close()
   M.state.preview_items = nil
   M.state.preview_contributor = nil
   M.state.contributors = {}
-  M.state.suggested_contributors = {}
   M.state.filter_scope = nil
   M.state.shortcut_return = nil
   M.state.opening_account_prompt = false
@@ -2482,8 +2293,6 @@ function M.open(opts)
   M.state.buf = buf
   M.state.win = win
   M.state.contributors = display_contributors(M.state.opts.contributors)
-  M.state.suggested_contributors =
-    display_contributors(M.state.opts.suggested_contributors)
 
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
@@ -2549,8 +2358,6 @@ function M.open(opts)
               vim.api.nvim_win_set_config(M.state.search_win, config)
             end
           end
-        elseif M.state.view == "suggestions" then
-          render_suggestions()
         elseif M.state.view == "activity" then
           render_activity_footer()
           update_activity_cursorline()
@@ -2573,18 +2380,13 @@ function M.open(opts)
       end
       if
         M.state.view ~= "contributors"
-        and M.state.view ~= "suggestions"
       then
         return
       end
       local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
       local contributor = M.state.line_targets[line]
       if type(contributor) == "table" then
-        if M.state.view == "suggestions" then
-          M.state.selected_suggestion = contributor_key(contributor)
-        else
-          M.state.selected_username = contributor.username
-        end
+        M.state.selected_username = contributor.username
         queue_preview(contributor)
       end
       update_contributor_selection()

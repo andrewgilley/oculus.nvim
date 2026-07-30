@@ -10,19 +10,7 @@ oculus.setup({
   persist_contributors = false,
 })
 assert(#oculus.config.contributors == 0)
-assert(#oculus.config.suggested_contributors > 0)
-local found_codeberg_suggestion = false
-for _, contributor in ipairs(oculus.config.suggested_contributors) do
-  assert(contributor.description == nil)
-  if
-    contributor.username == "andrewrk"
-    and contributor.provider == "codeberg"
-  then
-    found_codeberg_suggestion = true
-    break
-  end
-end
-assert(found_codeberg_suggestion)
+assert(oculus.config.suggested_contributors == nil)
 
 local state_file = vim.fn.tempname()
 assert(storage.save(state_file, {
@@ -60,18 +48,6 @@ window.open({
   border = "rounded",
   persist_contributors = false,
   contributors = {},
-  suggested_contributors = {
-    {
-      name = "Suggested GitHub",
-      username = "suggested-user",
-      provider = "github",
-    },
-    {
-      name = "Suggested Codeberg",
-      username = "suggested-codeberg",
-      provider = "codeberg",
-    },
-  },
 })
 
 local state = window.state
@@ -80,32 +56,8 @@ local empty_lines = table.concat(
   "\n"
 )
 assert(empty_lines:find("No users added.", 1, true))
-assert(empty_lines:find("a add account · g browse suggestions", 1, true))
-
-local suggestions_mapping = vim.fn.maparg("g", "n", false, true)
-assert(suggestions_mapping.desc == "Browse suggested Oculus users")
-suggestions_mapping.callback()
-assert(state.view == "suggestions")
-assert(state.selected_suggestion == "github:suggested-user")
-
-local toggle_mapping = vim.fn.maparg("<Space>", "n", false, true)
-toggle_mapping.callback()
-assert(#state.contributors == 1)
-assert(state.contributors[1].username == "suggested-user")
-local suggested_lines = table.concat(
-  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
-  "\n"
-)
-assert(suggested_lines:find("[x]", 1, true))
-
-local select_mapping = vim.fn.maparg("<CR>", "n", false, true)
-select_mapping.callback()
-assert(state.view == "contributors")
-assert(#state.contributors == 1)
-
-local remove_mapping = vim.fn.maparg("x", "n", false, true)
-remove_mapping.callback()
-assert(#state.contributors == 0)
+assert(empty_lines:find("a add account", 1, true))
+assert(vim.fn.maparg("g", "n", false, true).desc == nil)
 
 local original_select = vim.ui.select
 local original_input = vim.ui.input
@@ -126,23 +78,22 @@ assert(state.contributors[1].provider == "codeberg")
 window.close()
 
 local restart_state_file = vim.fn.tempname()
-local restart_suggestions = {
-  {
-    name = "Remembered Suggestion",
-    username = "remember-me",
-    provider = "github",
-  },
-}
 oculus.setup({
   state_file = restart_state_file,
   persist_filters = false,
   persist_contributors = true,
   contributors = {},
-  suggested_contributors = restart_suggestions,
 })
 window.open(oculus.config)
-vim.fn.maparg("g", "n", false, true).callback()
-vim.fn.maparg("<Space>", "n", false, true).callback()
+vim.ui.select = function(items, _, callback)
+  callback(items[1])
+end
+vim.ui.input = function(_, callback)
+  callback("@remember-me")
+end
+vim.fn.maparg("a", "n", false, true).callback()
+vim.ui.select = original_select
+vim.ui.input = original_input
 assert(#window.state.contributors == 1)
 assert(window.state.contributors[1].username == "remember-me")
 window.close()
@@ -152,7 +103,6 @@ oculus.setup({
   persist_filters = false,
   persist_contributors = true,
   contributors = {},
-  suggested_contributors = restart_suggestions,
 })
 assert(#oculus.config.contributors == 1)
 assert(oculus.config.contributors[1].username == "remember-me")
