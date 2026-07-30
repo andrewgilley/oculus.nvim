@@ -179,15 +179,13 @@ assert(not populated_search_lines:find("  COMMUNITY FIGURES", 1, true))
 local search_down_mapping =
   vim.fn.maparg("<C-k>", "i", false, true)
 local search_up_mapping =
-  vim.fn.maparg("<C-i>", "i", false, true)
-local search_up_tab_mapping =
-  vim.fn.maparg("<Tab>", "i", false, true)
+  vim.fn.maparg("<C-p>", "i", false, true)
 assert(search_down_mapping.desc
   == "Move down in Oculus user search results")
 assert(search_up_mapping.desc
-  == "Move up in Oculus user search results")
-assert(search_up_tab_mapping.desc
-  == "Move up in Oculus user search results")
+  == "Preview previous Oculus user search result")
+assert(vim.fn.maparg("<C-i>", "i", false, true).desc == nil)
+assert(vim.fn.maparg("<Tab>", "i", false, true).buffer ~= 1)
 search_down_mapping.callback()
 assert(state.search_index == 2)
 assert(state.preview_items[4][1] == state.search_results[2].name)

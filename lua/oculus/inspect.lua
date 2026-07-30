@@ -2184,7 +2184,11 @@ local function map_file_navigation(endpoint, session, role, group)
   if next_chunk_lhs == nil then
     next_chunk_lhs = default_next_chunk
   end
-  if type(next_chunk_lhs) == "string" and next_chunk_lhs ~= "" then
+  if
+    type(next_chunk_lhs) == "string"
+    and next_chunk_lhs ~= ""
+    and vim.keycode(next_chunk_lhs) ~= vim.keycode("<C-I>")
+  then
     vim.keymap.set("n", next_chunk_lhs, function()
       local chunks = inspection_chunks(group, session)
       if #chunks == 0 then
