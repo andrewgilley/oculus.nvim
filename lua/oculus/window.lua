@@ -1219,16 +1219,13 @@ local function render_activity(events, cached, notice, opts)
     )
   )
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 12 Label activity feeds with their forge
-  local context_suffix = M.state.activity_commit_page
-      and (" · %d commits"):format(#events)
-    or (
-      activity_page_number > 1
-          and (" (%d/%d)"):format(
-            activity_page_number,
-            activity_page_count
-          )
-        or ""
-    )
+  local context_suffix = not M.state.activity_commit_page
+      and activity_page_number > 1
+      and (" (%d/%d)"):format(
+        activity_page_number,
+        activity_page_count
+      )
+    or ""
   local lines = {
     "",
     "  USER",

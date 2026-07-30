@@ -1990,6 +1990,15 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_win() == sidebar_change_win)
   assert(vim.api.nvim_win_get_cursor(sidebar_change_win)[1]
     == selected_chunk_line)
+  assert(vim.api.nvim_win_get_cursor(sidebar_change_win)[2]
+    == (
+      vim.api.nvim_buf_get_lines(
+        sidebar_buf,
+        selected_chunk_line - 1,
+        selected_chunk_line,
+        false
+      )[1]:find("%S") - 1
+    ))
   assert(vim.fn.winsaveview().topline
     == parent_sidebar_view.topline)
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
@@ -2028,6 +2037,16 @@ if integration_root and (integration_sha or integration_url) then
     false
   )
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  do
+    local cursor = vim.api.nvim_win_get_cursor(change_win)
+    local cursor_text = vim.api.nvim_buf_get_lines(
+      change_buf,
+      cursor[1] - 1,
+      cursor[1],
+      false
+    )[1]
+    assert(cursor[2] == ((cursor_text:find("%S") or 1) - 1))
+  end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")

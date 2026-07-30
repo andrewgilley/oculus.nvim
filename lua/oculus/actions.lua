@@ -97,7 +97,7 @@ local function sentence(event, opts)
   if kind == "PushEvent" then
     local count = payload.size or #(payload.commits or {})
     if opts and opts.omit_single_commit_count and count == 1 then
-      return ("Pushed to %s"):format(repo)
+      return ("Pushed commit to %s"):format(repo)
     end
     if count == 0 then
       return ("Pushed to %s"):format(repo)

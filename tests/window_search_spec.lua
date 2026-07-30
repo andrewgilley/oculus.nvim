@@ -401,10 +401,10 @@ local commit_page_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(commit_page_lines:find("5 commits", 1, true))
+assert(not commit_page_lines:find("5 commits", 1, true))
 assert(not commit_page_lines:find("pushed 1 commit", 1, true))
 assert(commit_page_lines:find(
-  "pushed to example/repository",
+  "pushed commit to example/repository",
   1,
   true
 ))
