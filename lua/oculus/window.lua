@@ -886,7 +886,7 @@ local function render_contributors()
     or "  s /: search  ?: shortcuts  q: quit"
   local commands_line = #lines
   set_lines(lines)
-  vim.wo[M.state.win].cursorline = true
+  vim.wo[M.state.win].cursorline = false
 
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")

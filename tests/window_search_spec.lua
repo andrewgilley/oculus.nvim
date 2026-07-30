@@ -55,7 +55,7 @@ assert(
   inspection_window_options.winhighlight
     == vim.wo[origin_win].winhighlight
 )
-assert(vim.wo[state.win].cursorline == true)
+assert(vim.wo[state.win].cursorline == false)
 assert(vim.wo[state.win].cursorlineopt == "line")
 assert(not vim.wo[state.win].winhighlight:find(
   "CursorLine:OculusCursorLine",
@@ -279,6 +279,7 @@ end
 local select_mapping = vim.fn.maparg("<CR>", "n", false, true)
 select_mapping.callback()
 assert(state.view == "activity")
+assert(vim.wo[state.win].cursorline == true)
 assert(state.activity_page == 1)
 assert(#state.events == 8)
 assert(state.events[1].id == "1")
