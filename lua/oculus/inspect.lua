@@ -15,6 +15,7 @@ local syncing = false
 local sidebar_navigating = false
 local inspection_tabs_loading = false
 local oil_contexts = {}
+local oil_window_contexts = {}
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "o"
 local default_version_switch = "<C-s>"
@@ -1451,6 +1452,88 @@ local function focus_oil_origin(buf, context, oil)
   end
 end
 
+local function entered_oil_subdirectory(previous, current)
+  if type(previous) ~= "string"
+    or previous == ""
+    or type(current) ~= "string"
+    or current == ""
+  then
+    return false
+  end
+  previous = comparable_path(previous)
+  current = comparable_path(current)
+  return current ~= previous
+    and current:sub(1, #previous + 1) == previous .. "/"
+end
+
+local function first_changed_oil_file_line(
+  buf,
+  session,
+  role,
+  relative,
+  oil
+)
+  local listing_ready = false
+  for line = 1, vim.api.nvim_buf_line_count(buf) do
+    local entry = oil.get_entry_on_line(buf, line)
+    listing_ready = listing_ready or entry ~= nil
+    if entry
+      and entry.name
+      and entry.name ~= ".."
+      and entry.type ~= "directory"
+    then
+      local path = relative == ""
+          and entry.name
+        or (relative .. "/" .. entry.name)
+      local status = oil_entry_status(session, role, path, false)
+      if status and status ~= "directory" then
+        return line, true
+      end
+    end
+  end
+  return nil, listing_ready
+end
+
+local function focus_first_changed_oil_file(
+  buf,
+  context,
+  directory,
+  oil
+)
+  local session, role, relative = session_directory(
+    context.session,
+    context.role,
+    directory
+  )
+  if not session then
+    return
+  end
+  local line, listing_ready = first_changed_oil_file_line(
+    buf,
+    session,
+    role,
+    relative,
+    oil
+  )
+  if not line then
+    return false, listing_ready
+  end
+  local wins = vim.fn.win_findbuf(buf)
+  local win = vim.api.nvim_get_current_buf() == buf
+      and vim.api.nvim_get_current_win()
+    or wins[1]
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return false, listing_ready
+  end
+  vim.api.nvim_win_set_cursor(win, { line, 0 })
+  return true, true
+end
+
+local function oil_context_for_window(win)
+  local context = oil_window_contexts[win]
+  return context and context.active and context or nil
+end
+
 local function activate_oil_context(context)
   if context.active then
     return
@@ -1468,6 +1551,7 @@ restore_inspection_sidebar_for_buffer = function(buf)
   for _, context in pairs(oil_contexts) do
     if context.source_buf == buf and context.active then
       context.active = false
+      oil_window_contexts[context.win] = nil
       local group = context.group
       if context.restore_sidebar
         and group
@@ -1492,13 +1576,6 @@ local function configure_inspection_oil_buffer(buf)
   if not ok then
     return
   end
-  if oil_contexts[buf] then
-    local context = oil_contexts[buf]
-    activate_oil_context(context)
-    focus_oil_origin(buf, context, oil)
-    map_oil_origin_selection(buf, context, oil)
-    return
-  end
   local directory = oil.get_current_dir(buf)
   if not directory then
     return
@@ -1508,6 +1585,59 @@ local function configure_inspection_oil_buffer(buf)
       and vim.api.nvim_get_current_win()
     or wins[1]
   if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  local context = oil_contexts[buf] or oil_context_for_window(win)
+  if context then
+    oil_contexts[buf] = context
+    vim.b[buf].oculus_inspect_oil_origin = {
+      directory = context.directory,
+      filename = context.filename,
+      source_buf = context.source_buf,
+    }
+    local descended = entered_oil_subdirectory(
+      context.current_directory,
+      directory
+    )
+    if descended then
+      context.pending_changed_file_directory = directory
+    elseif context.pending_changed_file_directory
+      and comparable_path(context.pending_changed_file_directory)
+        ~= comparable_path(directory)
+    then
+      context.pending_changed_file_directory = nil
+    end
+    context.current_directory = directory
+    if context.win ~= win then
+      oil_window_contexts[context.win] = nil
+    end
+    context.win = win
+    oil_window_contexts[win] = context
+    activate_oil_context(context)
+    local focused_changed_file = false
+    local listing_ready = false
+    if context.pending_changed_file_directory
+      and comparable_path(context.pending_changed_file_directory)
+        == comparable_path(directory)
+    then
+      focused_changed_file, listing_ready =
+        focus_first_changed_oil_file(
+          buf,
+          context,
+          directory,
+          oil
+        )
+      if focused_changed_file or listing_ready then
+        context.pending_changed_file_directory = nil
+      end
+    end
+    if not focused_changed_file
+      and comparable_path(directory)
+        == comparable_path(context.directory)
+    then
+      focus_oil_origin(buf, context, oil)
+    end
+    map_oil_origin_selection(buf, context, oil)
     return
   end
   local tab = vim.api.nvim_win_get_tabpage(win)
@@ -1529,13 +1659,22 @@ local function configure_inspection_oil_buffer(buf)
     directory = source_directory,
     filename = vim.fs.basename(source_path),
     source_buf = endpoint.buf,
+    session = session,
+    role = role,
+    current_directory = directory,
+    win = win,
   }
-  vim.b[buf].oculus_inspect_oil_origin = vim.deepcopy(context)
+  vim.b[buf].oculus_inspect_oil_origin = {
+    directory = context.directory,
+    filename = context.filename,
+    source_buf = context.source_buf,
+  }
 
   local group = sidebar_group_for_session(session)
   context.group = group
   oil_contexts[buf] = context
   activate_oil_context(context)
+  oil_window_contexts[win] = context
 
   focus_oil_origin(buf, context, oil)
   map_oil_origin_selection(buf, context, oil)
@@ -1626,6 +1765,16 @@ vim.api.nvim_create_autocmd("BufWipeout", {
   group = oil_group,
   callback = function(args)
     oil_contexts[args.buf] = nil
+  end,
+})
+
+vim.api.nvim_create_autocmd("WinClosed", {
+  group = oil_group,
+  callback = function(args)
+    local win = tonumber(args.match)
+    if win then
+      oil_window_contexts[win] = nil
+    end
   end,
 })
 
@@ -4277,6 +4426,8 @@ M._parse_hunks = parse_hunks
 M._parse_revision_pairs = parse_revision_pairs
 M._blob_lines = blob_lines
 M._oil_entry_status = oil_entry_status
+M._entered_oil_subdirectory = entered_oil_subdirectory
+M._first_changed_oil_file_line = first_changed_oil_file_line
 M._change_lines = change_lines
 M._focused_change_lines = focused_change_lines
 M._prevent_window_dimming = prevent_window_dimming

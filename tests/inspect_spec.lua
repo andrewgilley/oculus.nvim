@@ -805,6 +805,39 @@ assert(inspect._oil_entry_status(
   "lua/oculus/new.lua",
   false
 ) == nil)
+assert(inspect._entered_oil_subdirectory(
+  root,
+  vim.fs.joinpath(root, "lua", "oculus")
+))
+assert(not inspect._entered_oil_subdirectory(
+  vim.fs.joinpath(root, "lua"),
+  root
+))
+vim.api.nvim_buf_set_lines(
+  viewport_buf,
+  0,
+  -1,
+  false,
+  { "nested", "unchanged.lua", "new.lua", "old.lua" }
+)
+assert(inspect._first_changed_oil_file_line(
+  viewport_buf,
+  oil_session,
+  "change",
+  "lua/oculus",
+  {
+    get_entry_on_line = function(_, line)
+      if line == 1 then
+        return { name = "nested", type = "directory" }
+      elseif line == 2 then
+        return { name = "unchanged.lua", type = "file" }
+      elseif line == 3 then
+        return { name = "new.lua", type = "file" }
+      end
+      return { name = "old.lua", type = "file" }
+    end,
+  }
+) == 3)
 
 local hunks = inspect._parse_hunks(table.concat({
   "@@ -10,2 +10,3 @@ local function changed()",
@@ -2190,6 +2223,51 @@ if integration_root and (integration_sha or integration_url) then
       link = false,
     })
     assert(oil_highlight.bg == normal_highlight.bg)
+    ;(function()
+      oil.open(vim.fs.dirname(change_state.directory))
+      assert(vim.wait(10000, function()
+        local current = oil.get_current_dir()
+        return current
+          and vim.fs.normalize(current):lower()
+            == vim.fs.normalize(
+              vim.fs.dirname(change_state.directory)
+            ):lower()
+      end), "Oil did not open the parent inspection directory")
+      oil.open(change_state.directory)
+      assert(vim.wait(10000, function()
+        local current = oil.get_current_dir()
+        if not current
+          or vim.fs.normalize(current):lower()
+            ~= vim.fs.normalize(change_state.directory):lower()
+        then
+          return false
+        end
+        local current_buf = vim.api.nvim_get_current_buf()
+        local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+        for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+          current_buf,
+          oil_signs,
+          0,
+          -1,
+          { details = true }
+        )) do
+          if mark[4].sign_text ~= "•" then
+            return cursor_line == mark[2] + 1
+          end
+        end
+        return false
+      end), "Oil did not select the first changed file after descending")
+      oil_buf = vim.api.nvim_get_current_buf()
+      cursor_entry = oil.get_cursor_entry()
+      assert(cursor_entry and cursor_entry.type ~= "directory")
+      for line = 1, vim.api.nvim_buf_line_count(oil_buf) do
+        local entry = oil.get_entry_on_line(oil_buf, line)
+        if entry and entry.name == oil_origin.filename then
+          vim.api.nvim_win_set_cursor(0, { line, 0 })
+          break
+        end
+      end
+    end)()
     local oil_select_mapping =
       vim.fn.maparg("l", "n", false, true)
     assert(
