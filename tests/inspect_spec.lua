@@ -1503,10 +1503,14 @@ if integration_root and (integration_sha or integration_url) then
   local toggle_mapped = false
   local switch_mapped = false
   local next_file_mapping
+  local main_ctrl_i_mapped = false
   local sidebar_ctrl_i_mapped = false
   local sidebar_tab_mapped = false
   local sidebar_leader_toggle
   for _, mapping in ipairs(jump_maps) do
+    if mapping.lhs == "<C-I>" then
+      main_ctrl_i_mapped = true
+    end
     if mapping.desc == "Previous Oculus change" then
       previous_mapped = mapping.lhs == "<C-Left>"
     elseif mapping.desc == "Previous Oculus changed chunk" then
@@ -1533,15 +1537,26 @@ if integration_root and (integration_sha or integration_url) then
   end
   assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
   assert(not next_mapped)
-  assert(not toggle_mapped)
+  assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
   assert(switch_mapped)
   assert(not next_file_mapping)
+  assert(not main_ctrl_i_mapped)
   assert(not sidebar_ctrl_i_mapped)
   assert(not sidebar_tab_mapped)
   assert(sidebar_leader_toggle
     and sidebar_leader_toggle.lhs
       == (vim.g.mapleader or "\\") .. "oi")
   assert(vim.fn.maparg("o", "n", false, true).buffer ~= 1)
+  toggle_mapped.callback()
+  assert(vim.api.nvim_get_current_win() == change_win)
+  do
+    local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    local active_sidebar_win = assert(sidebar_window(
+      vim.api.nvim_get_current_tabpage()
+    ))
+    assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
+      == file_lines[active.pair_index] + active.chunk_index)
+  end
 
   local sidebar_ctrl_i_from_sidebar = false
   local sidebar_tab_from_sidebar = false
