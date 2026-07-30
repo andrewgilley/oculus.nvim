@@ -376,19 +376,22 @@ assert(first_activity_text:find(
 ))
 assert(not first_activity_text:find(state.contributor.name, 1, true))
 local expansion_line
+local expansion_count = 0
 for line, event in pairs(state.activity_expansion_targets) do
   if event.id == "2" then
-    expansion_line = line
-    break
+    expansion_count = expansion_count + 1
+    if state.activity_title_lines[line] == line then
+      expansion_line = line
+    end
   end
 end
 assert(expansion_line)
-assert(vim.trim(vim.api.nvim_buf_get_lines(
-  state.buf,
-  expansion_line - 1,
-  expansion_line,
-  false
-)[1]) == "...")
+assert(expansion_count == 5)
+for line, title_line in pairs(state.activity_title_lines) do
+  if title_line == expansion_line then
+    assert(state.activity_expansion_targets[line].id == "2")
+  end
+end
 vim.api.nvim_win_set_cursor(state.win, { expansion_line, 0 })
 select_mapping.callback()
 assert(state.view == "activity")
@@ -399,6 +402,12 @@ local commit_page_lines = table.concat(
   "\n"
 )
 assert(commit_page_lines:find("5 commits", 1, true))
+assert(not commit_page_lines:find("pushed 1 commit", 1, true))
+assert(commit_page_lines:find(
+  "pushed to example/repository",
+  1,
+  true
+))
 for index, event in ipairs(state.events) do
   assert(event.type == "PushEvent")
   assert(event.payload.size == 1)

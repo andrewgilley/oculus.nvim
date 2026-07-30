@@ -83,7 +83,7 @@ local function value(root, ...)
   return current
 end
 
-local function sentence(event)
+local function sentence(event, opts)
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 3 Support provider-normalized activity text
   if type(event.oculus_text) == "string" then
     return event.oculus_text
@@ -96,6 +96,9 @@ local function sentence(event)
 
   if kind == "PushEvent" then
     local count = payload.size or #(payload.commits or {})
+    if opts and opts.omit_single_commit_count and count == 1 then
+      return ("Pushed to %s"):format(repo)
+    end
     if count == 0 then
       return ("Pushed to %s"):format(repo)
     end
@@ -394,11 +397,11 @@ local function push_group_url(event)
   return ("https://github.com/%s/commits/%s"):format(repo, target)
 end
 
-function M.describe(event)
+function M.describe(event, opts)
   return {
     type = event.type,
     icon = icons[event.type] or "●",
-    text = lowercase_first(sentence(event)),
+    text = lowercase_first(sentence(event, opts)),
     summary = summary(event),
     detail = detail(event),
     url = event_url(event),

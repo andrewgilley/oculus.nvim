@@ -487,9 +487,9 @@ do
     { kind = "commit" }
   )
   assert(compact_config.width
-    == math.max(20, math.floor(main_config.width * 0.75)))
+    == math.max(20, math.floor(main_config.width * 0.8)))
   assert(compact_config.height
-    == math.max(8, math.floor(main_config.height * 0.75)))
+    == math.max(8, math.floor(main_config.height * 0.8)))
   assert(compact_config.col > main_config.col)
   assert(compact_config.row > main_config.row)
   local pull_request_config = inspect._overview_window_config(
@@ -1679,10 +1679,10 @@ if integration_root and (integration_sha or integration_url) then
       require("oculus.window").window_config({})
     local expected_overview_width = integration_is_pull_request
         and main_overview_config.width
-      or math.max(20, math.floor(main_overview_config.width * 0.75))
+      or math.max(20, math.floor(main_overview_config.width * 0.8))
     local expected_overview_height = integration_is_pull_request
         and main_overview_config.height
-      or math.max(8, math.floor(main_overview_config.height * 0.75))
+      or math.max(8, math.floor(main_overview_config.height * 0.8))
     assert(overview_saved.config.width
       == expected_overview_width)
     assert(overview_saved.config.height
