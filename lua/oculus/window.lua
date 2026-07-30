@@ -511,7 +511,7 @@ local function footer(lines, text)
 end
 
 local function preview_left_width(window_width)
-  local preferred = math.max(40, math.floor(window_width * 0.46))
+  local preferred = math.max(40, math.floor(window_width * 0.52))
   return math.max(30, math.min(preferred, window_width - 22))
 end
 
@@ -797,7 +797,8 @@ local function render_contributors()
   M.state.preview_key = nil
 
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 10 Generalize the contributor list for multiple forges
-  local searching = M.state.search_query ~= nil
+  local searching = type(M.state.search_query) == "string"
+    and M.state.search_query ~= ""
   local lines = searching
       and {
         "",
@@ -882,7 +883,7 @@ local function render_contributors()
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
   lines[#lines + 1] = searching
-      and "  Keep typing to refine · esc cancel"
+      and "  esc cancel"
     or "  s /: search  ?: shortcuts  q: quit"
   local commands_line = #lines
   set_lines(lines)
@@ -1434,19 +1435,12 @@ local function search_win_config()
   local position = vim.api.nvim_win_get_position(M.state.win)
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(parent_width)
-  local right_width = math.max(3, parent_width - left_width - 1)
-  local midpoint = math.floor(right_width / 2)
-  local search_start = math.max(0, midpoint - 2)
-  local outer_width = math.max(3, right_width - search_start - 1)
   return {
     relative = "editor",
-    width = math.max(1, outer_width - 2),
+    width = math.max(1, left_width - 4),
     height = 1,
     row = position[1] + 1,
-    col = position[2]
-      + left_width
-      + 1
-      + search_start,
+    col = position[2] + 1,
     style = "minimal",
     border = M.state.opts.border or "rounded",
     zindex = 70,
@@ -1620,6 +1614,19 @@ local function open_search()
   end
   search_map("<Esc>", cancel_search, "Cancel Oculus user search")
   search_map("<C-c>", cancel_search, "Cancel Oculus user search")
+  vim.keymap.set("i", "<BS>", function()
+    if prompt_query(buf) == "" then
+      cancel_search()
+      return ""
+    end
+    return "<BS>"
+  end, {
+    buffer = buf,
+    expr = true,
+    nowait = true,
+    silent = true,
+    desc = "Close empty Oculus user search",
+  })
   search_map("<CR>", accept_search, "Open searched Oculus user")
   search_map("<Down>", function()
     move_search_selection(1)
