@@ -131,14 +131,11 @@ local expected_left_width = math.max(
   )
 )
 local search_config = vim.api.nvim_win_get_config(state.search_win)
-local search_title_width = vim.fn.strdisplaywidth("  COMMUNITY FIGURES")
-local expected_search_width = math.max(
-  1,
-  math.min(22, expected_left_width - search_title_width - 4)
-)
+local search_title_width = vim.fn.strdisplaywidth("  SEARCH")
+local expected_search_width =
+  math.max(1, expected_left_width - search_title_width - 4)
 assert(search_config.col
-  == main_position[2] + expected_left_width
-    - expected_search_width - 3)
+  == main_position[2] + search_title_width + 1)
 assert(search_config.width == expected_search_width)
 assert(
   search_config.col + search_config.width + 2
@@ -149,13 +146,9 @@ local initial_search_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(initial_search_lines:find("  COMMUNITY FIGURES", 1, true))
-assert(initial_search_lines:find(
-  "  a add  g suggested  / search  ?: help  q quit",
-  1,
-  true
-))
-assert(not initial_search_lines:find("  SEARCH", 1, true))
+assert(initial_search_lines:find("  SEARCH", 1, true))
+assert(initial_search_lines:find("  esc cancel", 1, true))
+assert(not initial_search_lines:find("  COMMUNITY FIGURES", 1, true))
 assert(not initial_search_lines:find("Keep typing to refine", 1, true))
 assert(not initial_search_lines:find("arrows preview", 1, true))
 assert(not initial_search_lines:find("enter open", 1, true))
@@ -215,13 +208,9 @@ local cleared_search_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(cleared_search_lines:find("  COMMUNITY FIGURES", 1, true))
-assert(cleared_search_lines:find(
-  "  a add  g suggested  / search  ?: help  q quit",
-  1,
-  true
-))
-assert(not cleared_search_lines:find("  SEARCH", 1, true))
+assert(cleared_search_lines:find("  SEARCH", 1, true))
+assert(cleared_search_lines:find("  esc cancel", 1, true))
+assert(not cleared_search_lines:find("  COMMUNITY FIGURES", 1, true))
 
 vim.api.nvim_buf_set_lines(
   state.search_buf,
