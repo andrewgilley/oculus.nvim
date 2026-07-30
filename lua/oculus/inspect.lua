@@ -2932,8 +2932,14 @@ local function overview_window_config(config, overview)
   if overview and overview.kind == "commit" then
     local original_width = math.max(1, tonumber(config.width) or 1)
     local original_height = math.max(1, tonumber(config.height) or 1)
-    config.width = math.max(20, math.floor(original_width * 0.8))
-    config.height = math.max(8, math.floor(original_height * 0.8))
+    config.width = math.min(
+      original_width,
+      math.max(20, math.floor(original_width * 0.8)) + 4
+    )
+    config.height = math.min(
+      original_height,
+      math.max(8, math.floor(original_height * 0.8)) + 2
+    )
     config.col = (tonumber(config.col) or 0)
       + math.floor((original_width - config.width) / 2)
     config.row = (tonumber(config.row) or 0)
