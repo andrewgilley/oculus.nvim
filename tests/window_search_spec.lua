@@ -64,6 +64,13 @@ assert(vim.wo[state.win].relativenumber == false)
 local initial_window_height = vim.api.nvim_win_get_height(state.win)
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
+local initial_user_text = table.concat(initial_user_lines, "\n")
+assert(initial_user_text:find("  USER", 1, true))
+assert(initial_user_text:find("@mitchellh", 1, true))
+assert(initial_user_text:find("@andrewrk", 1, true))
+assert(not initial_user_text:find("HANDLE", 1, true))
+assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
+assert(not initial_user_text:find("Andrew Kelley", 1, true))
 assert(initial_user_lines[initial_window_height]
   == "  a add  / search  ?: help  q quit")
 local main_down_mapping =
@@ -188,10 +195,12 @@ assert(vim.fn.maparg("<C-i>", "i", false, true).desc == nil)
 assert(vim.fn.maparg("<Tab>", "i", false, true).buffer ~= 1)
 search_down_mapping.callback()
 assert(state.search_index == 2)
-assert(state.preview_items[4][1] == state.search_results[2].name)
+assert(state.preview_items[4][1]
+  == "@" .. state.search_results[2].username)
 search_up_mapping.callback()
 assert(state.search_index == 1)
-assert(state.preview_items[4][1] == state.search_results[1].name)
+assert(state.preview_items[4][1]
+  == "@" .. state.search_results[1].username)
 search_up_mapping.callback()
 assert(state.search_index == 2)
 search_down_mapping.callback()
@@ -225,7 +234,9 @@ vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
 assert(state.search_query == "mhash")
 assert(#state.search_results == 1)
 assert(state.search_results[1].username == "mitchellh")
-assert(state.preview_items[4][1] == "Mitchell Hashimoto")
+assert(state.preview_items[2][1] == "USER")
+assert(state.preview_items[4][1] == "@mitchellh")
+assert(state.preview_items[5][1] == "GitHub")
 
 vim.api.nvim_buf_set_lines(
   state.search_buf,
@@ -238,8 +249,8 @@ vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
 assert(#state.search_results == 0)
 local main_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(table.concat(main_lines, "\n"):find("No matching users.", 1, true))
-assert(state.preview_items[2][1] == "PREVIEW")
-assert(state.preview_items[4][1] == "Mitchell Hashimoto")
+assert(state.preview_items[2][1] == "USER")
+assert(state.preview_items[4][1] == "@mitchellh")
 local preview_marks = vim.api.nvim_buf_get_extmarks(
   state.buf,
   vim.api.nvim_create_namespace("oculus_preview"),
@@ -353,6 +364,17 @@ assert(#state.events == 8)
 assert(state.events[1].id == "1")
 assert(state.events[8].id == "8")
 assert(requested_per_page[1] == 30)
+local first_activity_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(first_activity_text:find("  USER", 1, true))
+assert(first_activity_text:find(
+  "@" .. state.contributor.username,
+  1,
+  true
+))
+assert(not first_activity_text:find(state.contributor.name, 1, true))
 local expansion_line
 for line, event in pairs(state.activity_expansion_targets) do
   if event.id == "2" then
