@@ -3,6 +3,7 @@ vim.opt.runtimepath:prepend(root)
 
 local window = require("oculus.window")
 local inspect = require("oculus.inspect")
+local browser = require("oculus.browser")
 local contributors = {
   {
     name = "Mitchell Hashimoto",
@@ -370,7 +371,27 @@ inspect.open = original_inspect_open
 
 local past_mapping = vim.fn.maparg("p", "n", false, true)
 assert(past_mapping.desc == "Load past Oculus activity")
-assert(vim.fn.maparg("b", "n", false, true).callback == nil)
+local browser_mapping = vim.fn.maparg("b", "n", false, true)
+assert(browser_mapping.desc == "Open Oculus activity in browser")
+local original_browser_open = browser.open
+local opened_activity_url
+browser.open = function(url)
+  opened_activity_url = url
+  return true
+end
+browser_mapping.callback()
+assert(opened_activity_url:find(
+  "https://github.com/example/repository/pull/42",
+  1,
+  true
+) == 1)
+opened_activity_url = nil
+local profile_mapping = vim.fn.maparg("o", "n", false, true)
+assert(profile_mapping.desc == "Open Oculus contributor profile")
+profile_mapping.callback()
+select_mapping.callback()
+assert(opened_activity_url == nil)
+browser.open = original_browser_open
 past_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
@@ -391,6 +412,7 @@ local footer_text = table.concat(
 )
 assert(footer_text:find("p past", 1, true))
 assert(footer_text:find("r recent", 1, true))
+assert(footer_text:find("b browser", 1, true))
 
 past_mapping.callback()
 assert(state.view == "activity")

@@ -18,6 +18,7 @@ local oil_contexts = {}
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "o"
 local default_version_switch = "<C-s>"
+local default_next_file = "<Tab>"
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
@@ -1880,7 +1881,7 @@ local function select_endpoint(endpoint)
   sidebar_navigating = false
 end
 
-local function map_file_navigation(endpoint, session, role, lhs)
+local function map_file_navigation(endpoint, session, role, group)
   local function toggle_version()
     local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
     local chunk_index = hunk_index_at_line(session, role, line)
@@ -1891,13 +1892,47 @@ local function map_file_navigation(endpoint, session, role, lhs)
       role == "parent" and session.change or session.parent
     )
   end
-  lhs = lhs == nil and default_version_switch or lhs
-  if type(lhs) == "string" and lhs ~= "" then
-    vim.keymap.set("n", lhs, toggle_version, {
+  local version_lhs = group.version_switch
+  if version_lhs == nil then
+    version_lhs = default_version_switch
+  end
+  if type(version_lhs) == "string" and version_lhs ~= "" then
+    vim.keymap.set("n", version_lhs, toggle_version, {
       buffer = endpoint.buf,
       nowait = true,
       silent = true,
       desc = "Switch Oculus file version",
+    })
+  end
+  local next_file_lhs = group.next_file
+  if next_file_lhs == nil then
+    next_file_lhs = default_next_file
+  end
+  if type(next_file_lhs) == "string" and next_file_lhs ~= "" then
+    vim.keymap.set("n", next_file_lhs, function()
+      local current_index
+      for index, candidate in ipairs(group) do
+        if candidate == session then
+          current_index = index
+          break
+        end
+      end
+      if not current_index then
+        return
+      end
+      for offset = 1, #group do
+        local next_index = ((current_index + offset - 1) % #group) + 1
+        local target = group[next_index][role]
+        if valid_endpoint(target) then
+          select_endpoint(target)
+          return
+        end
+      end
+    end, {
+      buffer = endpoint.buf,
+      nowait = true,
+      silent = true,
+      desc = "Next Oculus changed file",
     })
   end
 end
@@ -1992,6 +2027,21 @@ local function sidebar_row(file, width)
   }
 end
 
+local function inspect_sidebar_width(proportion, columns)
+  columns = math.max(1, tonumber(columns) or vim.o.columns)
+  if type(proportion) ~= "number"
+    or proportion <= 0
+    or proportion >= 1
+  then
+    proportion = 28 / columns
+  end
+  local width = math.floor(columns * proportion)
+  return math.min(
+    math.max(20, width),
+    math.max(1, columns - 20)
+  )
+end
+
 local function issue_sidebar_row(file, width)
   local prefix = "• "
   local path_width = math.max(
@@ -2017,33 +2067,8 @@ local function sidebar_chunk_row(hunk, last)
   )
 end
 
-local function inspection_overview(info, inspections)
+local function inspection_overview(info)
   local overview = vim.deepcopy(info or {})
-  local files = {}
-  local file_count = 0
-  local additions = 0
-  local deletions = 0
-  local commit_count = 0
-  for _, inspection in ipairs(inspections or {}) do
-    local file = inspection.change_file or inspection.parent_file
-    if file and not files[file] then
-      files[file] = true
-      file_count = file_count + 1
-    end
-    commit_count = math.max(
-      commit_count,
-      tonumber(inspection.commit_index) or 1
-    )
-    for _, hunk in ipairs(inspection.hunks or {}) do
-      additions = additions + (tonumber(hunk.new_count) or 0)
-      deletions = deletions + (tonumber(hunk.old_count) or 0)
-    end
-  end
-  overview.file_count = tonumber(overview.changed_files) or file_count
-  overview.additions = tonumber(overview.additions) or additions
-  overview.deletions = tonumber(overview.deletions) or deletions
-  overview.commit_count = tonumber(overview.commit_count)
-    or math.max(1, commit_count)
   local route = overview.kind == "pull_request"
       and (
         overview.forge == "codeberg"
@@ -2117,17 +2142,10 @@ local function sidebar_overview_lines(overview, width, toggle)
   width = math.max(12, tonumber(width) or 28)
   local details = overview.commit_details or {}
   local is_pull_request = overview.kind == "pull_request"
-  local title = is_pull_request
-      and overview.title
-    or details.subject
   local lines = {
-    is_pull_request and "PULL REQUEST OVERVIEW" or "COMMIT OVERVIEW",
+    "OVERVIEW",
     "",
   }
-  if type(title) == "string" and vim.trim(title) ~= "" then
-    append_sidebar_text(lines, title, width)
-    lines[#lines + 1] = ""
-  end
   local function field(label, value)
     if value == nil or value == "" then
       return
@@ -2136,12 +2154,32 @@ local function sidebar_overview_lines(overview, width, toggle)
     append_sidebar_text(lines, value, width, "  ")
     lines[#lines + 1] = ""
   end
-  field("Repository", ("%s/%s"):format(
-    overview.owner or "",
-    overview.repo or ""
+  local function value_or(value, fallback)
+    return type(value) == "string" and vim.trim(value) ~= ""
+        and value
+      or fallback
+  end
+  field("Title", value_or(
+    is_pull_request and overview.title or details.subject,
+    "Untitled"
   ))
+  field("Description", value_or(
+    is_pull_request and overview.body or details.body,
+    "No description provided."
+  ))
+  local author
   if is_pull_request then
-    field("Pull request", "#" .. tostring(overview.number or ""))
+    author = overview.author and ("@" .. overview.author)
+  else
+    author = details.author_name or ""
+    if details.author_email and details.author_email ~= "" then
+      author = author .. " <" .. details.author_email .. ">"
+    end
+  end
+  field("Author", value_or(author, "Unknown"))
+  field("URL", overview.url)
+  if is_pull_request then
+    field("PR number", "#" .. tostring(overview.number or ""))
     local status = overview.merged and "Merged"
       or overview.draft and "Draft"
       or (
@@ -2149,39 +2187,7 @@ local function sidebar_overview_lines(overview, width, toggle)
           and overview.state:gsub("^%l", string.upper)
         or nil
       )
-    field("Status", status)
-    field("Author", overview.author and ("@" .. overview.author))
-    if overview.base_ref or overview.head_ref then
-      field("Branches", ("%s ← %s"):format(
-        overview.base_ref or "?",
-        overview.head_ref or "?"
-      ))
-    end
-    field("Commits", tostring(overview.commit_count or 0))
-  else
-    field("Commit", details.sha or overview.sha)
-    local author = details.author_name or ""
-    if details.author_email and details.author_email ~= "" then
-      author = author .. " <" .. details.author_email .. ">"
-    end
-    field("Author", author)
-    field("Authored", details.authored_at)
-  end
-  local file_count = tonumber(overview.file_count) or 0
-  field("Changes", ("%d %s · +%d −%d"):format(
-    file_count,
-    file_count == 1 and "file" or "files",
-    tonumber(overview.additions) or 0,
-    tonumber(overview.deletions) or 0
-  ))
-  if is_pull_request then
-    field("Created", overview.created_at)
-    field("Updated", overview.updated_at)
-  end
-  field("URL", overview.url)
-  local body = is_pull_request and overview.body or details.body
-  if type(body) == "string" and vim.trim(body) ~= "" then
-    field(is_pull_request and "Description" or "Message", body)
+    field("Status", value_or(status, "Unknown"))
   end
   toggle = toggle == nil and default_overview_toggle or toggle
   if type(toggle) == "string" and toggle ~= "" then
@@ -2488,7 +2494,39 @@ local function toggle_inspection_sidebar(group)
   end
 end
 
+local function capture_window_state(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return nil
+  end
+  return {
+    win = win,
+    cursor = vim.api.nvim_win_get_cursor(win),
+    view = vim.api.nvim_win_call(win, function()
+      return vim.fn.winsaveview()
+    end),
+  }
+end
+
+local function restore_window_state(state)
+  if not state or not vim.api.nvim_win_is_valid(state.win) then
+    return
+  end
+  vim.api.nvim_win_set_cursor(state.win, state.cursor)
+  vim.api.nvim_win_call(state.win, function()
+    vim.fn.winrestview(state.view)
+  end)
+end
+
 show_inspection_overview = function(group)
+  local tab = vim.api.nvim_get_current_tabpage()
+  local sidebar_win = vim.api.nvim_get_current_win()
+  local endpoint = endpoint_for_tab(group, tab)
+  group.overview_return = {
+    tab = tab,
+    sidebar = capture_window_state(sidebar_win),
+    endpoint = endpoint and capture_window_state(endpoint.win),
+    anchor_line = group.sidebar_anchor_line,
+  }
   group.sidebar_mode = "overview"
   group.sidebar_rendered_mode = nil
   if not group.sidebar_visible then
@@ -2499,9 +2537,33 @@ show_inspection_overview = function(group)
 end
 
 show_sidebar_files = function(group)
+  local return_state = group.overview_return
+  sidebar_navigating = true
   group.sidebar_mode = "files"
   group.sidebar_rendered_mode = nil
-  refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  group.sidebar_anchor_line = return_state and return_state.anchor_line or nil
+  local tab = return_state
+      and vim.api.nvim_tabpage_is_valid(return_state.tab)
+      and return_state.tab
+    or vim.api.nvim_get_current_tabpage()
+  refresh_sidebar(group, tab)
+  if return_state then
+    restore_window_state(return_state.endpoint)
+    if vim.api.nvim_tabpage_is_valid(return_state.tab) then
+      vim.api.nvim_set_current_tabpage(return_state.tab)
+    end
+    restore_window_state(return_state.sidebar)
+    if return_state.sidebar
+      and vim.api.nvim_win_is_valid(return_state.sidebar.win)
+    then
+      vim.api.nvim_set_current_win(return_state.sidebar.win)
+      group.focused_win = return_state.sidebar.win
+    end
+  end
+  group.overview_return = nil
+  group.sidebar_focus_generation =
+    (group.sidebar_focus_generation or 0) + 1
+  sidebar_navigating = false
 end
 
 local function map_inspection_sidebar_toggle(group)
@@ -2583,8 +2645,10 @@ local function prepare_inspection_sidebar(group)
   group.sidebar_buf = buf
   group.sidebar_windows = {}
   group.sidebar_visible = false
-  group.sidebar_width =
-    math.min(28, math.max(20, vim.o.columns - 20))
+  group.sidebar_width = inspect_sidebar_width(
+    group.sidebar_width_proportion,
+    vim.o.columns
+  )
   group.sidebar_rows = {}
   group.sidebar_chunk_lines = {}
   group.sidebar_entries = {}
@@ -2665,7 +2729,7 @@ local function sidebar_group_for_buffer(buf)
 end
 
 local function open_sidebar_selection(group)
-  if sidebar_navigating then
+  if sidebar_navigating or group.sidebar_mode == "overview" then
     return
   end
   local tab = vim.api.nvim_get_current_tabpage()
@@ -2720,6 +2784,7 @@ end
 focus_sidebar_selection = function(group)
   if
     sidebar_navigating
+    or group.sidebar_mode == "overview"
     or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
   then
     return
@@ -2765,6 +2830,7 @@ end
 switch_sidebar_version = function(group)
   if
     sidebar_navigating
+    or group.sidebar_mode == "overview"
     or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
   then
     return
@@ -3202,9 +3268,11 @@ local function open_tabs(
   local ok, err = pcall(function()
     local inspection_sessions = {
       sidebar_toggle = opts.inspect_sidebar_toggle,
+      sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
       version_switch = opts.inspect_version_switch,
-      overview = inspection_overview(info, inspections),
+      next_file = opts.inspect_next_file,
+      overview = inspection_overview(info),
     }
     for index, paths in ipairs(inspections) do
       inspection_sessions[index] = {
@@ -3265,13 +3333,13 @@ local function open_tabs(
         parent,
         session,
         "parent",
-        inspection_sessions.version_switch
+        inspection_sessions
       )
       map_file_navigation(
         change,
         session,
         "change",
-        inspection_sessions.version_switch
+        inspection_sessions
       )
       if focused_start then
         set_change_cursor(parent.win, focused_start)
@@ -3561,8 +3629,6 @@ local function apply_pull_request(info, details)
     "state",
     "draft",
     "merged",
-    "created_at",
-    "updated_at",
     "html_url",
     "base_sha",
     "base_ref",
@@ -3570,9 +3636,6 @@ local function apply_pull_request(info, details)
     "head_ref",
     "fetch_ref",
     "commit_count",
-    "additions",
-    "deletions",
-    "changed_files",
   }) do
     resolved[key] = details[key]
   end
@@ -3905,6 +3968,7 @@ M._refresh_buffer_highlighting = refresh_buffer_highlighting
 M._apply_inspection_filetype = apply_inspection_filetype
 M._normalize_inspection_view = normalize_inspection_view
 M._sidebar_row = sidebar_row
+M._inspect_sidebar_width = inspect_sidebar_width
 M._sidebar_chunk_row = sidebar_chunk_row
 M._sidebar_file = sidebar_file
 M._sidebar_target_role = sidebar_target_role
