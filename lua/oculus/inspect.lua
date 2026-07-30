@@ -19,10 +19,12 @@ local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "o"
 local default_version_switch = "<C-s>"
 local default_next_chunk = "<Tab>"
+local default_previous_chunk = "<S-Tab>"
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
 local select_next_sidebar_chunk
+local select_previous_sidebar_chunk
 local switch_sidebar_version
 local close_inspection_sidebar
 local open_inspection_sidebar
@@ -1915,6 +1917,30 @@ local function next_inspection_chunk(group, session, current_chunk)
   end
 end
 
+local function previous_inspection_chunk(group, session, current_chunk)
+  local current_index
+  for index, candidate in ipairs(group) do
+    if candidate == session then
+      current_index = index
+      break
+    end
+  end
+  if not current_index then
+    return
+  end
+  if current_chunk > 1 then
+    return session, current_index, current_chunk - 1
+  end
+  for offset = 1, #group do
+    local index = ((current_index - offset - 1) % #group) + 1
+    local candidate = group[index]
+    local chunks = inspection_chunks(group, candidate)
+    if #chunks > 0 then
+      return candidate, index, #chunks
+    end
+  end
+end
+
 local function focus_inspection_chunk(group, session, role, chunk_index)
   local endpoint = group.kind == "issue"
       and session.issue
@@ -1993,6 +2019,46 @@ local function map_file_navigation(endpoint, session, role, group)
       nowait = true,
       silent = true,
       desc = "Next Oculus changed chunk",
+    })
+  end
+  local previous_chunk_lhs = group.previous_chunk
+  if previous_chunk_lhs == nil then
+    previous_chunk_lhs = default_previous_chunk
+  end
+  if
+    type(previous_chunk_lhs) == "string"
+    and previous_chunk_lhs ~= ""
+  then
+    vim.keymap.set("n", previous_chunk_lhs, function()
+      local chunks = inspection_chunks(group, session)
+      if #chunks == 0 then
+        return
+      end
+      local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+      local current_chunk = group.kind == "issue"
+          and (session.active_chunk or 1)
+        or (
+          session.focused_chunks
+              and session.active_chunk
+            or hunk_index_at_line(session, role, line)
+          or session.active_chunk
+          or 1
+        )
+      local previous_session, _, previous_chunk =
+        previous_inspection_chunk(group, session, current_chunk)
+      if previous_session then
+        focus_inspection_chunk(
+          group,
+          previous_session,
+          role,
+          previous_chunk
+        )
+      end
+    end, {
+      buffer = endpoint.buf,
+      nowait = true,
+      silent = true,
+      desc = "Previous Oculus changed chunk",
     })
   end
 end
@@ -2210,7 +2276,7 @@ local function sidebar_overview_lines(overview, width, toggle)
     if value == nil or value == "" then
       return
     end
-    lines[#lines + 1] = label
+    lines[#lines + 1] = "• " .. label
     append_sidebar_text(lines, value, width, "  ")
     lines[#lines + 1] = ""
   end
@@ -2464,6 +2530,23 @@ refresh_sidebar = function(group, tab)
   }
 end
 
+local function sidebar_display_width(group)
+  local width = group.sidebar_width or 1
+  if group.sidebar_mode == "overview" then
+    width = width + 10
+  end
+  return math.max(1, math.min(width, vim.o.columns - 1))
+end
+
+local function resize_sidebar_windows(group)
+  local width = sidebar_display_width(group)
+  for _, win in pairs(group.sidebar_windows or {}) do
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_set_width, win, width)
+    end
+  end
+end
+
 local function create_sidebar_window(group, endpoint)
   if not valid_endpoint(endpoint) then
     return
@@ -2473,7 +2556,7 @@ local function create_sidebar_window(group, endpoint)
   vim.cmd("botright vsplit")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, group.sidebar_buf)
-  vim.api.nvim_win_set_width(win, group.sidebar_width)
+  vim.api.nvim_win_set_width(win, sidebar_display_width(group))
   vim.wo[win].winfixwidth = true
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
@@ -2589,6 +2672,12 @@ show_inspection_overview = function(group)
   }
   group.sidebar_mode = "overview"
   group.sidebar_rendered_mode = nil
+  group.sidebar_overview_lines = sidebar_overview_lines(
+    group.overview,
+    sidebar_display_width(group),
+    group.overview_toggle
+  )
+  resize_sidebar_windows(group)
   if not group.sidebar_visible then
     open_inspection_sidebar(group)
   else
@@ -2602,6 +2691,7 @@ show_sidebar_files = function(group)
   group.sidebar_mode = "files"
   group.sidebar_rendered_mode = nil
   group.sidebar_anchor_line = return_state and return_state.anchor_line or nil
+  resize_sidebar_windows(group)
   local tab = return_state
       and vim.api.nvim_tabpage_is_valid(return_state.tab)
       and return_state.tab
@@ -2694,6 +2784,23 @@ local function map_inspection_sidebar_toggle(group)
       nowait = true,
       silent = true,
       desc = "Next Oculus changed chunk",
+    })
+  end
+  local previous_chunk_lhs = group.previous_chunk
+  if previous_chunk_lhs == nil then
+    previous_chunk_lhs = default_previous_chunk
+  end
+  if
+    type(previous_chunk_lhs) == "string"
+    and previous_chunk_lhs ~= ""
+  then
+    vim.keymap.set("n", previous_chunk_lhs, function()
+      select_previous_sidebar_chunk(group)
+    end, {
+      buffer = group.sidebar_buf,
+      nowait = true,
+      silent = true,
+      desc = "Previous Oculus changed chunk",
     })
   end
   if group.kind ~= "issue" then
@@ -2855,7 +2962,7 @@ local function open_sidebar_selection(group)
   sidebar_navigating = false
 end
 
-select_next_sidebar_chunk = function(group)
+local function select_sidebar_chunk(group, navigator, fallback_chunk)
   if
     group.sidebar_mode == "overview"
     or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
@@ -2878,20 +2985,25 @@ select_next_sidebar_chunk = function(group)
       and entry.pair_index == active_index
       and entry.chunk_index
     or sidebar_chunk(group, session, active_role)
-    or 0
-  local next_session, next_index, next_chunk =
-    next_inspection_chunk(group, session, current_chunk)
-  if not next_session then
+    or fallback_chunk
+  local target_session, target_index, target_chunk =
+    navigator(group, session, current_chunk)
+  if not target_session then
     return
   end
   local endpoint =
-    focus_inspection_chunk(group, next_session, active_role, next_chunk)
+    focus_inspection_chunk(
+      group,
+      target_session,
+      active_role,
+      target_chunk
+    )
   if not endpoint then
     return
   end
   local sidebar_win = group.sidebar_windows[endpoint.tab]
-  local target_line = group.sidebar_chunk_lines[next_index]
-      and group.sidebar_chunk_lines[next_index][next_chunk]
+  local target_line = group.sidebar_chunk_lines[target_index]
+      and group.sidebar_chunk_lines[target_index][target_chunk]
     or nil
   if
     not sidebar_win
@@ -2906,6 +3018,14 @@ select_next_sidebar_chunk = function(group)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
   sidebar_navigating = false
+end
+
+select_next_sidebar_chunk = function(group)
+  select_sidebar_chunk(group, next_inspection_chunk, 0)
+end
+
+select_previous_sidebar_chunk = function(group)
+  select_sidebar_chunk(group, previous_inspection_chunk, 1)
 end
 
 focus_sidebar_selection = function(group)
@@ -3399,6 +3519,7 @@ local function open_tabs(
       overview_toggle = opts.inspect_overview_toggle,
       version_switch = opts.inspect_version_switch,
       next_chunk = opts.inspect_next_chunk,
+      previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(info),
     }
     for index, paths in ipairs(inspections) do

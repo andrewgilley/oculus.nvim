@@ -37,6 +37,7 @@ local defaults = {
   inspect_overview_toggle = "o",
   inspect_version_switch = "<C-s>",
   inspect_next_chunk = "<Tab>",
+  inspect_previous_chunk = "<S-Tab>",
   opinion = {
     provider = nil,
     width = 0.64,
