@@ -1352,6 +1352,14 @@ local function render_activity(events, cached, notice)
   M.state.activity_title_lines = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
+  local activity_page_number = M.state.activity_page or 1
+  local activity_page_count = math.max(
+    activity_page_number,
+    math.ceil(
+      #(M.state.activity_source_events or {})
+        / math.max(1, M.state.activity_page_size or 1)
+    )
+  )
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 12 Label activity feeds with their forge
   local lines = {
     "",
@@ -1359,8 +1367,11 @@ local function render_activity(events, cached, notice)
     ("  %s · %s%s%s"):format(
       "@" .. contributor.username,
       provider_name(contributor),
-      M.state.activity_page > 1
-          and (" · page " .. M.state.activity_page)
+      activity_page_number > 1
+          and (" (%d/%d)"):format(
+            activity_page_number,
+            activity_page_count
+          )
         or "",
       cached and " · cached" or ""
     ),
