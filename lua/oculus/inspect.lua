@@ -18,10 +18,12 @@ local oil_contexts = {}
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "o"
 local default_version_switch = "<C-s>"
-local default_next_file = "<Tab>"
+local default_next_chunk = "<Tab>"
+local default_next_file = "<S-Tab>"
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
+local select_next_sidebar_chunk
 local switch_sidebar_version
 local close_inspection_sidebar
 local open_inspection_sidebar
@@ -2627,6 +2629,20 @@ local function map_inspection_sidebar_toggle(group)
     silent = true,
     desc = "Open Oculus Inspect sidebar item",
   })
+  local next_chunk_lhs = group.next_chunk
+  if next_chunk_lhs == nil then
+    next_chunk_lhs = default_next_chunk
+  end
+  if type(next_chunk_lhs) == "string" and next_chunk_lhs ~= "" then
+    vim.keymap.set("n", next_chunk_lhs, function()
+      select_next_sidebar_chunk(group)
+    end, {
+      buffer = group.sidebar_buf,
+      nowait = true,
+      silent = true,
+      desc = "Next Oculus changed chunk",
+    })
+  end
   if group.kind ~= "issue" then
     local version_lhs = group.version_switch
     if version_lhs == nil then
@@ -2798,6 +2814,35 @@ local function open_sidebar_selection(group)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
   sidebar_navigating = false
+end
+
+select_next_sidebar_chunk = function(group)
+  if
+    group.sidebar_mode == "overview"
+    or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
+  then
+    return
+  end
+  local active_index, active_role =
+    sidebar_active_item(group, vim.api.nvim_get_current_tabpage())
+  local session = active_index and group[active_index] or nil
+  local chunk_lines = active_index
+      and group.sidebar_chunk_lines[active_index]
+    or nil
+  if not session or not chunk_lines or #chunk_lines == 0 then
+    return
+  end
+
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local entry = group.sidebar_entries[line]
+  local current_chunk = entry
+      and entry.pair_index == active_index
+      and entry.chunk_index
+    or sidebar_chunk(group, session, active_role)
+    or 0
+  local next_chunk = (current_chunk % #chunk_lines) + 1
+  vim.api.nvim_win_set_cursor(0, { chunk_lines[next_chunk], 0 })
+  open_sidebar_selection(group)
 end
 
 focus_sidebar_selection = function(group)
@@ -3290,6 +3335,7 @@ local function open_tabs(
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
       version_switch = opts.inspect_version_switch,
+      next_chunk = opts.inspect_next_chunk,
       next_file = opts.inspect_next_file,
       overview = inspection_overview(info),
     }

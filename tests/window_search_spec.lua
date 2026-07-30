@@ -8,17 +8,14 @@ local contributors = {
   {
     name = "Mitchell Hashimoto",
     username = "mitchellh",
-    description = "First result",
   },
   {
     name = "Andrew Kelley",
     username = "andrewrk",
-    description = "Second result",
   },
   {
     name = "Michael Paulson",
     username = "ThePrimeagen",
-    description = "Third result",
   },
 }
 

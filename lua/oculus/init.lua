@@ -36,7 +36,8 @@ local defaults = {
   inspect_sidebar_width = default_inspect_sidebar_width,
   inspect_overview_toggle = "o",
   inspect_version_switch = "<C-s>",
-  inspect_next_file = "<Tab>",
+  inspect_next_chunk = "<Tab>",
+  inspect_next_file = "<S-Tab>",
   opinion = {
     provider = nil,
     width = 0.64,
@@ -52,49 +53,41 @@ local defaults = {
     {
       name = "Mitchell Hashimoto",
       username = "mitchellh",
-      description = "Creator of Ghostty, HashiCorp, Terraform, and Nomad",
     },
 
     {
       name = "Luke Wagner",
       username = "lukewagner",
-      description = "WebAssembly and JavaScript engine engineer",
     },
 
     {
       name = "Robin Freyler",
       username = "Robbepop",
-      description = "Rust, WebAssembly, virtual machines, and compiler engineer",
     },
 
     {
       name = "Alex Kladov",
       username = "matklad",
-      description = "Rust Analyzer co-creator and TigerBeetle engineer",
     },
 
     {
       name = "Linus Torvalds",
       username = "torvalds",
-      description = "Creator of Linux and Git",
     },
 
     {
       name = "Michael Paulson",
       username = "ThePrimeagen",
-      description = "Vim, developer tooling, and performance programming",
     },
 
     {
       name = "Ryan Fleury",
       username = "ryanfleury",
-      description = "Systems programming, debuggers, and data-oriented tools",
     },
 
     {
       name = "Bill Hall",
       username = "gingerBill",
-      description = "Creator of the Odin programming language",
     },
 
     -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 1 Add Andrew Kelley as a Codeberg contributor
@@ -102,213 +95,178 @@ local defaults = {
       name = "Andrew Kelley",
       username = "andrewrk",
       provider = "codeberg",
-      description = "Creator of Zig and president of the Zig Software Foundation",
     },
     -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 1
 
     {
       name = "Jon Gjengset",
       username = "jonhoo",
-      description = "Rust educator and distributed systems engineer",
     },
 
     {
       name = "Jarred Sumner",
       username = "Jarred-Sumner",
-      description = "Creator of the Bun JavaScript runtime and toolkit",
     },
 
     {
       name = "Shadan Ahmed",
       username = "shadcn",
-      description = "Creator of shadcn/ui and open-code interface tooling",
     },
 
     {
       name = "Andrej Karpathy",
       username = "karpathy",
-      description = "AI researcher; creator of nanoGPT, llm.c, and micrograd",
     },
 
     {
       name = "Zhiyuan Li",
       username = "zhiyuan1i",
-      description = "AI systems engineer and Flash Linear Attention contributor",
     },
 
     {
       name = "Jake Fitzgerald",
       username = "earthtojake",
-      description = "Creator of Text-to-CAD and source-controlled CAD tooling",
     },
 
     {
       name = "Folke Lemaitre",
       username = "folke",
-      description = "Creator of lazy.nvim, LazyVim, and Neovim tooling",
     },
 
     {
       name = "Liam Dyer",
       username = "saghen",
-      description = "Creator of blink.cmp and performant Neovim tooling",
     },
 
     {
       name = "Tim Culverhouse",
       username = "rockorager",
-      description = "Creator of libvaxis and modern Zig tooling",
     },
 
     {
       name = "Simon Willison",
       username = "simonw",
-      description = "Creator of Datasette and practical LLM tooling",
     },
 
     {
       name = "Charlie Marsh",
       username = "charliermarsh",
-      description = "Builder of uv, ruff, and fast Python tooling",
     },
 
     {
       name = "Andrew Gallant",
       username = "BurntSushi",
-      description = "Creator of ripgrep, Rust regex, and jiff",
     },
 
     {
       name = "Carl Lerche",
       username = "carllerche",
-      description = "Rust asynchronous systems engineer and creator of Tokio",
     },
 
     {
       name = "David Pedersen",
       username = "davidpdrsn",
-      description = "Creator and maintainer of the axum web framework",
     },
 
     {
       name = "Georgi Gerganov",
       username = "ggerganov",
-      description = "Creator of llama.cpp, whisper.cpp, and local AI tools",
     },
 
     {
       name = "Andrey Vasnetsov",
       username = "generall",
-      description = "Creator and CTO of the Qdrant vector database",
     },
 
     {
       name = "Glauber Costa",
       username = "glommer",
-      description = "Founder of Turso; Linux, ScyllaDB, and database engineer",
     },
 
     {
       name = "Pekka Enberg",
       username = "penberg",
-      description = "Turso founder and CTO; ScyllaDB and Linux engineer",
     },
 
     {
       name = "Michael Paquier",
       username = "michaelpq",
-      description = "PostgreSQL committer and database systems engineer",
     },
 
     {
       name = "David Tolnay",
       username = "dtolnay",
-      description = "Maintainer of foundational Rust libraries and macros",
     },
 
     {
       name = "Justin M. Keyes",
       username = "justinmk",
-      description = "Neovim maintainer and influential tooling creator",
     },
 
     {
       name = "Björn Linse",
       username = "bfredl",
-      description = "Neovim core maintainer and editor infrastructure engineer",
     },
 
     {
       name = "Christian Clason",
       username = "clason",
-      description = "Neovim maintainer and release manager",
     },
 
     {
       name = "Peter Steinberger",
       username = "steipete",
-      description = "Creator of OpenClaw and founder of PSPDFKit",
     },
 
     {
       name = "Russ Cox",
       username = "rsc",
-      description = "Go engineer, writer, and open-source maintainer",
     },
 
     {
       name = "Brad Fitzpatrick",
       username = "bradfitz",
-      description = "Go contributor and open-source infrastructure engineer",
     },
 
     {
       name = "David H. Hansson",
       username = "dhh",
-      description = "Creator of Ruby on Rails and co-owner of 37signals",
     },
 
     {
       name = "Alex Crichton",
       username = "alexcrichton",
-      description = "WebAssembly, Wasmtime, and Rust engineer",
     },
 
     {
       name = "Andrew Clark",
       username = "acdlite",
-      description = "React core engineer and co-creator of Redux",
     },
 
     {
       name = "Matt Pocock",
       username = "mattpocock",
-      description = "TypeScript educator and creator of Total TypeScript",
     },
 
     {
       name = "Benno Lossin",
       username = "BennoLossin",
-      description = "Rust-for-Linux maintainer and Rust contributor",
     },
 
     {
       name = "Niko Matsakis",
       username = "nikomatsakis",
-      description = "Rust language designer and compiler team leader",
     },
 
     {
       name = "Patrick Ohly",
       username = "pohly",
-      description = "Kubernetes developer and cloud-native systems engineer",
     },
 
     -- AGENT_CHANGE_BEGIN fil-c-creator-20260726 1 Add Filip Pizlo to default contributors
     {
       name = "Filip Pizlo",
       username = "pizlonator",
-      description = "Creator of Fil-C and programming-language systems engineer",
     },
     -- AGENT_CHANGE_END fil-c-creator-20260726 1
 
@@ -316,14 +274,12 @@ local defaults = {
     {
       name = "Sun Yi",
       username = "sunyi0505",
-      description = "Flash Linear Attention contributor and AI developer",
     },
     -- AGENT_CHANGE_END sun-yi-name-20260726 1
 
     {
       name = "Andrew Gilley",
       username = "andrewgilley",
-      description = "Creator of Oculus and Reliquary Neovim plugins",
     },
   },
 }

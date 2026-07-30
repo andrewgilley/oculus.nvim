@@ -29,7 +29,8 @@ assert(inspect._inspect_sidebar_width(
 ) == 28)
 assert(oculus.config.inspect_overview_toggle == "o")
 assert(oculus.config.inspect_version_switch == "<C-s>")
-assert(oculus.config.inspect_next_file == "<Tab>")
+assert(oculus.config.inspect_next_chunk == "<Tab>")
+assert(oculus.config.inspect_next_file == "<S-Tab>")
 
 local normal_highlight =
   vim.api.nvim_get_hl(0, { name = "Normal", link = false })
@@ -1452,10 +1453,14 @@ if integration_root and (integration_sha or integration_url) then
       next_mapped = mapping.lhs == "<C-Right>"
     elseif mapping.desc == "Toggle Oculus file version" then
       toggle_mapped = mapping.lhs == "<Tab>"
+    elseif mapping.desc == "Next Oculus changed chunk" then
+      toggle_mapped = mapping
     elseif mapping.desc == "Switch Oculus file version" then
       switch_mapped = mapping.lhs == "gS"
     elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapping = mapping
+    elseif mapping.desc == "Next Oculus changed chunk" then
+      toggle_mapped = mapping
     elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
       if mapping.lhs == "<C-I>" then
         sidebar_ctrl_i_mapped = true
@@ -1518,11 +1523,24 @@ if integration_root and (integration_sha or integration_url) then
   assert(sidebar_overview_mapping
     and sidebar_overview_mapping.lhs == "gO")
   assert(next_file_mapping and next_file_mapping.lhs == "gN")
+  assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
 
   vim.api.nvim_set_current_tabpage(tabs[3])
   vim.api.nvim_set_current_win(change_win)
   local overview_sidebar_win = assert(sidebar_window(tabs[3]))
   vim.api.nvim_set_current_win(overview_sidebar_win)
+  vim.g.oculus_test_chunk =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index or 0
+  vim.g.oculus_test_chunk_count =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_count
+  assert(vim.g.oculus_test_chunk_count > 0)
+  toggle_mapped.callback()
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
+      == (vim.g.oculus_test_chunk % vim.g.oculus_test_chunk_count) + 1
+  )
+  vim.g.oculus_test_chunk = nil
+  vim.g.oculus_test_chunk_count = nil
   next_file_mapping.callback()
   assert(vim.api.nvim_get_current_tabpage()
     == (pair_count > 1 and tabs[5] or tabs[3]))

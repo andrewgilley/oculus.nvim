@@ -341,7 +341,13 @@ local function left_pad_cell(text, width)
 end
 
 local function display_contributors(contributors)
-  return vim.list_extend({}, contributors or {})
+  local result = {}
+  for _, contributor in ipairs(contributors or {}) do
+    local copy = vim.deepcopy(contributor)
+    copy.description = nil
+    result[#result + 1] = copy
+  end
+  return result
 end
 
 local function contributor_key(contributor)
@@ -736,15 +742,6 @@ local function preview_items(contributor)
     [5] = {
       "@" .. contributor.username .. " · " .. provider_name(contributor),
       "Identifier",
-    },
-    [7] = {
-      contributor.description or (provider_name(contributor) .. " contributor"),
-      "Comment",
-    },
-    [9] = { "", "Special" },
-    [10] = {
-      "",
-      "Comment",
     },
   }
 end
@@ -1913,8 +1910,7 @@ local function add_contributor(contributor)
   added.username = username
   added.provider = added.provider == "codeberg" and "codeberg" or "github"
   added.name = added.name or username
-  added.description = added.description
-    or (provider_name(added) .. " account")
+  added.description = nil
   if has_contributor(M.state.contributors, added) then
     vim.notify(
       ("Oculus: @%s is already in your %s list"):format(
