@@ -465,12 +465,8 @@ assert(vim.trim(vim.api.nvim_buf_get_lines(
   state.activity_scroll_limit_line,
   false
 )[1]) ~= "")
-assert(vim.trim(vim.api.nvim_buf_get_lines(
-  state.buf,
-  state.activity_scroll_limit_line,
-  state.activity_scroll_limit_line + 1,
-  false
-)[1]) == "")
+assert(vim.api.nvim_buf_line_count(state.buf)
+  == state.activity_scroll_limit_line)
 vim.api.nvim_win_set_cursor(
   state.win,
   { vim.api.nvim_buf_line_count(state.buf), 0 }
