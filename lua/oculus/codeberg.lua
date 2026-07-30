@@ -425,10 +425,22 @@ function M.pull_request(repo, number, opts, callback)
     local details = {
       number = pull_request.number or number,
       title = pull_request.title,
+      body = pull_request.body,
+      author = pull_request.user and pull_request.user.login,
+      state = pull_request.state,
+      draft = pull_request.draft,
+      merged = pull_request.merged,
+      created_at = pull_request.created_at,
+      updated_at = pull_request.updated_at,
+      html_url = pull_request.html_url,
       base_sha = base_sha,
       base_ref = base.ref,
       head_sha = head.sha,
       head_ref = head.ref,
+      commit_count = pull_request.commits,
+      additions = pull_request.additions,
+      deletions = pull_request.deletions,
+      changed_files = pull_request.changed_files,
       fetch_ref = type(head.ref) == "string"
           and head.ref:match("^refs/")
           and head.ref

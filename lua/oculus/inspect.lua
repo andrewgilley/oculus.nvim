@@ -16,6 +16,8 @@ local sidebar_navigating = false
 local inspection_tabs_loading = false
 local oil_contexts = {}
 local default_sidebar_toggle = "<leader>oi"
+local default_overview_toggle = "o"
+local default_version_switch = "<C-s>"
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
@@ -23,6 +25,8 @@ local switch_sidebar_version
 local close_inspection_sidebar
 local open_inspection_sidebar
 local restore_inspection_sidebar_for_buffer
+local show_inspection_overview
+local show_sidebar_files
 
 local function git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
@@ -187,6 +191,29 @@ local function parse_target_url(url)
   return parse_commit_url(url)
     or parse_pull_request_url(url)
     or parse_issue_url(url)
+end
+
+local function parse_commit_overview(output)
+  if type(output) ~= "string" or output == "" then
+    return nil
+  end
+  local fields = vim.split(output, "\0", { plain = true })
+  if #fields < 7 then
+    return nil
+  end
+  return {
+    sha = vim.trim(fields[1] or ""),
+    parents = vim.split(
+      vim.trim(fields[2] or ""),
+      "%s+",
+      { trimempty = true }
+    ),
+    author_name = vim.trim(fields[3] or ""),
+    author_email = vim.trim(fields[4] or ""),
+    authored_at = vim.trim(fields[5] or ""),
+    subject = vim.trim(fields[6] or ""),
+    body = vim.trim(fields[7] or ""),
+  }
 end
 
 local function activity_comment(event)
@@ -1624,31 +1651,13 @@ end
 local function set_change_highlights()
   local normal =
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
-  local diff_delete =
-    vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
-  local diff_add =
-    vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
-  local diagnostic_error = vim.api.nvim_get_hl(
-    0,
-    { name = "DiagnosticError", link = false }
-  )
-  local diagnostic_ok =
-    vim.api.nvim_get_hl(0, { name = "DiagnosticOk", link = false })
   local diagnostic_info =
     vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
   vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
-    fg = diff_delete.fg
-      or diff_delete.bg
-      or diagnostic_error.fg
-      or 0xe06c75,
-    bg = normal.bg,
+    link = "DiffDelete",
   })
   vim.api.nvim_set_hl(0, "OculusInspectAdded", {
-    fg = diff_add.fg
-      or diff_add.bg
-      or diagnostic_ok.fg
-      or 0x00c853,
-    bg = normal.bg,
+    link = "DiffAdd",
   })
   vim.api.nvim_set_hl(0, "OculusIssueSection", {
     fg = diagnostic_info.fg or 0x61afef,
@@ -1871,7 +1880,7 @@ local function select_endpoint(endpoint)
   sidebar_navigating = false
 end
 
-local function map_file_navigation(endpoint, session, role)
+local function map_file_navigation(endpoint, session, role, lhs)
   local function toggle_version()
     local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
     local chunk_index = hunk_index_at_line(session, role, line)
@@ -1882,12 +1891,15 @@ local function map_file_navigation(endpoint, session, role)
       role == "parent" and session.change or session.parent
     )
   end
-  vim.keymap.set("n", "<C-s>", toggle_version, {
-    buffer = endpoint.buf,
-    nowait = true,
-    silent = true,
-    desc = "Switch Oculus file version",
-  })
+  lhs = lhs == nil and default_version_switch or lhs
+  if type(lhs) == "string" and lhs ~= "" then
+    vim.keymap.set("n", lhs, toggle_version, {
+      buffer = endpoint.buf,
+      nowait = true,
+      silent = true,
+      desc = "Switch Oculus file version",
+    })
+  end
 end
 
 local function sidebar_active_item(group, tab)
@@ -2005,6 +2017,198 @@ local function sidebar_chunk_row(hunk, last)
   )
 end
 
+local function inspection_overview(info, inspections)
+  local overview = vim.deepcopy(info or {})
+  local files = {}
+  local file_count = 0
+  local additions = 0
+  local deletions = 0
+  local commit_count = 0
+  for _, inspection in ipairs(inspections or {}) do
+    local file = inspection.change_file or inspection.parent_file
+    if file and not files[file] then
+      files[file] = true
+      file_count = file_count + 1
+    end
+    commit_count = math.max(
+      commit_count,
+      tonumber(inspection.commit_index) or 1
+    )
+    for _, hunk in ipairs(inspection.hunks or {}) do
+      additions = additions + (tonumber(hunk.new_count) or 0)
+      deletions = deletions + (tonumber(hunk.old_count) or 0)
+    end
+  end
+  overview.file_count = tonumber(overview.changed_files) or file_count
+  overview.additions = tonumber(overview.additions) or additions
+  overview.deletions = tonumber(overview.deletions) or deletions
+  overview.commit_count = tonumber(overview.commit_count)
+    or math.max(1, commit_count)
+  local route = overview.kind == "pull_request"
+      and (
+        overview.forge == "codeberg"
+            and ("pulls/" .. tostring(overview.number))
+          or ("pull/" .. tostring(overview.number))
+      )
+    or ("commit/" .. tostring(
+      overview.commit_details
+        and overview.commit_details.sha
+        or overview.sha
+        or ""
+    ))
+  overview.url = overview.html_url
+    or ("https://%s/%s/%s/%s"):format(
+      overview.host or (
+        overview.forge == "codeberg"
+            and "codeberg.org"
+          or "github.com"
+      ),
+      overview.owner or "",
+      overview.repo or "",
+      route
+    )
+  return overview
+end
+
+local function append_sidebar_text(lines, text, width, indent)
+  indent = indent or ""
+  local available = math.max(1, width - vim.fn.strdisplaywidth(indent))
+  for _, paragraph in ipairs(vim.split(
+    tostring(text or ""),
+    "\n",
+    { plain = true }
+  )) do
+    paragraph = vim.trim(paragraph)
+    if paragraph == "" then
+      lines[#lines + 1] = ""
+    else
+      local current = ""
+      for word in paragraph:gmatch("%S+") do
+        while vim.fn.strdisplaywidth(word) > available do
+          if current ~= "" then
+            lines[#lines + 1] = indent .. current
+            current = ""
+          end
+          local take = math.max(1, available)
+          local piece = vim.fn.strcharpart(word, 0, take)
+          while vim.fn.strdisplaywidth(piece) > available and take > 1 do
+            take = take - 1
+            piece = vim.fn.strcharpart(word, 0, take)
+          end
+          lines[#lines + 1] = indent .. piece
+          word = vim.fn.strcharpart(word, take)
+        end
+        local proposed = current == "" and word or (current .. " " .. word)
+        if vim.fn.strdisplaywidth(proposed) <= available then
+          current = proposed
+        else
+          lines[#lines + 1] = indent .. current
+          current = word
+        end
+      end
+      if current ~= "" then
+        lines[#lines + 1] = indent .. current
+      end
+    end
+  end
+end
+
+local function sidebar_overview_lines(overview, width, toggle)
+  width = math.max(12, tonumber(width) or 28)
+  local details = overview.commit_details or {}
+  local is_pull_request = overview.kind == "pull_request"
+  local title = is_pull_request
+      and overview.title
+    or details.subject
+  local lines = {
+    is_pull_request and "PULL REQUEST OVERVIEW" or "COMMIT OVERVIEW",
+    "",
+  }
+  if type(title) == "string" and vim.trim(title) ~= "" then
+    append_sidebar_text(lines, title, width)
+    lines[#lines + 1] = ""
+  end
+  local function field(label, value)
+    if value == nil or value == "" then
+      return
+    end
+    lines[#lines + 1] = label
+    append_sidebar_text(lines, value, width, "  ")
+    lines[#lines + 1] = ""
+  end
+  field("Repository", ("%s/%s"):format(
+    overview.owner or "",
+    overview.repo or ""
+  ))
+  if is_pull_request then
+    field("Pull request", "#" .. tostring(overview.number or ""))
+    local status = overview.merged and "Merged"
+      or overview.draft and "Draft"
+      or (
+        type(overview.state) == "string"
+          and overview.state:gsub("^%l", string.upper)
+        or nil
+      )
+    field("Status", status)
+    field("Author", overview.author and ("@" .. overview.author))
+    if overview.base_ref or overview.head_ref then
+      field("Branches", ("%s ← %s"):format(
+        overview.base_ref or "?",
+        overview.head_ref or "?"
+      ))
+    end
+    field("Commits", tostring(overview.commit_count or 0))
+  else
+    field("Commit", details.sha or overview.sha)
+    local author = details.author_name or ""
+    if details.author_email and details.author_email ~= "" then
+      author = author .. " <" .. details.author_email .. ">"
+    end
+    field("Author", author)
+    field("Authored", details.authored_at)
+  end
+  local file_count = tonumber(overview.file_count) or 0
+  field("Changes", ("%d %s · +%d −%d"):format(
+    file_count,
+    file_count == 1 and "file" or "files",
+    tonumber(overview.additions) or 0,
+    tonumber(overview.deletions) or 0
+  ))
+  if is_pull_request then
+    field("Created", overview.created_at)
+    field("Updated", overview.updated_at)
+  end
+  field("URL", overview.url)
+  local body = is_pull_request and overview.body or details.body
+  if type(body) == "string" and vim.trim(body) ~= "" then
+    field(is_pull_request and "Description" or "Message", body)
+  end
+  toggle = toggle == nil and default_overview_toggle or toggle
+  if type(toggle) == "string" and toggle ~= "" then
+    lines[#lines + 1] = toggle .. " changed files"
+  end
+  return lines
+end
+
+local function set_sidebar_buffer_lines(group, lines, mode)
+  local buf = group.sidebar_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  if group.sidebar_rendered_mode ~= mode then
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    group.sidebar_rendered_mode = mode
+    for _, win in pairs(group.sidebar_windows or {}) do
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_set_cursor(win, { 1, 0 })
+      end
+    end
+  end
+  vim.b[buf].oculus_inspect_sidebar_mode = mode
+end
+
 local function issue_sidebar_section_row(section, last)
   local branch = last and "└─" or "├─"
   return ("  %s %d-%d"):format(
@@ -2053,6 +2257,23 @@ refresh_sidebar = function(group, tab)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     return
   end
+  if group.sidebar_mode == "overview" then
+    set_sidebar_buffer_lines(
+      group,
+      group.sidebar_overview_lines,
+      "overview"
+    )
+    vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+    vim.b[buf].oculus_inspect_sidebar_active = {
+      mode = "overview",
+    }
+    vim.api.nvim_buf_set_extmark(buf, sidebar_ns, 0, 0, {
+      line_hl_group = "Title",
+      priority = 100,
+    })
+    return
+  end
+  set_sidebar_buffer_lines(group, group.sidebar_lines, "files")
   local active_index, active_role = sidebar_active_item(group, tab)
   if not active_index then
     return
@@ -2267,6 +2488,22 @@ local function toggle_inspection_sidebar(group)
   end
 end
 
+show_inspection_overview = function(group)
+  group.sidebar_mode = "overview"
+  group.sidebar_rendered_mode = nil
+  if not group.sidebar_visible then
+    open_inspection_sidebar(group)
+  else
+    refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  end
+end
+
+show_sidebar_files = function(group)
+  group.sidebar_mode = "files"
+  group.sidebar_rendered_mode = nil
+  refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+end
+
 local function map_inspection_sidebar_toggle(group)
   local opts = {
     nowait = true,
@@ -2297,6 +2534,24 @@ local function map_inspection_sidebar_toggle(group)
     end
   end
   map_buffer(group.sidebar_buf)
+  local overview_lhs = group.overview_toggle
+  if overview_lhs == nil then
+    overview_lhs = default_overview_toggle
+  end
+  if type(overview_lhs) == "string" and overview_lhs ~= "" then
+    vim.keymap.set("n", overview_lhs, function()
+      if group.sidebar_mode == "overview" then
+        show_sidebar_files(group)
+      else
+        show_inspection_overview(group)
+      end
+    end, {
+      buffer = group.sidebar_buf,
+      nowait = true,
+      silent = true,
+      desc = "Toggle Oculus Inspect overview",
+    })
+  end
   vim.keymap.set("n", "<CR>", function()
     focus_sidebar_selection(group)
   end, {
@@ -2306,14 +2561,20 @@ local function map_inspection_sidebar_toggle(group)
     desc = "Open Oculus Inspect sidebar item",
   })
   if group.kind ~= "issue" then
-    vim.keymap.set("n", "<C-s>", function()
-      switch_sidebar_version(group)
-    end, {
-      buffer = group.sidebar_buf,
-      nowait = true,
-      silent = true,
-      desc = "Switch Oculus file version",
-    })
+    local version_lhs = group.version_switch
+    if version_lhs == nil then
+      version_lhs = default_version_switch
+    end
+    if type(version_lhs) == "string" and version_lhs ~= "" then
+      vim.keymap.set("n", version_lhs, function()
+        switch_sidebar_version(group)
+      end, {
+        buffer = group.sidebar_buf,
+        nowait = true,
+        silent = true,
+        desc = "Switch Oculus file version",
+      })
+    end
   end
 end
 
@@ -2328,6 +2589,14 @@ local function prepare_inspection_sidebar(group)
   group.sidebar_chunk_lines = {}
   group.sidebar_entries = {}
   group.sidebar_lines = {}
+  group.sidebar_mode = "files"
+  group.sidebar_rendered_mode = nil
+  group.overview = group.overview or {}
+  group.sidebar_overview_lines = sidebar_overview_lines(
+    group.overview,
+    group.sidebar_width,
+    group.overview_toggle
+  )
   local lines = {}
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
@@ -2377,6 +2646,7 @@ local function prepare_inspection_sidebar(group)
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
+  group.sidebar_rendered_mode = "files"
   vim.bo[buf].filetype = "oculus-inspect-files"
 end
 
@@ -2911,6 +3181,7 @@ local function open_tabs(
   inspections,
   loading,
   comment,
+  info,
   number_options,
   opts,
   done
@@ -2931,6 +3202,9 @@ local function open_tabs(
   local ok, err = pcall(function()
     local inspection_sessions = {
       sidebar_toggle = opts.inspect_sidebar_toggle,
+      overview_toggle = opts.inspect_overview_toggle,
+      version_switch = opts.inspect_version_switch,
+      overview = inspection_overview(info, inspections),
     }
     for index, paths in ipairs(inspections) do
       inspection_sessions[index] = {
@@ -2990,12 +3264,14 @@ local function open_tabs(
       map_file_navigation(
         parent,
         session,
-        "parent"
+        "parent",
+        inspection_sessions.version_switch
       )
       map_file_navigation(
         change,
         session,
-        "change"
+        "change",
+        inspection_sessions.version_switch
       )
       if focused_start then
         set_change_cursor(parent.win, focused_start)
@@ -3192,6 +3468,25 @@ local function prepare_revision(
   )
 end
 
+local function load_commit_overview(repository, info, commit, callback)
+  if info.kind ~= "commit" then
+    callback()
+    return
+  end
+  run_raw({
+    "git",
+    "-C",
+    repository,
+    "show",
+    "--no-patch",
+    "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%s%x00%b",
+    commit,
+  }, function(output)
+    info.commit_details = parse_commit_overview(output)
+    callback()
+  end)
+end
+
 local function prepare(info, opts, callback)
   ensure_repository(info, opts, function(
     repository,
@@ -3211,42 +3506,47 @@ local function prepare(info, opts, callback)
         callback(nil, commit_err)
         return
       end
-      revision_pairs(repository, info, commits, function(pairs, pairs_err)
-        if pairs_err then
-          callback(nil, pairs_err)
-          return
-        end
-        local inspections = {}
-        local index = 1
-        local function prepare_next()
-          local pair = pairs[index]
-          if not pair then
-            if #inspections == 0 then
-              callback(nil, "the inspected revisions do not change any files")
-              return
-            end
-            callback(inspections)
+      load_commit_overview(repository, info, commits.commit, function()
+        revision_pairs(repository, info, commits, function(pairs, pairs_err)
+          if pairs_err then
+            callback(nil, pairs_err)
             return
           end
-          prepare_revision(
-            repository,
-            info,
-            pair,
-            index,
-            function(commit_inspections, err)
-              if err then
-                callback(nil, err)
+          local inspections = {}
+          local index = 1
+          local function prepare_next()
+            local pair = pairs[index]
+            if not pair then
+              if #inspections == 0 then
+                callback(
+                  nil,
+                  "the inspected revisions do not change any files"
+                )
                 return
               end
-              for _, inspection in ipairs(commit_inspections) do
-                inspections[#inspections + 1] = inspection
-              end
-              index = index + 1
-              prepare_next()
+              callback(inspections)
+              return
             end
-          )
-        end
-        prepare_next()
+            prepare_revision(
+              repository,
+              info,
+              pair,
+              index,
+              function(commit_inspections, err)
+                if err then
+                  callback(nil, err)
+                  return
+                end
+                for _, inspection in ipairs(commit_inspections) do
+                  inspections[#inspections + 1] = inspection
+                end
+                index = index + 1
+                prepare_next()
+              end
+            )
+          end
+          prepare_next()
+        end)
       end)
     end)
   end)
@@ -3254,13 +3554,28 @@ end
 
 local function apply_pull_request(info, details)
   local resolved = vim.deepcopy(info)
-  resolved.base_sha = details.base_sha
-  resolved.base_ref = details.base_ref
-  resolved.head_sha = details.head_sha
-  resolved.head_ref = details.head_ref
-  resolved.fetch_ref = details.fetch_ref
-  resolved.commit_count = details.commit_count
-  resolved.title = details.title
+  for _, key in ipairs({
+    "title",
+    "body",
+    "author",
+    "state",
+    "draft",
+    "merged",
+    "created_at",
+    "updated_at",
+    "html_url",
+    "base_sha",
+    "base_ref",
+    "head_sha",
+    "head_ref",
+    "fetch_ref",
+    "commit_count",
+    "additions",
+    "deletions",
+    "changed_files",
+  }) do
+    resolved[key] = details[key]
+  end
   return resolved
 end
 
@@ -3543,6 +3858,7 @@ function M.open(url, opts, context, lifecycle)
           inspections,
           loading,
           resolved.comment,
+          resolved,
           number_options,
           opts,
           function(_, open_err)
@@ -3563,9 +3879,12 @@ M._parse_commit_url = parse_commit_url
 M._parse_pull_request_url = parse_pull_request_url
 M._parse_issue_url = parse_issue_url
 M._parse_target_url = parse_target_url
+M._parse_commit_overview = parse_commit_overview
 M.activity_comment = activity_comment
 M.activity_context = activity_context
 M._apply_pull_request = apply_pull_request
+M._inspection_overview = inspection_overview
+M._sidebar_overview_lines = sidebar_overview_lines
 M._first_changed_paths = first_changed_paths
 M._parse_changed_files = parse_changed_files
 M._inspection_directory = inspection_directory

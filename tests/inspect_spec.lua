@@ -4,22 +4,38 @@ vim.api.nvim_set_hl(0, "Normal", {
   fg = 0xd0d0d0,
   bg = 0x101820,
 })
+vim.api.nvim_set_hl(0, "DiffDelete", {
+  fg = 0xff8080,
+  bg = 0x401820,
+})
+vim.api.nvim_set_hl(0, "DiffAdd", {
+  fg = 0x80ff80,
+  bg = 0x104020,
+})
 local oil_runtime = vim.env.OCULUS_INSPECT_TEST_OIL
 if oil_runtime then
   vim.opt.runtimepath:append(oil_runtime)
 end
 
 local inspect = require("oculus.inspect")
+local oculus = require("oculus")
+assert(oculus.config.inspect_sidebar_toggle == "<leader>oi")
+assert(oculus.config.inspect_overview_toggle == "o")
+assert(oculus.config.inspect_version_switch == "<C-s>")
 
 local normal_highlight =
   vim.api.nvim_get_hl(0, { name = "Normal", link = false })
-for _, group in ipairs({
-  "OculusInspectRemoved",
-  "OculusInspectAdded",
+for group, target in pairs({
+  OculusInspectRemoved = "DiffDelete",
+  OculusInspectAdded = "DiffAdd",
 }) do
   local sign_highlight =
     vim.api.nvim_get_hl(0, { name = group, link = false })
-  assert(sign_highlight.bg == normal_highlight.bg)
+  local target_highlight =
+    vim.api.nvim_get_hl(0, { name = target, link = false })
+  assert(sign_highlight.fg == target_highlight.fg)
+  assert(sign_highlight.bg == target_highlight.bg)
+  assert(sign_highlight.bg ~= normal_highlight.bg)
 end
 
 local dimming_win = vim.api.nvim_get_current_win()
@@ -344,17 +360,101 @@ assert(codeberg_pull_request.remote_url
 
 local resolved_pull_request = inspect._apply_pull_request(pull_request, {
   title = "Test pull request",
+  body = "This pull request improves the Inspect workflow.",
+  author = "reviewer",
+  state = "open",
+  draft = false,
+  merged = false,
+  created_at = "2026-07-29T10:00:00Z",
+  updated_at = "2026-07-30T10:00:00Z",
+  html_url = "https://github.com/neovim/neovim/pull/123",
   base_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   base_ref = "main",
   head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   head_ref = "feature",
   commit_count = 3,
+  additions = 24,
+  deletions = 7,
+  changed_files = 4,
 })
 assert(resolved_pull_request.base_ref == "main")
 assert(resolved_pull_request.head_ref == "feature")
 assert(resolved_pull_request.base_sha:match("^a+$"))
 assert(resolved_pull_request.head_sha:match("^b+$"))
 assert(resolved_pull_request.commit_count == 3)
+assert(resolved_pull_request.author == "reviewer")
+assert(resolved_pull_request.additions == 24)
+assert(resolved_pull_request.deletions == 7)
+
+local pull_request_overview = inspect._inspection_overview(
+  resolved_pull_request,
+  {}
+)
+local pull_request_overview_text = table.concat(
+  inspect._sidebar_overview_lines(pull_request_overview, 28),
+  "\n"
+)
+assert(pull_request_overview_text:find(
+  "PULL REQUEST OVERVIEW",
+  1,
+  true
+))
+assert(pull_request_overview_text:find("Test pull request", 1, true))
+assert(pull_request_overview_text:find("neovim/neovim", 1, true))
+assert(pull_request_overview_text:find("#123", 1, true))
+assert(pull_request_overview_text:find("@reviewer", 1, true))
+assert(pull_request_overview_text:find("main ← feature", 1, true))
+assert(pull_request_overview_text:find("4 files · +24 −7", 1, true))
+assert(pull_request_overview_text:find(
+  "This pull request improves",
+  1,
+  true
+))
+assert(pull_request_overview_text:find("o changed files", 1, true))
+
+local parsed_commit_overview = inspect._parse_commit_overview(
+  table.concat({
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "Ada Lovelace",
+    "ada@example.com",
+    "2026-07-30T12:00:00-04:00",
+    "Keep Inspect context visible",
+    "Show the relevant commit details in the sidebar.",
+  }, "\0")
+)
+assert(parsed_commit_overview)
+assert(parsed_commit_overview.author_name == "Ada Lovelace")
+assert(parsed_commit_overview.subject == "Keep Inspect context visible")
+local commit_overview = inspect._inspection_overview({
+  kind = "commit",
+  forge = "github",
+  host = "github.com",
+  owner = "neovim",
+  repo = "neovim",
+  sha = parsed_commit_overview.sha,
+  commit_details = parsed_commit_overview,
+}, {
+  {
+    change_file = "lua/inspect.lua",
+    commit_index = 1,
+    hunks = {
+      { old_count = 2, new_count = 5 },
+    },
+  },
+})
+local commit_overview_text = table.concat(
+  inspect._sidebar_overview_lines(commit_overview, 28),
+  "\n"
+)
+assert(commit_overview_text:find("COMMIT OVERVIEW", 1, true))
+assert(commit_overview_text:find(
+  "Keep Inspect context",
+  1,
+  true
+))
+assert(commit_overview_text:find("Ada Lovelace", 1, true))
+assert(commit_overview_text:find("1 file · +5 −2", 1, true))
 
 local issue_context = inspect.activity_context({
   type = "IssueCommentEvent",
@@ -944,6 +1044,8 @@ if integration_root and (integration_sha or integration_url) then
       inspect_search_paths = integration_search_root
           and { integration_search_root }
         or {},
+      inspect_overview_toggle = "gO",
+      inspect_version_switch = "gS",
     },
     nil,
     {
@@ -1329,7 +1431,7 @@ if integration_root and (integration_sha or integration_url) then
     elseif mapping.desc == "Toggle Oculus file version" then
       toggle_mapped = mapping.lhs == "<Tab>"
     elseif mapping.desc == "Switch Oculus file version" then
-      switch_mapped = mapping.lhs == "<C-S>"
+      switch_mapped = mapping.lhs == "gS"
     elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapped = mapping.lhs == "<C-N>"
     elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
@@ -1352,12 +1454,14 @@ if integration_root and (integration_sha or integration_url) then
   assert(sidebar_leader_toggle
     and sidebar_leader_toggle.lhs
       == (vim.g.mapleader or "\\") .. "oi")
+  assert(vim.fn.maparg("o", "n", false, true).buffer ~= 1)
 
   local sidebar_ctrl_i_from_sidebar = false
   local sidebar_tab_from_sidebar = false
   local sidebar_leader_toggle_from_sidebar
   local sidebar_open_mapping
   local sidebar_switch_mapping
+  local sidebar_overview_mapping
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
     sidebar_buf,
     "n"
@@ -1374,6 +1478,8 @@ if integration_root and (integration_sha or integration_url) then
       sidebar_open_mapping = mapping
     elseif mapping.desc == "Switch Oculus file version" then
       sidebar_switch_mapping = mapping
+    elseif mapping.desc == "Toggle Oculus Inspect overview" then
+      sidebar_overview_mapping = mapping
     end
   end
   assert(not sidebar_ctrl_i_from_sidebar)
@@ -1384,7 +1490,36 @@ if integration_root and (integration_sha or integration_url) then
   assert(sidebar_open_mapping
     and sidebar_open_mapping.lhs == "<CR>")
   assert(sidebar_switch_mapping
-    and sidebar_switch_mapping.lhs == "<C-S>")
+    and sidebar_switch_mapping.lhs == "gS")
+  assert(sidebar_overview_mapping
+    and sidebar_overview_mapping.lhs == "gO")
+
+  vim.api.nvim_set_current_tabpage(tabs[3])
+  local overview_sidebar_win = assert(sidebar_window(tabs[3]))
+  vim.api.nvim_set_current_win(overview_sidebar_win)
+  sidebar_overview_mapping.callback()
+  assert(vim.api.nvim_get_current_win() == overview_sidebar_win)
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "overview")
+  local overview_text = table.concat(
+    vim.api.nvim_buf_get_lines(sidebar_buf, 0, -1, false),
+    "\n"
+  )
+  assert(overview_text:find("COMMIT OVERVIEW", 1, true))
+  assert(overview_text:find("Repository", 1, true))
+  assert(overview_text:find("Commit", 1, true))
+  assert(overview_text:find("Author", 1, true))
+  assert(overview_text:find("Authored", 1, true))
+  assert(overview_text:find("Changes", 1, true))
+  assert(overview_text:find("gO changed files", 1, true))
+  sidebar_overview_mapping.callback()
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_mode == "files")
+  assert(vim.api.nvim_buf_get_lines(
+    sidebar_buf,
+    file_lines[1] - 1,
+    file_lines[1],
+    false
+  )[1]:find("• ", 1, true))
+
   vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
   sidebar_leader_toggle_from_sidebar.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
@@ -1616,7 +1751,7 @@ if integration_root and (integration_sha or integration_url) then
   end
   assert(anchored_selection)
   vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
+    "gS",
     "x",
     false
   )
@@ -1629,7 +1764,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(visible_role_groups.OculusInspectSidebarChangeActive)
   assert(not visible_role_groups.OculusInspectSidebarParentActive)
   vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
+    "gS",
     "x",
     false
   )
@@ -1637,7 +1772,7 @@ if integration_root and (integration_sha or integration_url) then
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
   vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes("<C-s>", true, false, true),
+    "gS",
     "x",
     false
   )

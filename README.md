@@ -17,13 +17,18 @@ handles. Results and the contributor preview update as you type. Use
 `<C-p>`/`<C-n>` also work), `<CR>` to open a match, and `<Esc>` to cancel the
 search.
 
-The Inspect sidebar toggle defaults to `<leader>oi` and can be configured:
+Inspect mappings can be configured in `setup`:
 
 ```lua
 require("oculus").setup({
   inspect_sidebar_toggle = "<leader>it",
+  inspect_overview_toggle = "O",
+  inspect_version_switch = "<leader>is",
 })
 ```
+
+Their defaults are `<leader>oi`, `o`, and `<C-s>`, respectively. Set any
+mapping to an empty string to disable it.
 
 
 <img width="1902" height="1027" alt="oculus" src="https://github.com/user-attachments/assets/c6de957e-f9ba-4c7f-870f-8fc46754b673" />
@@ -45,6 +50,10 @@ The selected activity row shows a loading spinner while Oculus prepares the
 inspection; tabs appear only after the changed-file sidebar is ready.
 Oculus reads each commit and its first parent from Git without changing the
 local checkout. Every changed file opens an adjacent parent/change tab pair.
+Press `o` while the Inspect sidebar is focused to toggle between changed files
+and a commit or pull-request overview. The overview includes repository, author,
+revision or branch, change totals, dates, URL, and available description or
+commit-message details.
 
 Issue activity opens a read-only Markdown page containing the issue title,
 repository, URL, description, and the activity comment when one is available.
