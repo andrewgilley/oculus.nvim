@@ -129,33 +129,31 @@ local main_width = vim.api.nvim_win_get_width(state.win)
 local expected_left_width = math.max(
   30,
   math.min(
-    math.max(40, math.floor(main_width * 0.46)),
+    math.max(40, math.floor(main_width * 0.52)),
     main_width - 22
   )
 )
 local search_config = vim.api.nvim_win_get_config(state.search_win)
-local expected_right_width = main_width - expected_left_width - 1
-local expected_midpoint = math.floor(expected_right_width / 2)
-local expected_search_start = math.max(0, expected_midpoint - 2)
-local expected_outer_width =
-  expected_right_width - expected_search_start - 1
 assert(search_config.col
-  == main_position[2]
-    + expected_left_width
-    + 1
-    + expected_search_start)
-assert(search_config.width
-  == expected_outer_width - 2)
+  == main_position[2] + 1)
+assert(search_config.width == expected_left_width - 4)
 assert(
   search_config.col + search_config.width + 2
-    == main_position[2] + main_width - 1
+    == main_position[2] + expected_left_width - 1
 )
 assert(search_config.title == nil or search_config.title == "")
 local initial_search_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(initial_search_lines:find("  SEARCH", 1, true))
+assert(initial_search_lines:find("  COMMUNITY FIGURES", 1, true))
+assert(initial_search_lines:find(
+  "  s /: search  ?: shortcuts  q: quit",
+  1,
+  true
+))
+assert(not initial_search_lines:find("  SEARCH", 1, true))
+assert(not initial_search_lines:find("Keep typing to refine", 1, true))
 assert(not initial_search_lines:find("arrows preview", 1, true))
 assert(not initial_search_lines:find("enter open", 1, true))
 assert(not initial_search_lines:find("matching user", 1, true))
@@ -170,6 +168,14 @@ vim.api.nvim_buf_set_lines(
 vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
 assert(state.search_query == "m")
 assert(#state.search_results == 2)
+local populated_search_lines = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(populated_search_lines:find("  SEARCH", 1, true))
+assert(populated_search_lines:find("  esc cancel", 1, true))
+assert(not populated_search_lines:find("Keep typing to refine", 1, true))
+assert(not populated_search_lines:find("  COMMUNITY FIGURES", 1, true))
 local search_down_mapping =
   vim.fn.maparg("<C-k>", "i", false, true)
 local search_up_mapping =
@@ -198,6 +204,27 @@ vim.api.nvim_buf_set_lines(
   0,
   -1,
   false,
+  { prompt }
+)
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+assert(state.search_query == "")
+local cleared_search_lines = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(cleared_search_lines:find("  COMMUNITY FIGURES", 1, true))
+assert(cleared_search_lines:find(
+  "  s /: search  ?: shortcuts  q: quit",
+  1,
+  true
+))
+assert(not cleared_search_lines:find("  SEARCH", 1, true))
+
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
   { prompt .. "mhash" }
 )
 vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
@@ -220,6 +247,18 @@ assert(table.concat(main_lines, "\n"):find("No matching users.", 1, true))
 
 local cancel_mapping = vim.fn.maparg("<Esc>", "i", false, true)
 cancel_mapping.callback()
+assert(state.search_query == nil)
+assert(state.search_win == nil)
+assert(vim.api.nvim_win_is_valid(state.win))
+
+search_mapping.callback()
+vim.wait(10)
+assert(window._prompt_query(state.search_buf) == "")
+local empty_backspace_mapping =
+  vim.fn.maparg("<BS>", "i", false, true)
+assert(empty_backspace_mapping.desc
+  == "Close empty Oculus user search")
+assert(empty_backspace_mapping.callback() == "")
 assert(state.search_query == nil)
 assert(state.search_win == nil)
 assert(vim.api.nvim_win_is_valid(state.win))
