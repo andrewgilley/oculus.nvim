@@ -52,6 +52,7 @@ M.state = {
   events = nil,
   line_targets = {},
   inspect_targets = {},
+  activity_title_lines = {},
   request_id = 0,
   preview_key = nil,
   preview_items = nil,
@@ -1348,6 +1349,7 @@ local function render_activity(events, cached, notice)
   M.state.activity_error = nil
   M.state.line_targets = {}
   M.state.inspect_targets = {}
+  M.state.activity_title_lines = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 12 Label activity feeds with their forge
@@ -1376,6 +1378,7 @@ local function render_activity(events, cached, notice)
     local item = actions.describe(event)
     local inspect_context = inspect.activity_context(event)
     local event_line = #lines + 1
+    M.state.activity_title_lines[event_line] = event_line
     first_event_line = first_event_line or event_line
     activity_line_kinds[event_line] = "main"
     local item_width = width - 2
@@ -1393,6 +1396,7 @@ local function render_activity(events, cached, notice)
               and (item.group_url or item.url)
             or item.url
           M.state.inspect_targets[#lines] = inspect_context
+          M.state.activity_title_lines[#lines] = event_line
           activity_line_kinds[#lines] = "preview"
         end
       end
@@ -1406,6 +1410,7 @@ local function render_activity(events, cached, notice)
       )
       lines[#lines + 1] = pad_cell("", item_width)
       M.state.line_targets[#lines] = item.url
+      M.state.activity_title_lines[#lines] = event_line
       scroll_limit_line = #lines
     end
     M.state.line_targets[event_line] = item.url
@@ -2099,7 +2104,8 @@ local function inspect_current()
     return
   end
 
-  local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  local source_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  local line = M.state.activity_title_lines[source_line] or source_line
   local activity_buf = M.state.buf
   local activity_line = vim.api.nvim_buf_get_lines(
     activity_buf,
@@ -2126,7 +2132,7 @@ local function inspect_current()
     if is_valid_buf(activity_buf)
       and M.state.buf == activity_buf
       and M.state.view == "activity"
-      and M.state.line_targets[line] == target
+      and M.state.line_targets[source_line] == target
     then
       set_loading_line(activity_line)
       vim.api.nvim_buf_clear_namespace(
@@ -2140,13 +2146,14 @@ local function inspect_current()
   local ok, err = inspect.open(
     target,
     M.state.opts,
-    M.state.inspect_targets[line],
+    M.state.inspect_targets[source_line]
+      or M.state.inspect_targets[line],
     {
       on_progress = function(frame)
         if not is_valid_buf(activity_buf)
           or M.state.buf ~= activity_buf
           or M.state.view ~= "activity"
-          or M.state.line_targets[line] ~= target
+          or M.state.line_targets[source_line] ~= target
         then
           return
         end
@@ -2413,6 +2420,7 @@ function M.close()
   M.state.win = nil
   M.state.line_targets = {}
   M.state.inspect_targets = {}
+  M.state.activity_title_lines = {}
   M.state.preview_key = nil
   M.state.preview_items = nil
   M.state.preview_contributor = nil
