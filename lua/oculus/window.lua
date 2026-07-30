@@ -1415,18 +1415,18 @@ local function render_activity(events, cached, notice)
           activity_line_kinds[#lines] = "preview"
         end
       end
-      lines[#lines + 1] = pad_cell("", item_width)
       scroll_limit_line = #lines
+      lines[#lines + 1] = pad_cell("", item_width)
     else
       lines[event_line] = activity_item_line(
         item,
         activity_time(event.created_at),
         item_width
       )
+      scroll_limit_line = event_line
       lines[#lines + 1] = pad_cell("", item_width)
       M.state.line_targets[#lines] = item.url
       M.state.activity_title_lines[#lines] = event_line
-      scroll_limit_line = #lines
     end
     M.state.line_targets[event_line] = item.url
     M.state.inspect_targets[event_line] = inspect_context
@@ -1436,8 +1436,8 @@ local function render_activity(events, cached, notice)
     lines[#lines + 1] = M.state.activity_page > 1
         and "  No past public activity was returned."
       or "  No recent public activity was returned."
-    lines[#lines + 1] = ""
     scroll_limit_line = #lines
+    lines[#lines + 1] = ""
   end
   M.state.activity_scroll_limit_line = scroll_limit_line
   lines[#lines + 1] = ""

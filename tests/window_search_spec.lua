@@ -336,6 +336,28 @@ assert(review_context.body == "Please keep this branch explicit.")
 assert(review_context.path == "lua/example.lua")
 assert(review_context.line == 15)
 assert(review_context.side == "change")
+assert(vim.trim(vim.api.nvim_buf_get_lines(
+  state.buf,
+  state.activity_scroll_limit_line - 1,
+  state.activity_scroll_limit_line,
+  false
+)[1]) ~= "")
+assert(vim.trim(vim.api.nvim_buf_get_lines(
+  state.buf,
+  state.activity_scroll_limit_line,
+  state.activity_scroll_limit_line + 1,
+  false
+)[1]) == "")
+vim.api.nvim_win_set_cursor(
+  state.win,
+  { vim.api.nvim_buf_line_count(state.buf), 0 }
+)
+vim.api.nvim_exec_autocmds("CursorMoved", { buffer = state.buf })
+assert(vim.api.nvim_win_get_cursor(state.win)[1]
+  == state.activity_scroll_limit_line)
+main_down_mapping.callback()
+assert(vim.api.nvim_win_get_cursor(state.win)[1]
+  == state.activity_scroll_limit_line)
 local inspect_source_line
 for line, title_line in pairs(state.activity_title_lines) do
   if
