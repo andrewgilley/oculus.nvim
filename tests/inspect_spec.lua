@@ -1310,13 +1310,11 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.wo[old_sidebar_win].cursorlineopt == "line")
     assert(vim.wo[new_sidebar_win].cursorlineopt == "line")
     assert(vim.wo[old_sidebar_win].statusline
-      == inspect._inspection_statusline_option)
+      == inspect._inspection_sidebar_statusline_option)
     assert(vim.wo[new_sidebar_win].statusline
-      == inspect._inspection_statusline_option)
-    assert(inspect._inspection_statusline(old_sidebar_win)
-      == inspect._inspection_statusline(old_main_win))
-    assert(inspect._inspection_statusline(new_sidebar_win)
-      == inspect._inspection_statusline(new_main_win))
+      == inspect._inspection_sidebar_statusline_option)
+    assert(inspect._inspection_statusline(old_sidebar_win) == "")
+    assert(inspect._inspection_statusline(new_sidebar_win) == "")
     assert(vim.wo[old_main_win].winhighlight:find(
       "NormalNC:Normal",
       1,
@@ -1502,6 +1500,9 @@ if integration_root and (integration_sha or integration_url) then
     vim.g.oculus_test_statusline_path,
     1,
     true
+  ))
+  assert(inspect._inspection_statusline(change_win):find(
+    "%d+, %d+"
   ))
   vim.g.oculus_test_statusline_path = nil
   if verify_revision_content then
