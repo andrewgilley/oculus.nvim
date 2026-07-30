@@ -1021,6 +1021,28 @@ local function update_session_buffer(win, buf)
   end
 end
 
+local function inspection_statusline_path(state)
+  if type(state) ~= "table"
+    or type(state.repository) ~= "string"
+    or state.repository == ""
+  then
+    return nil
+  end
+  local repository = vim.fs.normalize(state.repository)
+  local repository_folder = vim.fs.basename(repository)
+  local file = type(state.file) == "string" and state.file or nil
+  if not file or file == "" then
+    file = type(state.source_path) == "string"
+        and vim.fs.basename(state.source_path)
+      or nil
+  end
+  if not file or file == "" then
+    return repository_folder
+  end
+  file = file:gsub("\\", "/"):gsub("^/+", "")
+  return repository_folder .. "/" .. file
+end
+
 local function show_inspection_path(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -1031,6 +1053,16 @@ local function show_inspection_path(buf)
     or state.source_path == ""
   then
     return
+  end
+  local statusline_path = inspection_statusline_path(state)
+  if statusline_path then
+    vim.b[buf].oculus_inspect_statusline_path = statusline_path
+    local statusline = " " .. statusline_path:gsub("%%", "%%%%")
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_buf(win) == buf then
+        vim.wo[win].statusline = statusline
+      end
+    end
   end
   for _, other in ipairs(vim.api.nvim_list_bufs()) do
     if other ~= buf
@@ -4485,6 +4517,7 @@ M._prevent_window_dimming = prevent_window_dimming
 M._refresh_buffer_highlighting = refresh_buffer_highlighting
 M._apply_inspection_filetype = apply_inspection_filetype
 M._normalize_inspection_view = normalize_inspection_view
+M._inspection_statusline_path = inspection_statusline_path
 M._sidebar_row = sidebar_row
 M._inspect_sidebar_width = inspect_sidebar_width
 M._sidebar_chunk_row = sidebar_chunk_row
