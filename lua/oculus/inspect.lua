@@ -2352,6 +2352,50 @@ local function truncate_path(path, width)
   return "…"
 end
 
+local function sort_inspections(inspections)
+  local ordered = {}
+  for index, inspection in ipairs(inspections or {}) do
+    local path = inspection.change_file
+      or inspection.parent_file
+      or inspection.file
+      or ""
+    path = path:gsub("\\", "/"):gsub("^%./", ""):gsub("/+$", "")
+    local parent = path:match("^(.*)/[^/]+$") or ""
+    local name = path:match("([^/]+)$") or path
+    local depth = 0
+    for _ in parent:gmatch("[^/]+") do
+      depth = depth + 1
+    end
+    ordered[index] = {
+      inspection = inspection,
+      index = index,
+      depth = depth,
+      parent = parent:lower(),
+      name = name:lower(),
+      path = path:lower(),
+    }
+  end
+  table.sort(ordered, function(left, right)
+    if left.depth ~= right.depth then
+      return left.depth < right.depth
+    end
+    if left.parent ~= right.parent then
+      return left.parent < right.parent
+    end
+    if left.name ~= right.name then
+      return left.name < right.name
+    end
+    if left.path ~= right.path then
+      return left.path < right.path
+    end
+    return left.index < right.index
+  end)
+  for index, item in ipairs(ordered) do
+    inspections[index] = item.inspection
+  end
+  return inspections
+end
+
 local function sidebar_file(file)
   local normalized = file:gsub("\\", "/"):gsub("/+$", "")
   local parent, name = normalized:match("([^/]+)/([^/]+)$")
@@ -3796,6 +3840,7 @@ local function open_tabs(
   opts,
   done
 )
+  sort_inspections(inspections)
   local staging_tab = vim.api.nvim_get_current_tabpage()
   local staging_win = vim.api.nvim_get_current_win()
   local previous_lazyredraw = vim.o.lazyredraw
@@ -4518,6 +4563,7 @@ M._refresh_buffer_highlighting = refresh_buffer_highlighting
 M._apply_inspection_filetype = apply_inspection_filetype
 M._normalize_inspection_view = normalize_inspection_view
 M._inspection_statusline_path = inspection_statusline_path
+M._sort_inspections = sort_inspections
 M._sidebar_row = sidebar_row
 M._inspect_sidebar_width = inspect_sidebar_width
 M._sidebar_chunk_row = sidebar_chunk_row

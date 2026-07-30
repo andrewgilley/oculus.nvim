@@ -284,6 +284,30 @@ assert(inspect._sidebar_file(
   "lua\\oculus\\inspect.lua"
 ) == "oculus/inspect.lua")
 assert(inspect._sidebar_file("README.md") == "README.md")
+vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
+  { change_file = "tests/unit/inspect_spec.lua" },
+  { change_file = "lua/oculus/window.lua" },
+  { change_file = "README.md" },
+  { parent_file = "lua/init.lua" },
+  { change_file = "LICENSE" },
+  { change_file = "tests/inspect_spec.lua" },
+  { change_file = "lua/oculus/inspect.lua" },
+})
+assert(vim.deep_equal(
+  vim.tbl_map(function(inspection)
+    return inspection.change_file or inspection.parent_file
+  end, vim.g.oculus_test_sorted_inspections),
+  {
+    "LICENSE",
+    "README.md",
+    "lua/init.lua",
+    "tests/inspect_spec.lua",
+    "lua/oculus/inspect.lua",
+    "lua/oculus/window.lua",
+    "tests/unit/inspect_spec.lua",
+  }
+))
+vim.g.oculus_test_sorted_inspections = nil
 assert(inspect._sidebar_target_role(
   1,
   "change",
