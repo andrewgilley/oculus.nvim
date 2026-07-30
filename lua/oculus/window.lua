@@ -37,6 +37,7 @@ local contributor_selection_ns = vim.api.nvim_create_namespace(
 local inspect_loading_ns = vim.api.nvim_create_namespace(
   "oculus_inspect_activity_loading"
 )
+local commit_activity_url
 local autocmd_group = vim.api.nvim_create_augroup(
   "OculusWindow",
   { clear = true }
@@ -679,21 +680,30 @@ local function preview_lines(item, width)
   local lines = {}
   local details = {}
   if summary then
-    details[#details + 1] = summary
+    details[#details + 1] = { text = summary }
   end
   if type(detail) == "table" then
-    vim.list_extend(details, detail)
+    for index, detail_item in ipairs(detail) do
+      details[#details + 1] = {
+        text = detail_item,
+        detail_index = vim.trim(tostring(detail_item)) ~= "..."
+            and index
+          or nil,
+      }
+    end
   elseif detail and detail ~= summary then
-    details[#details + 1] = detail
+    details[#details + 1] = { text = detail }
   end
+  local detail_indices = {}
   for _, detail_item in ipairs(details) do
-    local remaining = quoted_detail_line(detail_item)
+    local remaining = quoted_detail_line(detail_item.text)
     for _ = 1, 3 do
       if remaining == "" then
         break
       end
       local text = trim_to_width(remaining, content_width)
       lines[#lines + 1] = indent .. pad_cell(text, content_width) .. " "
+      detail_indices[#lines] = detail_item.detail_index
       if vim.fn.strdisplaywidth(remaining) <= content_width then
         break
       end
@@ -702,7 +712,7 @@ local function preview_lines(item, width)
       remaining = vim.fn.strcharpart(remaining, consumed)
     end
   end
-  return lines
+  return lines, detail_indices
 end
 
 local function without_preview(item)
@@ -1267,13 +1277,25 @@ local function render_activity(events, cached, notice, opts)
         activity_time(event.created_at),
         item_width
       )
-      local detail_lines = preview_lines(item, item_width)
+      local detail_lines, detail_indices = preview_lines(item, item_width)
       if detail_lines then
-        for _, detail_line in ipairs(detail_lines) do
+        for detail_line_index, detail_line in ipairs(detail_lines) do
           lines[#lines + 1] = detail_line
-          M.state.line_targets[#lines] = expands_commits
-              and (item.group_url or item.url)
-            or item.url
+          local detail_target = item.url
+          if expands_commits then
+            local commit_index = detail_indices[detail_line_index]
+            local commit = commit_index
+                and event.payload
+                and event.payload.commits
+                and event.payload.commits[commit_index]
+              or nil
+            detail_target = commit
+                and type(commit.sha) == "string"
+                and commit.sha ~= ""
+                and commit_activity_url(event, commit.sha)
+              or (item.group_url or item.url)
+          end
+          M.state.line_targets[#lines] = detail_target
           if expands_commits then
             M.state.activity_expansion_targets[#lines] = event
           end
@@ -1337,7 +1359,7 @@ local function render_activity(events, cached, notice, opts)
   update_activity_cursorline()
 end
 
-local function commit_activity_url(event, sha)
+commit_activity_url = function(event, sha)
   local url = type(event.url) == "string" and event.url or ""
   local prefix = url:match("^(.-/commit)/[^/?#]+")
   if prefix then
