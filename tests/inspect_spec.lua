@@ -1470,7 +1470,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(not next_mapped)
   assert(not toggle_mapped)
   assert(switch_mapped)
-  assert(next_file_mapping and next_file_mapping.lhs == "gN")
+  assert(not next_file_mapping)
   assert(not sidebar_ctrl_i_mapped)
   assert(not sidebar_tab_mapped)
   assert(sidebar_leader_toggle
@@ -1502,6 +1502,8 @@ if integration_root and (integration_sha or integration_url) then
       sidebar_switch_mapping = mapping
     elseif mapping.desc == "Toggle Oculus Inspect overview" then
       sidebar_overview_mapping = mapping
+    elseif mapping.desc == "Next Oculus changed file" then
+      next_file_mapping = mapping
     end
   end
   assert(not sidebar_ctrl_i_from_sidebar)
@@ -1515,14 +1517,19 @@ if integration_root and (integration_sha or integration_url) then
     and sidebar_switch_mapping.lhs == "gS")
   assert(sidebar_overview_mapping
     and sidebar_overview_mapping.lhs == "gO")
+  assert(next_file_mapping and next_file_mapping.lhs == "gN")
 
   vim.api.nvim_set_current_tabpage(tabs[3])
   vim.api.nvim_set_current_win(change_win)
+  local overview_sidebar_win = assert(sidebar_window(tabs[3]))
+  vim.api.nvim_set_current_win(overview_sidebar_win)
   next_file_mapping.callback()
   assert(vim.api.nvim_get_current_tabpage()
     == (pair_count > 1 and tabs[5] or tabs[3]))
+  assert(vim.api.nvim_get_current_win()
+    == assert(sidebar_window(vim.api.nvim_get_current_tabpage())))
   vim.api.nvim_set_current_tabpage(tabs[3])
-  local overview_sidebar_win = assert(sidebar_window(tabs[3]))
+  overview_sidebar_win = assert(sidebar_window(tabs[3]))
   vim.api.nvim_set_current_win(overview_sidebar_win)
   local overview_saved = {
     sidebar_cursor = vim.api.nvim_win_get_cursor(overview_sidebar_win),

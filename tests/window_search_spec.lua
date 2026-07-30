@@ -68,7 +68,7 @@ local initial_window_height = vim.api.nvim_win_get_height(state.win)
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(initial_user_lines[initial_window_height]
-  == "  s /: search  ?: shortcuts  q: quit")
+  == "  a add  g suggested  s search  ?: help  q quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local first_list_line
@@ -134,9 +134,11 @@ local expected_left_width = math.max(
   )
 )
 local search_config = vim.api.nvim_win_get_config(state.search_win)
+local search_title_width = vim.fn.strdisplaywidth("  COMMUNITY FIGURES")
 assert(search_config.col
-  == main_position[2] + 1)
-assert(search_config.width == expected_left_width - 4)
+  == main_position[2] + search_title_width + 1)
+assert(search_config.width
+  == expected_left_width - search_title_width - 4)
 assert(
   search_config.col + search_config.width + 2
     == main_position[2] + expected_left_width - 1
@@ -148,7 +150,7 @@ local initial_search_lines = table.concat(
 )
 assert(initial_search_lines:find("  COMMUNITY FIGURES", 1, true))
 assert(initial_search_lines:find(
-  "  s /: search  ?: shortcuts  q: quit",
+  "  a add  g suggested  s search  ?: help  q quit",
   1,
   true
 ))
@@ -214,7 +216,7 @@ local cleared_search_lines = table.concat(
 )
 assert(cleared_search_lines:find("  COMMUNITY FIGURES", 1, true))
 assert(cleared_search_lines:find(
-  "  s /: search  ?: shortcuts  q: quit",
+  "  a add  g suggested  s search  ?: help  q quit",
   1,
   true
 ))
@@ -496,7 +498,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  s /: search  ?: shortcuts  q: quit")
+  == "  a add  g suggested  s search  ?: help  q quit")
 
 window.close()
 github.events = original_events
