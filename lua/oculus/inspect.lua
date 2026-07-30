@@ -21,6 +21,8 @@ local default_overview_toggle = "o"
 local default_version_switch = "<C-s>"
 local default_next_chunk = "<Tab>"
 local default_previous_chunk = "<S-Tab>"
+local inspection_statusline_option =
+  "%!v:lua.require('oculus.inspect')._inspection_statusline()"
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
@@ -1043,6 +1045,26 @@ local function inspection_statusline_path(state)
   return repository_folder .. "/" .. file
 end
 
+local function inspection_buffer_name(state)
+  if type(state) ~= "table"
+    or type(state.source_path) ~= "string"
+    or state.source_path == ""
+  then
+    return nil
+  end
+  local revision = type(state.commit) == "string"
+      and state.commit:sub(1, 12)
+    or "revision"
+  local role = tostring(state.role or "inspect"):gsub("[^%w_-]", "-")
+  local pair = tostring(state.pair_index or "0")
+  return ("%s@oculus-%s-%s-%s"):format(
+    state.source_path,
+    role,
+    revision,
+    pair
+  )
+end
+
 local function show_inspection_path(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -1057,38 +1079,17 @@ local function show_inspection_path(buf)
   local statusline_path = inspection_statusline_path(state)
   if statusline_path then
     vim.b[buf].oculus_inspect_statusline_path = statusline_path
-    local statusline = " " .. statusline_path:gsub("%%", "%%%%")
     for _, win in ipairs(vim.api.nvim_list_wins()) do
       if vim.api.nvim_win_get_buf(win) == buf then
-        vim.wo[win].statusline = statusline
+        vim.wo[win].statusline = inspection_statusline_option
       end
     end
   end
-  for _, other in ipairs(vim.api.nvim_list_bufs()) do
-    if other ~= buf
-      and vim.api.nvim_buf_is_valid(other)
-      and type(vim.b[other].oculus_inspect) == "table"
-      and vim.api.nvim_buf_get_name(other) ~= ""
-    then
-      pcall(vim.api.nvim_buf_set_name, other, "")
-    end
-  end
-  if vim.api.nvim_buf_get_name(buf) == "" then
-    local named = pcall(
-      vim.api.nvim_buf_set_name,
-      buf,
-      state.source_path
-    )
-    if not named then
-      local revision = type(state.commit) == "string"
-          and state.commit:sub(1, 8)
-        or tostring(state.pair_index or "")
-      pcall(
-        vim.api.nvim_buf_set_name,
-        buf,
-        state.source_path .. "@" .. revision
-      )
-    end
+  local buffer_name = inspection_buffer_name(state)
+  if buffer_name
+    and vim.api.nvim_buf_get_name(buf) ~= buffer_name
+  then
+    pcall(vim.api.nvim_buf_set_name, buf, buffer_name)
   end
 end
 
@@ -1895,13 +1896,13 @@ local function apply_change_signs(parent_buf, change_buf, hunks)
   end
 end
 
-local function refresh_buffer_highlighting(buf)
+local function refresh_buffer_highlighting(buf, force)
   if not vim.api.nvim_buf_is_valid(buf)
     or type(vim.b[buf].oculus_inspect) ~= "table"
   then
     return false
   end
-  if vim.b[buf].oculus_inspect_highlighting_refreshed then
+  if vim.b[buf].oculus_inspect_highlighting_refreshed and not force then
     return true
   end
 
@@ -1941,7 +1942,7 @@ local function refresh_buffer_highlighting(buf)
   return true
 end
 
-local function apply_inspection_filetype(buf)
+local function apply_inspection_filetype(buf, force_refresh)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
@@ -1974,7 +1975,7 @@ local function apply_inspection_filetype(buf)
   then
     pcall(reliquary.apply, buf)
   end
-  refresh_buffer_highlighting(buf)
+  refresh_buffer_highlighting(buf, force_refresh)
   return filetype
 end
 
@@ -1989,6 +1990,7 @@ local function replace_inspection_lines(endpoint, lines)
   vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, lines)
   vim.bo[endpoint.buf].modifiable = false
   vim.bo[endpoint.buf].readonly = true
+  vim.b[endpoint.buf].oculus_inspect_highlighting_refreshed = false
   return true
 end
 
@@ -2807,6 +2809,9 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
+  if group.kind ~= "issue" then
+    vim.wo[win].statusline = inspection_statusline_option
+  end
   prevent_window_dimming(win)
   group.sidebar_windows[endpoint.tab] = win
   vim.api.nvim_set_current_win(endpoint.win)
@@ -3249,6 +3254,40 @@ local function sidebar_group_for_buffer(buf)
   end
 end
 
+local function inspection_statusline(win)
+  win = tonumber(win or vim.g.statusline_winid)
+    or vim.api.nvim_get_current_win()
+  if not vim.api.nvim_win_is_valid(win) then
+    return ""
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  local state = vim.b[buf].oculus_inspect
+  local code_win = win
+  if type(state) ~= "table" then
+    local group = sidebar_group_for_buffer(buf)
+    local tab = vim.api.nvim_win_get_tabpage(win)
+    local endpoint = group and endpoint_for_tab(group, tab) or nil
+    if not valid_endpoint(endpoint) then
+      return ""
+    end
+    code_win = endpoint.win
+    buf = endpoint.buf
+    state = vim.b[buf].oculus_inspect
+  end
+  if type(state) ~= "table" then
+    return ""
+  end
+  local path = vim.b[buf].oculus_inspect_statusline_path
+    or inspection_statusline_path(state)
+    or ""
+  local cursor = vim.api.nvim_win_get_cursor(code_win)
+  return (" %s%%= %d:%d "):format(
+    path:gsub("%%", "%%%%"),
+    cursor[1],
+    cursor[2] + 1
+  )
+end
+
 local function open_sidebar_selection(group)
   if sidebar_navigating or overview_window_is_open(group) then
     return
@@ -3467,7 +3506,11 @@ vim.api.nvim_create_autocmd("TabEnter", {
     for _, group in ipairs(sidebar_groups) do
       local endpoint = endpoint_for_tab(group, tab)
       if endpoint then
-        apply_inspection_filetype(endpoint.buf)
+        apply_inspection_filetype(endpoint.buf, true)
+        local paired = paired_endpoint(endpoint.win)
+        if paired then
+          apply_inspection_filetype(paired.buf, true)
+        end
       end
       refresh_sidebar(group, tab)
     end
@@ -4563,6 +4606,9 @@ M._refresh_buffer_highlighting = refresh_buffer_highlighting
 M._apply_inspection_filetype = apply_inspection_filetype
 M._normalize_inspection_view = normalize_inspection_view
 M._inspection_statusline_path = inspection_statusline_path
+M._inspection_buffer_name = inspection_buffer_name
+M._inspection_statusline = inspection_statusline
+M._inspection_statusline_option = inspection_statusline_option
 M._sort_inspections = sort_inspections
 M._sidebar_row = sidebar_row
 M._inspect_sidebar_width = inspect_sidebar_width
