@@ -1884,6 +1884,62 @@ local function select_endpoint(endpoint)
   sidebar_navigating = false
 end
 
+local function inspection_chunks(group, session)
+  return group.kind == "issue"
+      and (session.sections or {})
+    or (session.hunks or {})
+end
+
+local function next_inspection_chunk(group, session, current_chunk)
+  local current_index
+  for index, candidate in ipairs(group) do
+    if candidate == session then
+      current_index = index
+      break
+    end
+  end
+  if not current_index then
+    return
+  end
+  local current_chunks = inspection_chunks(group, session)
+  if current_chunk < #current_chunks then
+    return session, current_index, current_chunk + 1
+  end
+  for offset = 1, #group do
+    local index = ((current_index + offset - 1) % #group) + 1
+    local candidate = group[index]
+    local chunks = inspection_chunks(group, candidate)
+    if #chunks > 0 then
+      return candidate, index, 1
+    end
+  end
+end
+
+local function focus_inspection_chunk(group, session, role, chunk_index)
+  local endpoint = group.kind == "issue"
+      and session.issue
+    or session[role]
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  local chunks = inspection_chunks(group, session)
+  local start
+  if group.kind == "issue" then
+    session.active_chunk = chunk_index
+    start = chunks[chunk_index] and chunks[chunk_index].line
+  else
+    start = render_focused_chunk(session, chunk_index)
+      or focused_hunk_start(chunks[chunk_index])
+  end
+  select_endpoint(endpoint)
+  if start then
+    set_change_cursor(endpoint.win, start)
+  end
+  show_inspection_path(endpoint.buf)
+  refresh_sidebar(group, endpoint.tab)
+  return endpoint
+end
+
 local function map_file_navigation(endpoint, session, role, group)
   local function toggle_version()
     local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
@@ -1913,9 +1969,7 @@ local function map_file_navigation(endpoint, session, role, group)
   end
   if type(next_chunk_lhs) == "string" and next_chunk_lhs ~= "" then
     vim.keymap.set("n", next_chunk_lhs, function()
-      local chunks = group.kind == "issue"
-          and (session.sections or {})
-        or (session.hunks or {})
+      local chunks = inspection_chunks(group, session)
       if #chunks == 0 then
         return
       end
@@ -1923,24 +1977,17 @@ local function map_file_navigation(endpoint, session, role, group)
       local current_chunk = group.kind == "issue"
           and (session.active_chunk or 0)
         or (
-          hunk_index_at_line(session, role, line)
+          session.focused_chunks
+              and session.active_chunk
+            or hunk_index_at_line(session, role, line)
           or session.active_chunk
           or 0
         )
-      local next_chunk = (current_chunk % #chunks) + 1
-      local start
-      if group.kind == "issue" then
-        session.active_chunk = next_chunk
-        start = chunks[next_chunk].line
-      else
-        start = render_focused_chunk(session, next_chunk)
-          or focused_hunk_start(chunks[next_chunk])
+      local next_session, _, next_chunk =
+        next_inspection_chunk(group, session, current_chunk)
+      if next_session then
+        focus_inspection_chunk(group, next_session, role, next_chunk)
       end
-      if start then
-        set_change_cursor(endpoint.win, start)
-      end
-      show_inspection_path(endpoint.buf)
-      refresh_sidebar(group, endpoint.tab)
     end, {
       buffer = endpoint.buf,
       nowait = true,
@@ -2832,9 +2879,33 @@ select_next_sidebar_chunk = function(group)
       and entry.chunk_index
     or sidebar_chunk(group, session, active_role)
     or 0
-  local next_chunk = (current_chunk % #chunk_lines) + 1
-  vim.api.nvim_win_set_cursor(0, { chunk_lines[next_chunk], 0 })
-  open_sidebar_selection(group)
+  local next_session, next_index, next_chunk =
+    next_inspection_chunk(group, session, current_chunk)
+  if not next_session then
+    return
+  end
+  local endpoint =
+    focus_inspection_chunk(group, next_session, active_role, next_chunk)
+  if not endpoint then
+    return
+  end
+  local sidebar_win = group.sidebar_windows[endpoint.tab]
+  local target_line = group.sidebar_chunk_lines[next_index]
+      and group.sidebar_chunk_lines[next_index][next_chunk]
+    or nil
+  if
+    not sidebar_win
+    or not vim.api.nvim_win_is_valid(sidebar_win)
+    or not target_line
+  then
+    return
+  end
+  sidebar_navigating = true
+  vim.api.nvim_set_current_win(sidebar_win)
+  vim.api.nvim_win_set_cursor(sidebar_win, { target_line, 0 })
+  group.focused_win = sidebar_win
+  refresh_sidebar(group, endpoint.tab)
+  sidebar_navigating = false
 end
 
 focus_sidebar_selection = function(group)

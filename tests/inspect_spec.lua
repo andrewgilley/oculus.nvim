@@ -1464,8 +1464,6 @@ if integration_root and (integration_sha or integration_url) then
       switch_mapped = mapping.lhs == "gS"
     elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapping = mapping
-    elseif mapping.desc == "Next Oculus changed chunk" then
-      toggle_mapped = mapping
     elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
       if mapping.lhs == "<C-I>" then
         sidebar_ctrl_i_mapped = true
@@ -1495,13 +1493,38 @@ if integration_root and (integration_sha or integration_url) then
   vim.g.oculus_test_chunk_count =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_count
   assert(vim.g.oculus_test_chunk_count > 0)
-  toggle_mapped.callback()
+  for _ = vim.g.oculus_test_chunk + 1, vim.g.oculus_test_chunk_count do
+    toggle_mapped.callback()
+  end
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index == 1)
   assert(
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
-      == (vim.g.oculus_test_chunk % vim.g.oculus_test_chunk_count) + 1
+      == vim.g.oculus_test_chunk_count
   )
+  vim.g.oculus_test_sidebar_cursor =
+    vim.api.nvim_win_get_cursor(assert(sidebar_window(tabs[3])))[1]
+  toggle_mapped.callback()
+  assert(vim.api.nvim_get_current_tabpage()
+    == (pair_count > 1 and tabs[5] or tabs[3]))
+  assert(vim.api.nvim_get_current_win()
+    == assert(inspection_window(vim.api.nvim_get_current_tabpage())))
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
+      == (pair_count > 1 and 2 or 1)
+  )
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
+      == 1
+  )
+  if pair_count > 1 then
+    assert(
+      vim.api.nvim_win_get_cursor(assert(sidebar_window(tabs[5])))[1]
+        ~= vim.g.oculus_test_sidebar_cursor
+    )
+  end
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
+  vim.g.oculus_test_sidebar_cursor = nil
 
   local sidebar_ctrl_i_from_sidebar = false
   local sidebar_tab_from_sidebar = false
@@ -1529,6 +1552,8 @@ if integration_root and (integration_sha or integration_url) then
       sidebar_overview_mapping = mapping
     elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapping = mapping
+    elseif mapping.desc == "Next Oculus changed chunk" then
+      toggle_mapped = mapping
     end
   end
   assert(not sidebar_ctrl_i_from_sidebar)
@@ -1545,18 +1570,34 @@ if integration_root and (integration_sha or integration_url) then
   assert(not next_file_mapping)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
 
-  vim.api.nvim_set_current_tabpage(tabs[3])
-  local overview_sidebar_win = assert(sidebar_window(tabs[3]))
+  vim.api.nvim_set_current_tabpage(tabs[pair_count * 2 + 1])
+  local overview_sidebar_win =
+    assert(sidebar_window(tabs[pair_count * 2 + 1]))
   vim.api.nvim_set_current_win(overview_sidebar_win)
   vim.g.oculus_test_chunk =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index or 0
   vim.g.oculus_test_chunk_count =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_count
   assert(vim.g.oculus_test_chunk_count > 0)
-  toggle_mapped.callback()
+  for _ = vim.g.oculus_test_chunk + 1, vim.g.oculus_test_chunk_count do
+    toggle_mapped.callback()
+  end
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
+      == pair_count
+  )
   assert(
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
-      == (vim.g.oculus_test_chunk % vim.g.oculus_test_chunk_count) + 1
+      == vim.g.oculus_test_chunk_count
+  )
+  toggle_mapped.callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win()
+    == assert(sidebar_window(tabs[3])))
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index == 1)
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
+      == 1
   )
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
