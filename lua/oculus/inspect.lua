@@ -16,6 +16,7 @@ local syncing = false
 local sidebar_navigating = false
 local inspection_tabs_loading = false
 local oil_contexts = {}
+local default_sidebar_toggle = "<leader>oi"
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
@@ -3033,12 +3034,18 @@ local function map_inspection_sidebar_toggle(group)
     silent = true,
     desc = "Toggle Oculus Inspect sidebar",
   }
+  local lhs = group.sidebar_toggle
+  if lhs == nil then
+    lhs = default_sidebar_toggle
+  end
   local function map_buffer(buf)
-    vim.keymap.set("n", "<leader>pi", function()
-      toggle_inspection_sidebar(group)
-    end, vim.tbl_extend("force", opts, {
-      buffer = buf,
-    }))
+    if type(lhs) == "string" and lhs ~= "" then
+      vim.keymap.set("n", lhs, function()
+        toggle_inspection_sidebar(group)
+      end, vim.tbl_extend("force", opts, {
+        buffer = buf,
+      }))
+    end
   end
   for _, session in ipairs(group) do
     local endpoints = group.kind == "issue"
@@ -3661,6 +3668,7 @@ local function open_tabs(
   loading,
   comment,
   number_options,
+  opts,
   done
 )
   local staging_tab = vim.api.nvim_get_current_tabpage()
@@ -3677,7 +3685,9 @@ local function open_tabs(
     end
   end
   local ok, err = pcall(function()
-    local inspection_sessions = {}
+    local inspection_sessions = {
+      sidebar_toggle = opts.inspect_sidebar_toggle,
+    }
     for index, paths in ipairs(inspections) do
       inspection_sessions[index] = {
         file = paths.change_file or paths.parent_file,
@@ -4077,6 +4087,7 @@ local function open_issue_tabs(
   selected,
   loading,
   number_options,
+  opts,
   done
 )
   local files = {}
@@ -4119,7 +4130,10 @@ local function open_issue_tabs(
   local staging_win = vim.api.nvim_get_current_win()
   local previous_lazyredraw = vim.o.lazyredraw
   local loaded = {}
-  local issue_sessions = { kind = "issue" }
+  local issue_sessions = {
+    kind = "issue",
+    sidebar_toggle = opts.inspect_sidebar_toggle,
+  }
   for index, file in ipairs(files) do
     issue_sessions[index] = {
       file = file.path,
@@ -4267,6 +4281,7 @@ local function open_issue(
             selected,
             loading,
             number_options,
+            opts,
             done
           )
         end)
@@ -4351,6 +4366,7 @@ function M.open(url, opts, context, lifecycle)
             loading,
             resolved.comment,
             number_options,
+            opts,
             function(_, open_err)
               active = false
               if open_err then

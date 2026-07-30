@@ -33,6 +33,7 @@ local defaults = {
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
   inspect_select_changed_files = false,
+  inspect_sidebar_toggle = "<leader>oi",
   inspect_issue_codex_command = "codex",
   inspect_issue_codex_timeout = 120000,
   opinion = {

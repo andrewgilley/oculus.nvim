@@ -678,6 +678,7 @@ local issue_ok, issue_err = inspect.open(
       ["andrewgilley/oculus.nvim"] = root,
     },
     inspect_search_paths = { vim.fs.dirname(root) },
+    inspect_sidebar_toggle = "gI",
     inspect_issue_codex_runner = function(request, callback)
       assert(vim.fs.normalize(request.repository) == vim.fs.normalize(root))
       assert(request.prompt:find("Issue inspect fixture", 1, true))
@@ -821,9 +822,9 @@ for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
   end
 end
 assert(issue_toggle_mapping)
-assert(issue_toggle_mapping.lhs
-  == (vim.g.mapleader or "\\") .. "pi")
+assert(issue_toggle_mapping.lhs == "gI")
 local issue_open_mapping
+local issue_sidebar_toggle_mapping
 local issue_version_mapping
 for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
   issue_sidebar_buf,
@@ -831,11 +832,15 @@ for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
 )) do
   if mapping.desc == "Open Oculus Inspect sidebar item" then
     issue_open_mapping = mapping
+  elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
+    issue_sidebar_toggle_mapping = mapping
   elseif mapping.desc == "Switch Oculus file version" then
     issue_version_mapping = mapping
   end
 end
 assert(issue_open_mapping and issue_open_mapping.lhs == "<CR>")
+assert(issue_sidebar_toggle_mapping
+  and issue_sidebar_toggle_mapping.lhs == "gI")
 assert(not issue_version_mapping)
 
 vim.api.nvim_set_current_win(issue_sidebar_test.sidebar_windows[1])
@@ -1422,7 +1427,7 @@ if integration_root and (integration_sha or integration_url) then
   end
   assert(initial_sidebar_toggle)
   assert(initial_sidebar_toggle.lhs
-    == (vim.g.mapleader or "\\") .. "pi")
+    == (vim.g.mapleader or "\\") .. "oi")
   for pair_index = 1, pair_count do
     local old_tab = tabs[pair_index * 2]
     local new_tab = tabs[pair_index * 2 + 1]
@@ -1716,7 +1721,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(not sidebar_tab_mapped)
   assert(sidebar_leader_toggle
     and sidebar_leader_toggle.lhs
-      == (vim.g.mapleader or "\\") .. "pi")
+      == (vim.g.mapleader or "\\") .. "oi")
 
   local sidebar_ctrl_i_from_sidebar = false
   local sidebar_tab_from_sidebar = false
@@ -1745,7 +1750,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(not sidebar_tab_from_sidebar)
   assert(sidebar_leader_toggle_from_sidebar
     and sidebar_leader_toggle_from_sidebar.lhs
-      == (vim.g.mapleader or "\\") .. "pi")
+      == (vim.g.mapleader or "\\") .. "oi")
   assert(sidebar_open_mapping
     and sidebar_open_mapping.lhs == "<CR>")
   assert(sidebar_switch_mapping
