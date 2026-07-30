@@ -1,6 +1,7 @@
 local M = {}
 
 local default_inspect_search_paths = {}
+local default_inspect_sidebar_width = 28 / math.max(1, vim.o.columns)
 if vim.env.USERPROFILE and vim.env.USERPROFILE ~= "" then
   default_inspect_search_paths[1] = vim.fs.joinpath(
     vim.env.USERPROFILE,
@@ -31,8 +32,10 @@ local defaults = {
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
   inspect_sidebar_toggle = "<leader>oi",
+  inspect_sidebar_width = default_inspect_sidebar_width,
   inspect_overview_toggle = "o",
   inspect_version_switch = "<C-s>",
+  inspect_next_file = "<Tab>",
   opinion = {
     provider = nil,
     width = 0.64,

@@ -51,9 +51,10 @@ inspection; tabs appear only after the changed-file sidebar is ready.
 Oculus reads each commit and its first parent from Git without changing the
 local checkout. Every changed file opens an adjacent parent/change tab pair.
 Press `o` while the Inspect sidebar is focused to toggle between changed files
-and a commit or pull-request overview. The overview includes repository, author,
-revision or branch, change totals, dates, URL, and available description or
-commit-message details.
+and an overview. The overview shows only the title, description, author, and
+URL, plus the PR number and status for pull requests. Moving within the
+overview does not navigate the code pane, and returning to changed files
+restores the sidebar position that opened it.
 
 Issue activity opens a read-only Markdown page containing the issue title,
 repository, URL, description, and the activity comment when one is available.

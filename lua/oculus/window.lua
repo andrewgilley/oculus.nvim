@@ -180,7 +180,7 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local activity_commands = "  h inspect   p past"
+  local activity_commands = "  h inspect   b browser   p past"
   if (M.state.activity_page or 1) > 1 then
     activity_commands = activity_commands .. "   r recent"
   end
@@ -1266,7 +1266,7 @@ local function render_shortcuts()
   section("NAVIGATION", {
     { "<Up>", "Select the previous item" },
     { "k / <Down>", "Select the next item" },
-    { "l / <Right> / <CR>", "Select or open the current item" },
+    { "l / <Right> / <CR>", "Select the current item" },
     { "j / <Left>", "Return to the previous page" },
   })
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
@@ -1279,9 +1279,9 @@ local function render_shortcuts()
   })
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
+    { "b", "Open the selected activity in a browser" },
     { "p", "Load the next eight past activity items" },
     { "r", "Load the previous page of recent activity" },
-    { "o", "Open the selected activity" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
@@ -1683,8 +1683,6 @@ local function select_current()
   if M.state.view == "contributors" and type(target) == "table" then
     M.state.selected_username = target.username
     load_activity(target, false)
-  elseif M.state.view == "activity" and type(target) == "string" then
-    open_url(target)
   elseif M.state.view == "filters" then
     toggle_filter_type()
   end
@@ -1712,14 +1710,18 @@ local function open_current()
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 16 Open profiles on the contributor's forge
   if M.state.view == "contributors" and type(target) == "table" then
     open_url(contributor_profile_url(target))
-  elseif M.state.view == "activity" then
-    if type(target) == "string" then
-      open_url(target)
-    elseif M.state.contributor then
-      open_url(contributor_profile_url(M.state.contributor))
-    end
   end
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 16
+end
+
+local function open_activity_in_browser()
+  if M.state.view ~= "activity" then
+    return
+  end
+  local target = target_on_cursor()
+  if type(target) == "string" then
+    open_url(target)
+  end
 end
 
 local function inspect_current()
@@ -1975,7 +1977,8 @@ local function map_keys(buf)
   map("l", select_current, "Move right in Oculus")
   map("<Right>", select_current, "Move right in Oculus")
   map("<Space>", toggle_filter_type, "Toggle Oculus item")
-  map("o", open_current, "Open Oculus item in browser")
+  map("o", open_current, "Open Oculus contributor profile")
+  map("b", open_activity_in_browser, "Open Oculus activity in browser")
   map("f", function()
     open_filters(false)
   end, "Edit contributor activity types")
