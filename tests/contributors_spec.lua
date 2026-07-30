@@ -13,6 +13,7 @@ assert(#oculus.config.contributors == 0)
 assert(#oculus.config.suggested_contributors > 0)
 local found_codeberg_suggestion = false
 for _, contributor in ipairs(oculus.config.suggested_contributors) do
+  assert(contributor.description == nil)
   if
     contributor.username == "andrewrk"
     and contributor.provider == "codeberg"
@@ -64,13 +65,11 @@ window.open({
       name = "Suggested GitHub",
       username = "suggested-user",
       provider = "github",
-      description = "Suggested account",
     },
     {
       name = "Suggested Codeberg",
       username = "suggested-codeberg",
       provider = "codeberg",
-      description = "Suggested account",
     },
   },
 })
@@ -132,7 +131,6 @@ local restart_suggestions = {
     name = "Remembered Suggestion",
     username = "remember-me",
     provider = "github",
-    description = "Persisted suggested account",
   },
 }
 oculus.setup({
