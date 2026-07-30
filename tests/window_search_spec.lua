@@ -68,7 +68,7 @@ local initial_window_height = vim.api.nvim_win_get_height(state.win)
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(initial_user_lines[initial_window_height]
-  == "  a add  g suggested  s search  ?: help  q quit")
+  == "  a add  g suggested  / search  ?: help  q quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local first_list_line
@@ -135,10 +135,14 @@ local expected_left_width = math.max(
 )
 local search_config = vim.api.nvim_win_get_config(state.search_win)
 local search_title_width = vim.fn.strdisplaywidth("  COMMUNITY FIGURES")
+local expected_search_width = math.max(
+  1,
+  math.min(18, expected_left_width - search_title_width - 4)
+)
 assert(search_config.col
-  == main_position[2] + search_title_width + 1)
-assert(search_config.width
-  == expected_left_width - search_title_width - 4)
+  == main_position[2] + expected_left_width
+    - expected_search_width - 3)
+assert(search_config.width == expected_search_width)
 assert(
   search_config.col + search_config.width + 2
     == main_position[2] + expected_left_width - 1
@@ -150,7 +154,7 @@ local initial_search_lines = table.concat(
 )
 assert(initial_search_lines:find("  COMMUNITY FIGURES", 1, true))
 assert(initial_search_lines:find(
-  "  a add  g suggested  s search  ?: help  q quit",
+  "  a add  g suggested  / search  ?: help  q quit",
   1,
   true
 ))
@@ -216,7 +220,7 @@ local cleared_search_lines = table.concat(
 )
 assert(cleared_search_lines:find("  COMMUNITY FIGURES", 1, true))
 assert(cleared_search_lines:find(
-  "  a add  g suggested  s search  ?: help  q quit",
+  "  a add  g suggested  / search  ?: help  q quit",
   1,
   true
 ))
@@ -246,6 +250,19 @@ vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
 assert(#state.search_results == 0)
 local main_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(table.concat(main_lines, "\n"):find("No matching users.", 1, true))
+assert(state.preview_items[2][1] == "PREVIEW")
+assert(state.preview_items[4][1] == "Mitchell Hashimoto")
+local preview_marks = vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  vim.api.nvim_create_namespace("oculus_preview"),
+  0,
+  -1,
+  { details = true }
+)
+assert(#preview_marks == #main_lines)
+for _, mark in ipairs(preview_marks) do
+  assert(mark[4].virt_text[1][1] == "│")
+end
 
 local cancel_mapping = vim.fn.maparg("<Esc>", "i", false, true)
 cancel_mapping.callback()
@@ -498,7 +515,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  a add  g suggested  s search  ?: help  q quit")
+  == "  a add  g suggested  / search  ?: help  q quit")
 
 window.close()
 github.events = original_events
