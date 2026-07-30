@@ -133,9 +133,9 @@ local expected_left_width = math.max(
 local search_config = vim.api.nvim_win_get_config(state.search_win)
 local search_title_width = vim.fn.strdisplaywidth("  SEARCH")
 local expected_search_width =
-  math.max(1, expected_left_width - search_title_width - 4)
+  math.max(1, expected_left_width - search_title_width - 6)
 assert(search_config.col
-  == main_position[2] + search_title_width + 1)
+  == main_position[2] + search_title_width + 3)
 assert(search_config.width == expected_search_width)
 assert(
   search_config.col + search_config.width + 2

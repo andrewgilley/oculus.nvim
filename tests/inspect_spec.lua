@@ -30,7 +30,7 @@ assert(inspect._inspect_sidebar_width(
 assert(oculus.config.inspect_overview_toggle == "o")
 assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
-assert(oculus.config.inspect_next_file == "<S-Tab>")
+assert(oculus.config.inspect_next_file == nil)
 
 local normal_highlight =
   vim.api.nvim_get_hl(0, { name = "Normal", link = false })
@@ -1065,7 +1065,6 @@ if integration_root and (integration_sha or integration_url) then
       inspect_sidebar_width = 0.30,
       inspect_overview_toggle = "gO",
       inspect_version_switch = "gS",
-      inspect_next_file = "gN",
     },
     nil,
     {
@@ -1473,7 +1472,7 @@ if integration_root and (integration_sha or integration_url) then
   end
   assert(not previous_mapped)
   assert(not next_mapped)
-  assert(not toggle_mapped)
+  assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
   assert(switch_mapped)
   assert(not next_file_mapping)
   assert(not sidebar_ctrl_i_mapped)
@@ -1482,6 +1481,21 @@ if integration_root and (integration_sha or integration_url) then
     and sidebar_leader_toggle.lhs
       == (vim.g.mapleader or "\\") .. "oi")
   assert(vim.fn.maparg("o", "n", false, true).buffer ~= 1)
+
+  vim.api.nvim_set_current_tabpage(tabs[3])
+  vim.api.nvim_set_current_win(change_win)
+  vim.g.oculus_test_chunk =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index or 0
+  vim.g.oculus_test_chunk_count =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_count
+  assert(vim.g.oculus_test_chunk_count > 0)
+  toggle_mapped.callback()
+  assert(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
+      == (vim.g.oculus_test_chunk % vim.g.oculus_test_chunk_count) + 1
+  )
+  vim.g.oculus_test_chunk = nil
+  vim.g.oculus_test_chunk_count = nil
 
   local sidebar_ctrl_i_from_sidebar = false
   local sidebar_tab_from_sidebar = false
@@ -1522,11 +1536,10 @@ if integration_root and (integration_sha or integration_url) then
     and sidebar_switch_mapping.lhs == "gS")
   assert(sidebar_overview_mapping
     and sidebar_overview_mapping.lhs == "gO")
-  assert(next_file_mapping and next_file_mapping.lhs == "gN")
+  assert(not next_file_mapping)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
 
   vim.api.nvim_set_current_tabpage(tabs[3])
-  vim.api.nvim_set_current_win(change_win)
   local overview_sidebar_win = assert(sidebar_window(tabs[3]))
   vim.api.nvim_set_current_win(overview_sidebar_win)
   vim.g.oculus_test_chunk =
@@ -1541,12 +1554,6 @@ if integration_root and (integration_sha or integration_url) then
   )
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
-  next_file_mapping.callback()
-  assert(vim.api.nvim_get_current_tabpage()
-    == (pair_count > 1 and tabs[5] or tabs[3]))
-  assert(vim.api.nvim_get_current_win()
-    == assert(sidebar_window(vim.api.nvim_get_current_tabpage())))
-  vim.api.nvim_set_current_tabpage(tabs[3])
   overview_sidebar_win = assert(sidebar_window(tabs[3]))
   vim.api.nvim_set_current_win(overview_sidebar_win)
   local overview_saved = {
