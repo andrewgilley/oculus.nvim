@@ -1249,10 +1249,18 @@ local function render_activity(events, cached, notice, opts)
   local scroll_limit_line
   local activity_line_kinds = {}
   for _, event in ipairs(events) do
-    local item = actions.describe(event)
+    local item = actions.describe(event, {
+      omit_single_commit_count = M.state.activity_commit_page,
+    })
     local inspect_context = inspect.activity_context(event)
+    local expands_commits = not M.state.activity_commit_page
+      and event.type == "PushEvent"
+      and #(event.payload and event.payload.commits or {}) > 1
     local event_line = #lines + 1
     M.state.activity_title_lines[event_line] = event_line
+    if expands_commits then
+      M.state.activity_expansion_targets[event_line] = event
+    end
     first_event_line = first_event_line or event_line
     activity_line_kinds[event_line] = "main"
     local item_width = width - 2
@@ -1266,9 +1274,6 @@ local function render_activity(events, cached, notice, opts)
       if detail_lines then
         for _, detail_line in ipairs(detail_lines) do
           lines[#lines + 1] = detail_line
-          local expands_commits = vim.trim(detail_line) == "..."
-            and event.type == "PushEvent"
-            and #(event.payload and event.payload.commits or {}) > 3
           M.state.line_targets[#lines] = expands_commits
               and (item.group_url or item.url)
             or item.url
