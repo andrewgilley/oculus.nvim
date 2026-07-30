@@ -387,11 +387,24 @@ for line, event in pairs(state.activity_expansion_targets) do
 end
 assert(expansion_line)
 assert(expansion_count == 5)
+local listed_commit_urls = {}
 for line, title_line in pairs(state.activity_title_lines) do
   if title_line == expansion_line then
     assert(state.activity_expansion_targets[line].id == "2")
+    local url = state.line_targets[line]
+    if type(url) == "string" and url:find("/commit/", 1, true) then
+      listed_commit_urls[url] = true
+    end
   end
 end
+for _, sha in ipairs({ "aaaaaaaa", "bbbbbbbb", "cccccccc" }) do
+  assert(listed_commit_urls[
+    "https://github.com/example/repository/commit/" .. sha
+  ])
+end
+assert(not listed_commit_urls[
+  "https://github.com/example/repository/commit/dddddddd"
+])
 vim.api.nvim_win_set_cursor(state.win, { expansion_line, 0 })
 select_mapping.callback()
 assert(state.view == "activity")
