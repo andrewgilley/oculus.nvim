@@ -32,19 +32,25 @@ assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
 assert(oculus.config.inspect_next_file == nil)
 
-local normal_highlight =
-  vim.api.nvim_get_hl(0, { name = "Normal", link = false })
-for group, target in pairs({
-  OculusInspectRemoved = "DiffDelete",
-  OculusInspectAdded = "DiffAdd",
+for group, expected in pairs({
+  OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
+  OculusInspectAdded = { fg = 0xdcfce7, bg = 0x166534 },
 }) do
   local sign_highlight =
     vim.api.nvim_get_hl(0, { name = group, link = false })
-  local target_highlight =
-    vim.api.nvim_get_hl(0, { name = target, link = false })
-  assert(sign_highlight.fg == target_highlight.fg)
-  assert(sign_highlight.bg == target_highlight.bg)
-  assert(sign_highlight.bg ~= normal_highlight.bg)
+  assert(sign_highlight.fg == expected.fg)
+  assert(sign_highlight.bg == expected.bg)
+  vim.api.nvim_set_hl(0, group, { fg = 1, bg = 2 })
+end
+vim.api.nvim_exec_autocmds("ColorScheme", {})
+for group, expected in pairs({
+  OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
+  OculusInspectAdded = { fg = 0xdcfce7, bg = 0x166534 },
+}) do
+  local sign_highlight =
+    vim.api.nvim_get_hl(0, { name = group, link = false })
+  assert(sign_highlight.fg == expected.fg)
+  assert(sign_highlight.bg == expected.bg)
 end
 
 local dimming_win = vim.api.nvim_get_current_win()
