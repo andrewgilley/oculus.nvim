@@ -838,7 +838,6 @@ local function render_contributors()
 
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 10 Generalize the contributor list for multiple forges
   local searching = type(M.state.search_query) == "string"
-    and M.state.search_query ~= ""
   local lines = searching
       and {
         "",
@@ -1650,13 +1649,10 @@ local function search_win_config()
   local position = vim.api.nvim_win_get_position(M.state.win)
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(parent_width)
-  local title_width = vim.fn.strdisplaywidth("  COMMUNITY FIGURES")
+  local title_width = vim.fn.strdisplaywidth("  SEARCH")
   local divider_col = position[2] + left_width - 1
-  local available_width = divider_col
-    - (position[2] + title_width + 1)
-    - 2
-  local search_width = math.max(1, math.min(22, available_width))
-  local search_col = divider_col - search_width - 2
+  local search_col = position[2] + title_width + 1
+  local search_width = math.max(1, divider_col - search_col - 2)
   return {
     relative = "editor",
     width = search_width,
