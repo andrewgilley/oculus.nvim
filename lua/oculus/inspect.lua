@@ -1656,10 +1656,12 @@ local function set_change_highlights()
   local diagnostic_info =
     vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
   vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
-    link = "DiffDelete",
+    fg = 0xfee2e2,
+    bg = 0x991b1b,
   })
   vim.api.nvim_set_hl(0, "OculusInspectAdded", {
-    link = "DiffAdd",
+    fg = 0xdcfce7,
+    bg = 0x166534,
   })
   vim.api.nvim_set_hl(0, "OculusIssueSection", {
     fg = diagnostic_info.fg or 0x61afef,
