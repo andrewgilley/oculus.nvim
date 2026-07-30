@@ -517,196 +517,62 @@ assert(found_alias_fetch_source
   == "https://github.com/neovim/neovim.git")
 assert(vim.fn.delete(renamed_search_root, "rf") == 0)
 
-local extracted_issue_candidates
-local extracted_issue_error
-inspect._issue_candidates(root, {
-  title = "Inspect navigation",
-  body = table.concat({
-    "The main reference is lua/oculus/inspect.lua:10-12.",
-    "The behavior appears around `open_issue`.",
-  }, "\n"),
-}, function(candidates, err)
-  extracted_issue_candidates = candidates
-  extracted_issue_error = err
-end)
-assert(vim.wait(10000, function()
-  return extracted_issue_candidates ~= nil
-    or extracted_issue_error ~= nil
-end), "issue candidate extraction did not finish")
-assert(extracted_issue_candidates, extracted_issue_error)
-local found_direct_issue_section = false
-local found_symbol_issue_section = false
-for _, candidate in ipairs(extracted_issue_candidates) do
-  if candidate.path == "lua/oculus/inspect.lua"
-    and candidate.line == 10
-    and candidate.last_line == 12
-  then
-    found_direct_issue_section = true
-  end
-  if candidate.reason == "matches `open_issue`" then
-    found_symbol_issue_section = true
-  end
-end
-assert(found_direct_issue_section)
-assert(found_symbol_issue_section)
-
-local decoded_codex_candidates, decoded_codex_error =
-  inspect._decode_codex_issue_candidates({
-    candidates = {
-      {
-        path = "LUA\\OCULUS\\window.lua",
-        line = 20,
-        last_line = 24,
-        reason = "activity selection and inspect dispatch",
-        confidence = 91,
-        whole_file = false,
-      },
-      {
-        path = "../outside.lua",
-        line = 1,
-        last_line = 1,
-        reason = "must be rejected",
-        confidence = 100,
-        whole_file = false,
-      },
-    },
-  }, {
-    "lua/oculus/window.lua",
-    "lua/oculus/inspect.lua",
-  })
-assert(decoded_codex_candidates, decoded_codex_error)
-assert(#decoded_codex_candidates == 1)
-assert(decoded_codex_candidates[1].path == "lua/oculus/window.lua")
-assert(decoded_codex_candidates[1].line == 20)
-assert(decoded_codex_candidates[1].last_line == 24)
-assert(decoded_codex_candidates[1].reason
-  == "Codex: activity selection and inspect dispatch")
+local issue_lines = inspect._issue_page_lines({
+  forge = "github",
+  host = "github.com",
+  owner = "andrewgilley",
+  repo = "oculus.nvim",
+  number = 77,
+}, {
+  number = 77,
+  title = "Issue inspect fixture",
+  body = "Issue body\nwith a second line.",
+  comment = "Activity comment fixture.",
+  html_url = "https://github.com/andrewgilley/oculus.nvim/issues/77",
+})
+local issue_text = table.concat(issue_lines, "\n")
+assert(issue_text:find("# Issue inspect fixture", 1, true))
+assert(issue_text:find("Repository: `andrewgilley/oculus.nvim`", 1, true))
+assert(issue_text:find("## Description", 1, true))
+assert(issue_text:find("Issue body\nwith a second line.", 1, true))
+assert(issue_text:find("## Activity comment", 1, true))
+assert(issue_text:find("Activity comment fixture.", 1, true))
+local empty_issue_text = table.concat(inspect._issue_page_lines({
+  forge = "codeberg",
+  host = "codeberg.org",
+  owner = "example",
+  repo = "project",
+  number = 8,
+}, { number = 8 }), "\n")
+assert(empty_issue_text:find("# Issue #8", 1, true))
+assert(empty_issue_text:find("_No description was provided._", 1, true))
 
 local github = require("oculus.github")
-local oculus_window = require("oculus.window")
 local original_issue = github.issue
-local original_show_issue_picker = oculus_window.show_issue_picker
 github.issue = function(repo, number, _, callback)
   assert(repo == "andrewgilley/oculus.nvim")
   assert(number == 77)
   callback({
     number = number,
     title = "Issue inspect fixture",
-    body = table.concat({
-      "Review lua/oculus/inspect.lua:10-12.",
-      "The behavior also appears around `open_issue`.",
-    }, "\n"),
+    body = "The issue information should open without identifying files.",
+    html_url = "https://github.com/andrewgilley/oculus.nvim/issues/77",
   })
 end
-local issue_selection_targets = {
-  "codex",
-  "lua/oculus/inspect.lua",
-  "lua/oculus/window.lua",
-}
-local issue_selection_index = 1
-oculus_window.show_issue_picker = function(context, items, callback)
-  assert(context.details.title == "Issue inspect fixture")
-  assert(context.details.body:find(
-    "Review lua/oculus/inspect.lua:10-12.",
-    1,
-    true
-  ))
-  assert(context.details.comment
-    == "The referenced sections should become editable tabs.")
-  assert(vim.fs.normalize(context.repository) == vim.fs.normalize(root))
-  assert(context.default_source == vim.fs.dirname(root))
-  assert(context.remote_url
-    == "https://github.com/andrewgilley/oculus.nvim.git")
-  if context.status then
-    assert(context.status:find("Codex", 1, true))
-    assert(#items == 1 and items[1].action == "cancel")
-    return
-  end
-  local offered_paths = {}
-  for _, item in ipairs(items) do
-    if item.group then
-      assert(not offered_paths[item.group.path])
-      offered_paths[item.group.path] = true
-    end
-  end
-  if next(offered_paths) then
-    assert(items[1].action == "all")
-    assert(items[1].label == "[+] Show all files")
-  end
-  local target = issue_selection_targets[issue_selection_index]
-  if target then
-    issue_selection_index = issue_selection_index + 1
-    if target == "codex" then
-      for _, item in ipairs(items) do
-        if item.action == "codex" then
-          callback(item)
-          return
-        end
-      end
-      error("issue selection did not offer Codex analysis")
-    end
-    for _, item in ipairs(items) do
-      if item.group and item.group.path == target then
-        callback(item)
-        return
-      end
-    end
-    error("issue selection did not offer " .. target)
-  end
-  for _, item in ipairs(items) do
-    if item.action == "build" then
-      callback(item)
-      return
-    end
-  end
-  error("issue selection did not offer a build action")
-end
 local issue_tabs_before = vim.api.nvim_list_tabpages()
+local issue_origin_win = vim.api.nvim_get_current_win()
+local issue_origin_number = vim.wo[issue_origin_win].number
+local issue_origin_relativenumber = vim.wo[issue_origin_win].relativenumber
+vim.wo[issue_origin_win].number = true
+vim.wo[issue_origin_win].relativenumber = true
 local issue_lifecycle_complete = false
 local issue_lifecycle_error
-vim.g.oculus_test_issue_origin_win = vim.api.nvim_get_current_win()
-vim.g.oculus_test_issue_origin_number =
-  vim.wo[vim.g.oculus_test_issue_origin_win].number
-vim.g.oculus_test_issue_origin_relativenumber =
-  vim.wo[vim.g.oculus_test_issue_origin_win].relativenumber
-vim.wo[vim.g.oculus_test_issue_origin_win].number = true
-vim.wo[vim.g.oculus_test_issue_origin_win].relativenumber = true
 local issue_ok, issue_err = inspect.open(
   "https://github.com/andrewgilley/oculus.nvim/issues/77",
-  {
-    inspect_repositories = {
-      ["andrewgilley/oculus.nvim"] = root,
-    },
-    inspect_search_paths = { vim.fs.dirname(root) },
-    inspect_sidebar_toggle = "gI",
-    inspect_issue_codex_runner = function(request, callback)
-      assert(vim.fs.normalize(request.repository) == vim.fs.normalize(root))
-      assert(request.prompt:find("Issue inspect fixture", 1, true))
-      callback({
-        candidates = {
-          {
-            path = "lua/oculus/window.lua",
-            line = 20,
-            last_line = 20,
-            reason = "dispatches issue inspection",
-            confidence = 92,
-            whole_file = false,
-          },
-          {
-            path = "../outside.lua",
-            line = 1,
-            last_line = 1,
-            reason = "outside the repository",
-            confidence = 100,
-            whole_file = false,
-          },
-        },
-      })
-    end,
-  },
+  {},
   {
     issue = {
-      comment = "The referenced sections should become editable tabs.",
+      comment = "The activity comment belongs on the information page.",
     },
   },
   {
@@ -718,260 +584,51 @@ local issue_ok, issue_err = inspect.open(
   }
 )
 assert(issue_ok, issue_err)
-assert(vim.wait(30000, function()
+assert(vim.wait(10000, function()
   return issue_lifecycle_complete
-end), "issue inspect tabs were not opened")
+end), "issue information page was not opened")
 assert(not issue_lifecycle_error, issue_lifecycle_error)
 github.issue = original_issue
-oculus_window.show_issue_picker = original_show_issue_picker
 local issue_tabs_after = vim.api.nvim_list_tabpages()
-assert(#issue_tabs_after == #issue_tabs_before + 2)
-local issue_buffers = {}
-local issue_sidebar_test = {
-  main_windows = {},
-  sidebar_windows = {},
-}
-for index = #issue_tabs_before + 1, #issue_tabs_after do
-  local tab = issue_tabs_after[index]
-  local state = vim.api.nvim_tabpage_get_var(tab, "oculus_inspect")
-  assert(state.kind == "issue")
-  assert(state.role == "issue")
-  assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
-  local win
-  local sidebar_win
-  local issue_file_window_count = 0
-  for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-    local candidate_buf = vim.api.nvim_win_get_buf(candidate)
-    if vim.bo[candidate_buf].filetype == "oculus-inspect-files" then
-      sidebar_win = candidate
-      issue_sidebar_test.buf = issue_sidebar_test.buf or candidate_buf
-      assert(candidate_buf == issue_sidebar_test.buf)
-    elseif type(vim.b[candidate_buf].oculus_inspect) == "table" then
-      win = candidate
-      issue_file_window_count = issue_file_window_count + 1
-    end
-  end
-  assert(win)
-  assert(sidebar_win)
-  assert(issue_file_window_count == 1)
-  issue_sidebar_test.main_windows[
-    #issue_sidebar_test.main_windows + 1
-  ] = win
-  issue_sidebar_test.sidebar_windows[
-    #issue_sidebar_test.sidebar_windows + 1
-  ] = sidebar_win
-  local buf = vim.api.nvim_win_get_buf(win)
-  assert(vim.wo[win].number == true)
-  assert(vim.wo[win].relativenumber == true)
-  assert(vim.api.nvim_win_get_width(sidebar_win) == 28)
-  assert(vim.wo[sidebar_win].number == false)
-  assert(vim.wo[sidebar_win].relativenumber == false)
-  assert(vim.wo[sidebar_win].cursorline)
-  issue_buffers[#issue_buffers + 1] = buf
-  assert(vim.bo[buf].modifiable)
-  assert(vim.bo[buf].buftype == "")
-  assert(#vim.b[buf].oculus_issue_sections >= 1)
-  local marks = vim.api.nvim_buf_get_extmarks(
-    buf,
-    vim.api.nvim_get_namespaces().oculus_inspect_issue,
-    0,
-    -1,
-    { details = true }
-  )
-  assert(#marks == #vim.b[buf].oculus_issue_sections)
-  assert(marks[1][4].sign_text == "> ")
-end
-assert(vim.api.nvim_win_get_cursor(0)[1] == 10)
-do
-local issue_sidebar_buf = issue_sidebar_test.buf
-local issue_sidebar_lines =
-  vim.api.nvim_buf_get_lines(issue_sidebar_buf, 0, -1, false)
-local issue_file_lines = {}
-local issue_section_lines = {}
-for line_number, line in ipairs(issue_sidebar_lines) do
-  if line:match("^• ") then
-    issue_file_lines[#issue_file_lines + 1] = line_number
-    assert(
-      line:find("oculus/inspect.lua", 1, true)
-        or line:find("oculus/window.lua", 1, true)
-    )
-    assert(not line:match(" P C"))
-  elseif line:sub(1, 2) == "  "
-    and line:find("─ ", 1, true)
-  then
-    issue_section_lines[#issue_section_lines + 1] = line_number
-    assert(line:match("%d+%-%d+$"))
-  end
-end
-assert(#issue_file_lines == 2)
-assert(#issue_section_lines >= 2)
-local issue_sidebar_active =
-  vim.b[issue_sidebar_buf].oculus_inspect_sidebar_active
-assert(issue_sidebar_active.pair_index == 1)
-assert(issue_sidebar_active.role == "issue")
-assert(issue_sidebar_active.chunk_index == 1)
-assert(issue_sidebar_active.chunk_count >= 1)
-
-local issue_toggle_mapping
-for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
-  issue_buffers[1],
-  "n"
-)) do
-  if mapping.desc == "Toggle Oculus Inspect sidebar" then
-    issue_toggle_mapping = mapping
-  end
-end
-assert(issue_toggle_mapping)
-assert(issue_toggle_mapping.lhs == "gI")
-local issue_open_mapping
-local issue_sidebar_toggle_mapping
-local issue_version_mapping
-for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
-  issue_sidebar_buf,
-  "n"
-)) do
-  if mapping.desc == "Open Oculus Inspect sidebar item" then
-    issue_open_mapping = mapping
-  elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
-    issue_sidebar_toggle_mapping = mapping
-  elseif mapping.desc == "Switch Oculus file version" then
-    issue_version_mapping = mapping
-  end
-end
-assert(issue_open_mapping and issue_open_mapping.lhs == "<CR>")
-assert(issue_sidebar_toggle_mapping
-  and issue_sidebar_toggle_mapping.lhs == "gI")
-assert(not issue_version_mapping)
-
-vim.api.nvim_set_current_win(issue_sidebar_test.sidebar_windows[1])
-vim.api.nvim_win_set_cursor(
-  issue_sidebar_test.sidebar_windows[1],
-  { issue_file_lines[2], 0 }
+assert(#issue_tabs_after == #issue_tabs_before + 1)
+local issue_tab = issue_tabs_after[#issue_tabs_after]
+assert(vim.api.nvim_get_current_tabpage() == issue_tab)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 1)
+local issue_state = vim.api.nvim_tabpage_get_var(issue_tab, "oculus_inspect")
+assert(issue_state.kind == "issue")
+assert(issue_state.role == "issue")
+assert(issue_state.issue_number == 77)
+assert(issue_state.issue_title == "Issue inspect fixture")
+local issue_buf = vim.api.nvim_get_current_buf()
+assert(vim.bo[issue_buf].buftype == "nofile")
+assert(vim.bo[issue_buf].filetype == "markdown")
+assert(vim.bo[issue_buf].readonly)
+assert(not vim.bo[issue_buf].modifiable)
+assert(vim.wo.wrap)
+assert(vim.wo.linebreak)
+assert(vim.wo.signcolumn == "no")
+assert(vim.wo.number)
+assert(vim.wo.relativenumber)
+local issue_page = table.concat(
+  vim.api.nvim_buf_get_lines(issue_buf, 0, -1, false),
+  "\n"
 )
-vim.api.nvim_exec_autocmds("CursorMoved", {
-  buffer = issue_sidebar_buf,
-})
-assert(vim.wait(1000, function()
-  return vim.api.nvim_get_current_tabpage()
-      == issue_tabs_after[#issue_tabs_before + 2]
-    and vim.api.nvim_get_current_win()
-      == issue_sidebar_test.sidebar_windows[2]
-end), "issue sidebar did not preview the second file")
-local second_issue_state =
-  vim.b[vim.api.nvim_win_get_buf(issue_sidebar_test.main_windows[2])]
-    .oculus_inspect
-assert(second_issue_state.file == "lua/oculus/window.lua")
-issue_open_mapping.callback()
-assert(vim.api.nvim_get_current_win()
-  == issue_sidebar_test.main_windows[2])
-assert(vim.api.nvim_win_get_cursor(
-  issue_sidebar_test.main_windows[2]
-)[1] == 20)
-assert(vim.api.nvim_win_get_cursor(
-  issue_sidebar_test.sidebar_windows[2]
-)[1]
-  == issue_file_lines[2])
-
-issue_toggle_mapping.callback()
-for _, tab in ipairs({
-  issue_tabs_after[#issue_tabs_before + 1],
-  issue_tabs_after[#issue_tabs_before + 2],
-}) do
-  assert(#vim.api.nvim_tabpage_list_wins(tab) == 1)
-end
-issue_toggle_mapping.callback()
-for _, tab in ipairs({
-  issue_tabs_after[#issue_tabs_before + 1],
-  issue_tabs_after[#issue_tabs_before + 2],
-}) do
-  assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
-end
-end
-for index = #issue_tabs_after, #issue_tabs_before + 1, -1 do
-  local tab = vim.api.nvim_list_tabpages()[index]
-  if tab and vim.api.nvim_tabpage_is_valid(tab) then
-    vim.api.nvim_set_current_tabpage(tab)
-    vim.cmd("tabclose")
-  end
-end
-for _, buf in ipairs(issue_buffers) do
-  if vim.api.nvim_buf_is_valid(buf) then
-    vim.api.nvim_buf_delete(buf, { force = true })
-  end
-end
-vim.wo[vim.g.oculus_test_issue_origin_win].number =
-  vim.g.oculus_test_issue_origin_number
-vim.wo[vim.g.oculus_test_issue_origin_win].relativenumber =
-  vim.g.oculus_test_issue_origin_relativenumber
-vim.g.oculus_test_issue_origin_win = nil
-vim.g.oculus_test_issue_origin_number = nil
-vim.g.oculus_test_issue_origin_relativenumber = nil
-
-local original_show_change_picker = oculus_window.show_change_picker
-local selectable_change_one = {
-  commit_index = 1,
-  parent_file = "lua/oculus/inspect.lua",
-  change_file = "lua/oculus/inspect.lua",
-  status = "M",
-  repository = root,
-}
-local selectable_change_two = {
-  commit_index = 2,
-  parent_file = "lua/oculus/old.lua",
-  change_file = "lua/oculus/new.lua",
-  status = "R",
-  repository = root,
-}
-local selected_change_inspections
-local selected_change_error
-local change_picker_stage = 1
-oculus_window.show_change_picker = function(context, choices, callback)
-  assert(context.kind == "change")
-  assert(context.info.kind == "pull_request")
-  if change_picker_stage == 1 then
-    change_picker_stage = 2
-    for _, choice in ipairs(choices) do
-      if choice.inspection == selectable_change_two then
-        assert(choice.label:find("commit 2", 1, true))
-        assert(choice.label:find(
-          "lua/oculus/old.lua → lua/oculus/new.lua",
-          1,
-          true
-        ))
-        callback(choice)
-        return
-      end
-    end
-    error("second pull-request file was not selectable")
-  end
-  for _, choice in ipairs(choices) do
-    if choice.action == "build" then
-      callback(choice)
-      return
-    end
-  end
-  error("selected pull-request file could not be built")
-end
-inspect._select_change_inspections({
-  selectable_change_one,
-  selectable_change_two,
-}, {
-  kind = "pull_request",
-  owner = "andrewgilley",
-  repo = "oculus.nvim",
-  number = 77,
-  title = "Select changed files",
-  remote_url = "https://github.com/andrewgilley/oculus.nvim.git",
-}, {
-  inspect_search_paths = { vim.fs.dirname(root) },
-}, function(selected, err)
-  selected_change_inspections = selected
-  selected_change_error = err
-end)
-oculus_window.show_change_picker = original_show_change_picker
-assert(selected_change_inspections, selected_change_error)
-assert(#selected_change_inspections == 1)
-assert(selected_change_inspections[1] == selectable_change_two)
+assert(issue_page:find("# Issue inspect fixture", 1, true))
+assert(issue_page:find(
+  "The issue information should open without identifying files.",
+  1,
+  true
+))
+assert(issue_page:find("## Activity comment", 1, true))
+assert(issue_page:find(
+  "The activity comment belongs on the information page.",
+  1,
+  true
+))
+vim.cmd("tabclose")
+vim.api.nvim_set_current_win(issue_origin_win)
+vim.wo[issue_origin_win].number = issue_origin_number
+vim.wo[issue_origin_win].relativenumber = issue_origin_relativenumber
 
 local parent, change = inspect._first_changed_paths("M\tlua/oculus/init.lua")
 assert(parent == "lua/oculus/init.lua")
@@ -1237,8 +894,6 @@ if integration_root and (integration_sha or integration_url) then
     vim.env.OCULUS_INSPECT_TEST_NO_EXTERNAL_STATE == "1"
   local verify_revision_content =
     vim.env.OCULUS_INSPECT_TEST_VERIFY_CONTENT == "1"
-  local select_changed_files =
-    vim.env.OCULUS_INSPECT_TEST_SELECT_FILES == "1"
   local integration_cwd = vim.env.OCULUS_INSPECT_TEST_CWD
   local repositories = {}
   local integration_is_pull_request = integration_url
@@ -1255,44 +910,8 @@ if integration_root and (integration_sha or integration_url) then
   local activity_closed_after_tabs_ready = false
   local oculus_window = require("oculus.window")
   local original_window_close = oculus_window.close
-  local original_show_change_picker = oculus_window.show_change_picker
-  local change_picker_opened = false
-  oculus_window.show_change_picker = function(context, choices, callback)
-    assert(
-      select_changed_files,
-      "changed-file picker opened without explicit opt-in"
-    )
-    change_picker_opened = true
-    assert(context.kind == "change")
-    if expected_source_root then
-      assert(vim.fs.normalize(context.repository)
-        == vim.fs.normalize(expected_source_root))
-    end
-    local candidate_count = 0
-    local select_all
-    local build
-    for _, choice in ipairs(choices) do
-      if choice.inspection then
-        candidate_count = candidate_count + 1
-      elseif choice.action == "all" then
-        select_all = choice
-      elseif choice.action == "build" then
-        build = choice
-      end
-    end
-    if expected_pair_count then
-      assert(candidate_count == expected_pair_count)
-    end
-    if build then
-      callback(build)
-      return
-    end
-    assert(select_all)
-    callback(select_all)
-  end
   oculus_window.close = function(...)
     oculus_window.close = original_window_close
-    oculus_window.show_change_picker = original_show_change_picker
     local ready_tabs = vim.api.nvim_list_tabpages()
     assert(vim.api.nvim_get_current_tabpage() == initial_tab)
     assert(#ready_tabs > initial_tab_count)
@@ -1325,7 +944,6 @@ if integration_root and (integration_sha or integration_url) then
       inspect_search_paths = integration_search_root
           and { integration_search_root }
         or {},
-      inspect_select_changed_files = select_changed_files,
     },
     nil,
     {
@@ -1370,8 +988,6 @@ if integration_root and (integration_sha or integration_url) then
   assert(not lifecycle_error, lifecycle_error)
   assert(not inspection_error, inspection_error)
   assert(activity_closed_after_tabs_ready)
-  assert(change_picker_opened == select_changed_files)
-  oculus_window.show_change_picker = original_show_change_picker
   assert(vim.o.lazyredraw == initial_lazyredraw)
 
   local tabs = vim.api.nvim_list_tabpages()

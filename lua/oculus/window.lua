@@ -78,7 +78,6 @@ M.state = {
   search_return = nil,
   opening_search = false,
   closing_search = false,
-  issue_picker = nil,
   origin_win = nil,
   origin_window_options = nil,
   opts = {},
@@ -115,8 +114,6 @@ local function make_win_config(opts)
     col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = opts.border or "rounded",
-    title = opts.title or " Oculus ",
-    title_pos = "center",
   }
 end
 
@@ -267,7 +264,6 @@ local function clamp_list_cursor()
     max_line = M.state.activity_scroll_limit_line
   elseif M.state.view == "contributors"
     or M.state.view == "filters"
-    or M.state.view == "issue_picker"
   then
     for line, target in pairs(M.state.line_targets) do
       if type(target) == "table" then
@@ -1246,329 +1242,6 @@ local function render_activity(events, cached, notice)
   update_activity_cursorline()
 end
 
-local function wrapped_context_lines(text, width, limit)
-  local result = {}
-  local function append(line)
-    if #result < limit then
-      result[#result + 1] = line
-    end
-  end
-  for _, paragraph in ipairs(vim.split(
-    tostring(text or ""),
-    "\n",
-    { plain = true }
-  )) do
-    if #result >= limit then
-      break
-    end
-    paragraph = vim.trim(paragraph)
-    if paragraph == "" then
-      append("")
-    else
-      local line = ""
-      for word in paragraph:gmatch("%S+") do
-        local proposed = line == "" and word or (line .. " " .. word)
-        if vim.fn.strdisplaywidth(proposed) <= width then
-          line = proposed
-        else
-          if line ~= "" then
-            append(line)
-          end
-          line = trim_to_width(word, width)
-          if #result >= limit then
-            break
-          end
-        end
-      end
-      if line ~= "" and #result < limit then
-        append(line)
-      end
-    end
-  end
-  if #result == limit and vim.trim(tostring(text or "")) ~= "" then
-    result[#result] = trim_to_width(result[#result], math.max(1, width - 2))
-      .. " …"
-  end
-  return result
-end
-
-local function render_issue_picker()
-  local picker = M.state.issue_picker
-  if not picker or not is_valid_win(M.state.win) then
-    return
-  end
-  close_activity_footer()
-  M.state.view = "issue_picker"
-  M.state.line_targets = {}
-  M.state.inspect_targets = {}
-
-  local context = picker.context or {}
-  local details = context.details or {}
-  local info = context.info or {}
-  local change_mode = context.kind == "change"
-  local width = vim.api.nvim_win_get_width(M.state.win)
-  local text_width = math.max(20, width - 6)
-  local lines = {
-    "",
-    change_mode
-        and (
-          info.kind == "pull_request"
-              and "  PULL REQUEST INSPECT"
-            or "  COMMIT INSPECT"
-        )
-      or "  ISSUE INSPECT",
-    change_mode
-        and (
-          info.kind == "pull_request"
-              and ("  %s/%s #%s"):format(
-                info.owner or "",
-                info.repo or "",
-                tostring(info.number or "")
-              )
-            or ("  %s/%s · %s"):format(
-              info.owner or "",
-              info.repo or "",
-              tostring(info.sha or ""):sub(1, 12)
-            )
-        )
-      or ("  %s/%s #%s"):format(
-        info.owner or "",
-        info.repo or "",
-        tostring(details.number or info.number or "")
-      ),
-    "",
-    "  REPOSITORY LOCATIONS",
-    "  Using    " .. tostring(context.repository or "unavailable"),
-  }
-  if context.default_source and context.default_source ~= "" then
-    lines[#lines + 1] =
-      "  Default  " .. tostring(context.default_source)
-  end
-  if context.remote_url and context.remote_url ~= "" then
-    lines[#lines + 1] = "  Remote   " .. tostring(context.remote_url)
-  end
-
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = change_mode
-      and "  CHANGE CONTEXT"
-    or "  ISSUE CONTEXT"
-  local title_line = #lines + 1
-  lines[title_line] = "  " .. trim_to_width(
-    details.title
-      or info.title
-      or (
-        change_mode
-            and (
-              info.kind == "pull_request"
-                  and "Pull request changes"
-                or "Commit changes"
-            )
-          or "Untitled issue"
-      ),
-    text_width
-  )
-  if details.body and vim.trim(details.body) ~= "" then
-    lines[#lines + 1] = "  Body"
-    for _, line in ipairs(wrapped_context_lines(
-      details.body,
-      text_width,
-      8
-    )) do
-      lines[#lines + 1] = "    " .. line
-    end
-  end
-  if details.comment and vim.trim(details.comment) ~= "" then
-    lines[#lines + 1] = "  Activity comment"
-    for _, line in ipairs(wrapped_context_lines(
-      details.comment,
-      text_width,
-      5
-    )) do
-      lines[#lines + 1] = "    " .. line
-    end
-  end
-
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = change_mode
-      and "  CHANGED FILES"
-    or "  RELEVANT FILES"
-  local status_line
-  if context.status and context.status ~= "" then
-    status_line = #lines + 1
-    lines[status_line] = "  " .. tostring(context.status)
-  end
-  local choices = picker.choices or {}
-  local selectable_lines = {}
-  local has_agent_suggestion = false
-  for _, choice in ipairs(choices) do
-    if choice.action == "codex" then
-      has_agent_suggestion = true
-    else
-      local line = #lines + 1
-      lines[line] = "  " .. tostring(choice.label or "")
-      M.state.line_targets[line] = choice
-      selectable_lines[#selectable_lines + 1] = line
-    end
-  end
-  if #selectable_lines == 0 and not has_agent_suggestion then
-    lines[#lines + 1] = "  No candidates are available."
-  end
-  lines[#lines + 1] = ""
-  local footer = "  <CR>/l toggle"
-  if not change_mode and has_agent_suggestion then
-    footer = footer .. "   a agent suggestion"
-  end
-  lines[#lines + 1] = footer .. "   b build   j/←/q cancel"
-  set_lines(lines)
-  vim.wo[M.state.win].cursorline = true
-  vim.wo[M.state.win].scrolloff = 2
-
-  highlight(2, 2, -1, "Title")
-  highlight(3, 2, -1, "Identifier")
-  highlight(5, 2, -1, "Special")
-  highlight(title_line, 2, -1, "Function")
-  if status_line then
-    highlight(status_line, 2, -1, "DiagnosticInfo")
-  end
-  for index, line in ipairs(lines) do
-    if line == "  ISSUE CONTEXT"
-      or line == "  CHANGE CONTEXT"
-      or line == "  RELEVANT FILES"
-      or line == "  CHANGED FILES"
-    then
-      highlight(index, 2, -1, "Special")
-    elseif line == "  Body" or line == "  Activity comment" then
-      highlight(index, 2, -1, "Comment")
-    end
-  end
-  for _, line in ipairs(selectable_lines) do
-    local choice = M.state.line_targets[line]
-    if choice.action == "build" then
-      highlight(line, 2, -1, "DiagnosticOk")
-    elseif choice.action == "cancel" then
-      highlight(line, 2, -1, "Comment")
-    end
-  end
-  highlight(#lines, 2, -1, "Comment")
-
-  if #selectable_lines > 0 then
-    local cursor_index = math.min(
-      math.max(1, picker.cursor_index or 1),
-      #selectable_lines
-    )
-    picker.cursor_index = cursor_index
-    vim.api.nvim_win_set_cursor(
-      M.state.win,
-      { selectable_lines[cursor_index], 0 }
-    )
-  end
-end
-
-local function request_issue_agent_suggestion()
-  if M.state.view ~= "issue_picker" then
-    return
-  end
-  local picker = M.state.issue_picker
-  if not picker
-    or (
-      picker.context
-      and picker.context.kind == "change"
-    )
-    or type(picker.callback) ~= "function"
-  then
-    return
-  end
-  for _, choice in ipairs(picker.choices or {}) do
-    if choice.action == "codex" then
-      picker.callback(choice)
-      return
-    end
-  end
-end
-
-local function build_inspect_selection()
-  if M.state.view ~= "issue_picker" then
-    return
-  end
-  local picker = M.state.issue_picker
-  if not picker or type(picker.callback) ~= "function" then
-    return
-  end
-  for _, choice in ipairs(picker.choices or {}) do
-    if choice.action == "build" then
-      picker.callback(choice)
-      return
-    end
-  end
-  vim.notify(
-    "Oculus: select at least one file before building tabs",
-    vim.log.levels.WARN
-  )
-end
-
-function M.show_issue_picker(context, choices, callback)
-  if not is_valid_win(M.state.win) then
-    M.open((context and context.opts) or M.state.opts or {})
-  end
-  if not is_valid_win(M.state.win) then
-    callback(nil, "Oculus issue picker could not be opened")
-    return
-  end
-  local previous = M.state.issue_picker
-  local return_cursor = previous and previous.return_cursor
-  if not return_cursor and M.state.view == "activity" then
-    return_cursor = vim.api.nvim_win_get_cursor(M.state.win)
-  end
-  M.state.issue_picker = {
-    context = vim.deepcopy(context or {}),
-    choices = choices,
-    callback = callback,
-    cursor_index = previous and previous.cursor_index or 1,
-    return_cursor = return_cursor,
-  }
-  vim.keymap.set("n", "b", build_inspect_selection, {
-    buffer = M.state.buf,
-    nowait = true,
-    silent = true,
-    desc = "Build selected Oculus inspect files",
-  })
-  render_issue_picker()
-end
-
-function M.show_change_picker(context, choices, callback)
-  M.show_issue_picker(context, choices, callback)
-end
-
-function M.restore_issue_picker_page()
-  local picker = M.state.issue_picker
-  local return_cursor = picker and picker.return_cursor
-  M.state.issue_picker = nil
-  if is_valid_buf(M.state.buf) then
-    pcall(vim.keymap.del, "n", "b", { buffer = M.state.buf })
-  end
-  if M.state.contributor and M.state.activity_loaded and M.state.events then
-    render_activity(
-      M.state.events,
-      M.state.activity_cached,
-      M.state.activity_notice
-    )
-    if return_cursor and is_valid_win(M.state.win) then
-      local line_count = vim.api.nvim_buf_line_count(M.state.buf)
-      vim.api.nvim_win_set_cursor(M.state.win, {
-        math.min(math.max(1, return_cursor[1]), line_count),
-        return_cursor[2] or 0,
-      })
-      update_activity_cursorline()
-    end
-  else
-    render_contributors()
-  end
-end
-
-function M.restore_change_picker_page()
-  M.restore_issue_picker_page()
-end
-
 local function render_shortcuts()
   close_activity_footer()
   M.state.view = "shortcuts"
@@ -1605,7 +1278,7 @@ local function render_shortcuts()
     { "o", "Open the selected contributor profile" },
   })
   section("ACTIVITY", {
-    { "h", "Inspect a commit or pull request" },
+    { "h", "Inspect the selected change or issue" },
     { "p", "Load the next eight past activity items" },
     { "r", "Load the previous page of recent activity" },
     { "o", "Open the selected activity" },
@@ -1615,11 +1288,6 @@ local function render_shortcuts()
     { "<Space> / l / <CR>", "Toggle the selected activity type" },
     { "a", "Enable every activity type" },
     { "n", "Disable every activity type" },
-  })
-  section("INSPECT SELECTION", {
-    { "<Space> / l / <CR>", "Select or toggle the current choice" },
-    { "b", "Build tabs from the selected files" },
-    { "j / <Left>", "Cancel and return to activity" },
   })
   section("GENERAL", {
     { "?", "Open or close this shortcut page" },
@@ -2019,11 +1687,6 @@ local function select_current()
     open_url(target)
   elseif M.state.view == "filters" then
     toggle_filter_type()
-  elseif M.state.view == "issue_picker" and type(target) == "table" then
-    local picker = M.state.issue_picker
-    if picker and type(picker.callback) == "function" then
-      picker.callback(target)
-    end
   end
 end
 
@@ -2164,7 +1827,6 @@ local function move_cursor(direction)
     M.state.view ~= "contributors"
     and M.state.view ~= "filters"
     and M.state.view ~= "activity"
-    and M.state.view ~= "issue_picker"
   then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
     return
@@ -2230,14 +1892,6 @@ local function move_cursor(direction)
   end
   vim.api.nvim_win_set_cursor(M.state.win, { selected, 0 })
   local target = M.state.line_targets[selected]
-  if M.state.view == "issue_picker" and M.state.issue_picker then
-    for index, line in ipairs(selectable) do
-      if line == selected then
-        M.state.issue_picker.cursor_index = index
-        break
-      end
-    end
-  end
   if M.state.view == "contributors" and type(target) == "table" then
     M.state.selected_username = target.username
   end
@@ -2262,8 +1916,6 @@ local function go_back()
       end
     elseif return_state.view == "filters" and M.state.filter_scope then
       render_filters(M.state.filter_scope, return_state.selected_type)
-    elseif return_state.view == "issue_picker" and M.state.issue_picker then
-      render_issue_picker()
     else
       render_contributors()
     end
@@ -2273,11 +1925,6 @@ local function go_back()
         math.min(return_state.cursor[1], line_count),
         return_state.cursor[2],
       })
-    end
-  elseif M.state.view == "issue_picker" then
-    local picker = M.state.issue_picker
-    if picker and type(picker.callback) == "function" then
-      picker.callback({ action = "cancel" })
     end
   elseif M.state.view == "activity" or M.state.view == "filters" then
     M.state.request_id = M.state.request_id + 1
@@ -2318,29 +1965,16 @@ local function map_keys(buf)
       desc = desc,
     })
   end
-  local function close_or_cancel()
-    if M.state.view == "issue_picker" then
-      go_back()
-      return
-    end
-    M.close()
-  end
-  map("<C-c>", close_or_cancel, "Close Oculus")
-  map("q", close_or_cancel, "Close Oculus")
-  map("<Esc>", close_or_cancel, "Close Oculus")
+  map("<C-c>", M.close, "Close Oculus")
+  map("q", M.close, "Close Oculus")
+  map("<Esc>", M.close, "Close Oculus")
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
   map("s", open_search, "Fuzzy-search Oculus users")
   map("/", open_search, "Fuzzy-search Oculus users")
   map("<CR>", select_current, "Select Oculus item")
   map("l", select_current, "Move right in Oculus")
   map("<Right>", select_current, "Move right in Oculus")
-  map("<Space>", function()
-    if M.state.view == "issue_picker" then
-      select_current()
-      return
-    end
-    toggle_filter_type()
-  end, "Toggle Oculus item")
+  map("<Space>", toggle_filter_type, "Toggle Oculus item")
   map("o", open_current, "Open Oculus item in browser")
   map("f", function()
     open_filters(false)
@@ -2349,12 +1983,8 @@ local function map_keys(buf)
     open_filters(true)
   end, "Edit global activity types")
   map("a", function()
-    if M.state.view == "issue_picker" then
-      request_issue_agent_suggestion()
-      return
-    end
     set_all_filter_types(true)
-  end, "Run Oculus agent suggestion or enable all activity types")
+  end, "Enable all Oculus activity filters")
   map("n", function()
     set_all_filter_types(false)
   end, "Disable all Oculus activity filters")
@@ -2408,7 +2038,6 @@ function M.close()
   M.state.contributors = {}
   M.state.filter_scope = nil
   M.state.shortcut_return = nil
-  M.state.issue_picker = nil
 end
 
 function M.inspection_window_options()
@@ -2518,8 +2147,6 @@ function M.open(opts)
         elseif M.state.view == "activity" then
           render_activity_footer()
           update_activity_cursorline()
-        elseif M.state.view == "issue_picker" then
-          render_issue_picker()
         end
       end
     end,
@@ -2535,23 +2162,6 @@ function M.open(opts)
       clamp_list_cursor()
       if M.state.view == "activity" then
         update_activity_cursorline()
-        return
-      end
-      if M.state.view == "issue_picker" and M.state.issue_picker then
-        local current = vim.api.nvim_win_get_cursor(M.state.win)[1]
-        local selectable = {}
-        for line, target in pairs(M.state.line_targets) do
-          if type(target) == "table" then
-            selectable[#selectable + 1] = line
-          end
-        end
-        table.sort(selectable)
-        for index, line in ipairs(selectable) do
-          if line == current then
-            M.state.issue_picker.cursor_index = index
-            break
-          end
-        end
         return
       end
       if M.state.view ~= "contributors" then
