@@ -53,6 +53,7 @@ M.state = {
   line_targets = {},
   inspect_targets = {},
   activity_title_lines = {},
+  activity_expansion_targets = {},
   request_id = 0,
   preview_key = nil,
   preview_items = nil,
@@ -70,6 +71,8 @@ M.state = {
   activity_source_events = nil,
   activity_cursor_min_line = 1,
   activity_scroll_limit_line = nil,
+  activity_commit_page = false,
+  activity_return = nil,
   restore_cursor = nil,
   shortcut_return = nil,
   search_buf = nil,
@@ -187,8 +190,14 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local activity_commands = "  h inspect   b browser   p past"
-  if (M.state.activity_page or 1) > 1 then
+  local activity_commands = "  h inspect   b browser"
+  if not M.state.activity_commit_page then
+    activity_commands = activity_commands .. "   p past"
+  end
+  if
+    not M.state.activity_commit_page
+    and (M.state.activity_page or 1) > 1
+  then
     activity_commands = activity_commands .. "   r recent"
   end
   local lines = {
@@ -1155,6 +1164,9 @@ end
 local function render_loading(contributor)
   close_activity_footer()
   M.state.view = "activity"
+  M.state.activity_commit_page = false
+  M.state.activity_return = nil
+  M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
   M.state.activity_error = nil
   local loading_text = M.state.activity_page > 1
@@ -1184,6 +1196,9 @@ end
 local function render_error(message)
   close_activity_footer()
   M.state.view = "activity"
+  M.state.activity_commit_page = false
+  M.state.activity_return = nil
+  M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
   M.state.activity_error = message
   local contributor = M.state.contributor
@@ -1204,8 +1219,13 @@ local function render_error(message)
   highlight(6, 2, -1, "Comment")
 end
 
-local function render_activity(events, cached, notice)
+local function render_activity(events, cached, notice, opts)
+  opts = opts or {}
   M.state.view = "activity"
+  M.state.activity_commit_page = opts.commit_page == true
+  if not M.state.activity_commit_page then
+    M.state.activity_return = nil
+  end
   local contributor = M.state.contributor
   M.state.events = events
   M.state.activity_cached = cached
@@ -1215,6 +1235,7 @@ local function render_activity(events, cached, notice)
   M.state.line_targets = {}
   M.state.inspect_targets = {}
   M.state.activity_title_lines = {}
+  M.state.activity_expansion_targets = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
   local activity_page_number = M.state.activity_page or 1
@@ -1226,18 +1247,23 @@ local function render_activity(events, cached, notice)
     )
   )
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 12 Label activity feeds with their forge
+  local context_suffix = M.state.activity_commit_page
+      and (" · %d commits"):format(#events)
+    or (
+      activity_page_number > 1
+          and (" (%d/%d)"):format(
+            activity_page_number,
+            activity_page_count
+          )
+        or ""
+    )
   local lines = {
     "",
     "  " .. (contributor.name or contributor.username),
     ("  %s · %s%s%s"):format(
       "@" .. contributor.username,
       provider_name(contributor),
-      activity_page_number > 1
-          and (" (%d/%d)"):format(
-            activity_page_number,
-            activity_page_count
-          )
-        or "",
+      context_suffix,
       cached and " · cached" or ""
     ),
   }
@@ -1268,9 +1294,15 @@ local function render_activity(events, cached, notice)
       if detail_lines then
         for _, detail_line in ipairs(detail_lines) do
           lines[#lines + 1] = detail_line
-          M.state.line_targets[#lines] = vim.trim(detail_line) == "..."
+          local expands_commits = vim.trim(detail_line) == "..."
+            and event.type == "PushEvent"
+            and #(event.payload and event.payload.commits or {}) > 3
+          M.state.line_targets[#lines] = expands_commits
               and (item.group_url or item.url)
             or item.url
+          if expands_commits then
+            M.state.activity_expansion_targets[#lines] = event
+          end
           M.state.inspect_targets[#lines] = inspect_context
           M.state.activity_title_lines[#lines] = event_line
           activity_line_kinds[#lines] = "preview"
@@ -1331,6 +1363,70 @@ local function render_activity(events, cached, notice)
   update_activity_cursorline()
 end
 
+local function commit_activity_url(event, sha)
+  local url = type(event.url) == "string" and event.url or ""
+  local prefix = url:match("^(.-/commit)/[^/?#]+")
+  if prefix then
+    return prefix .. "/" .. sha
+  end
+  local repo = event.repo and event.repo.name
+  if repo then
+    local host = provider_name(M.state.contributor) == "Codeberg"
+        and "https://codeberg.org/"
+      or "https://github.com/"
+    return host .. repo .. "/commit/" .. sha
+  end
+  return url
+end
+
+local function commit_activity_events(event)
+  local result = {}
+  local payload = event.payload or {}
+  for index, commit in ipairs(payload.commits or {}) do
+    local sha = commit.sha
+    if type(sha) == "string" and sha ~= "" then
+      local commit_event = vim.deepcopy(event)
+      commit_event.id = ("%s:commit:%d:%s"):format(
+        tostring(event.id or "push"),
+        index,
+        sha
+      )
+      commit_event.type = "PushEvent"
+      commit_event.payload = {
+        ref = payload.ref,
+        before = payload.before,
+        head = sha,
+        size = 1,
+        commits = { vim.deepcopy(commit) },
+      }
+      commit_event.url = commit_activity_url(event, sha)
+      commit_event.group_url = nil
+      commit_event.oculus_text = nil
+      commit_event.oculus_detail = nil
+      result[#result + 1] = commit_event
+    end
+  end
+  return result
+end
+
+local function open_commit_activity(event)
+  local commits = commit_activity_events(event)
+  if #commits == 0 then
+    return
+  end
+  M.state.activity_return = {
+    events = M.state.events,
+    cached = M.state.activity_cached,
+    notice = M.state.activity_notice,
+    cursor = is_valid_win(M.state.win)
+        and vim.api.nvim_win_get_cursor(M.state.win)
+      or nil,
+    page = M.state.activity_page,
+    source_events = M.state.activity_source_events,
+  }
+  render_activity(commits, false, nil, { commit_page = true })
+end
+
 local function render_shortcuts()
   close_activity_footer()
   M.state.view = "shortcuts"
@@ -1362,7 +1458,6 @@ local function render_shortcuts()
   section("STARTUP USER LIST", {
     { "s /", "Fuzzy-search contributor names and handles" },
     { "a", "Add a GitHub or Codeberg account" },
-    { "g", "Browse suggested community users" },
     { "x", "Remove the selected account" },
     { "f", "Edit filters for the selected contributor" },
     { "F", "Edit global activity filters" },
@@ -1494,7 +1589,11 @@ local function load_activity(contributor, force, page)
 end
 
 local function next_activity_page()
-  if M.state.view ~= "activity" or not M.state.contributor then
+  if
+    M.state.view ~= "activity"
+    or M.state.activity_commit_page
+    or not M.state.contributor
+  then
     return
   end
   load_activity(
@@ -1507,6 +1606,7 @@ end
 local function previous_activity_page()
   if
     M.state.view ~= "activity"
+    or M.state.activity_commit_page
     or not M.state.contributor
     or (M.state.activity_page or 1) == 1
   then
@@ -1883,6 +1983,12 @@ local function select_current()
   if M.state.view == "contributors" and type(target) == "table" then
     M.state.selected_username = target.username
     load_activity(target, false)
+  elseif M.state.view == "activity" then
+    local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+    local event = M.state.activity_expansion_targets[line]
+    if event then
+      open_commit_activity(event)
+    end
   elseif M.state.view == "filters" then
     toggle_filter_type()
   end
@@ -2103,6 +2209,25 @@ local function move_cursor(direction)
 end
 
 local function go_back()
+  if M.state.view == "activity"
+    and M.state.activity_commit_page
+    and M.state.activity_return
+  then
+    local return_state = M.state.activity_return
+    M.state.activity_return = nil
+    M.state.activity_page = return_state.page
+    M.state.activity_source_events = return_state.source_events
+    render_activity(
+      return_state.events,
+      return_state.cached,
+      return_state.notice
+    )
+    if return_state.cursor and is_valid_win(M.state.win) then
+      vim.api.nvim_win_set_cursor(M.state.win, return_state.cursor)
+      update_activity_cursorline()
+    end
+    return
+  end
   if M.state.view == "shortcuts" and M.state.shortcut_return then
     local return_state = M.state.shortcut_return
     M.state.shortcut_return = nil
@@ -2113,7 +2238,8 @@ local function go_back()
         render_activity(
           M.state.events,
           M.state.activity_cached,
-          M.state.activity_notice
+          M.state.activity_notice,
+          { commit_page = M.state.activity_commit_page }
         )
       else
         load_activity(M.state.contributor, false)
@@ -2247,6 +2373,7 @@ function M.close()
   M.state.line_targets = {}
   M.state.inspect_targets = {}
   M.state.activity_title_lines = {}
+  M.state.activity_expansion_targets = {}
   M.state.preview_key = nil
   M.state.preview_items = nil
   M.state.preview_contributor = nil
@@ -2335,7 +2462,8 @@ function M.open(opts)
     render_activity(
       M.state.events,
       M.state.activity_cached,
-      M.state.activity_notice
+      M.state.activity_notice,
+      { commit_page = M.state.activity_commit_page }
     )
     restore_cursor()
   else

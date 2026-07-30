@@ -301,6 +301,28 @@ for index = 1, 20 do
           "https://github.com/example/repository/pull/42#discussion_r1",
       },
     },
+  } or index == 2 and {
+    id = tostring(index),
+    type = "PushEvent",
+    created_at = "2026-07-02T12:00:00Z",
+    actor = { login = "mitchellh" },
+    repo = { name = "example/repository" },
+    payload = {
+      ref = "refs/heads/main",
+      before = "00000000",
+      head = "eeeeeeee",
+      size = 5,
+      commits = {
+        { sha = "aaaaaaaa", message = "First grouped commit" },
+        { sha = "bbbbbbbb", message = "Second grouped commit" },
+        { sha = "cccccccc", message = "Third grouped commit" },
+        { sha = "dddddddd", message = "Fourth grouped commit" },
+        { sha = "eeeeeeee", message = "Fifth grouped commit" },
+      },
+    },
+    url = "https://github.com/example/repository/commit/eeeeeeee",
+    group_url =
+      "https://github.com/example/repository/compare/aaaaaaaa...eeeeeeee",
   } or {
     id = tostring(index),
     type = "CreateEvent",
@@ -333,6 +355,59 @@ assert(#state.events == 8)
 assert(state.events[1].id == "1")
 assert(state.events[8].id == "8")
 assert(requested_per_page[1] == 30)
+local expansion_line
+for line, event in pairs(state.activity_expansion_targets) do
+  if event.id == "2" then
+    expansion_line = line
+    break
+  end
+end
+assert(expansion_line)
+assert(vim.trim(vim.api.nvim_buf_get_lines(
+  state.buf,
+  expansion_line - 1,
+  expansion_line,
+  false
+)[1]) == "...")
+vim.api.nvim_win_set_cursor(state.win, { expansion_line, 0 })
+select_mapping.callback()
+assert(state.view == "activity")
+assert(state.activity_commit_page == true)
+assert(#state.events == 5)
+local commit_page_lines = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(commit_page_lines:find("5 commits", 1, true))
+for index, event in ipairs(state.events) do
+  assert(event.type == "PushEvent")
+  assert(event.payload.size == 1)
+  assert(#event.payload.commits == 1)
+  assert(event.payload.head
+    == ({ "aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd", "eeeeeeee" })[index])
+  local found_url = false
+  for _, url in pairs(state.line_targets) do
+    if
+      url
+      == "https://github.com/example/repository/commit/"
+        .. event.payload.head
+    then
+      found_url = true
+      break
+    end
+  end
+  assert(found_url)
+end
+local commit_footer_lines = table.concat(
+  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+  "\n"
+)
+assert(not commit_footer_lines:find("p past", 1, true))
+vim.fn.maparg("j", "n", false, true).callback()
+assert(state.activity_commit_page == false)
+assert(#state.events == 8)
+assert(state.events[2].id == "2")
+assert(vim.api.nvim_win_get_cursor(state.win)[1] == expansion_line)
 local review_context
 for _, context in pairs(state.inspect_targets) do
   review_context = context or review_context
