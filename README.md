@@ -18,6 +18,14 @@ handles. Results and the contributor preview update as you type. Use
 search. Main-list and search-result navigation use a short configurable delay
 (`navigation_delay`, 80 ms by default) to keep held keys from skipping items.
 
+The Inspect sidebar toggle defaults to `<leader>oi` and can be configured:
+
+```lua
+require("oculus").setup({
+  inspect_sidebar_toggle = "<leader>it",
+})
+```
+
 
 <img width="1902" height="1027" alt="oculus" src="https://github.com/user-attachments/assets/c6de957e-f9ba-4c7f-870f-8fc46754b673" />
 
