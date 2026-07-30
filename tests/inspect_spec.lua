@@ -303,6 +303,11 @@ assert(inspect._inspection_directory(
   root,
   "not-present/inspect.lua"
 ) == root)
+assert(inspect._inspection_statusline_path({
+  repository = root,
+  source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
+  file = "lua/oculus/inspect.lua",
+}) == vim.fs.basename(root) .. "/lua/oculus/inspect.lua")
 
 local parsed = inspect._parse_commit_url(
   "https://github.com/neovim/neovim/commit/"
@@ -1444,6 +1449,14 @@ if integration_root and (integration_sha or integration_url) then
   local change_win = assert(inspection_window(tabs[3]))
   local parent_buf = vim.api.nvim_win_get_buf(parent_win)
   local change_buf = vim.api.nvim_win_get_buf(change_win)
+  vim.g.oculus_test_statusline_path = vim.fs.basename(
+    vim.fs.normalize(change_state.repository)
+  ) .. "/" .. change_state.file:gsub("\\", "/")
+  assert(vim.b[change_buf].oculus_inspect_statusline_path
+    == vim.g.oculus_test_statusline_path)
+  assert(vim.wo[change_win].statusline
+    == " " .. vim.g.oculus_test_statusline_path:gsub("%%", "%%%%"))
+  vim.g.oculus_test_statusline_path = nil
   if verify_revision_content then
     assert(expected_source_root)
     local content_state = change_state.status == "A"
