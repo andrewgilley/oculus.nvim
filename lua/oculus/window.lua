@@ -841,7 +841,7 @@ local function render_contributors()
   local lines = searching
       and {
         "",
-        "  SEARCH",
+        "",
         "",
         "",
       }
@@ -1649,10 +1649,9 @@ local function search_win_config()
   local position = vim.api.nvim_win_get_position(M.state.win)
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(parent_width)
-  local title_width = vim.fn.strdisplaywidth("  SEARCH")
   local divider_col = position[2] + left_width - 1
-  local search_col = position[2] + title_width + 3
-  local search_width = math.max(1, divider_col - search_col - 2)
+  local search_col = position[2] + 1
+  local search_width = math.max(1, divider_col - search_col - 10)
   return {
     relative = "editor",
     width = search_width,
