@@ -19,7 +19,6 @@ local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "o"
 local default_version_switch = "<C-s>"
 local default_next_chunk = "<Tab>"
-local default_next_file = "<S-Tab>"
 local normalize_inspection_view
 local refresh_sidebar
 local focus_sidebar_selection
@@ -1906,6 +1905,47 @@ local function map_file_navigation(endpoint, session, role, group)
       desc = "Switch Oculus file version",
     })
   end
+  local next_chunk_lhs = group.next_chunk
+  if next_chunk_lhs == nil then
+    next_chunk_lhs = default_next_chunk
+  end
+  if type(next_chunk_lhs) == "string" and next_chunk_lhs ~= "" then
+    vim.keymap.set("n", next_chunk_lhs, function()
+      local chunks = group.kind == "issue"
+          and (session.sections or {})
+        or (session.hunks or {})
+      if #chunks == 0 then
+        return
+      end
+      local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+      local current_chunk = group.kind == "issue"
+          and (session.active_chunk or 0)
+        or (
+          hunk_index_at_line(session, role, line)
+          or session.active_chunk
+          or 0
+        )
+      local next_chunk = (current_chunk % #chunks) + 1
+      local start
+      if group.kind == "issue" then
+        session.active_chunk = next_chunk
+        start = chunks[next_chunk].line
+      else
+        start = render_focused_chunk(session, next_chunk)
+          or focused_hunk_start(chunks[next_chunk])
+      end
+      if start then
+        set_change_cursor(endpoint.win, start)
+      end
+      show_inspection_path(endpoint.buf)
+      refresh_sidebar(group, endpoint.tab)
+    end, {
+      buffer = endpoint.buf,
+      nowait = true,
+      silent = true,
+      desc = "Next Oculus changed chunk",
+    })
+  end
 end
 
 local function sidebar_active_item(group, tab)
@@ -1921,42 +1961,6 @@ local function sidebar_active_item(group, tab)
     end
     if valid_endpoint(session.change) and session.change.tab == tab then
       return index, "change"
-    end
-  end
-end
-
-local function select_next_sidebar_file(group)
-  if
-    group.kind == "issue"
-    or group.sidebar_mode == "overview"
-    or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
-  then
-    return
-  end
-  local current_index, role =
-    sidebar_active_item(group, vim.api.nvim_get_current_tabpage())
-  if not current_index or not role then
-    return
-  end
-  for offset = 1, #group do
-    local next_index = ((current_index + offset - 1) % #group) + 1
-    local endpoint = group[next_index][role]
-    if valid_endpoint(endpoint) then
-      local sidebar_win = group.sidebar_windows[endpoint.tab]
-      if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
-        return
-      end
-      sidebar_navigating = true
-      vim.api.nvim_set_current_tabpage(endpoint.tab)
-      vim.api.nvim_set_current_win(sidebar_win)
-      local row = group.sidebar_rows[next_index]
-      if row then
-        vim.api.nvim_win_set_cursor(sidebar_win, { row.line_number, 0 })
-      end
-      group.focused_win = sidebar_win
-      refresh_sidebar(group, endpoint.tab)
-      sidebar_navigating = false
-      return
     end
   end
 end
@@ -2658,20 +2662,6 @@ local function map_inspection_sidebar_toggle(group)
         desc = "Switch Oculus file version",
       })
     end
-    local next_file_lhs = group.next_file
-    if next_file_lhs == nil then
-      next_file_lhs = default_next_file
-    end
-    if type(next_file_lhs) == "string" and next_file_lhs ~= "" then
-      vim.keymap.set("n", next_file_lhs, function()
-        select_next_sidebar_file(group)
-      end, {
-        buffer = group.sidebar_buf,
-        nowait = true,
-        silent = true,
-        desc = "Next Oculus changed file",
-      })
-    end
   end
 end
 
@@ -3336,7 +3326,6 @@ local function open_tabs(
       overview_toggle = opts.inspect_overview_toggle,
       version_switch = opts.inspect_version_switch,
       next_chunk = opts.inspect_next_chunk,
-      next_file = opts.inspect_next_file,
       overview = inspection_overview(info),
     }
     for index, paths in ipairs(inspections) do
