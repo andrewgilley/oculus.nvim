@@ -55,6 +55,7 @@ M.state = {
   request_id = 0,
   preview_key = nil,
   preview_items = nil,
+  preview_contributor = nil,
   contributors = {},
   suggested_contributors = {},
   selected_username = nil,
@@ -778,6 +779,7 @@ local function queue_preview(contributor)
     return
   end
   M.state.preview_key = key
+  M.state.preview_contributor = contributor
   render_preview_panel(preview_items(contributor))
 end
 
@@ -928,7 +930,7 @@ local function render_contributors()
   local separator_line = #lines
   lines[#lines + 1] = searching
       and "  esc cancel"
-    or "  a add  g suggested  s search  ?: help  q quit"
+    or "  a add  g suggested  / search  ?: help  q quit"
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
@@ -970,6 +972,26 @@ local function render_contributors()
     vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
     queue_preview(contributor)
     update_contributor_selection()
+  else
+    local preview_contributor = M.state.preview_contributor
+    local previous_username = M.state.search_return
+        and M.state.search_return.selected_username
+      or nil
+    if not preview_contributor and previous_username then
+      for _, contributor in ipairs(M.state.contributors) do
+        if contributor.username == previous_username then
+          preview_contributor = contributor
+          break
+        end
+      end
+    end
+    if preview_contributor then
+      queue_preview(preview_contributor)
+    else
+      render_preview_panel({
+        [2] = { "PREVIEW", "Title" },
+      })
+    end
   end
 end
 
@@ -1632,11 +1654,15 @@ local function search_win_config()
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(parent_width)
   local title_width = vim.fn.strdisplaywidth("  COMMUNITY FIGURES")
-  local search_col = position[2] + title_width + 1
   local divider_col = position[2] + left_width - 1
+  local available_width = divider_col
+    - (position[2] + title_width + 1)
+    - 2
+  local search_width = math.max(1, math.min(18, available_width))
+  local search_col = divider_col - search_width - 2
   return {
     relative = "editor",
-    width = math.max(1, divider_col - search_col - 2),
+    width = search_width,
     height = 1,
     row = position[1] + 1,
     col = search_col,
@@ -2398,6 +2424,7 @@ function M.close()
   M.state.inspect_targets = {}
   M.state.preview_key = nil
   M.state.preview_items = nil
+  M.state.preview_contributor = nil
   M.state.contributors = {}
   M.state.suggested_contributors = {}
   M.state.filter_scope = nil
