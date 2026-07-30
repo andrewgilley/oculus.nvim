@@ -1669,6 +1669,9 @@ local function set_change_highlights()
     fg = diagnostic_info.fg or 0x61afef,
     bg = normal.bg,
   })
+  vim.api.nvim_set_hl(0, "OculusInspectOverviewSection", {
+    link = "Function",
+  })
 end
 
 set_change_highlights()
@@ -2716,8 +2719,6 @@ show_inspection_overview = function(group)
   vim.bo[buf].modifiable = false
   vim.b[buf].oculus_inspect_overview = true
 
-  config.title = "OVERVIEW"
-  config.title_pos = "center"
   config.zindex = 70
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_buf = buf
@@ -2736,7 +2737,7 @@ show_inspection_overview = function(group)
   for index, line in ipairs(lines) do
     if line:match("^• ") then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 0, {
-        line_hl_group = "Title",
+        line_hl_group = "OculusInspectOverviewSection",
         priority = 100,
       })
     end

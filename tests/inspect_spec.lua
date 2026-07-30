@@ -1672,8 +1672,8 @@ if integration_root and (integration_sha or integration_url) then
     == require("oculus.window").window_config({}).row)
   assert(overview_saved.config.col
     == require("oculus.window").window_config({}).col)
-  assert(overview_saved.config.title[1][1] == "OVERVIEW")
-  assert(overview_saved.config.title_pos == "center")
+  assert(overview_saved.config.title == nil
+    or overview_saved.config.title == "")
   local overview_text = table.concat(
     vim.api.nvim_buf_get_lines(overview_saved.buf, 0, -1, false),
     "\n"
@@ -1687,6 +1687,18 @@ if integration_root and (integration_sha or integration_url) then
   assert(not overview_text:find("Authored", 1, true))
   assert(not overview_text:find("Changes", 1, true))
   assert(overview_text:find("gO changed files", 1, true))
+  overview_saved.section_marks = vim.api.nvim_buf_get_extmarks(
+    overview_saved.buf,
+    vim.api.nvim_get_namespaces().oculus_inspect_sidebar,
+    0,
+    -1,
+    { details = true }
+  )
+  assert(#overview_saved.section_marks >= 4)
+  for _, mark in ipairs(overview_saved.section_marks) do
+    assert(mark[4].line_hl_group
+      == "OculusInspectOverviewSection")
+  end
   local overview_line_count =
     vim.api.nvim_buf_line_count(overview_saved.buf)
   vim.api.nvim_win_set_cursor(
