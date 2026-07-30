@@ -15,8 +15,7 @@ From the startup user list, press `s` or `/` to fuzzy-search contributor names a
 handles. Results and the contributor preview update as you type. Use
 `<C-i>` to move up or `<C-k>` to move down (`<Up>`/`<Down>` and
 `<C-p>`/`<C-n>` also work), `<CR>` to open a match, and `<Esc>` to cancel the
-search. Main-list and search-result navigation use a short configurable delay
-(`navigation_delay`, 80 ms by default) to keep held keys from skipping items.
+search.
 
 The Inspect sidebar toggle defaults to `<leader>oi` and can be configured:
 
