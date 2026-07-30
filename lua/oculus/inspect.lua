@@ -1806,6 +1806,8 @@ local function set_change_highlights()
     vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local diagnostic_info =
     vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
+  local overview_section =
+    vim.api.nvim_get_hl(0, { name = "Function", link = false })
   vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
     fg = 0xfee2e2,
     bg = 0x991b1b,
@@ -1818,9 +1820,13 @@ local function set_change_highlights()
     fg = diagnostic_info.fg or 0x61afef,
     bg = normal.bg,
   })
-  vim.api.nvim_set_hl(0, "OculusInspectOverviewSection", {
-    link = "Function",
-  })
+  overview_section.underline = true
+  overview_section.sp = overview_section.sp or overview_section.fg
+  vim.api.nvim_set_hl(
+    0,
+    "OculusInspectOverviewSection",
+    overview_section
+  )
 end
 
 set_change_highlights()
@@ -2449,7 +2455,7 @@ local function append_sidebar_text(lines, text, width, indent)
   end
 end
 
-local function sidebar_overview_lines(overview, width, toggle)
+local function sidebar_overview_lines(overview, width)
   width = math.max(12, tonumber(width) or 28)
   local details = overview.commit_details or {}
   local is_pull_request = overview.kind == "pull_request"
@@ -2461,7 +2467,7 @@ local function sidebar_overview_lines(overview, width, toggle)
     if value == nil or value == "" then
       return
     end
-    lines[#lines + 1] = "• " .. label
+    lines[#lines + 1] = "  " .. label
     append_sidebar_text(lines, value, width, "  ")
     lines[#lines + 1] = ""
   end
@@ -2499,10 +2505,6 @@ local function sidebar_overview_lines(overview, width, toggle)
         or nil
       )
     field("Status", value_or(status, "Unknown"))
-  end
-  toggle = toggle == nil and default_overview_toggle or toggle
-  if type(toggle) == "string" and toggle ~= "" then
-    lines[#lines + 1] = toggle .. " changed files"
   end
   return lines
 end
@@ -2830,6 +2832,22 @@ local function close_overview_window(group)
   end
 end
 
+local function overview_window_config(config, overview)
+  config = vim.deepcopy(config or {})
+  if overview and overview.kind == "commit" then
+    local original_width = math.max(1, tonumber(config.width) or 1)
+    local original_height = math.max(1, tonumber(config.height) or 1)
+    config.width = math.max(20, math.floor(original_width * 0.75))
+    config.height = math.max(8, math.floor(original_height * 0.75))
+    config.col = (tonumber(config.col) or 0)
+      + math.floor((original_width - config.width) / 2)
+    config.row = (tonumber(config.row) or 0)
+      + math.floor((original_height - config.height) / 2)
+  end
+  config.zindex = 70
+  return config
+end
+
 show_inspection_overview = function(group)
   if vim.api.nvim_get_current_buf() ~= group.sidebar_buf then
     return
@@ -2847,11 +2865,13 @@ show_inspection_overview = function(group)
     endpoint = endpoint and capture_window_state(endpoint.win),
     anchor_line = group.sidebar_anchor_line,
   }
-  local config = vim.deepcopy(group.overview_window_config or {})
+  local config = overview_window_config(
+    group.overview_window_config,
+    group.overview
+  )
   local lines = sidebar_overview_lines(
     group.overview,
-    math.max(12, (config.width or 28) - 4),
-    group.overview_toggle
+    math.max(12, (config.width or 28) - 4)
   )
   if lines[1] == "OVERVIEW" then
     table.remove(lines, 1)
@@ -2868,7 +2888,6 @@ show_inspection_overview = function(group)
   vim.bo[buf].modifiable = false
   vim.b[buf].oculus_inspect_overview = true
 
-  config.zindex = 70
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_buf = buf
   group.overview_win = win
@@ -2883,14 +2902,32 @@ show_inspection_overview = function(group)
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
   }, ",")
+  local section_labels = {
+    Title = true,
+    Description = true,
+    Author = true,
+    URL = true,
+    ["PR number"] = true,
+    Status = true,
+  }
   for index, line in ipairs(lines) do
-    if line:match("^• ") then
-      vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 0, {
-        line_hl_group = "OculusInspectOverviewSection",
+    local label = line:match("^  (.-)%s*$")
+    if section_labels[label] then
+      vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
+        end_col = #line,
+        hl_group = "OculusInspectOverviewSection",
         priority = 100,
       })
     end
   end
+  vim.keymap.set("n", "q", function()
+    show_sidebar_files(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Close Oculus Inspect overview",
+  })
   local overview_lhs = group.overview_toggle
   if overview_lhs == nil then
     overview_lhs = default_overview_toggle
@@ -4413,6 +4450,7 @@ M.activity_context = activity_context
 M._apply_pull_request = apply_pull_request
 M._inspection_overview = inspection_overview
 M._sidebar_overview_lines = sidebar_overview_lines
+M._overview_window_config = overview_window_config
 M._first_changed_paths = first_changed_paths
 M._parse_changed_files = parse_changed_files
 M._inspection_directory = inspection_directory
