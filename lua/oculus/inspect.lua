@@ -1830,6 +1830,25 @@ local function render_focused_chunk(session, chunk_index)
   return start
 end
 
+local function render_full_file(session)
+  if not replace_inspection_lines(
+    session.change,
+    session.change_content or {}
+  ) then
+    return false
+  end
+  session.active_chunk = nil
+  session.focused_start = nil
+  session.focused_chunks = false
+  apply_change_signs(
+    session.parent.buf,
+    session.change.buf,
+    session.hunks
+  )
+  refresh_buffer_highlighting(session.change.buf)
+  return true
+end
+
 local function set_change_cursor(win, line)
   if not vim.api.nvim_win_is_valid(win) then
     return
@@ -1839,6 +1858,20 @@ local function set_change_cursor(win, line)
   line = math.min(math.max(1, line), line_count)
   vim.api.nvim_win_set_cursor(win, { line, 0 })
   normalize_inspection_view(win)
+  sync_window(win)
+end
+
+local function show_file_top(win)
+  set_change_cursor(win, 1)
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    view.lnum = 1
+    view.col = 0
+    view.curswant = 0
+    view.topline = 1
+    view.leftcol = 0
+    vim.fn.winrestview(view)
+  end)
   sync_window(win)
 end
 
@@ -2389,22 +2422,6 @@ refresh_sidebar = function(group, tab)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  if group.sidebar_mode == "overview" then
-    set_sidebar_buffer_lines(
-      group,
-      group.sidebar_overview_lines,
-      "overview"
-    )
-    vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
-    vim.b[buf].oculus_inspect_sidebar_active = {
-      mode = "overview",
-    }
-    vim.api.nvim_buf_set_extmark(buf, sidebar_ns, 0, 0, {
-      line_hl_group = "Title",
-      priority = 100,
-    })
-    return
-  end
   set_sidebar_buffer_lines(group, group.sidebar_lines, "files")
   local active_index, active_role = sidebar_active_item(group, tab)
   if not active_index then
@@ -2530,23 +2547,6 @@ refresh_sidebar = function(group, tab)
   }
 end
 
-local function sidebar_display_width(group)
-  local width = group.sidebar_width or 1
-  if group.sidebar_mode == "overview" then
-    width = width + 10
-  end
-  return math.max(1, math.min(width, vim.o.columns - 1))
-end
-
-local function resize_sidebar_windows(group)
-  local width = sidebar_display_width(group)
-  for _, win in pairs(group.sidebar_windows or {}) do
-    if vim.api.nvim_win_is_valid(win) then
-      pcall(vim.api.nvim_win_set_width, win, width)
-    end
-  end
-end
-
 local function create_sidebar_window(group, endpoint)
   if not valid_endpoint(endpoint) then
     return
@@ -2556,7 +2556,7 @@ local function create_sidebar_window(group, endpoint)
   vim.cmd("botright vsplit")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, group.sidebar_buf)
-  vim.api.nvim_win_set_width(win, sidebar_display_width(group))
+  vim.api.nvim_win_set_width(win, group.sidebar_width)
   vim.wo[win].winfixwidth = true
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
@@ -2660,7 +2660,32 @@ local function restore_window_state(state)
   end)
 end
 
+local function overview_window_is_open(group)
+  return group.overview_win
+    and vim.api.nvim_win_is_valid(group.overview_win)
+end
+
+local function close_overview_window(group)
+  local win = group.overview_win
+  local buf = group.overview_buf
+  group.overview_win = nil
+  group.overview_buf = nil
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_win_close(win, true)
+  end
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+end
+
 show_inspection_overview = function(group)
+  if vim.api.nvim_get_current_buf() ~= group.sidebar_buf then
+    return
+  end
+  if overview_window_is_open(group) then
+    vim.api.nvim_set_current_win(group.overview_win)
+    return
+  end
   local tab = vim.api.nvim_get_current_tabpage()
   local sidebar_win = vim.api.nvim_get_current_win()
   local endpoint = endpoint_for_tab(group, tab)
@@ -2670,28 +2695,74 @@ show_inspection_overview = function(group)
     endpoint = endpoint and capture_window_state(endpoint.win),
     anchor_line = group.sidebar_anchor_line,
   }
-  group.sidebar_mode = "overview"
-  group.sidebar_rendered_mode = nil
-  group.sidebar_overview_lines = sidebar_overview_lines(
+  local config = vim.deepcopy(group.overview_window_config or {})
+  local lines = sidebar_overview_lines(
     group.overview,
-    sidebar_display_width(group),
+    math.max(12, (config.width or 28) - 4),
     group.overview_toggle
   )
-  resize_sidebar_windows(group)
-  if not group.sidebar_visible then
-    open_inspection_sidebar(group)
-  else
-    refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  if lines[1] == "OVERVIEW" then
+    table.remove(lines, 1)
+    if lines[1] == "" then
+      table.remove(lines, 1)
+    end
   end
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "oculus-inspect-overview"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.b[buf].oculus_inspect_overview = true
+
+  config.title = "OVERVIEW"
+  config.title_pos = "center"
+  config.zindex = 70
+  local win = vim.api.nvim_open_win(buf, true, config)
+  group.overview_buf = buf
+  group.overview_win = win
+  vim.wo[win].wrap = false
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].cursorline = false
+  vim.wo[win].winhighlight = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+    "FloatBorder:OculusBorder",
+    "FloatTitle:OculusBorder",
+  }, ",")
+  for index, line in ipairs(lines) do
+    if line:match("^• ") then
+      vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 0, {
+        line_hl_group = "Title",
+        priority = 100,
+      })
+    end
+  end
+  local overview_lhs = group.overview_toggle
+  if overview_lhs == nil then
+    overview_lhs = default_overview_toggle
+  end
+  if type(overview_lhs) == "string" and overview_lhs ~= "" then
+    vim.keymap.set("n", overview_lhs, function()
+      show_sidebar_files(group)
+    end, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = "Close Oculus Inspect overview",
+    })
+  end
+  vim.api.nvim_set_current_win(win)
 end
 
 show_sidebar_files = function(group)
   local return_state = group.overview_return
   sidebar_navigating = true
-  group.sidebar_mode = "files"
-  group.sidebar_rendered_mode = nil
   group.sidebar_anchor_line = return_state and return_state.anchor_line or nil
-  resize_sidebar_windows(group)
+  close_overview_window(group)
   local tab = return_state
       and vim.api.nvim_tabpage_is_valid(return_state.tab)
       and return_state.tab
@@ -2752,7 +2823,7 @@ local function map_inspection_sidebar_toggle(group)
   end
   if type(overview_lhs) == "string" and overview_lhs ~= "" then
     vim.keymap.set("n", overview_lhs, function()
-      if group.sidebar_mode == "overview" then
+      if overview_window_is_open(group) then
         show_sidebar_files(group)
       else
         show_inspection_overview(group)
@@ -2834,14 +2905,8 @@ local function prepare_inspection_sidebar(group)
   group.sidebar_chunk_lines = {}
   group.sidebar_entries = {}
   group.sidebar_lines = {}
-  group.sidebar_mode = "files"
   group.sidebar_rendered_mode = nil
   group.overview = group.overview or {}
-  group.sidebar_overview_lines = sidebar_overview_lines(
-    group.overview,
-    group.sidebar_width,
-    group.overview_toggle
-  )
   local lines = {}
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
@@ -2910,7 +2975,7 @@ local function sidebar_group_for_buffer(buf)
 end
 
 local function open_sidebar_selection(group)
-  if sidebar_navigating or group.sidebar_mode == "overview" then
+  if sidebar_navigating or overview_window_is_open(group) then
     return
   end
   local tab = vim.api.nvim_get_current_tabpage()
@@ -2945,6 +3010,11 @@ local function open_sidebar_selection(group)
     if start then
       set_change_cursor(endpoint.win, start)
     end
+  else
+    if group.kind ~= "issue" then
+      render_full_file(session)
+    end
+    show_file_top(endpoint.win)
   end
   show_inspection_path(endpoint.buf)
   if sidebar_win ~= source_win then
@@ -2962,76 +3032,64 @@ local function open_sidebar_selection(group)
   sidebar_navigating = false
 end
 
-local function select_sidebar_chunk(group, navigator, fallback_chunk)
+local function select_sidebar_entry(group, direction)
   if
-    group.sidebar_mode == "overview"
+    overview_window_is_open(group)
     or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
   then
     return
   end
   local active_index, active_role =
     sidebar_active_item(group, vim.api.nvim_get_current_tabpage())
-  local session = active_index and group[active_index] or nil
-  local chunk_lines = active_index
-      and group.sidebar_chunk_lines[active_index]
-    or nil
-  if not session or not chunk_lines or #chunk_lines == 0 then
+  if not active_index or #group.sidebar_lines == 0 then
     return
   end
 
   local line = vim.api.nvim_win_get_cursor(0)[1]
-  local entry = group.sidebar_entries[line]
-  local current_chunk = entry
-      and entry.pair_index == active_index
-      and entry.chunk_index
-    or sidebar_chunk(group, session, active_role)
-    or fallback_chunk
-  local target_session, target_index, target_chunk =
-    navigator(group, session, current_chunk)
-  if not target_session then
+  local target_line = line
+  local entry
+  for _ = 1, #group.sidebar_lines do
+    target_line = ((target_line - 1 + direction)
+      % #group.sidebar_lines) + 1
+    entry = group.sidebar_entries[target_line]
+    if entry then
+      break
+    end
+  end
+  if not entry then
     return
   end
-  local endpoint =
-    focus_inspection_chunk(
-      group,
-      target_session,
-      active_role,
-      target_chunk
-    )
-  if not endpoint then
+  local session = group[entry.pair_index]
+  local role = group.kind == "issue" and "issue" or active_role
+  local endpoint = sidebar_endpoint(group, session, role)
+  if not valid_endpoint(endpoint) then
     return
   end
   local sidebar_win = group.sidebar_windows[endpoint.tab]
-  local target_line = group.sidebar_chunk_lines[target_index]
-      and group.sidebar_chunk_lines[target_index][target_chunk]
-    or nil
-  if
-    not sidebar_win
-    or not vim.api.nvim_win_is_valid(sidebar_win)
-    or not target_line
-  then
+  if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
     return
   end
   sidebar_navigating = true
+  vim.api.nvim_set_current_tabpage(endpoint.tab)
   vim.api.nvim_set_current_win(sidebar_win)
   vim.api.nvim_win_set_cursor(sidebar_win, { target_line, 0 })
   group.focused_win = sidebar_win
-  refresh_sidebar(group, endpoint.tab)
   sidebar_navigating = false
+  open_sidebar_selection(group)
 end
 
 select_next_sidebar_chunk = function(group)
-  select_sidebar_chunk(group, next_inspection_chunk, 0)
+  select_sidebar_entry(group, 1)
 end
 
 select_previous_sidebar_chunk = function(group)
-  select_sidebar_chunk(group, previous_inspection_chunk, 1)
+  select_sidebar_entry(group, -1)
 end
 
 focus_sidebar_selection = function(group)
   if
     sidebar_navigating
-    or group.sidebar_mode == "overview"
+    or overview_window_is_open(group)
     or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
   then
     return
@@ -3047,12 +3105,14 @@ focus_sidebar_selection = function(group)
     return
   end
 
-  local chunk_index = entry.chunk_index or 1
+  local chunk_index = entry.chunk_index
   local hunk = group.kind ~= "issue"
+      and chunk_index
       and session.hunks
       and session.hunks[chunk_index]
     or nil
   local section = group.kind == "issue"
+      and chunk_index
       and session.sections
       and session.sections[chunk_index]
     or nil
@@ -3068,6 +3128,11 @@ focus_sidebar_selection = function(group)
     set_change_cursor(endpoint.win, start)
   elseif section then
     set_change_cursor(endpoint.win, section.line)
+  else
+    if group.kind ~= "issue" then
+      render_full_file(session)
+    end
+    show_file_top(endpoint.win)
   end
   show_inspection_path(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
@@ -3077,7 +3142,7 @@ end
 switch_sidebar_version = function(group)
   if
     sidebar_navigating
-    or group.sidebar_mode == "overview"
+    or overview_window_is_open(group)
     or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
   then
     return
@@ -3196,7 +3261,7 @@ vim.api.nvim_create_autocmd("WinLeave", {
   group = sync_group,
   callback = function(args)
     local group = sidebar_group_for_buffer(args.buf)
-    if group and group.focused_win == vim.api.nvim_get_current_win() then
+    if group and group.focused_win then
       group.sidebar_focus_generation =
         (group.sidebar_focus_generation or 0) + 1
       group.focused_win = nil
@@ -3521,6 +3586,8 @@ local function open_tabs(
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(info),
+      overview_window_config =
+        require("oculus.window").window_config(opts),
     }
     for index, paths in ipairs(inspections) do
       inspection_sessions[index] = {

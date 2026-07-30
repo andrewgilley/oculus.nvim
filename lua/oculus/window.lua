@@ -123,6 +123,10 @@ local function make_win_config(opts)
   }
 end
 
+function M.window_config(opts)
+  return make_win_config(opts or {})
+end
+
 local function make_buf()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].bufhidden = "wipe"
@@ -2474,7 +2478,7 @@ function M.open(opts)
     winhighlight = vim.wo[origin_win].winhighlight,
   }
   local buf = make_buf()
-  local win = vim.api.nvim_open_win(buf, true, make_win_config(M.state.opts))
+  local win = vim.api.nvim_open_win(buf, true, M.window_config(M.state.opts))
   M.state.buf = buf
   M.state.win = win
   M.state.contributors = display_contributors(M.state.opts.contributors)
