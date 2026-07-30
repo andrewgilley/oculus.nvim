@@ -115,6 +115,9 @@ parsed = false
 assert(inspect._refresh_buffer_highlighting(highlight_buf))
 assert(not invalidated)
 assert(not parsed)
+assert(inspect._refresh_buffer_highlighting(highlight_buf, true))
+assert(invalidated)
+assert(parsed)
 vim.treesitter.highlighter.active[highlight_buf] = original_highlighter
 vim.treesitter.get_parser = original_get_parser
 vim.treesitter.stop = original_stop
@@ -332,6 +335,13 @@ assert(inspect._inspection_statusline_path({
   source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
   file = "lua/oculus/inspect.lua",
 }) == vim.fs.basename(root) .. "/lua/oculus/inspect.lua")
+assert(inspect._inspection_buffer_name({
+  source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
+  commit = "0123456789abcdef",
+  role = "change",
+  pair_index = 2,
+}) == vim.fs.joinpath(root, "lua", "oculus", "inspect.lua")
+  .. "@oculus-change-0123456789ab-2")
 
 local parsed = inspect._parse_commit_url(
   "https://github.com/neovim/neovim/commit/"
@@ -1299,6 +1309,14 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.wo[new_sidebar_win].cursorline)
     assert(vim.wo[old_sidebar_win].cursorlineopt == "line")
     assert(vim.wo[new_sidebar_win].cursorlineopt == "line")
+    assert(vim.wo[old_sidebar_win].statusline
+      == inspect._inspection_statusline_option)
+    assert(vim.wo[new_sidebar_win].statusline
+      == inspect._inspection_statusline_option)
+    assert(inspect._inspection_statusline(old_sidebar_win)
+      == inspect._inspection_statusline(old_main_win))
+    assert(inspect._inspection_statusline(new_sidebar_win)
+      == inspect._inspection_statusline(new_main_win))
     assert(vim.wo[old_main_win].winhighlight:find(
       "NormalNC:Normal",
       1,
@@ -1479,7 +1497,12 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.b[change_buf].oculus_inspect_statusline_path
     == vim.g.oculus_test_statusline_path)
   assert(vim.wo[change_win].statusline
-    == " " .. vim.g.oculus_test_statusline_path:gsub("%%", "%%%%"))
+    == inspect._inspection_statusline_option)
+  assert(inspect._inspection_statusline(change_win):find(
+    vim.g.oculus_test_statusline_path,
+    1,
+    true
+  ))
   vim.g.oculus_test_statusline_path = nil
   if verify_revision_content then
     assert(expected_source_root)
@@ -1947,7 +1970,9 @@ if integration_root and (integration_sha or integration_url) then
   assert(visible_role_groups.OculusInspectSidebarChange)
   assert(not visible_role_groups.OculusInspectSidebarChangeActive)
   assert(vim.fs.normalize(vim.api.nvim_buf_get_name(parent_buf)):lower()
-    == vim.fs.normalize(parent_state.source_path):lower())
+    == vim.fs.normalize(
+      inspect._inspection_buffer_name(parent_state)
+    ):lower())
   local initial_cursor = vim.api.nvim_win_get_cursor(change_win)
   local initial_line = vim.api.nvim_buf_get_lines(
     change_buf,
@@ -2121,8 +2146,13 @@ if integration_root and (integration_sha or integration_url) then
   )
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   assert(vim.fs.normalize(vim.api.nvim_buf_get_name(change_buf)):lower()
-    == vim.fs.normalize(change_state.source_path):lower())
-  assert(vim.api.nvim_buf_get_name(parent_buf) == "")
+    == vim.fs.normalize(
+      inspect._inspection_buffer_name(change_state)
+    ):lower())
+  assert(vim.fs.normalize(vim.api.nvim_buf_get_name(parent_buf)):lower()
+    == vim.fs.normalize(
+      inspect._inspection_buffer_name(parent_state)
+    ):lower())
   if pair_count > 1 then
     vim.api.nvim_set_current_tabpage(tabs[3])
     vim.api.nvim_set_current_win(assert(sidebar_window(tabs[3])))
