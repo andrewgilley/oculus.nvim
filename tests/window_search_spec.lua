@@ -137,7 +137,7 @@ local search_config = vim.api.nvim_win_get_config(state.search_win)
 local search_title_width = vim.fn.strdisplaywidth("  COMMUNITY FIGURES")
 local expected_search_width = math.max(
   1,
-  math.min(18, expected_left_width - search_title_width - 4)
+  math.min(22, expected_left_width - search_title_width - 4)
 )
 assert(search_config.col
   == main_position[2] + expected_left_width

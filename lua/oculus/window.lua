@@ -1658,7 +1658,7 @@ local function search_win_config()
   local available_width = divider_col
     - (position[2] + title_width + 1)
     - 2
-  local search_width = math.max(1, math.min(18, available_width))
+  local search_width = math.max(1, math.min(22, available_width))
   local search_col = divider_col - search_width - 2
   return {
     relative = "editor",
