@@ -345,8 +345,10 @@ for index = 1, 20 do
   }
 end
 local deferred_activity_request
+local requested_force = {}
 github.events = function(_, opts, callback)
   requested_per_page[#requested_per_page + 1] = opts.per_page
+  requested_force[#requested_force + 1] = opts.force
   if deferred_activity_request == true then
     deferred_activity_request = {
       callback = callback,
@@ -717,6 +719,11 @@ local page_one_footer_text = table.concat(
 )
 assert(page_one_footer_text:find("p past", 1, true))
 assert(not page_one_footer_text:find("r recent", 1, true))
+local user_refresh_mapping = vim.fn.maparg("R", "n", false, true)
+assert(user_refresh_mapping.desc == "Refresh Oculus activity")
+user_refresh_mapping.callback()
+assert(requested_force[#requested_force] == true)
+assert(state.activity_page == 1)
 
 local back_mapping = vim.fn.maparg("j", "n", false, true)
 back_mapping.callback()
@@ -732,8 +739,10 @@ assert(returned_user_lines[returned_window_height]
 window.close()
 do
   local original_repository_events = github.repository_events
-  github.repository_events = function(repository, _, callback)
+  local repository_forces = {}
+  github.repository_events = function(repository, opts, callback)
     assert(repository == "neovim/neovim")
+    repository_forces[#repository_forces + 1] = opts.force
     callback({
       {
         type = "PushEvent",
@@ -790,7 +799,7 @@ do
     "\n"
   )
   assert(startpage_text:find("  PROJECT", 1, true))
-  assert(startpage_text:find("Neovim", 1, true))
+  assert(startpage_text:find("neovim/neovim", 1, true))
   local project_line
   for line, target in pairs(state.line_targets) do
     if target.kind == "project" then
@@ -809,7 +818,11 @@ do
     "\n"
   )
   assert(project_activity_text:find("  PROJECT", 1, true))
-  assert(project_activity_text:find("Neovim", 1, true))
+  assert(project_activity_text:find("neovim/neovim", 1, true))
+  local refresh_mapping = vim.fn.maparg("R", "n", false, true)
+  assert(refresh_mapping.desc == "Refresh Oculus activity")
+  refresh_mapping.callback()
+  assert(repository_forces[#repository_forces] == true)
   window.close()
   github.repository_events = original_repository_events
 end
