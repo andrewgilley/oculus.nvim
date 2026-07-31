@@ -611,7 +611,7 @@ local activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(activity_text:find("GitHub (2/3)", 1, true))
+assert(activity_text:find("GitHub (2/2)", 1, true))
 assert(not activity_text:find("page 2", 1, true))
 assert(vim.api.nvim_win_get_cursor(state.win)[1]
   == state.activity_cursor_min_line)
@@ -650,10 +650,20 @@ local recent_footer_text = table.concat(
 )
 assert(recent_footer_text:find("p past", 1, true))
 assert(recent_footer_text:find("r recent", 1, true))
+local recent_activity_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(recent_activity_text:find("GitHub (2/3)", 1, true))
 
 recent_mapping.callback()
 assert(state.activity_page == 1)
 assert(requested_per_page[5] == 30)
+local page_one_activity_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(page_one_activity_text:find("GitHub (1/3)", 1, true))
 local page_one_footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
