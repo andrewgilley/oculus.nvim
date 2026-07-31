@@ -1007,6 +1007,26 @@ local function prevent_window_dimming(win)
   return true
 end
 
+local function preserve_cursorline_text_highlighting(win)
+  if not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+  local mappings = {}
+  for _, mapping in ipairs(vim.split(
+    vim.wo[win].winhighlight,
+    ",",
+    { trimempty = true }
+  )) do
+    if not mapping:match("^CursorLine:") then
+      mappings[#mappings + 1] = mapping
+    end
+  end
+  mappings[#mappings + 1] =
+    "CursorLine:OculusInspectCursorLine"
+  vim.wo[win].winhighlight = table.concat(mappings, ",")
+  return true
+end
+
 local function update_session_buffer(win, buf)
   local name = vim.api.nvim_buf_get_name(buf)
   if vim.bo[buf].filetype == "oil"
@@ -1842,6 +1862,8 @@ local function set_change_highlights()
     vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
   local overview_section =
     vim.api.nvim_get_hl(0, { name = "Function", link = false })
+  local cursorline =
+    vim.api.nvim_get_hl(0, { name = "CursorLine", link = false })
   vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
     fg = 0xfee2e2,
     bg = 0x991b1b,
@@ -1861,6 +1883,19 @@ local function set_change_highlights()
     "OculusInspectOverviewSection",
     overview_section
   )
+  vim.api.nvim_set_hl(0, "OculusInspectCursorLine", {
+    bg = cursorline.bg,
+    sp = cursorline.sp,
+    blend = cursorline.blend,
+    bold = cursorline.bold,
+    italic = cursorline.italic,
+    underline = cursorline.underline,
+    undercurl = cursorline.undercurl,
+    underdouble = cursorline.underdouble,
+    underdotted = cursorline.underdotted,
+    underdashed = cursorline.underdashed,
+    strikethrough = cursorline.strikethrough,
+  })
 end
 
 set_change_highlights()
@@ -3868,6 +3903,7 @@ local function apply_inspection_window_options(win, options)
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
   prevent_window_dimming(win)
+  preserve_cursorline_text_highlighting(win)
 end
 
 local function open_tabs(
@@ -4598,6 +4634,8 @@ M._first_changed_oil_file_line = first_changed_oil_file_line
 M._change_lines = change_lines
 M._focused_change_lines = focused_change_lines
 M._prevent_window_dimming = prevent_window_dimming
+M._preserve_cursorline_text_highlighting =
+  preserve_cursorline_text_highlighting
 M._refresh_buffer_highlighting = refresh_buffer_highlighting
 M._apply_inspection_filetype = apply_inspection_filetype
 M._normalize_inspection_view = normalize_inspection_view

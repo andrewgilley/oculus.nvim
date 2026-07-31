@@ -12,6 +12,11 @@ vim.api.nvim_set_hl(0, "DiffAdd", {
   fg = 0x80ff80,
   bg = 0x104020,
 })
+vim.api.nvim_set_hl(0, "CursorLine", {
+  fg = 0xfefefe,
+  bg = 0x202830,
+  nocombine = true,
+})
 local oil_runtime = vim.env.OCULUS_INSPECT_TEST_OIL
 if oil_runtime then
   vim.opt.runtimepath:append(oil_runtime)
@@ -53,6 +58,18 @@ for group, expected in pairs({
   assert(sign_highlight.fg == expected.fg)
   assert(sign_highlight.bg == expected.bg)
 end
+assert(vim.api.nvim_get_hl(
+  0,
+  { name = "OculusInspectCursorLine", link = false }
+).bg == 0x202830)
+assert(vim.api.nvim_get_hl(
+  0,
+  { name = "OculusInspectCursorLine", link = false }
+).fg == nil)
+assert(vim.api.nvim_get_hl(
+  0,
+  { name = "OculusInspectCursorLine", link = false }
+).nocombine ~= true)
 
 local dimming_win = vim.api.nvim_get_current_win()
 local original_winhighlight = vim.wo[dimming_win].winhighlight
@@ -61,6 +78,9 @@ vim.wo[dimming_win].winhighlight =
 assert(inspect._prevent_window_dimming(dimming_win))
 assert(vim.wo[dimming_win].winhighlight
   == "CursorLine:Visual,NormalNC:Normal")
+assert(inspect._preserve_cursorline_text_highlighting(dimming_win))
+assert(vim.wo[dimming_win].winhighlight
+  == "NormalNC:Normal,CursorLine:OculusInspectCursorLine")
 vim.wo[dimming_win].winhighlight = original_winhighlight
 
 local highlight_buf = vim.api.nvim_create_buf(false, true)
