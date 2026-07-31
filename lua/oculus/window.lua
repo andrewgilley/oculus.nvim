@@ -37,6 +37,9 @@ local contributor_selection_ns = vim.api.nvim_create_namespace(
 local inspect_loading_ns = vim.api.nvim_create_namespace(
   "oculus_inspect_activity_loading"
 )
+local activity_page_loading_ns = vim.api.nvim_create_namespace(
+  "oculus_activity_page_loading"
+)
 local commit_activity_url
 local autocmd_group = vim.api.nvim_create_augroup(
   "OculusWindow",
@@ -75,6 +78,8 @@ M.state = {
   activity_scroll_limit_line = nil,
   activity_commit_page = false,
   activity_return = nil,
+  activity_loading_timer = nil,
+  activity_loading_frame = 1,
   restore_cursor = nil,
   shortcut_return = nil,
   search_buf = nil,
@@ -97,6 +102,100 @@ end
 
 local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
+end
+
+local activity_loading_frames = {
+  "⠋",
+  "⠙",
+  "⠹",
+  "⠸",
+  "⠼",
+  "⠴",
+  "⠦",
+  "⠧",
+  "⠇",
+  "⠏",
+}
+
+local function stop_activity_page_loading()
+  local timer = M.state.activity_loading_timer
+  M.state.activity_loading_timer = nil
+  M.state.activity_loading_frame = 1
+  if timer then
+    pcall(timer.stop, timer)
+    if not timer:is_closing() then
+      timer:close()
+    end
+  end
+  if is_valid_buf(M.state.buf) then
+    vim.api.nvim_buf_clear_namespace(
+      M.state.buf,
+      activity_page_loading_ns,
+      0,
+      -1
+    )
+  end
+end
+
+local function draw_activity_page_loading()
+  if not is_valid_buf(M.state.buf) then
+    return
+  end
+  local handle_line
+  for line, text in ipairs(vim.api.nvim_buf_get_lines(
+    M.state.buf,
+    0,
+    -1,
+    false
+  )) do
+    if text:match("^  @") then
+      handle_line = line
+      break
+    end
+  end
+  if not handle_line then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(
+    M.state.buf,
+    activity_page_loading_ns,
+    0,
+    -1
+  )
+  vim.api.nvim_buf_set_extmark(
+    M.state.buf,
+    activity_page_loading_ns,
+    handle_line - 1,
+    0,
+    {
+      virt_text = {
+        {
+          " " .. activity_loading_frames[M.state.activity_loading_frame],
+          "DiagnosticInfo",
+        },
+      },
+      virt_text_pos = "eol",
+      hl_mode = "combine",
+    }
+  )
+end
+
+local function start_activity_page_loading()
+  stop_activity_page_loading()
+  draw_activity_page_loading()
+  local timer = vim.uv.new_timer()
+  if not timer then
+    return
+  end
+  M.state.activity_loading_timer = timer
+  timer:start(80, 80, vim.schedule_wrap(function()
+    if M.state.activity_loading_timer ~= timer then
+      return
+    end
+    M.state.activity_loading_frame =
+      (M.state.activity_loading_frame % #activity_loading_frames) + 1
+    draw_activity_page_loading()
+  end))
 end
 
 local function dimension(value, total, fallback, minimum)
@@ -840,6 +939,7 @@ local function update_contributor_selection()
 end
 
 local function render_contributors()
+  stop_activity_page_loading()
   close_activity_footer()
   M.state.view = "contributors"
   M.state.contributor = nil
@@ -1049,6 +1149,7 @@ local function save_filter_type_set(scope, enabled)
 end
 
 local function render_filters(scope, selected_type)
+  stop_activity_page_loading()
   close_activity_footer()
   M.state.view = "filters"
   M.state.filter_scope = scope
@@ -1145,6 +1246,7 @@ end
 
 -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 11 Show the selected forge while activity loads
 local function render_loading(contributor)
+  stop_activity_page_loading()
   close_activity_footer()
   M.state.view = "activity"
   M.state.activity_commit_page = false
@@ -1152,31 +1254,22 @@ local function render_loading(contributor)
   M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
   M.state.activity_error = nil
-  local loading_text = M.state.activity_page > 1
-      and ("Loading past %s activity · page %d…"):format(
-        provider_name(contributor),
-        M.state.activity_page
-      )
-    or ("Loading recent %s activity…"):format(
-      provider_name(contributor)
-    )
   local lines = {
     "",
     "  USER",
     "  @" .. contributor.username,
-    "",
-    "  " .. loading_text,
   }
   footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Function")
   highlight(3, 2, -1, "Comment")
-  highlight(5, 2, -1, "DiagnosticInfo")
+  start_activity_page_loading()
 end
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 11
 
 local function render_error(message)
+  stop_activity_page_loading()
   close_activity_footer()
   M.state.view = "activity"
   M.state.activity_commit_page = false
@@ -1203,6 +1296,7 @@ local function render_error(message)
 end
 
 local function render_activity(events, cached, notice, opts)
+  stop_activity_page_loading()
   opts = opts or {}
   M.state.view = "activity"
   M.state.activity_commit_page = opts.commit_page == true
@@ -1417,6 +1511,7 @@ local function open_commit_activity(event)
 end
 
 local function render_shortcuts()
+  stop_activity_page_loading()
   close_activity_footer()
   M.state.view = "shortcuts"
   M.state.line_targets = {}
@@ -1521,6 +1616,10 @@ end
 M._activity_page = activity_page
 
 local function load_activity(contributor, force, page)
+  local preserve_activity_page = page ~= nil
+    and M.state.view == "activity"
+    and M.state.activity_loaded
+    and is_valid_buf(M.state.buf)
   M.state.view = "activity"
   M.state.contributor = contributor
   if page == nil then
@@ -1533,7 +1632,12 @@ local function load_activity(contributor, force, page)
   )
   M.state.request_id = M.state.request_id + 1
   local request_id = M.state.request_id
-  render_loading(contributor)
+  if preserve_activity_page then
+    M.state.activity_error = nil
+    start_activity_page_loading()
+  else
+    render_loading(contributor)
+  end
 
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 14 Load and enrich activity through the contributor's provider
   local provider = activity_provider(contributor)
@@ -1547,7 +1651,10 @@ local function load_activity(contributor, force, page)
   request_opts.per_page = base_per_page
     + (M.state.activity_page - 1) * M.state.activity_page_size
   local callback = function(events, err, cached, notice)
-    if request_id ~= M.state.request_id or not is_valid_win(M.state.win) then
+    if request_id ~= M.state.request_id
+      or M.state.view ~= "activity"
+      or not is_valid_win(M.state.win)
+    then
       return
     end
     if err then
@@ -2342,6 +2449,7 @@ end
 
 function M.close()
   M.state.request_id = M.state.request_id + 1
+  stop_activity_page_loading()
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
   if is_valid_buf(M.state.buf) then
     vim.api.nvim_buf_clear_namespace(

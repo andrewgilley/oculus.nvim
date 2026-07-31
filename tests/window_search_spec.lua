@@ -344,8 +344,16 @@ for index = 1, 20 do
     },
   }
 end
+local deferred_activity_request
 github.events = function(_, opts, callback)
   requested_per_page[#requested_per_page + 1] = opts.per_page
+  if deferred_activity_request == true then
+    deferred_activity_request = {
+      callback = callback,
+      events = vim.deepcopy(activity_events),
+    }
+    return
+  end
   callback(vim.deepcopy(activity_events), nil, false)
 end
 github.enrich_pull_requests = function(events, _, callback)
@@ -600,13 +608,52 @@ profile_mapping.callback()
 select_mapping.callback()
 assert(opened_activity_url == nil)
 browser.open = original_browser_open
+local activity_before_page_load =
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
+deferred_activity_request = true
 past_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
+assert(state.events[1].id == "1")
+assert(vim.deep_equal(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  activity_before_page_load
+))
+assert(not table.concat(activity_before_page_load, "\n"):find(
+  "Loading",
+  1,
+  true
+))
+local activity_page_loading_namespace =
+  vim.api.nvim_get_namespaces().oculus_activity_page_loading
+local activity_page_loading_marks = vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  activity_page_loading_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#activity_page_loading_marks == 1)
+assert(activity_page_loading_marks[1][2] == 2)
+assert(activity_page_loading_marks[1][4].virt_text[1][1]:match("^ "))
+local pending_activity_request = deferred_activity_request
+deferred_activity_request = nil
+pending_activity_request.callback(
+  pending_activity_request.events,
+  nil,
+  false
+)
 assert(#state.events == 8)
 assert(state.events[1].id == "9")
 assert(state.events[8].id == "16")
 assert(requested_per_page[2] == 38)
+assert(#vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  activity_page_loading_namespace,
+  0,
+  -1,
+  {}
+) == 0)
 local activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"

@@ -541,22 +541,14 @@ assert(not commit_overview_text:find("Authored", 1, true))
 assert(not commit_overview_text:find("Changes", 1, true))
 do
   local main_config = require("oculus.window").window_config({})
-  local compact_config = inspect._overview_window_config(
+  local commit_config = inspect._overview_window_config(
     main_config,
     { kind = "commit" }
   )
-  assert(compact_config.width
-    == math.min(
-      main_config.width,
-      math.max(20, math.floor(main_config.width * 0.8)) + 4
-    ))
-  assert(compact_config.height
-    == math.min(
-      main_config.height,
-      math.max(8, math.floor(main_config.height * 0.8)) + 2
-    ))
-  assert(compact_config.col > main_config.col)
-  assert(compact_config.row > main_config.row)
+  assert(commit_config.width == main_config.width)
+  assert(commit_config.height == main_config.height)
+  assert(commit_config.col == main_config.col)
+  assert(commit_config.row == main_config.row)
   local pull_request_config = inspect._overview_window_config(
     main_config,
     { kind = "pull_request" }
@@ -1779,32 +1771,14 @@ if integration_root and (integration_sha or integration_url) then
   do
     local main_overview_config =
       require("oculus.window").window_config({})
-    local expected_overview_width = integration_is_pull_request
-        and main_overview_config.width
-      or math.min(
-        main_overview_config.width,
-        math.max(20, math.floor(main_overview_config.width * 0.8)) + 4
-      )
-    local expected_overview_height = integration_is_pull_request
-        and main_overview_config.height
-      or math.min(
-        main_overview_config.height,
-        math.max(8, math.floor(main_overview_config.height * 0.8)) + 2
-      )
     assert(overview_saved.config.width
-      == expected_overview_width)
+      == main_overview_config.width)
     assert(overview_saved.config.height
-      == expected_overview_height)
+      == main_overview_config.height)
     assert(overview_saved.config.row
-      == main_overview_config.row
-        + math.floor(
-          (main_overview_config.height - expected_overview_height) / 2
-        ))
+      == main_overview_config.row)
     assert(overview_saved.config.col
-      == main_overview_config.col
-        + math.floor(
-          (main_overview_config.width - expected_overview_width) / 2
-        ))
+      == main_overview_config.col)
   end
   assert(overview_saved.config.title == nil
     or overview_saved.config.title == "")

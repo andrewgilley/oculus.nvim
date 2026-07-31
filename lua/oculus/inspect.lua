@@ -2962,24 +2962,8 @@ local function close_overview_window(group)
   end
 end
 
-local function overview_window_config(config, overview)
+local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
-  if overview and overview.kind == "commit" then
-    local original_width = math.max(1, tonumber(config.width) or 1)
-    local original_height = math.max(1, tonumber(config.height) or 1)
-    config.width = math.min(
-      original_width,
-      math.max(20, math.floor(original_width * 0.8)) + 4
-    )
-    config.height = math.min(
-      original_height,
-      math.max(8, math.floor(original_height * 0.8)) + 2
-    )
-    config.col = (tonumber(config.col) or 0)
-      + math.floor((original_width - config.width) / 2)
-    config.row = (tonumber(config.row) or 0)
-      + math.floor((original_height - config.height) / 2)
-  end
   config.zindex = 70
   return config
 end
