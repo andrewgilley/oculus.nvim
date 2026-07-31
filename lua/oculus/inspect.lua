@@ -16,6 +16,7 @@ local sidebar_navigating = false
 local inspection_tabs_loading = false
 local oil_contexts = {}
 local oil_window_contexts = {}
+local foreign_sidebar_reconcile_pending = false
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "o"
 local default_version_switch = "<C-s>"
@@ -2890,6 +2891,9 @@ close_inspection_sidebar = function(group)
 end
 
 open_inspection_sidebar = function(group)
+  if group.sidebar_displaced_by_foreign then
+    return
+  end
   local origin_tab = vim.api.nvim_get_current_tabpage()
   local origin_win = vim.api.nvim_get_current_win()
   group.sidebar_windows = {}
@@ -2914,6 +2918,11 @@ open_inspection_sidebar = function(group)
 end
 
 local function toggle_inspection_sidebar(group)
+  if group.sidebar_displaced_by_foreign then
+    group.sidebar_restore_after_foreign =
+      not group.sidebar_restore_after_foreign
+    return
+  end
   if group.sidebar_visible then
     close_inspection_sidebar(group)
   else
@@ -3280,6 +3289,107 @@ local function sidebar_group_for_buffer(buf)
     end
   end
 end
+
+local foreign_sidebar_filetypes = {
+  aerial = true,
+  ["neo-tree"] = true,
+  NvimTree = true,
+  Outline = true,
+  ["symbols-outline"] = true,
+}
+
+local function is_foreign_sidebar_window(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+  local config = vim.api.nvim_win_get_config(win)
+  if config.relative and config.relative ~= "" then
+    return false
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  if sidebar_group_for_buffer(buf)
+    or type(vim.b[buf].oculus_inspect) == "table"
+  then
+    return false
+  end
+  if foreign_sidebar_filetypes[vim.bo[buf].filetype] then
+    return true
+  end
+  return vim.wo[win].winfixwidth
+end
+
+local function group_foreign_sidebar_state(group)
+  local tabs = {}
+  local has_endpoint = false
+  for _, session in ipairs(group) do
+    for _, endpoint in ipairs({
+      session.issue,
+      session.parent,
+      session.change,
+    }) do
+      if valid_endpoint(endpoint) then
+        has_endpoint = true
+        tabs[endpoint.tab] = true
+      end
+    end
+  end
+  for tab in pairs(tabs) do
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+      if is_foreign_sidebar_window(win) then
+        return true, has_endpoint
+      end
+    end
+  end
+  return false, has_endpoint
+end
+
+local function reconcile_foreign_sidebars()
+  for _, group in ipairs(sidebar_groups) do
+    local has_foreign_sidebar, has_endpoint =
+      group_foreign_sidebar_state(group)
+    if not has_endpoint then
+      group.sidebar_displaced_by_foreign = nil
+      group.sidebar_restore_after_foreign = nil
+    elseif has_foreign_sidebar then
+      if not group.sidebar_displaced_by_foreign
+        and group.sidebar_visible
+      then
+        group.sidebar_displaced_by_foreign = true
+        group.sidebar_restore_after_foreign = true
+        close_inspection_sidebar(group)
+      end
+    elseif group.sidebar_displaced_by_foreign then
+      local restore = group.sidebar_restore_after_foreign
+      group.sidebar_displaced_by_foreign = nil
+      group.sidebar_restore_after_foreign = nil
+      if restore and not group.sidebar_visible then
+        open_inspection_sidebar(group)
+      end
+    end
+  end
+end
+
+local function queue_foreign_sidebar_reconciliation()
+  if foreign_sidebar_reconcile_pending then
+    return
+  end
+  foreign_sidebar_reconcile_pending = true
+  vim.schedule(function()
+    foreign_sidebar_reconcile_pending = false
+    reconcile_foreign_sidebars()
+  end)
+end
+
+vim.api.nvim_create_autocmd({
+  "WinNew",
+  "WinEnter",
+  "BufWinEnter",
+  "FileType",
+  "WinClosed",
+}, {
+  group = sync_group,
+  callback = queue_foreign_sidebar_reconciliation,
+})
 
 local function inspection_statusline(win)
   win = tonumber(win or vim.g.statusline_winid)
@@ -4635,6 +4745,7 @@ M._inspect_sidebar_width = inspect_sidebar_width
 M._sidebar_chunk_row = sidebar_chunk_row
 M._sidebar_file = sidebar_file
 M._sidebar_target_role = sidebar_target_role
+M._is_foreign_sidebar_window = is_foreign_sidebar_window
 M._comment_float = comment_float
 
 return M

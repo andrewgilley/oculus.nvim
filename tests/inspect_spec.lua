@@ -32,6 +32,32 @@ assert(inspect._inspect_sidebar_width(
   oculus.config.inspect_sidebar_width,
   vim.o.columns
 ) == 28)
+do
+  local original_win = vim.api.nvim_get_current_win()
+  vim.cmd("botright vsplit")
+  local aerial_win = vim.api.nvim_get_current_win()
+  local aerial_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_win_set_buf(aerial_win, aerial_buf)
+  vim.bo[aerial_buf].filetype = "aerial"
+  vim.wo[aerial_win].winfixwidth = true
+  assert(inspect._is_foreign_sidebar_window(aerial_win))
+  vim.bo[aerial_buf].filetype = "custom-sidebar"
+  assert(inspect._is_foreign_sidebar_window(aerial_win))
+  vim.wo[aerial_win].winfixwidth = false
+  assert(not inspect._is_foreign_sidebar_window(aerial_win))
+  vim.bo[aerial_buf].filetype = "aerial"
+  vim.api.nvim_win_set_config(aerial_win, {
+    relative = "editor",
+    row = 0,
+    col = 0,
+    width = 10,
+    height = 5,
+  })
+  assert(not inspect._is_foreign_sidebar_window(aerial_win))
+  vim.api.nvim_win_close(aerial_win, true)
+  vim.api.nvim_set_current_win(original_win)
+  vim.api.nvim_buf_delete(aerial_buf, { force = true })
+end
 assert(oculus.config.inspect_overview_toggle == "o")
 assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
@@ -1283,6 +1309,38 @@ if integration_root and (integration_sha or integration_url) then
   assert(initial_sidebar_toggle)
   assert(initial_sidebar_toggle.lhs
     == (vim.g.mapleader or "\\") .. "oi")
+  do
+    vim.api.nvim_set_current_tabpage(tabs[2])
+    vim.api.nvim_set_current_win(initial_parent_win)
+    vim.cmd("botright vsplit")
+    local foreign_win = vim.api.nvim_get_current_win()
+    local foreign_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_win_set_buf(foreign_win, foreign_buf)
+    vim.bo[foreign_buf].filetype = "aerial"
+    vim.wo[foreign_win].winfixwidth = true
+    assert(vim.wait(10000, function()
+      for pair_index = 1, pair_count do
+        if sidebar_window(tabs[pair_index * 2])
+          or sidebar_window(tabs[pair_index * 2 + 1])
+        then
+          return false
+        end
+      end
+      return true
+    end), "Inspect sidebar remained open beside Aerial")
+    vim.api.nvim_win_close(foreign_win, true)
+    vim.api.nvim_buf_delete(foreign_buf, { force = true })
+    assert(vim.wait(10000, function()
+      for pair_index = 1, pair_count do
+        if not sidebar_window(tabs[pair_index * 2])
+          or not sidebar_window(tabs[pair_index * 2 + 1])
+        then
+          return false
+        end
+      end
+      return true
+    end), "Inspect sidebar was not restored after closing Aerial")
+  end
   for pair_index = 1, pair_count do
     local old_tab = tabs[pair_index * 2]
     local new_tab = tabs[pair_index * 2 + 1]
