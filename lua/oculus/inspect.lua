@@ -2756,7 +2756,6 @@ refresh_sidebar = function(group, tab)
     and sidebar_win
     and vim.api.nvim_win_is_valid(sidebar_win)
     and vim.api.nvim_win_get_buf(sidebar_win) == buf
-    and not sidebar_navigating
     and not sidebar_is_focused
     and vim.api.nvim_win_get_cursor(sidebar_win)[1]
       ~= sidebar_cursor_line
@@ -2768,23 +2767,6 @@ refresh_sidebar = function(group, tab)
       { sidebar_cursor_line, 0 }
     )
     sidebar_navigating = was_navigating
-  end
-  local anchor_line = group.sidebar_anchor_line
-  if anchor_line
-    and anchor_line >= 1
-    and anchor_line <= vim.api.nvim_buf_line_count(buf)
-  then
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      sidebar_ns,
-      anchor_line - 1,
-      0,
-      {
-        line_hl_group = "CursorLine",
-        hl_eol = true,
-        priority = 90,
-      }
-    )
   end
   if group.kind ~= "issue" then
     for index, _ in ipairs(group) do

@@ -1711,16 +1711,72 @@ if integration_root and (integration_sha or integration_url) then
       view
     ))
   end
+  vim.g.oculus_test_main_tab_pair =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
+  vim.g.oculus_test_main_tab_chunk =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
   toggle_mapped.callback()
   assert(vim.api.nvim_get_current_win() == change_win)
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    assert(active.pair_index == vim.g.oculus_test_main_tab_pair)
+    assert(active.chunk_index == vim.g.oculus_test_main_tab_chunk + 1)
     local active_sidebar_win = assert(sidebar_window(
       vim.api.nvim_get_current_tabpage()
     ))
     assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
       == file_lines[active.pair_index] + active.chunk_index)
   end
+  previous_mapped = vim.fn.maparg("<S-Tab>", "n", false, true)
+  assert(previous_mapped.desc == "Previous Oculus changed chunk")
+  previous_mapped.callback()
+  do
+    local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    assert(active.pair_index == vim.g.oculus_test_main_tab_pair)
+    assert(active.chunk_index == vim.g.oculus_test_main_tab_chunk)
+    local active_sidebar_win = assert(sidebar_window(
+      vim.api.nvim_get_current_tabpage()
+    ))
+    assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
+      == file_lines[active.pair_index] + active.chunk_index)
+  end
+  toggle_mapped.callback()
+  vim.g.oculus_test_main_tab_pair = nil
+  vim.g.oculus_test_main_tab_chunk = nil
+  vim.g.oculus_test_main_file_pair =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
+  vim.g.oculus_test_main_file_chunks =
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_count
+  while vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
+    < vim.g.oculus_test_main_file_chunks
+  do
+    vim.fn.maparg("<Tab>", "n", false, true).callback()
+  end
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  do
+    local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    assert(active.pair_index
+      == (vim.g.oculus_test_main_file_pair % pair_count) + 1)
+    assert(active.chunk_index == 1)
+    local active_sidebar_win = assert(sidebar_window(
+      vim.api.nvim_get_current_tabpage()
+    ))
+    assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
+      == file_lines[active.pair_index] + 1)
+  end
+  vim.fn.maparg("<S-Tab>", "n", false, true).callback()
+  do
+    local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    assert(active.pair_index == vim.g.oculus_test_main_file_pair)
+    assert(active.chunk_index == vim.g.oculus_test_main_file_chunks)
+    local active_sidebar_win = assert(sidebar_window(
+      vim.api.nvim_get_current_tabpage()
+    ))
+    assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
+      == file_lines[active.pair_index] + active.chunk_index)
+  end
+  vim.g.oculus_test_main_file_pair = nil
+  vim.g.oculus_test_main_file_chunks = nil
 
   local sidebar_ctrl_i_from_sidebar = false
   local sidebar_tab_from_sidebar = false
@@ -2187,20 +2243,16 @@ if integration_root and (integration_sha or integration_url) then
     == selected_parent_line)
   assert(vim.api.nvim_win_get_cursor(sidebar_parent_win)[1]
     == selected_chunk_line)
-  local anchored_selection = false
   for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
     sidebar_buf,
     sidebar_signs,
-    { selected_chunk_line - 1, 0 },
-    { selected_chunk_line - 1, -1 },
+    0,
+    -1,
     { details = true }
   )) do
-    if mark[4].line_hl_group == "CursorLine" then
-      anchored_selection = true
-      break
-    end
+    assert(mark[4].line_hl_group ~= "CursorLine")
   end
-  assert(anchored_selection)
+  assert(vim.wo[sidebar_parent_win].cursorline)
   vim.api.nvim_feedkeys(
     "gS",
     "x",
