@@ -18,7 +18,7 @@ local oil_contexts = {}
 local oil_window_contexts = {}
 local foreign_sidebar_reconcile_pending = false
 local default_sidebar_toggle = "<leader>oi"
-local default_overview_toggle = "o"
+local default_overview_toggle = "<leader>ow"
 local default_version_switch = "<C-s>"
 local default_next_chunk = "<Tab>"
 local default_previous_chunk = "<S-Tab>"
@@ -2978,18 +2978,22 @@ local function overview_window_config(config, _)
 end
 
 show_inspection_overview = function(group)
-  if vim.api.nvim_get_current_buf() ~= group.sidebar_buf then
-    return
-  end
   if overview_window_is_open(group) then
     vim.api.nvim_set_current_win(group.overview_win)
     return
   end
   local tab = vim.api.nvim_get_current_tabpage()
-  local sidebar_win = vim.api.nvim_get_current_win()
   local endpoint = endpoint_for_tab(group, tab)
+  if not endpoint then
+    return
+  end
+  local source_win = vim.api.nvim_get_current_win()
+  local sidebar_win = group.sidebar_windows
+      and group.sidebar_windows[tab]
+    or nil
   group.overview_return = {
     tab = tab,
+    source = capture_window_state(source_win),
     sidebar = capture_window_state(sidebar_win),
     endpoint = endpoint and capture_window_state(endpoint.win),
     anchor_line = group.sidebar_anchor_line,
@@ -3090,11 +3094,18 @@ show_sidebar_files = function(group)
       vim.api.nvim_set_current_tabpage(return_state.tab)
     end
     restore_window_state(return_state.sidebar)
-    if return_state.sidebar
-      and vim.api.nvim_win_is_valid(return_state.sidebar.win)
+    restore_window_state(return_state.source)
+    if return_state.source
+      and vim.api.nvim_win_is_valid(return_state.source.win)
     then
-      vim.api.nvim_set_current_win(return_state.sidebar.win)
-      group.focused_win = return_state.sidebar.win
+      vim.api.nvim_set_current_win(return_state.source.win)
+      group.focused_win =
+          return_state.source.win == (
+            group.sidebar_windows
+              and group.sidebar_windows[return_state.tab]
+          )
+        and return_state.source.win
+        or nil
     end
   end
   group.overview_return = nil
@@ -3104,22 +3115,40 @@ show_sidebar_files = function(group)
 end
 
 local function map_inspection_sidebar_toggle(group)
-  local opts = {
+  local sidebar_opts = {
     nowait = true,
     silent = true,
     desc = "Toggle Oculus Inspect sidebar",
   }
-  local lhs = group.sidebar_toggle
-  if lhs == nil then
-    lhs = default_sidebar_toggle
+  local sidebar_lhs = group.sidebar_toggle
+  if sidebar_lhs == nil then
+    sidebar_lhs = default_sidebar_toggle
+  end
+  local overview_lhs = group.overview_toggle
+  if overview_lhs == nil then
+    overview_lhs = default_overview_toggle
   end
   local function map_buffer(buf)
-    if type(lhs) == "string" and lhs ~= "" then
-      vim.keymap.set("n", lhs, function()
+    if type(sidebar_lhs) == "string" and sidebar_lhs ~= "" then
+      vim.keymap.set("n", sidebar_lhs, function()
         toggle_inspection_sidebar(group)
-      end, vim.tbl_extend("force", opts, {
+      end, vim.tbl_extend("force", sidebar_opts, {
         buffer = buf,
       }))
+    end
+    if type(overview_lhs) == "string" and overview_lhs ~= "" then
+      vim.keymap.set("n", overview_lhs, function()
+        if overview_window_is_open(group) then
+          show_sidebar_files(group)
+        else
+          show_inspection_overview(group)
+        end
+      end, {
+        buffer = buf,
+        nowait = true,
+        silent = true,
+        desc = "Toggle Oculus Inspect overview",
+      })
     end
   end
   for _, session in ipairs(group) do
@@ -3133,24 +3162,6 @@ local function map_inspection_sidebar_toggle(group)
     end
   end
   map_buffer(group.sidebar_buf)
-  local overview_lhs = group.overview_toggle
-  if overview_lhs == nil then
-    overview_lhs = default_overview_toggle
-  end
-  if type(overview_lhs) == "string" and overview_lhs ~= "" then
-    vim.keymap.set("n", overview_lhs, function()
-      if overview_window_is_open(group) then
-        show_sidebar_files(group)
-      else
-        show_inspection_overview(group)
-      end
-    end, {
-      buffer = group.sidebar_buf,
-      nowait = true,
-      silent = true,
-      desc = "Toggle Oculus Inspect overview",
-    })
-  end
   vim.keymap.set("n", "<CR>", function()
     focus_sidebar_selection(group)
   end, {
