@@ -799,6 +799,7 @@ do
       local events = {}
       for index = 1, 8 do
         events[#events + 1] = {
+          id = "page-3-push-" .. index,
           type = "PushEvent",
           repo = { name = repository },
           created_at = "2026-07-06T12:00:00Z",
@@ -806,6 +807,10 @@ do
         }
       end
       callback(events, nil, false)
+      return
+    end
+    if opts.page == 4 then
+      callback({}, nil, false)
       return
     end
     local events = {
@@ -844,8 +849,12 @@ do
         payload = { ref_type = "branch", ref = "ignored" },
       },
     }
-    for index = 5, 100 do
+    -- GitHub's Neovim feed can return 99 rows for per_page=100 even though a
+    -- second page exists. Keep this fixture short by one row to guard against
+    -- treating that response as end-of-history.
+    for index = 5, 99 do
       events[#events + 1] = {
+        id = "page-1-ignored-" .. index,
         type = "CreateEvent",
         repo = { name = repository },
         created_at = "2026-07-04T12:00:00Z",
@@ -919,6 +928,7 @@ do
     end
   end
   assert(project_activity_items == 8)
+  assert(#state.events[1].payload.commits == 2)
   assert(project_pushes_enriched)
   assert(repository_per_page == 100)
   assert(vim.deep_equal(repository_pages, { 1, 2 }))
@@ -935,16 +945,17 @@ do
   project_past_mapping.callback()
   assert(state.activity_page == 2)
   assert(#state.events == 8)
-  assert(state.activity_has_past == false)
+  assert(state.activity_has_past == true)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
   project_past_mapping.callback()
   assert(state.activity_page == 2)
-  assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
+  assert(state.activity_has_past == false)
+  assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
   local project_recent_mapping = vim.fn.maparg("r", "n", false, true)
   project_recent_mapping.callback()
   assert(state.activity_page == 1)
   assert(#state.events == 8)
-  assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
+  assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
   local refresh_mapping = vim.fn.maparg("R", "n", false, true)
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()

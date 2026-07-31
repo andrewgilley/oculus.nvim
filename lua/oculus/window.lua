@@ -2090,7 +2090,11 @@ load_project_activity = function(project, force, page)
       feed.next_page = source_page + 1
       feed.cached = feed.cached and cached == true
       feed.notice = feed.notice or notice
-      if #source < request_opts.per_page or added == 0 then
+      -- GitHub can return fewer rows than requested while still exposing older
+      -- repository-event pages (for example, Neovim currently returns 99 for
+      -- per_page=100). Only an empty or no-progress page proves this feed is
+      -- exhausted; otherwise continue until the grouped activity page is full.
+      if #source == 0 or added == 0 then
         feed.complete = true
       end
       ensure_project_page()
