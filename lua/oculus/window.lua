@@ -1907,38 +1907,90 @@ load_project_activity = function(project, force, page)
     M.state.opts,
     { force = force or false }
   )
-  -- Repository feeds contain many non-project events (watches, comments,
-  -- and reviews), so fetch the largest useful window before filtering.
-  request_opts.per_page = 100
-  local callback = function(events, err, cached, notice)
-    if request_id ~= M.state.request_id
-      or M.state.view ~= "activity"
-      or M.state.activity_project ~= project
-      or not is_valid_win(M.state.win)
-    then
-      return
-    end
-    if err then
-      render_error(err)
-      return
-    end
-    local filtered = filter_project_events(events, project)
+  -- Repository feeds contain many events outside the configured project
+  -- categories. Fetch subsequent pages only when the current one cannot fill
+  -- the requested activity page.
+  request_opts.per_page = project.provider == "codeberg" and 50 or 100
+  local project_feed_page = 1
+  local project_feed_pages = 3
+  local required_events =
+    M.state.activity_page * M.state.activity_page_size
+  local source_events = {}
+  local source_cached = true
+  local source_notice
+
+  local function render_project_results()
+    local filtered = filter_project_events(source_events, project)
     M.state.activity_source_events = filtered
     M.state.activity_loaded_pages = math.max(
       M.state.activity_loaded_pages or 1,
       M.state.activity_page
     )
-    render_activity(
-      activity_page(filtered, M.state.activity_page, M.state.activity_page_size),
+    local results = activity_page(
+      filtered,
+      M.state.activity_page,
+      M.state.activity_page_size
+    )
+    render_activity(results, source_cached, source_notice)
+    provider.enrich_pull_requests(results, request_opts, function(with_prs)
+      if request_id ~= M.state.request_id
+        or M.state.view ~= "activity"
+        or M.state.activity_project ~= project
+      then
+        return
+      end
+      render_activity(with_prs, source_cached, source_notice)
+      provider.enrich_pushes(with_prs, request_opts, function(enriched)
+        if request_id ~= M.state.request_id
+          or M.state.view ~= "activity"
+          or M.state.activity_project ~= project
+        then
+          return
+        end
+        render_activity(enriched, source_cached, source_notice)
+      end)
+    end)
+  end
+
+  local function request_project_feed()
+    request_opts.page = project_feed_page
+    provider.repository_events(project.repository, request_opts, function(
+      events,
+      err,
       cached,
       notice
     )
+      if request_id ~= M.state.request_id
+        or M.state.view ~= "activity"
+        or M.state.activity_project ~= project
+        or not is_valid_win(M.state.win)
+      then
+        return
+      end
+      if err then
+        render_error(err)
+        return
+      end
+      vim.list_extend(source_events, events or {})
+      source_cached = source_cached and cached == true
+      source_notice = source_notice or notice
+      local filtered = filter_project_events(source_events, project)
+      if #filtered < required_events
+        and #(events or {}) >= request_opts.per_page
+        and project_feed_page < project_feed_pages
+      then
+        project_feed_page = project_feed_page + 1
+        request_project_feed()
+        return
+      end
+      render_project_results()
+    end)
   end
   if type(provider.repository_events) ~= "function" then
-    callback(nil, "this provider does not support project activity")
+    render_error("this provider does not support project activity")
     return
   end
-  provider.repository_events(project.repository, request_opts, callback)
+  request_project_feed()
 end
 
 local function load_activity(contributor, force, page)

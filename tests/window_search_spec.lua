@@ -767,11 +767,27 @@ do
   local original_repository_events = github.repository_events
   local repository_forces = {}
   local repository_per_page
+  local repository_pages = {}
+  local project_pushes_enriched = false
   github.repository_events = function(repository, opts, callback)
     assert(repository == "neovim/neovim")
     repository_forces[#repository_forces + 1] = opts.force
     repository_per_page = opts.per_page
-    callback({
+    repository_pages[#repository_pages + 1] = opts.page
+    if opts.page == 2 then
+      local events = {}
+      for index = 1, 6 do
+        events[#events + 1] = {
+          type = "PushEvent",
+          repo = { name = repository },
+          created_at = "2026-07-05T12:00:00Z",
+          payload = { size = 1 },
+        }
+      end
+      callback(events, nil, false)
+      return
+    end
+    local events = {
       {
         type = "PushEvent",
         repo = { name = repository },
@@ -806,7 +822,26 @@ do
         created_at = "2026-07-04T12:00:00Z",
         payload = { ref_type = "branch", ref = "ignored" },
       },
-    }, nil, false)
+    }
+    for index = 5, 100 do
+      events[#events + 1] = {
+        type = "CreateEvent",
+        repo = { name = repository },
+        created_at = "2026-07-04T12:00:00Z",
+        payload = { ref_type = "branch", ref = "ignored" },
+      }
+    end
+    callback(events, nil, false)
+  end
+  github.enrich_pull_requests = function(events, _, callback)
+    callback(events)
+  end
+  github.enrich_pushes = function(events, _, callback)
+    project_pushes_enriched = true
+    events[1].payload.commits = {
+      { sha = "projectcommit", message = "Project commit title" },
+    }
+    callback(events)
   end
   window.open({
     width = 0.8,
@@ -840,14 +875,17 @@ do
   vim.fn.maparg("<CR>", "n", false, true).callback()
   assert(state.activity_scope == "project")
   assert(state.activity_project.repository == "neovim/neovim")
-  assert(#state.events == 3)
+  assert(#state.events == 8)
+  assert(project_pushes_enriched)
   assert(repository_per_page == 100)
+  assert(vim.deep_equal(repository_pages, { 1, 2 }))
   local project_activity_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"
   )
   assert(project_activity_text:find("  PROJECT", 1, true))
   assert(project_activity_text:find("neovim/neovim", 1, true))
+  assert(project_activity_text:find("Project commit title", 1, true))
   local refresh_mapping = vim.fn.maparg("R", "n", false, true)
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()

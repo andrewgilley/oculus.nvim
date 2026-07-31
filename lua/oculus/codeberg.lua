@@ -377,7 +377,9 @@ end
 function M.repository_events(repository_name, opts, callback)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
-  local cached = repository_cache[repository_name]
+  local page = math.max(1, math.floor(opts.page or 1))
+  local cache_key = ("%s:%d"):format(repository_name, page)
+  local cached = repository_cache[cache_key]
   local limit = math.min(
     50,
     math.max(1, math.floor(opts.per_page or 30))
@@ -397,8 +399,8 @@ function M.repository_events(repository_name, opts, callback)
   end
 
   local url = (
-    "%s/api/v1/repos/%s/activities/feeds?limit=%d"
-  ):format(base_url, repository_name, limit)
+    "%s/api/v1/repos/%s/activities/feeds?limit=%d&page=%d"
+  ):format(base_url, repository_name, limit, page)
   request_json(url, opts, function(activities, err)
     if not activities then
       callback(nil, err)
@@ -409,7 +411,7 @@ function M.repository_events(repository_name, opts, callback)
     for _, activity in ipairs(activities) do
       events[#events + 1] = M.normalize_activity(activity)
     end
-    repository_cache[repository_name] = {
+    repository_cache[cache_key] = {
       events = events,
       fetched_at = os.time(),
       per_page = limit,
