@@ -3312,7 +3312,7 @@ local function inspection_statusline(win)
     or inspection_statusline_path(state)
     or ""
   local cursor = vim.api.nvim_win_get_cursor(win)
-  return (" %s%%= %d, %d "):format(
+  return (" %s%%= %d,%d "):format(
     path:gsub("%%", "%%%%"),
     cursor[1],
     cursor[2] + 1
