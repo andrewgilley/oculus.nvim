@@ -730,6 +730,89 @@ assert(returned_user_lines[returned_window_height]
   == "  a add  / search  ?: help  q quit")
 
 window.close()
+do
+  local original_repository_events = github.repository_events
+  github.repository_events = function(repository, _, callback)
+    assert(repository == "neovim/neovim")
+    callback({
+      {
+        type = "PushEvent",
+        repo = { name = repository },
+        created_at = "2026-07-01T12:00:00Z",
+        payload = { size = 2 },
+      },
+      {
+        type = "PullRequestEvent",
+        repo = { name = repository },
+        created_at = "2026-07-02T12:00:00Z",
+        payload = {
+          action = "closed",
+          pull_request = {
+            number = 10,
+            merged = true,
+            title = "Improve startup",
+          },
+        },
+      },
+      {
+        type = "IssuesEvent",
+        repo = { name = repository },
+        created_at = "2026-07-03T12:00:00Z",
+        payload = {
+          action = "assigned",
+          issue = { number = 11, title = "Track startup" },
+        },
+      },
+      {
+        type = "CreateEvent",
+        repo = { name = repository },
+        created_at = "2026-07-04T12:00:00Z",
+        payload = { ref_type = "branch", ref = "ignored" },
+      },
+    }, nil, false)
+  end
+  window.open({
+    width = 0.8,
+    height = 0.8,
+    border = "rounded",
+    results_limit = 8,
+    projects = {
+      {
+        name = "Neovim",
+        repository = "neovim/neovim",
+        provider = "github",
+      },
+    },
+  })
+  state = window.state
+  local startpage_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+    "\n"
+  )
+  assert(startpage_text:find("  PROJECT", 1, true))
+  assert(startpage_text:find("Neovim", 1, true))
+  local project_line
+  for line, target in pairs(state.line_targets) do
+    if target.kind == "project" then
+      project_line = line
+      break
+    end
+  end
+  assert(project_line)
+  vim.api.nvim_win_set_cursor(state.win, { project_line, 0 })
+  vim.fn.maparg("<CR>", "n", false, true).callback()
+  assert(state.activity_scope == "project")
+  assert(state.activity_project.repository == "neovim/neovim")
+  assert(#state.events == 3)
+  local project_activity_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+    "\n"
+  )
+  assert(project_activity_text:find("  PROJECT", 1, true))
+  assert(project_activity_text:find("Neovim", 1, true))
+  window.close()
+  github.repository_events = original_repository_events
+end
 github.events = original_events
 github.enrich_pull_requests = original_enrich_pull_requests
 github.enrich_pushes = original_enrich_pushes
