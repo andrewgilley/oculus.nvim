@@ -800,10 +800,9 @@ do
         repo = { name = repository },
         created_at = "2026-07-02T12:00:00Z",
         payload = {
-          action = "closed",
+          action = "merged",
           pull_request = {
             number = 10,
-            merged = true,
             title = "Improve startup",
           },
         },

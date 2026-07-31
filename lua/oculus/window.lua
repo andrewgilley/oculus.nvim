@@ -1872,8 +1872,8 @@ local function project_event_allowed(event, project)
       or pull_request.merged_at ~= nil
       or pull_request.merged_by ~= nil
     return enabled.merged_pull_request == true
-      and payload.action == "closed"
-      and merged
+      and (payload.action == "merged"
+        or (payload.action == "closed" and merged))
   end
   if event_type == "IssuesEvent" then
     return enabled.assigned_issue == true

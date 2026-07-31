@@ -109,7 +109,9 @@ local function sentence(event, opts)
   if kind == "PullRequestEvent" then
     local number = value(payload, "pull_request", "number") or payload.number
     local action = payload.action or "Updated"
-    if action == "closed" and value(payload, "pull_request", "merged") then
+    if action == "merged"
+      or (action == "closed" and value(payload, "pull_request", "merged"))
+    then
       action = "Merged"
     end
     return ("%s pull request%s in %s"):format(
