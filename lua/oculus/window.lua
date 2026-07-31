@@ -1237,11 +1237,10 @@ local function render_activity(events, cached, notice, opts)
   local lines = {
     "",
     "  USER",
-    ("  %s · %s%s%s"):format(
+    ("  %s · %s%s"):format(
       "@" .. contributor.username,
       provider_name(contributor),
-      context_suffix,
-      cached and " · cached" or ""
+      context_suffix
     ),
   }
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 12
