@@ -36,6 +36,21 @@ local defaults = {
       repository = "neovim/neovim",
       provider = "github",
     },
+    {
+      name = "Ghostty",
+      repository = "ghostty-org/ghostty",
+      provider = "github",
+    },
+    {
+      name = "Zig",
+      repository = "ziglang/zig",
+      provider = "codeberg",
+    },
+    {
+      name = "Fil-C",
+      repository = "pizlonator/fil-c",
+      provider = "github",
+    },
   },
   persist_filters = true,
   persist_contributors = true,
@@ -113,6 +128,9 @@ function M.setup(opts)
         end
         if type(saved.user_activity_types) == "table" then
           M.config.user_activity_types = saved.user_activity_types
+        end
+        if type(saved.project_activity_types) == "table" then
+          M.config.project_activity_types = saved.project_activity_types
         end
       end
       if

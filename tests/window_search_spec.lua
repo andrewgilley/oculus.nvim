@@ -852,6 +852,17 @@ do
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()
   assert(repository_forces[#repository_forces] == true)
+  local project_filter_mapping = vim.fn.maparg("f", "n", false, true)
+  project_filter_mapping.callback()
+  assert(state.view == "filters")
+  assert(state.filter_scope.project.repository == "neovim/neovim")
+  local project_filter_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+    "\n"
+  )
+  assert(project_filter_text:find("Merged pull requests", 1, true))
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.view == "contributors")
   window.close()
   github.repository_events = original_repository_events
 end
