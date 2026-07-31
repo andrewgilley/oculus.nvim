@@ -58,7 +58,7 @@ do
   vim.api.nvim_set_current_win(original_win)
   vim.api.nvim_buf_delete(aerial_buf, { force = true })
 end
-assert(oculus.config.inspect_overview_toggle == "o")
+assert(oculus.config.inspect_overview_toggle == "<leader>ow")
 assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
 assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
@@ -1207,7 +1207,6 @@ if integration_root and (integration_sha or integration_url) then
           and { integration_search_root }
         or {},
       inspect_sidebar_width = 0.30,
-      inspect_overview_toggle = "gO",
       inspect_version_switch = "gS",
     },
     nil,
@@ -1670,6 +1669,8 @@ if integration_root and (integration_sha or integration_url) then
       else
         sidebar_leader_toggle = mapping
       end
+    elseif mapping.desc == "Toggle Oculus Inspect overview" then
+      jump_maps.main_overview = mapping
     end
   end
   assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
@@ -1683,7 +1684,33 @@ if integration_root and (integration_sha or integration_url) then
   assert(sidebar_leader_toggle
     and sidebar_leader_toggle.lhs
       == (vim.g.mapleader or "\\") .. "oi")
-  assert(vim.fn.maparg("o", "n", false, true).buffer ~= 1)
+  assert(jump_maps.main_overview
+    and jump_maps.main_overview.lhs
+      == (vim.g.mapleader or "\\") .. "ow")
+  do
+    vim.api.nvim_set_current_tabpage(tabs[3])
+    vim.api.nvim_set_current_win(change_win)
+    local cursor = vim.api.nvim_win_get_cursor(change_win)
+    local view = vim.api.nvim_win_call(change_win, vim.fn.winsaveview)
+    jump_maps.main_overview.callback()
+    local overview_win = vim.api.nvim_get_current_win()
+    local overview_buf = vim.api.nvim_get_current_buf()
+    assert(vim.b[overview_buf].oculus_inspect_overview == true)
+    local close_mapping = vim.fn.maparg("q", "n", false, true)
+    assert(close_mapping.desc == "Close Oculus Inspect overview")
+    close_mapping.callback()
+    assert(not vim.api.nvim_win_is_valid(overview_win))
+    assert(not vim.api.nvim_buf_is_valid(overview_buf))
+    assert(vim.api.nvim_get_current_win() == change_win)
+    assert(vim.deep_equal(
+      vim.api.nvim_win_get_cursor(change_win),
+      cursor
+    ))
+    assert(vim.deep_equal(
+      vim.api.nvim_win_call(change_win, vim.fn.winsaveview),
+      view
+    ))
+  end
   toggle_mapped.callback()
   assert(vim.api.nvim_get_current_win() == change_win)
   do
@@ -1737,7 +1764,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(sidebar_switch_mapping
     and sidebar_switch_mapping.lhs == "gS")
   assert(sidebar_overview_mapping
-    and sidebar_overview_mapping.lhs == "gO")
+    and sidebar_overview_mapping.lhs
+      == (vim.g.mapleader or "\\") .. "ow")
   assert(not next_file_mapping)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
   assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
