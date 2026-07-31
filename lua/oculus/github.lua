@@ -112,7 +112,9 @@ end
 function M.repository_events(repository, opts, callback)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
-  local cached = repository_cache[repository]
+  local page = math.max(1, math.floor(opts.page or 1))
+  local cache_key = ("%s:%d"):format(repository, page)
+  local cached = repository_cache[cache_key]
   local per_page = math.min(
     100,
     math.max(1, math.floor(opts.per_page or 30))
@@ -132,14 +134,14 @@ function M.repository_events(repository, opts, callback)
   end
 
   local url = (
-    "https://api.github.com/repos/%s/events?per_page=%d"
-  ):format(repository, per_page)
+    "https://api.github.com/repos/%s/events?per_page=%d&page=%d"
+  ):format(repository, per_page, page)
   request_json(url, opts, function(events, err)
     if not events then
       callback(nil, err)
       return
     end
-    repository_cache[repository] = {
+    repository_cache[cache_key] = {
       events = events,
       fetched_at = os.time(),
       per_page = per_page,
@@ -286,9 +288,10 @@ function M.enrich_pushes(events, opts, callback)
     if selected >= limit then
       break
     end
+    local commits = event.payload and event.payload.commits
     if
       event.type == "PushEvent"
-      and not (event.payload and event.payload.commits)
+      and (type(commits) ~= "table" or #commits == 0)
     then
       local key = push_key(event)
       if key then
