@@ -874,6 +874,29 @@ local function without_preview(item)
   return result
 end
 
+local function project_push_author(event)
+  local actor = type(event.actor) == "table" and event.actor or {}
+  local handle = actor.login or actor.username or actor.handle
+  if type(handle) == "string" and handle ~= "" then
+    return "@" .. handle
+  end
+  if type(actor.name) == "string" and actor.name ~= "" then
+    return actor.name
+  end
+
+  local commits = event.payload and event.payload.commits or {}
+  local commit = commits[#commits]
+  local author = type(commit) == "table" and commit.author or nil
+  if type(author) == "table" then
+    local author_handle = author.login or author.username
+    if type(author_handle) == "string" and author_handle ~= "" then
+      return "@" .. author_handle
+    end
+    author = author.name
+  end
+  return type(author) == "string" and author ~= "" and author or nil
+end
+
 local function render_preview_panel(items)
   if
     M.state.view ~= "contributors"
@@ -1559,6 +1582,12 @@ local function render_activity(events, cached, notice, opts)
     local item = actions.describe(event, {
       omit_single_commit_count = M.state.activity_commit_page,
     })
+    if project and event.type == "PushEvent" then
+      local author = project_push_author(event)
+      if author then
+        item.text = author .. " " .. item.text
+      end
+    end
     local inspect_context = inspect.activity_context(event)
     local expands_commits = not M.state.activity_commit_page
       and event.type == "PushEvent"

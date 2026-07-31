@@ -791,6 +791,7 @@ do
       {
         type = "PushEvent",
         repo = { name = repository },
+        actor = { login = "project-author" },
         created_at = "2026-07-01T12:00:00Z",
         payload = { size = 2 },
       },
@@ -886,6 +887,7 @@ do
   )
   assert(project_activity_text:find("  PROJECT", 1, true))
   assert(project_activity_text:find("neovim/neovim", 1, true))
+  assert(project_activity_text:find("@project-author pushed", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
   local refresh_mapping = vim.fn.maparg("R", "n", false, true)
