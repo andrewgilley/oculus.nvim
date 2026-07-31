@@ -958,8 +958,8 @@ local function render_contributors()
       }
     or {
       "",
-      "  COMMUNITY FIGURES",
-      "  Public developer activity",
+      "  COMMUNITY ACTIVITY",
+      "",
       "",
     }
 

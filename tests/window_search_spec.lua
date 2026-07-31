@@ -159,7 +159,7 @@ local initial_search_lines = table.concat(
 )
 assert(initial_search_lines:find("  esc cancel", 1, true))
 assert(not initial_search_lines:find("  SEARCH", 1, true))
-assert(not initial_search_lines:find("  COMMUNITY FIGURES", 1, true))
+assert(not initial_search_lines:find("  COMMUNITY ACTIVITY", 1, true))
 assert(not initial_search_lines:find("Keep typing to refine", 1, true))
 assert(not initial_search_lines:find("arrows preview", 1, true))
 assert(not initial_search_lines:find("enter open", 1, true))
