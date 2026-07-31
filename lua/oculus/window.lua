@@ -47,6 +47,19 @@ local default_project_activity_types = {
   "merged_pull_request",
   "assigned_issue",
 }
+local project_activity_categories = {
+  { key = "push", label = "Pushed commits" },
+  { key = "merged_pull_request", label = "Merged pull requests" },
+  { key = "assigned_issue", label = "Assigned issues" },
+}
+
+local function project_activity_types_for(project)
+  if project.activity_types ~= nil then
+    return project.activity_types
+  end
+  return M.state.opts.project_activity_types
+    or default_project_activity_types
+end
 local autocmd_group = vim.api.nvim_create_augroup(
   "OculusWindow",
   { clear = true }
@@ -1204,20 +1217,26 @@ end
 
 local function filter_type_set(scope)
   local types
-  if scope.global then
+  local categories
+  if scope.project then
+    types = project_activity_types_for(scope.project)
+    categories = project_activity_categories
+  elseif scope.global then
     types = M.state.opts.activity_types
+    categories = actions.event_types
   else
     types = activity_types_for(scope)
+    categories = actions.event_types
   end
 
   local enabled = {}
   if types == nil then
-    for _, event_type in ipairs(actions.event_types) do
-      enabled[event_type] = true
+    for _, category in ipairs(categories) do
+      enabled[category.key or category] = true
     end
   else
-    for _, event_type in ipairs(types) do
-      enabled[event_type] = true
+    for _, category in ipairs(types) do
+      enabled[category] = true
     end
   end
   return enabled
@@ -1257,13 +1276,28 @@ end
 
 local function save_filter_type_set(scope, enabled)
   local types = {}
-  for _, event_type in ipairs(actions.event_types) do
-    if enabled[event_type] then
-      types[#types + 1] = event_type
+  local categories = scope.project
+      and project_activity_categories
+    or actions.event_types
+  for _, category in ipairs(categories) do
+    local key = category.key or category
+    if enabled[key] then
+      types[#types + 1] = key
     end
   end
 
-  if scope.global then
+  if scope.project then
+    if scope.project.activity_types ~= nil then
+      for _, project in ipairs(M.state.opts.projects or {}) do
+        if project.repository == scope.project.repository then
+          project.activity_types = types
+          break
+        end
+      end
+    else
+      M.state.opts.project_activity_types = types
+    end
+  elseif scope.global then
     M.state.opts.activity_types = types
   else
     M.state.opts.user_activity_types = M.state.opts.user_activity_types or {}
@@ -1280,8 +1314,14 @@ local function render_filters(scope, selected_type)
   M.state.filter_scope = scope
   M.state.line_targets = {}
 
-  local scope_name = scope.global and "All contributors"
+  local scope_name = scope.project
+      and project_title(scope.project)
+    or scope.global
+      and "All contributors"
     or ("@" .. scope.username)
+  local categories = scope.project
+      and project_activity_categories
+    or actions.event_types
   local enabled = filter_type_set(scope)
   local lines = {
     "",
@@ -1292,12 +1332,14 @@ local function render_filters(scope, selected_type)
   }
 
   local selected_line
-  for _, event_type in ipairs(actions.event_types) do
+  for _, category in ipairs(categories) do
+    local event_type = category.key or category
+    local label = category.label or actions.type_label(event_type)
     local line = #lines + 1
     local checkbox = enabled[event_type] and "[x]" or "[ ]"
     lines[line] = ("  %s  %-28s %s"):format(
       checkbox,
-      actions.type_label(event_type),
+      label,
       event_type
     )
     M.state.line_targets[line] = { event_type = event_type }
@@ -1352,14 +1394,26 @@ local function set_all_filter_types(value)
   local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
   local target = M.state.line_targets[line]
   local enabled = {}
-  for _, event_type in ipairs(actions.event_types) do
-    enabled[event_type] = value
+  local categories = M.state.filter_scope.project
+      and project_activity_categories
+    or actions.event_types
+  for _, category in ipairs(categories) do
+    enabled[category.key or category] = value
   end
   save_filter_type_set(M.state.filter_scope, enabled)
   render_filters(M.state.filter_scope, target and target.event_type or nil)
 end
 
 local function reset_filter_types_to_default()
+  if M.state.view == "filters"
+    and M.state.filter_scope
+    and M.state.filter_scope.project
+  then
+    M.state.opts.project_activity_types = nil
+    persist_filter_config()
+    render_filters(M.state.filter_scope)
+    return
+  end
   if M.state.view ~= "contributors" then
     return
   end
@@ -1477,7 +1531,11 @@ local function render_activity(events, cached, notice, opts)
       and {
         "",
         "  PROJECT",
-        ("  %s%s"):format(project_title(project), context_suffix),
+        ("  %s · %s%s"):format(
+          project_title(project),
+          provider_name(project),
+          context_suffix
+        ),
       }
     or {
       "",
@@ -1696,7 +1754,7 @@ local function render_shortcuts()
     { "s /", "Fuzzy-search contributor names and handles" },
     { "a", "Add a GitHub or Codeberg account" },
     { "x", "Remove the selected account" },
-    { "f", "Edit filters for the selected contributor" },
+    { "f", "Edit filters for the selected user or project" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
     { "o", "Open the selected contributor profile" },
@@ -1768,14 +1826,6 @@ local function activity_page(events, page, page_size)
 end
 
 M._activity_page = activity_page
-
-local function project_activity_types_for(project)
-  if project.activity_types ~= nil then
-    return project.activity_types
-  end
-  return M.state.opts.project_activity_types
-    or default_project_activity_types
-end
 
 local function project_event_allowed(event, project)
   local enabled = {}
@@ -2406,14 +2456,24 @@ local function open_filters(global)
     return
   end
 
-  local contributor
+  local scope
   if M.state.view == "contributors" then
-    contributor = target_on_cursor()
+    local target = target_on_cursor()
+    if type(target) == "table" and target.kind == "project" then
+      scope = { project = target.project }
+    else
+      scope = target
+    end
   elseif M.state.view == "activity" then
-    contributor = M.state.contributor
+    scope = M.state.activity_project or M.state.contributor
+    if M.state.activity_project then
+      scope = { project = M.state.activity_project }
+    end
   end
-  if type(contributor) == "table" and contributor.username then
-    render_filters(contributor)
+  if type(scope) == "table"
+    and (scope.project or scope.username)
+  then
+    render_filters(scope)
   end
 end
 
@@ -2755,7 +2815,7 @@ local function map_keys(buf)
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
   map("f", function()
     open_filters(false)
-  end, "Edit contributor activity types")
+  end, "Edit activity categories")
   map("F", function()
     open_filters(true)
   end, "Edit global activity types")

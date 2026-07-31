@@ -2,6 +2,7 @@
 local M = {}
 
 local cache = {}
+local repository_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
 local base_url = "https://codeberg.org"
@@ -364,6 +365,51 @@ function M.events(username, opts, callback)
       events[#events + 1] = M.normalize_activity(activity)
     end
     cache[username] = {
+      events = events,
+      fetched_at = os.time(),
+      per_page = limit,
+      complete = #activities < limit,
+    }
+    callback(events, nil, false)
+  end)
+end
+
+function M.repository_events(repository_name, opts, callback)
+  opts = opts or {}
+  local ttl = opts.cache_ttl or 300
+  local cached = repository_cache[repository_name]
+  local limit = math.min(
+    50,
+    math.max(1, math.floor(opts.per_page or 30))
+  )
+  if not opts.force
+    and cached
+    and os.time() - cached.fetched_at < ttl
+    and (
+      (cached.per_page or #cached.events) >= limit
+      or cached.complete
+    )
+  then
+    vim.schedule(function()
+      callback(cached.events, nil, true)
+    end)
+    return
+  end
+
+  local url = (
+    "%s/api/v1/repos/%s/activities/feeds?limit=%d"
+  ):format(base_url, repository_name, limit)
+  request_json(url, opts, function(activities, err)
+    if not activities then
+      callback(nil, err)
+      return
+    end
+
+    local events = {}
+    for _, activity in ipairs(activities) do
+      events[#events + 1] = M.normalize_activity(activity)
+    end
+    repository_cache[repository_name] = {
       events = events,
       fetched_at = os.time(),
       per_page = limit,
