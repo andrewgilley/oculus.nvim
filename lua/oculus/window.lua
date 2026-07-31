@@ -68,6 +68,7 @@ M.state = {
   activity_error = nil,
   activity_loaded = false,
   activity_page = 1,
+  activity_loaded_pages = 1,
   activity_page_size = 8,
   activity_source_events = nil,
   activity_cursor_min_line = 1,
@@ -1223,14 +1224,11 @@ local function render_activity(events, cached, notice, opts)
   local activity_page_number = M.state.activity_page or 1
   local activity_page_count = math.max(
     activity_page_number,
-    math.ceil(
-      #(M.state.activity_source_events or {})
-        / math.max(1, M.state.activity_page_size or 1)
-    )
+    M.state.activity_loaded_pages or 1
   )
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 12 Label activity feeds with their forge
   local context_suffix = not M.state.activity_commit_page
-      and activity_page_number > 1
+      and activity_page_count > 1
       and (" (%d/%d)"):format(
         activity_page_number,
         activity_page_count
@@ -1526,6 +1524,9 @@ M._activity_page = activity_page
 local function load_activity(contributor, force, page)
   M.state.view = "activity"
   M.state.contributor = contributor
+  if page == nil then
+    M.state.activity_loaded_pages = 1
+  end
   M.state.activity_page = math.max(1, page or 1)
   M.state.activity_page_size = math.max(
     1,
@@ -1555,6 +1556,10 @@ local function load_activity(contributor, force, page)
     else
       local filtered = actions.filter(events, activity_types_for(contributor))
       M.state.activity_source_events = filtered
+      M.state.activity_loaded_pages = math.max(
+        M.state.activity_loaded_pages or 1,
+        M.state.activity_page
+      )
       local results = activity_page(
         filtered,
         M.state.activity_page,
