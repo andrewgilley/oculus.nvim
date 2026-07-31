@@ -305,7 +305,7 @@ local function render_activity_footer()
   local width = config.width
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
-    activity_commands = activity_commands .. "   p past"
+    activity_commands = activity_commands .. "   R refresh   p past"
   end
   if
     not M.state.activity_commit_page
@@ -477,8 +477,6 @@ local function display_projects(projects)
   local result = {}
   for _, project in ipairs(projects or {}) do
     if type(project) == "table"
-      and type(project.name) == "string"
-      and project.name ~= ""
       and type(project.repository) == "string"
       and project.repository ~= ""
     then
@@ -495,6 +493,10 @@ local function project_key(project)
   return (project.provider == "codeberg" and "codeberg" or "github")
     .. ":"
     .. project.repository:lower()
+end
+
+local function project_title(project)
+  return project.repository
 end
 
 local function contributor_key(contributor)
@@ -902,7 +904,7 @@ local function project_preview_items(project)
   local provider = project.provider == "codeberg" and "Codeberg" or "GitHub"
   return {
     [2] = { "PROJECT", "Title" },
-    [4] = { project.name, "Identifier" },
+    [4] = { project_title(project), "Identifier" },
     [5] = { project.repository, "Comment" },
     [6] = { provider, "Comment" },
     [8] = { "↑ pushes", "Comment" },
@@ -1048,7 +1050,10 @@ local function render_contributors()
     lines[#lines + 1] = "  PROJECT"
     for _, project in ipairs(projects) do
       local line = #lines + 1
-      lines[line] = pad_cell("  " .. project.name, left_width)
+      lines[line] = pad_cell(
+        "  " .. project_title(project),
+        left_width
+      )
       M.state.line_targets[line] = {
         kind = "project",
         project = project,
@@ -1139,7 +1144,8 @@ local function render_contributors()
   local selected_line
   for line, target in pairs(M.state.line_targets) do
     if target.kind == "project"
-      and target.project.name == (M.state.selected_project or {}).name
+      and target.project.repository
+        == (M.state.selected_project or {}).repository
     then
       selected_line = line
       break
@@ -1380,7 +1386,7 @@ local function render_loading(target)
       and {
         "",
         "  PROJECT",
-        "  " .. project.name,
+        "  " .. project_title(project),
       }
     or {
       "",
@@ -1410,7 +1416,7 @@ local function render_error(message)
       and {
         "",
         "  PROJECT",
-        "  " .. project.name,
+        "  " .. project_title(project),
         "",
         "  Could not load activity",
         "  " .. message,
@@ -1470,7 +1476,7 @@ local function render_activity(events, cached, notice, opts)
       and {
         "",
         "  PROJECT",
-        ("  %s%s"):format(project.name, context_suffix),
+        ("  %s%s"):format(project_title(project), context_suffix),
       }
     or {
       "",
@@ -1697,6 +1703,7 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
+    { "R", "Refresh the current activity page" },
     { "p", "Load the next eight past activity items" },
     { "r", "Load the previous page of recent activity" },
   })
@@ -1983,6 +1990,18 @@ local function previous_activity_page()
     load_project_activity(M.state.activity_project, false, page)
   else
     load_activity(M.state.contributor, false, page)
+  end
+end
+
+local function refresh_activity()
+  if M.state.view ~= "activity" or M.state.activity_commit_page then
+    return
+  end
+  local page = M.state.activity_page or 1
+  if M.state.activity_project then
+    load_project_activity(M.state.activity_project, true, page)
+  elseif M.state.contributor then
+    load_activity(M.state.contributor, true, page)
   end
 end
 
@@ -2734,6 +2753,7 @@ local function map_keys(buf)
   end, "Disable all Oculus activity filters")
   map("p", next_activity_page, "Load past Oculus activity")
   map("r", previous_activity_page, "Load more recent Oculus activity")
+  map("R", refresh_activity, "Refresh Oculus activity")
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
   map("k", function()
