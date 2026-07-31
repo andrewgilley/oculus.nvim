@@ -25,6 +25,18 @@ local defaults = {
   request_timeout = 15,
   activity_types = nil,
   user_activity_types = {},
+  project_activity_types = {
+    "push",
+    "merged_pull_request",
+    "assigned_issue",
+  },
+  projects = {
+    {
+      name = "Neovim",
+      repository = "neovim/neovim",
+      provider = "github",
+    },
+  },
   persist_filters = true,
   persist_contributors = true,
   state_file = vim.fn.stdpath("state") .. "/oculus.json",

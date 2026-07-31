@@ -41,6 +41,12 @@ local activity_page_loading_ns = vim.api.nvim_create_namespace(
   "oculus_activity_page_loading"
 )
 local commit_activity_url
+local load_project_activity
+local default_project_activity_types = {
+  "push",
+  "merged_pull_request",
+  "assigned_issue",
+}
 local autocmd_group = vim.api.nvim_create_augroup(
   "OculusWindow",
   { clear = true }
@@ -53,6 +59,8 @@ M.state = {
   footer_win = nil,
   view = "contributors",
   contributor = nil,
+  activity_scope = nil,
+  activity_project = nil,
   events = nil,
   line_targets = {},
   inspect_targets = {},
@@ -62,8 +70,10 @@ M.state = {
   preview_key = nil,
   preview_items = nil,
   preview_contributor = nil,
+  preview_project = nil,
   contributors = {},
   selected_username = nil,
+  selected_project = nil,
   contributor_offset = 1,
   filter_scope = nil,
   activity_cached = nil,
@@ -148,7 +158,9 @@ local function draw_activity_page_loading()
     -1,
     false
   )) do
-    if text:match("^  @") then
+    if text:match("^  @")
+      or (M.state.activity_project and line == 3)
+    then
       handle_line = line
       break
     end
@@ -459,6 +471,30 @@ local function display_contributors(contributors)
     result[#result + 1] = copy
   end
   return result
+end
+
+local function display_projects(projects)
+  local result = {}
+  for _, project in ipairs(projects or {}) do
+    if type(project) == "table"
+      and type(project.name) == "string"
+      and project.name ~= ""
+      and type(project.repository) == "string"
+      and project.repository ~= ""
+    then
+      result[#result + 1] = vim.deepcopy(project)
+    end
+  end
+  return result
+end
+
+local function project_key(project)
+  if type(project) ~= "table" or not project.repository then
+    return nil
+  end
+  return (project.provider == "codeberg" and "codeberg" or "github")
+    .. ":"
+    .. project.repository:lower()
 end
 
 local function contributor_key(contributor)
@@ -861,6 +897,19 @@ local function preview_items(contributor)
     [5] = { provider_name(contributor), "Comment" },
   }
 end
+
+local function project_preview_items(project)
+  local provider = project.provider == "codeberg" and "Codeberg" or "GitHub"
+  return {
+    [2] = { "PROJECT", "Title" },
+    [4] = { project.name, "Identifier" },
+    [5] = { project.repository, "Comment" },
+    [6] = { provider, "Comment" },
+    [8] = { "↑ pushes", "Comment" },
+    [9] = { "↗ merged PRs", "Comment" },
+    [10] = { "! assigned issues", "Comment" },
+  }
+end
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 9
 
 local function activity_types_for(contributor)
@@ -891,6 +940,19 @@ local function queue_preview(contributor)
   M.state.preview_key = key
   M.state.preview_contributor = contributor
   render_preview_panel(preview_items(contributor))
+end
+
+local function queue_project_preview(project)
+  if not project or M.state.view ~= "contributors" then
+    return
+  end
+  local key = project_key(project)
+  if M.state.preview_key == key then
+    return
+  end
+  M.state.preview_key = key
+  M.state.preview_project = project
+  render_preview_panel(project_preview_items(project))
 end
 
 local function update_contributor_selection()
@@ -943,9 +1005,12 @@ local function render_contributors()
   close_activity_footer()
   M.state.view = "contributors"
   M.state.contributor = nil
+  M.state.activity_scope = nil
+  M.state.activity_project = nil
   M.state.events = nil
   M.state.line_targets = {}
   M.state.preview_key = nil
+  M.state.preview_project = nil
 
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 10 Generalize the contributor list for multiple forges
   local searching = type(M.state.search_query) == "string"
@@ -964,12 +1029,34 @@ local function render_contributors()
     }
 
   local contributors = visible_contributors()
+  local projects = not searching
+      and display_projects(M.state.opts.projects)
+    or {}
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
   local username_width = 4
   for _, contributor in ipairs(contributors) do
     username_width = math.max(username_width, #(contributor.username) + 1)
   end
   username_width = math.min(username_width, math.max(4, left_width - 2))
+
+  local project_lines = {}
+  local project_heading_line
+  if #projects > 0 then
+    project_heading_line = #lines + 1
+    lines[#lines + 1] = "  PROJECT ACTIVITY"
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "  PROJECT"
+    for _, project in ipairs(projects) do
+      local line = #lines + 1
+      lines[line] = pad_cell("  " .. project.name, left_width)
+      M.state.line_targets[line] = {
+        kind = "project",
+        project = project,
+      }
+      project_lines[#project_lines + 1] = line
+    end
+    lines[#lines + 1] = ""
+  end
 
   lines[#lines + 1] = "  " .. pad_cell("USER", username_width)
 
@@ -987,7 +1074,7 @@ local function render_contributors()
   local window_height = vim.api.nvim_win_get_height(M.state.win)
   list_limit = math.min(
     list_limit,
-    math.max(1, window_height - 7)
+    math.max(1, window_height - 7 - #project_lines - 4)
   )
   local max_offset = math.max(1, #contributors - list_limit + 1)
   local offset = math.min(
@@ -1034,28 +1121,57 @@ local function render_contributors()
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
   highlight(5, 2, -1, "Comment")
+  if project_heading_line then
+    highlight(project_heading_line, 2, -1, "Title")
+  end
   for line, _ in pairs(M.state.line_targets) do
-    highlight(line, 2, 2 + username_width, "Identifier")
+    local target = M.state.line_targets[line]
+    highlight(
+      line,
+      2,
+      target.kind == "project" and -1 or 2 + username_width,
+      "Identifier"
+    )
   end
   highlight(separator_line, 2, -1, "WinSeparator")
   highlight(commands_line, 2, -1, "Comment")
 
   local selected_line
-  for line, contributor in pairs(M.state.line_targets) do
-    if contributor.username == M.state.selected_username then
+  for line, target in pairs(M.state.line_targets) do
+    if target.kind == "project"
+      and target.project.name == (M.state.selected_project or {}).name
+    then
+      selected_line = line
+      break
+    elseif target.kind ~= "project"
+      and target.username == M.state.selected_username
+    then
       selected_line = line
       break
     end
   end
-  selected_line = selected_line or (M.state.line_targets[6] and 6)
+  selected_line = selected_line
+    or project_lines[1]
+    or (M.state.line_targets[6] and 6)
   if selected_line and is_valid_win(M.state.win) then
-    local contributor = M.state.line_targets[selected_line]
-    M.state.selected_username = contributor.username
+    local target = M.state.line_targets[selected_line]
+    if target.kind == "project" then
+      M.state.selected_project = target.project
+      M.state.selected_username = nil
+    else
+      M.state.selected_project = nil
+      M.state.selected_username = target.username
+    end
     vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
-    queue_preview(contributor)
+    if target.kind == "project" then
+      queue_project_preview(target.project)
+    else
+      queue_preview(target)
+    end
     update_contributor_selection()
   else
     local preview_contributor = M.state.preview_contributor
+    local preview_project = M.state.preview_project
     local previous_username = M.state.search_return
         and M.state.search_return.selected_username
       or nil
@@ -1067,7 +1183,9 @@ local function render_contributors()
         end
       end
     end
-    if preview_contributor then
+    if preview_project then
+      queue_project_preview(preview_project)
+    elseif preview_contributor then
       queue_preview(preview_contributor)
     else
       render_preview_panel({
@@ -1245,7 +1363,7 @@ local function reset_filter_types_to_default()
 end
 
 -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 11 Show the selected forge while activity loads
-local function render_loading(contributor)
+local function render_loading(target)
   stop_activity_page_loading()
   close_activity_footer()
   M.state.view = "activity"
@@ -1254,11 +1372,21 @@ local function render_loading(contributor)
   M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
   M.state.activity_error = nil
-  local lines = {
-    "",
-    "  USER",
-    "  @" .. contributor.username,
-  }
+  local project = target.kind == "project" and target.project or nil
+  M.state.activity_scope = project and "project" or "user"
+  M.state.activity_project = project
+  M.state.contributor = project and nil or target
+  local lines = project
+      and {
+        "",
+        "  PROJECT",
+        "  " .. project.name,
+      }
+    or {
+      "",
+      "  USER",
+      "  @" .. target.username,
+    }
   footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
@@ -1277,15 +1405,24 @@ local function render_error(message)
   M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
   M.state.activity_error = message
-  local contributor = M.state.contributor
-  local lines = {
-    "",
-    "  USER",
-    "  @" .. contributor.username,
-    "",
-    "  Could not load activity",
-    "  " .. message,
-  }
+  local project = M.state.activity_project
+  local lines = project
+      and {
+        "",
+        "  PROJECT",
+        "  " .. project.name,
+        "",
+        "  Could not load activity",
+        "  " .. message,
+      }
+    or {
+      "",
+      "  USER",
+      "  @" .. M.state.contributor.username,
+      "",
+      "  Could not load activity",
+      "  " .. message,
+    }
   footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
@@ -1304,6 +1441,7 @@ local function render_activity(events, cached, notice, opts)
     M.state.activity_return = nil
   end
   local contributor = M.state.contributor
+  local project = M.state.activity_project
   M.state.events = events
   M.state.activity_cached = cached
   M.state.activity_notice = notice
@@ -1328,15 +1466,21 @@ local function render_activity(events, cached, notice, opts)
         activity_page_count
       )
     or ""
-  local lines = {
-    "",
-    "  USER",
-    ("  %s · %s%s"):format(
-      "@" .. contributor.username,
-      provider_name(contributor),
-      context_suffix
-    ),
-  }
+  local lines = project
+      and {
+        "",
+        "  PROJECT",
+        ("  %s%s"):format(project.name, context_suffix),
+      }
+    or {
+      "",
+      "  USER",
+      ("  %s · %s%s"):format(
+        "@" .. contributor.username,
+        provider_name(contributor),
+        context_suffix
+      ),
+    }
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 12
   if notice then
     lines[#lines + 1] = "  " .. notice
@@ -1454,7 +1598,9 @@ commit_activity_url = function(event, sha)
   end
   local repo = event.repo and event.repo.name
   if repo then
-    local host = provider_name(M.state.contributor) == "Codeberg"
+    local activity_source = M.state.activity_project
+      or M.state.contributor
+    local host = provider_name(activity_source) == "Codeberg"
         and "https://codeberg.org/"
       or "https://github.com/"
     return host .. repo .. "/commit/" .. sha
@@ -1615,12 +1761,128 @@ end
 
 M._activity_page = activity_page
 
+local function project_activity_types_for(project)
+  if project.activity_types ~= nil then
+    return project.activity_types
+  end
+  return M.state.opts.project_activity_types
+    or default_project_activity_types
+end
+
+local function project_event_allowed(event, project)
+  local enabled = {}
+  for _, category in ipairs(project_activity_types_for(project) or {}) do
+    enabled[category] = true
+  end
+  local payload = event.payload or {}
+  if event.type == "PushEvent" then
+    return enabled.push == true
+  end
+  if event.type == "PullRequestEvent" then
+    local pull_request = payload.pull_request or {}
+    local merged = pull_request.merged == true
+      or pull_request.merged_at ~= nil
+    return enabled.merged_pull_request == true
+      and payload.action == "closed"
+      and merged
+  end
+  if event.type == "IssuesEvent" then
+    return enabled.assigned_issue == true
+      and payload.action == "assigned"
+  end
+  return false
+end
+
+local function filter_project_events(events, project)
+  local result = {}
+  for _, event in ipairs(events or {}) do
+    if event.repo
+      and event.repo.name == project.repository
+      and project_event_allowed(event, project)
+    then
+      result[#result + 1] = event
+    end
+  end
+  return result
+end
+
+M._filter_project_events = filter_project_events
+
+load_project_activity = function(project, force, page)
+  local preserve_activity_page = page ~= nil
+    and M.state.view == "activity"
+    and M.state.activity_loaded
+    and is_valid_buf(M.state.buf)
+  M.state.view = "activity"
+  M.state.activity_scope = "project"
+  M.state.activity_project = project
+  M.state.contributor = nil
+  if page == nil then
+    M.state.activity_loaded_pages = 1
+  end
+  M.state.activity_page = math.max(1, page or 1)
+  M.state.activity_page_size = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.results_limit) or 8)
+  )
+  M.state.request_id = M.state.request_id + 1
+  local request_id = M.state.request_id
+  if preserve_activity_page then
+    M.state.activity_error = nil
+    start_activity_page_loading()
+  else
+    render_loading({ kind = "project", project = project })
+  end
+
+  local provider = project.provider == "codeberg" and codeberg or github
+  local request_opts = vim.tbl_extend(
+    "force",
+    M.state.opts,
+    { force = force or false }
+  )
+  request_opts.per_page = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.per_page) or 30)
+  ) + (M.state.activity_page - 1) * M.state.activity_page_size
+  local callback = function(events, err, cached, notice)
+    if request_id ~= M.state.request_id
+      or M.state.view ~= "activity"
+      or M.state.activity_project ~= project
+      or not is_valid_win(M.state.win)
+    then
+      return
+    end
+    if err then
+      render_error(err)
+      return
+    end
+    local filtered = filter_project_events(events, project)
+    M.state.activity_source_events = filtered
+    M.state.activity_loaded_pages = math.max(
+      M.state.activity_loaded_pages or 1,
+      M.state.activity_page
+    )
+    render_activity(
+      activity_page(filtered, M.state.activity_page, M.state.activity_page_size),
+      cached,
+      notice
+    )
+  end
+  if type(provider.repository_events) ~= "function" then
+    callback(nil, "this provider does not support project activity")
+    return
+  end
+  provider.repository_events(project.repository, request_opts, callback)
+end
+
 local function load_activity(contributor, force, page)
   local preserve_activity_page = page ~= nil
     and M.state.view == "activity"
     and M.state.activity_loaded
     and is_valid_buf(M.state.buf)
   M.state.view = "activity"
+  M.state.activity_scope = "user"
+  M.state.activity_project = nil
   M.state.contributor = contributor
   if page == nil then
     M.state.activity_loaded_pages = 1
@@ -1695,31 +1957,33 @@ local function next_activity_page()
   if
     M.state.view ~= "activity"
     or M.state.activity_commit_page
-    or not M.state.contributor
+    or (not M.state.contributor and not M.state.activity_project)
   then
     return
   end
-  load_activity(
-    M.state.contributor,
-    false,
-    (M.state.activity_page or 1) + 1
-  )
+  local page = (M.state.activity_page or 1) + 1
+  if M.state.activity_project then
+    load_project_activity(M.state.activity_project, false, page)
+  else
+    load_activity(M.state.contributor, false, page)
+  end
 end
 
 local function previous_activity_page()
   if
     M.state.view ~= "activity"
     or M.state.activity_commit_page
-    or not M.state.contributor
+    or (not M.state.contributor and not M.state.activity_project)
     or (M.state.activity_page or 1) == 1
   then
     return
   end
-  load_activity(
-    M.state.contributor,
-    false,
-    (M.state.activity_page or 1) - 1
-  )
+  local page = (M.state.activity_page or 1) - 1
+  if M.state.activity_project then
+    load_project_activity(M.state.activity_project, false, page)
+  else
+    load_activity(M.state.contributor, false, page)
+  end
 end
 
 local function search_win_config()
@@ -2078,8 +2342,15 @@ end
 local function select_current()
   local target = target_on_cursor()
   if M.state.view == "contributors" and type(target) == "table" then
-    M.state.selected_username = target.username
-    load_activity(target, false)
+    if target.kind == "project" then
+      M.state.selected_project = target.project
+      M.state.selected_username = nil
+      load_project_activity(target.project, false)
+    else
+      M.state.selected_project = nil
+      M.state.selected_username = target.username
+      load_activity(target, false)
+    end
   elseif M.state.view == "activity" then
     local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
     local event = M.state.activity_expansion_targets[line]
@@ -2111,7 +2382,10 @@ end
 local function open_current()
   local target = target_on_cursor()
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 16 Open profiles on the contributor's forge
-  if M.state.view == "contributors" and type(target) == "table" then
+  if M.state.view == "contributors"
+    and type(target) == "table"
+    and target.kind ~= "project"
+  then
     open_url(contributor_profile_url(target))
   end
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 16
@@ -2240,21 +2514,39 @@ local function move_cursor(direction)
   end
 
   if M.state.view == "contributors" and #M.state.contributors > 0 then
-    local target = target_on_cursor()
-    local username = type(target) == "table" and target.username
-      or M.state.selected_username
-    local current_index = 1
-    for index, contributor in ipairs(M.state.contributors) do
-      if contributor.username == username then
-        current_index = index
-        break
+    local selectable = {}
+    for line, candidate in pairs(M.state.line_targets) do
+      if type(candidate) == "table" then
+        selectable[#selectable + 1] = line
       end
     end
-    local next_index = ((current_index - 1 + direction) %
-      #M.state.contributors) + 1
-    M.state.selected_username = M.state.contributors[next_index].username
-    render_contributors()
-    return
+    table.sort(selectable)
+    if #selectable > 0 then
+      local current_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+      local selected = selectable[direction > 0 and 1 or #selectable]
+      for index, line in ipairs(selectable) do
+        if line == current_line then
+          selected = selectable[((index - 1 + direction)
+            % #selectable) + 1]
+          break
+        elseif direction > 0 and line > current_line then
+          selected = line
+          break
+        elseif direction < 0 and line < current_line then
+          selected = line
+        end
+      end
+      local candidate = M.state.line_targets[selected]
+      if candidate.kind == "project" then
+        M.state.selected_project = candidate.project
+        M.state.selected_username = nil
+      else
+        M.state.selected_project = nil
+        M.state.selected_username = candidate.username
+      end
+      render_contributors()
+      return
+    end
   end
 
   if M.state.view == "activity" then
@@ -2300,9 +2592,21 @@ local function move_cursor(direction)
   vim.api.nvim_win_set_cursor(M.state.win, { selected, 0 })
   local target = M.state.line_targets[selected]
   if M.state.view == "contributors" and type(target) == "table" then
-    M.state.selected_username = target.username
+    if target.kind == "project" then
+      M.state.selected_project = target.project
+      M.state.selected_username = nil
+    else
+      M.state.selected_project = nil
+      M.state.selected_username = target.username
+    end
   end
-  queue_preview(target)
+  if M.state.view == "contributors" and type(target) == "table" then
+    if target.kind == "project" then
+      queue_project_preview(target.project)
+    else
+      queue_preview(target)
+    end
+  end
 end
 
 local function go_back()
@@ -2328,7 +2632,9 @@ local function go_back()
   if M.state.view == "shortcuts" and M.state.shortcut_return then
     local return_state = M.state.shortcut_return
     M.state.shortcut_return = nil
-    if return_state.view == "activity" and M.state.contributor then
+    if return_state.view == "activity"
+      and (M.state.contributor or M.state.activity_project)
+    then
       if M.state.activity_error then
         render_error(M.state.activity_error)
       elseif M.state.activity_loaded and M.state.events then
@@ -2338,6 +2644,8 @@ local function go_back()
           M.state.activity_notice,
           { commit_page = M.state.activity_commit_page }
         )
+      elseif M.state.activity_project then
+        load_project_activity(M.state.activity_project, false)
       else
         load_activity(M.state.contributor, false)
       end
@@ -2475,6 +2783,10 @@ function M.close()
   M.state.preview_key = nil
   M.state.preview_items = nil
   M.state.preview_contributor = nil
+  M.state.preview_project = nil
+  M.state.activity_scope = nil
+  M.state.activity_project = nil
+  M.state.selected_project = nil
   M.state.contributors = {}
   M.state.filter_scope = nil
   M.state.shortcut_return = nil
@@ -2549,14 +2861,21 @@ function M.open(opts)
   map_keys(buf)
   if
     M.state.view == "activity"
-    and M.state.contributor
+    and (M.state.contributor or M.state.activity_project)
     and M.state.events
     and M.state.activity_loaded
   then
-    local contributor = contributor_by_username(M.state.contributor.username)
-      or M.state.contributor
+    local contributor = M.state.contributor
+      and (contributor_by_username(M.state.contributor.username)
+        or M.state.contributor)
+      or nil
     M.state.contributor = contributor
-    M.state.selected_username = contributor.username
+    if M.state.activity_project then
+      M.state.selected_project = M.state.activity_project
+      M.state.selected_username = nil
+    else
+      M.state.selected_username = contributor.username
+    end
     render_activity(
       M.state.events,
       M.state.activity_cached,
@@ -2610,10 +2929,17 @@ function M.open(opts)
         return
       end
       local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
-      local contributor = M.state.line_targets[line]
-      if type(contributor) == "table" then
-        M.state.selected_username = contributor.username
-        queue_preview(contributor)
+      local target = M.state.line_targets[line]
+      if type(target) == "table" then
+        if target.kind == "project" then
+          M.state.selected_project = target.project
+          M.state.selected_username = nil
+          queue_project_preview(target.project)
+        else
+          M.state.selected_project = nil
+          M.state.selected_username = target.username
+          queue_preview(target)
+        end
       end
       update_contributor_selection()
     end,

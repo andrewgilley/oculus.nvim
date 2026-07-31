@@ -1,6 +1,7 @@
 local M = {}
 
 local cache = {}
+local repository_cache = {}
 local push_cache = {}
 local pull_request_cache = {}
 local inspect_pull_request_cache = {}
@@ -105,6 +106,46 @@ function M.events(username, opts, callback)
       complete = #events < per_page,
     }
     callback(events, nil, false)
+  end)
+end
+
+function M.repository_events(repository, opts, callback)
+  opts = opts or {}
+  local ttl = opts.cache_ttl or 300
+  local cached = repository_cache[repository]
+  local per_page = math.min(
+    100,
+    math.max(1, math.floor(opts.per_page or 30))
+  )
+  if not opts.force
+    and cached
+    and os.time() - cached.fetched_at < ttl
+    and (
+      (cached.per_page or #cached.events) >= per_page
+      or cached.complete
+    )
+  then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.events), nil, true)
+    end)
+    return
+  end
+
+  local url = (
+    "https://api.github.com/repos/%s/events?per_page=%d"
+  ):format(repository, per_page)
+  request_json(url, opts, function(events, err)
+    if not events then
+      callback(nil, err)
+      return
+    end
+    repository_cache[repository] = {
+      events = events,
+      fetched_at = os.time(),
+      per_page = per_page,
+      complete = #events < per_page,
+    }
+    callback(vim.deepcopy(events), nil, false)
   end)
 end
 
