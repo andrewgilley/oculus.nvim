@@ -95,6 +95,7 @@ M.state = {
   search_buf = nil,
   search_win = nil,
   search_query = nil,
+  search_backspace_pending = false,
   search_results = nil,
   search_index = 1,
   search_return = nil,
@@ -1782,18 +1783,20 @@ local function project_event_allowed(event, project)
     enabled[category] = true
   end
   local payload = event.payload or {}
-  if event.type == "PushEvent" then
+  local event_type = event.type or event.event_type
+  if event_type == "PushEvent" then
     return enabled.push == true
   end
-  if event.type == "PullRequestEvent" then
+  if event_type == "PullRequestEvent" then
     local pull_request = payload.pull_request or {}
     local merged = pull_request.merged == true
       or pull_request.merged_at ~= nil
+      or pull_request.merged_by ~= nil
     return enabled.merged_pull_request == true
       and payload.action == "closed"
       and merged
   end
-  if event.type == "IssuesEvent" then
+  if event_type == "IssuesEvent" then
     return enabled.assigned_issue == true
       and payload.action == "assigned"
   end
@@ -1803,8 +1806,15 @@ end
 local function filter_project_events(events, project)
   local result = {}
   for _, event in ipairs(events or {}) do
-    if event.repo
-      and event.repo.name == project.repository
+    local event_repository = event.repo
+        and (event.repo.name or event.repo.full_name)
+      or event.repository
+        and (event.repository.full_name or event.repository.name)
+      or nil
+    local repository_matches = type(event_repository) ~= "string"
+      or event_repository == ""
+      or event_repository:lower() == project.repository:lower()
+    if repository_matches
       and project_event_allowed(event, project)
     then
       result[#result + 1] = event
@@ -1847,10 +1857,9 @@ load_project_activity = function(project, force, page)
     M.state.opts,
     { force = force or false }
   )
-  request_opts.per_page = math.max(
-    1,
-    math.floor(tonumber(M.state.opts.per_page) or 30)
-  ) + (M.state.activity_page - 1) * M.state.activity_page_size
+  -- Repository feeds contain many non-project events (watches, comments,
+  -- and reviews), so fetch the largest useful window before filtering.
+  request_opts.per_page = 100
   local callback = function(events, err, cached, notice)
     if request_id ~= M.state.request_id
       or M.state.view ~= "activity"
@@ -2046,6 +2055,7 @@ end
 
 local function clear_search_state()
   M.state.search_query = nil
+  M.state.search_backspace_pending = false
   M.state.search_results = nil
   M.state.search_index = 1
   M.state.search_return = nil
@@ -2093,6 +2103,13 @@ local function update_search_results()
     return
   end
   local line = prompt_query(M.state.search_buf)
+  local close_after_backspace = M.state.search_backspace_pending
+    and line == ""
+  M.state.search_backspace_pending = false
+  if close_after_backspace then
+    vim.schedule(cancel_search)
+    return
+  end
   M.state.search_query = line
   M.state.search_results = fuzzy_contributors(M.state.contributors, line)
   M.state.search_index = 1
@@ -2145,6 +2162,7 @@ local function open_search()
     contributor_offset = M.state.contributor_offset,
   }
   M.state.search_query = ""
+  M.state.search_backspace_pending = false
   M.state.search_results = fuzzy_contributors(M.state.contributors, "")
   M.state.search_index = 1
   for index, contributor in ipairs(M.state.search_results) do
@@ -2198,6 +2216,7 @@ local function open_search()
       cancel_search()
       return ""
     end
+    M.state.search_backspace_pending = true
     return "<BS>"
   end, {
     buffer = buf,
