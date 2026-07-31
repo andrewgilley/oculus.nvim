@@ -944,17 +944,48 @@ local function preview_items(contributor)
   }
 end
 
-local function project_preview_items(project)
+local function wrapped_preview_text(text, width, limit)
+  if type(text) ~= "string" or vim.trim(text) == "" then
+    return {}
+  end
+  width = math.max(8, width or 32)
+  limit = math.max(1, limit or 3)
+  local words = vim.split(vim.trim(text):gsub("%s+", " "), " ")
+  local lines = {}
+  local index = 1
+  while index <= #words and #lines < limit do
+    local line = words[index]
+    index = index + 1
+    while index <= #words
+      and vim.fn.strdisplaywidth(line .. " " .. words[index]) <= width
+    do
+      line = line .. " " .. words[index]
+      index = index + 1
+    end
+    if #lines == limit - 1 and index <= #words then
+      line = line .. " " .. table.concat(words, " ", index)
+      index = #words + 1
+    end
+    lines[#lines + 1] = trim_to_width(line, width)
+  end
+  return lines
+end
+
+local function project_preview_items(project, width)
   local provider = project.provider == "codeberg" and "Codeberg" or "GitHub"
-  return {
+  local items = {
     [2] = { "PROJECT", "Title" },
     [4] = { project_title(project), "Identifier" },
-    [5] = { project.repository, "Comment" },
-    [6] = { provider, "Comment" },
-    [8] = { "↑ pushes", "Comment" },
-    [9] = { "↗ merged PRs", "Comment" },
-    [10] = { "! assigned issues", "Comment" },
+    [5] = { provider, "Comment" },
   }
+  for index, line in ipairs(wrapped_preview_text(
+    project.description,
+    width,
+    3
+  )) do
+    items[6 + index] = { line, "Comment" }
+  end
+  return items
 end
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 9
 
@@ -998,7 +1029,10 @@ local function queue_project_preview(project)
   end
   M.state.preview_key = key
   M.state.preview_project = project
-  render_preview_panel(project_preview_items(project))
+  local window_width = vim.api.nvim_win_get_width(M.state.win)
+  local left_width = preview_left_width(window_width)
+  local preview_width = math.max(15, window_width - left_width - 5)
+  render_preview_panel(project_preview_items(project, preview_width))
 end
 
 local function update_contributor_selection()
@@ -1079,19 +1113,17 @@ local function render_contributors()
       and display_projects(M.state.opts.projects)
     or {}
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
-  local username_width = 4
+  local username_width = 5
   for _, contributor in ipairs(contributors) do
     username_width = math.max(username_width, #(contributor.username) + 1)
   end
-  username_width = math.min(username_width, math.max(4, left_width - 2))
+  username_width = math.min(username_width, math.max(5, left_width - 2))
 
   local project_lines = {}
   local project_heading_line
   if #projects > 0 then
     project_heading_line = #lines + 1
-    lines[#lines + 1] = "  PROJECT ACTIVITY"
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "  PROJECT"
+    lines[#lines + 1] = "  PROJECTS"
     for _, project in ipairs(projects) do
       local line = #lines + 1
       lines[line] = pad_cell(
@@ -1107,7 +1139,8 @@ local function render_contributors()
     lines[#lines + 1] = ""
   end
 
-  lines[#lines + 1] = "  " .. pad_cell("USER", username_width)
+  local user_heading_line = #lines + 1
+  lines[#lines + 1] = "  " .. pad_cell("USERS", username_width)
 
   local selected_index = 1
   for index, contributor in ipairs(contributors) do
@@ -1169,10 +1202,10 @@ local function render_contributors()
 
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
-  highlight(5, 2, -1, "Comment")
   if project_heading_line then
     highlight(project_heading_line, 2, -1, "Title")
   end
+  highlight(user_heading_line, 2, -1, "Title")
   for line, _ in pairs(M.state.line_targets) do
     local target = M.state.line_targets[line]
     highlight(

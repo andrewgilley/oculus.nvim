@@ -65,7 +65,7 @@ local initial_window_height = vim.api.nvim_win_get_height(state.win)
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 local initial_user_text = table.concat(initial_user_lines, "\n")
-assert(initial_user_text:find("  USER", 1, true))
+assert(initial_user_lines[5]:find("USERS", 1, true))
 assert(initial_user_text:find("@mitchellh", 1, true))
 assert(initial_user_text:find("@andrewrk", 1, true))
 assert(not initial_user_text:find("HANDLE", 1, true))
@@ -875,6 +875,7 @@ do
         name = "Neovim",
         repository = "neovim/neovim",
         provider = "github",
+        description = "Vim-fork focused on extensibility and usability.",
       },
     },
   })
@@ -883,8 +884,21 @@ do
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"
   )
-  assert(startpage_text:find("  PROJECT", 1, true))
+  assert(startpage_text:find("  PROJECTS", 1, true))
+  assert(startpage_text:find("  USERS", 1, true))
+  assert(not startpage_text:find("PROJECT ACTIVITY", 1, true))
   assert(startpage_text:find("neovim/neovim", 1, true))
+  local preview_text = {}
+  for _, item in pairs(state.preview_items) do
+    preview_text[#preview_text + 1] = item[1]
+  end
+  preview_text = table.concat(preview_text, " ")
+  assert(preview_text:find(
+    "Vim%-fork focused on extensibility and usability%."
+  ))
+  assert(not preview_text:find("pushes", 1, true))
+  assert(not preview_text:find("merged PRs", 1, true))
+  assert(not preview_text:find("assigned issues", 1, true))
   local project_line
   for line, target in pairs(state.line_targets) do
     if target.kind == "project" then
