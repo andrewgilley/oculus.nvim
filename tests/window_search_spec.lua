@@ -272,6 +272,32 @@ assert(vim.api.nvim_win_is_valid(state.win))
 search_mapping.callback()
 vim.wait(10)
 assert(window._prompt_query(state.search_buf) == "")
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { "m" }
+)
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+assert(state.search_query == "m")
+local deleting_backspace_mapping =
+  vim.fn.maparg("<BS>", "i", false, true)
+assert(deleting_backspace_mapping.callback() == "<BS>")
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { "" }
+)
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+vim.wait(10)
+assert(state.search_query == nil)
+assert(state.search_win == nil)
+
+search_mapping.callback()
+vim.wait(10)
 local empty_backspace_mapping =
   vim.fn.maparg("<BS>", "i", false, true)
 assert(empty_backspace_mapping.desc
@@ -740,9 +766,11 @@ window.close()
 do
   local original_repository_events = github.repository_events
   local repository_forces = {}
+  local repository_per_page
   github.repository_events = function(repository, opts, callback)
     assert(repository == "neovim/neovim")
     repository_forces[#repository_forces + 1] = opts.force
+    repository_per_page = opts.per_page
     callback({
       {
         type = "PushEvent",
@@ -813,6 +841,7 @@ do
   assert(state.activity_scope == "project")
   assert(state.activity_project.repository == "neovim/neovim")
   assert(#state.events == 3)
+  assert(repository_per_page == 100)
   local project_activity_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"
