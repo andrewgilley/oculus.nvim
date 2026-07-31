@@ -877,6 +877,13 @@ do
   assert(state.activity_scope == "project")
   assert(state.activity_project.repository == "neovim/neovim")
   assert(#state.events == 8)
+  local project_activity_items = 0
+  for line, title_line in pairs(state.activity_title_lines) do
+    if line == title_line then
+      project_activity_items = project_activity_items + 1
+    end
+  end
+  assert(project_activity_items == 8)
   assert(project_pushes_enriched)
   assert(repository_per_page == 100)
   assert(vim.deep_equal(repository_pages, { 1, 2 }))
