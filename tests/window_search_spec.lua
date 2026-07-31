@@ -776,11 +776,32 @@ do
     repository_pages[#repository_pages + 1] = opts.page
     if opts.page == 2 then
       local events = {}
-      for index = 1, 6 do
+      for index = 1, 5 do
         events[#events + 1] = {
           type = "PushEvent",
           repo = { name = repository },
           created_at = "2026-07-05T12:00:00Z",
+          payload = { size = 1 },
+        }
+      end
+      for index = 6, 100 do
+        events[#events + 1] = {
+          type = "CreateEvent",
+          repo = { name = repository },
+          created_at = "2026-07-05T12:00:00Z",
+          payload = { ref_type = "branch", ref = "ignored" },
+        }
+      end
+      callback(events, nil, false)
+      return
+    end
+    if opts.page == 3 then
+      local events = {}
+      for index = 1, 8 do
+        events[#events + 1] = {
+          type = "PushEvent",
+          repo = { name = repository },
+          created_at = "2026-07-06T12:00:00Z",
           payload = { size = 1 },
         }
       end
@@ -896,6 +917,20 @@ do
   assert(project_activity_text:find("@project-author pushed", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
+  local project_past_mapping = vim.fn.maparg("p", "n", false, true)
+  project_past_mapping.callback()
+  assert(state.activity_page == 2)
+  assert(#state.events == 8)
+  assert(state.activity_has_past == false)
+  assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
+  project_past_mapping.callback()
+  assert(state.activity_page == 2)
+  assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
+  local project_recent_mapping = vim.fn.maparg("r", "n", false, true)
+  project_recent_mapping.callback()
+  assert(state.activity_page == 1)
+  assert(#state.events == 8)
+  assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
   local refresh_mapping = vim.fn.maparg("R", "n", false, true)
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()
