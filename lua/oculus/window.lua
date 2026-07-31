@@ -97,6 +97,8 @@ M.state = {
   activity_loaded_pages = 1,
   activity_page_size = 8,
   activity_source_events = nil,
+  activity_has_past = nil,
+  project_activity_feed = nil,
   activity_cursor_min_line = 1,
   activity_scroll_limit_line = nil,
   activity_commit_page = false,
@@ -319,7 +321,12 @@ local function render_activity_footer()
   local width = config.width
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
-    activity_commands = activity_commands .. "   R refresh   p past"
+    activity_commands = activity_commands .. "   R refresh"
+    if M.state.activity_scope ~= "project"
+      or M.state.activity_has_past ~= false
+    then
+      activity_commands = activity_commands .. "   p past"
+    end
   end
   if
     not M.state.activity_commit_page
@@ -1905,6 +1912,7 @@ end
 M._filter_project_events = filter_project_events
 
 load_project_activity = function(project, force, page)
+  local previous_page = M.state.activity_page or 1
   local preserve_activity_page = page ~= nil
     and M.state.view == "activity"
     and M.state.activity_loaded
@@ -1916,7 +1924,8 @@ load_project_activity = function(project, force, page)
   if page == nil then
     M.state.activity_loaded_pages = 1
   end
-  M.state.activity_page = math.max(1, page or 1)
+  local requested_page = math.max(1, page or 1)
+  M.state.activity_page = requested_page
   M.state.activity_page_size = math.max(
     1,
     math.floor(tonumber(M.state.opts.results_limit) or 8)
@@ -1936,31 +1945,52 @@ load_project_activity = function(project, force, page)
     M.state.opts,
     { force = force or false }
   )
-  -- Repository feeds contain many events outside the configured project
-  -- categories. Fetch subsequent pages only when the current one cannot fill
-  -- the requested activity page.
   request_opts.per_page = project.provider == "codeberg" and 50 or 100
-  local project_feed_page = 1
-  local project_feed_pages = 3
-  local required_events =
-    M.state.activity_page * M.state.activity_page_size
-  local source_events = {}
-  local source_cached = true
-  local source_notice
+  local activity_types = vim.deepcopy(project_activity_types_for(project) or {})
+  table.sort(activity_types)
+  local feed_key = table.concat({
+    project.provider == "codeberg" and "codeberg" or "github",
+    project.repository:lower(),
+    table.concat(activity_types, ","),
+  }, ":")
+  local feed = M.state.project_activity_feed
+  if force or not feed or feed.key ~= feed_key then
+    feed = {
+      key = feed_key,
+      events = {},
+      seen = {},
+      next_page = 1,
+      complete = #activity_types == 0,
+      cached = true,
+      notice = nil,
+    }
+    M.state.project_activity_feed = feed
+  end
+  local required_events = requested_page * M.state.activity_page_size
+  local max_source_pages = 10
 
   local function render_project_results()
-    local filtered = filter_project_events(source_events, project)
+    local filtered = filter_project_events(feed.events, project)
+    local first_event =
+      (requested_page - 1) * M.state.activity_page_size + 1
+    if requested_page > 1 and #filtered < first_event then
+      M.state.activity_page = math.max(1, previous_page)
+    else
+      M.state.activity_page = requested_page
+    end
     M.state.activity_source_events = filtered
     M.state.activity_loaded_pages = math.max(
       M.state.activity_loaded_pages or 1,
       M.state.activity_page
     )
+    local page_end = M.state.activity_page * M.state.activity_page_size
+    M.state.activity_has_past = #filtered > page_end or not feed.complete
     local results = activity_page(
       filtered,
       M.state.activity_page,
       M.state.activity_page_size
     )
-    render_activity(results, source_cached, source_notice)
+    render_activity(results, feed.cached, feed.notice)
     provider.enrich_pull_requests(results, request_opts, function(with_prs)
       if request_id ~= M.state.request_id
         or M.state.view ~= "activity"
@@ -1968,7 +1998,7 @@ load_project_activity = function(project, force, page)
       then
         return
       end
-      render_activity(with_prs, source_cached, source_notice)
+      render_activity(with_prs, feed.cached, feed.notice)
       provider.enrich_pushes(with_prs, request_opts, function(enriched)
         if request_id ~= M.state.request_id
           or M.state.view ~= "activity"
@@ -1976,13 +2006,25 @@ load_project_activity = function(project, force, page)
         then
           return
         end
-        render_activity(enriched, source_cached, source_notice)
+        render_activity(enriched, feed.cached, feed.notice)
       end)
     end)
   end
 
-  local function request_project_feed()
-    request_opts.page = project_feed_page
+  local function ensure_project_page()
+    local filtered = filter_project_events(feed.events, project)
+    if #filtered >= required_events or feed.complete then
+      render_project_results()
+      return
+    end
+    if feed.next_page > max_source_pages then
+      feed.complete = true
+      render_project_results()
+      return
+    end
+
+    local source_page = feed.next_page
+    request_opts.page = source_page
     provider.repository_events(project.repository, request_opts, function(
       events,
       err,
@@ -2000,26 +2042,32 @@ load_project_activity = function(project, force, page)
         render_error(err)
         return
       end
-      vim.list_extend(source_events, events or {})
-      source_cached = source_cached and cached == true
-      source_notice = source_notice or notice
-      local filtered = filter_project_events(source_events, project)
-      if #filtered < required_events
-        and #(events or {}) >= request_opts.per_page
-        and project_feed_page < project_feed_pages
-      then
-        project_feed_page = project_feed_page + 1
-        request_project_feed()
-        return
+      local source = events or {}
+      local added = 0
+      for _, event in ipairs(source) do
+        local event_key = event.id and tostring(event.id) or nil
+        if not event_key or not feed.seen[event_key] then
+          feed.events[#feed.events + 1] = event
+          if event_key then
+            feed.seen[event_key] = true
+          end
+          added = added + 1
+        end
       end
-      render_project_results()
+      feed.next_page = source_page + 1
+      feed.cached = feed.cached and cached == true
+      feed.notice = feed.notice or notice
+      if #source < request_opts.per_page or added == 0 then
+        feed.complete = true
+      end
+      ensure_project_page()
     end)
   end
   if type(provider.repository_events) ~= "function" then
     render_error("this provider does not support project activity")
     return
   end
-  request_project_feed()
+  ensure_project_page()
 end
 
 local function load_activity(contributor, force, page)
@@ -2030,6 +2078,7 @@ local function load_activity(contributor, force, page)
   M.state.view = "activity"
   M.state.activity_scope = "user"
   M.state.activity_project = nil
+  M.state.activity_has_past = nil
   M.state.contributor = contributor
   if page == nil then
     M.state.activity_loaded_pages = 1
@@ -2110,6 +2159,9 @@ local function next_activity_page()
   end
   local page = (M.state.activity_page or 1) + 1
   if M.state.activity_project then
+    if M.state.activity_has_past == false then
+      return
+    end
     load_project_activity(M.state.activity_project, false, page)
   else
     load_activity(M.state.contributor, false, page)
@@ -2966,6 +3018,8 @@ function M.close()
   M.state.preview_project = nil
   M.state.activity_scope = nil
   M.state.activity_project = nil
+  M.state.activity_has_past = nil
+  M.state.project_activity_feed = nil
   M.state.selected_project = nil
   M.state.contributors = {}
   M.state.filter_scope = nil
