@@ -839,7 +839,8 @@ do
   github.enrich_pushes = function(events, _, callback)
     project_pushes_enriched = true
     events[1].payload.commits = {
-      { sha = "projectcommit", message = "Project commit title" },
+      { sha = "projectcommit1", message = "First project commit" },
+      { sha = "projectcommit2", message = "Second project commit" },
     }
     callback(events)
   end
@@ -885,7 +886,8 @@ do
   )
   assert(project_activity_text:find("  PROJECT", 1, true))
   assert(project_activity_text:find("neovim/neovim", 1, true))
-  assert(project_activity_text:find("Project commit title", 1, true))
+  assert(project_activity_text:find("First project commit", 1, true))
+  assert(project_activity_text:find("Second project commit", 1, true))
   local refresh_mapping = vim.fn.maparg("R", "n", false, true)
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()
