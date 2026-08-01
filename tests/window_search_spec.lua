@@ -482,6 +482,8 @@ local commit_footer_lines = table.concat(
 )
 assert(not commit_footer_lines:find("p past", 1, true))
 assert(not commit_footer_lines:find("l/→ past", 1, true))
+assert(not commit_footer_lines:find("j/←", 1, true))
+assert(not commit_footer_lines:find("? shortcuts", 1, true))
 vim.fn.maparg("j", "n", false, true).callback()
 assert(state.activity_commit_page == false)
 assert(#state.events == 8)
@@ -703,9 +705,12 @@ local footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(footer_text:find("l/→ past", 1, true))
-assert(footer_text:find("j/← recent", 1, true))
+assert(not footer_text:find("l/→", 1, true))
+assert(not footer_text:find("j/←", 1, true))
+assert(not footer_text:find("? shortcuts", 1, true))
 assert(footer_text:find("b browser", 1, true))
+assert(footer_text:find("u refresh", 1, true))
+assert(footer_text:find("q close", 1, true))
 
 older_arrow_mapping.callback()
 assert(state.view == "activity")
@@ -732,8 +737,9 @@ local recent_footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(recent_footer_text:find("l/→ past", 1, true))
-assert(recent_footer_text:find("j/← recent", 1, true))
+assert(not recent_footer_text:find("l/→", 1, true))
+assert(not recent_footer_text:find("j/←", 1, true))
+assert(not recent_footer_text:find("? shortcuts", 1, true))
 local recent_activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
@@ -752,9 +758,9 @@ local page_one_footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(page_one_footer_text:find("l/→ past", 1, true))
-assert(not page_one_footer_text:find("j/← recent", 1, true))
-assert(page_one_footer_text:find("j/← back", 1, true))
+assert(not page_one_footer_text:find("l/→", 1, true))
+assert(not page_one_footer_text:find("j/←", 1, true))
+assert(not page_one_footer_text:find("? shortcuts", 1, true))
 local user_refresh_mapping = vim.fn.maparg("u", "n", false, true)
 assert(user_refresh_mapping.desc == "Refresh Oculus activity")
 assert(vim.fn.maparg("R", "n", false, true).desc == nil)
