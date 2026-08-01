@@ -3296,7 +3296,7 @@ local function map_inspection_sidebar_toggle(group)
     if type(sidebar_lhs) == "string" and sidebar_lhs ~= "" then
       vim.keymap.set("n", sidebar_lhs, toggle_sidebar, opts)
     end
-    vim.keymap.set("n", "<C-i>", toggle_sidebar, opts)
+    vim.keymap.set("n", "<C-t>", toggle_sidebar, opts)
     if type(overview_lhs) == "string" and overview_lhs ~= "" then
       vim.keymap.set("n", overview_lhs, function()
         if overview_window_is_open(group) then
