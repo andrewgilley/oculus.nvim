@@ -164,24 +164,11 @@ local function stop_activity_page_loading()
 end
 
 local function draw_activity_page_loading()
-  if not is_valid_buf(M.state.buf) then
+  if M.state.view ~= "activity" or not is_valid_buf(M.state.buf) then
     return
   end
-  local handle_line
-  for line, text in ipairs(vim.api.nvim_buf_get_lines(
-    M.state.buf,
-    0,
-    -1,
-    false
-  )) do
-    if text:match("^  @")
-      or (M.state.activity_project and line == 3)
-    then
-      handle_line = line
-      break
-    end
-  end
-  if not handle_line then
+  local title_line = 3
+  if vim.api.nvim_buf_line_count(M.state.buf) < title_line then
     return
   end
   vim.api.nvim_buf_clear_namespace(
@@ -193,7 +180,7 @@ local function draw_activity_page_loading()
   vim.api.nvim_buf_set_extmark(
     M.state.buf,
     activity_page_loading_ns,
-    handle_line - 1,
+    title_line - 1,
     0,
     {
       virt_text = {
@@ -211,6 +198,9 @@ end
 local function start_activity_page_loading()
   stop_activity_page_loading()
   draw_activity_page_loading()
+  if is_valid_win(M.state.win) then
+    vim.cmd("redraw")
+  end
   local timer = vim.uv.new_timer()
   if not timer then
     return
