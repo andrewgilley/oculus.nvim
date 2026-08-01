@@ -21,6 +21,7 @@ local default_overview_toggle = "<leader>op"
 local default_version_switch = "<C-s>"
 local default_next_chunk = "<Tab>"
 local default_previous_chunk = "<S-Tab>"
+local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
 local inspection_statusline_option =
   "%!v:lua.require('oculus.inspect')._inspection_statusline()"
 local inspection_sidebar_statusline_option = "[oculus] "
@@ -1871,6 +1872,10 @@ local function set_change_highlights()
     "OculusInspectOverviewSection",
     overview_section
   )
+  vim.api.nvim_set_hl(0, "OculusInspectHiddenCursor", {
+    blend = 100,
+    nocombine = true,
+  })
   vim.api.nvim_set_hl(0, "OculusInspectCursorLine", {
     bg = cursorline.bg,
     sp = cursorline.sp,
@@ -3031,11 +3036,31 @@ local function overview_window_is_open(group)
     and vim.api.nvim_win_is_valid(group.overview_win)
 end
 
+local function hide_overview_cursor(group)
+  if group.overview_cursor_hidden then
+    return
+  end
+  group.overview_saved_guicursor = vim.o.guicursor
+  group.overview_cursor_hidden = true
+  vim.o.guicursor = hidden_overview_guicursor
+end
+
+local function restore_overview_cursor(group)
+  if not group.overview_cursor_hidden then
+    return
+  end
+  local guicursor = group.overview_saved_guicursor
+  group.overview_cursor_hidden = nil
+  group.overview_saved_guicursor = nil
+  vim.o.guicursor = guicursor or ""
+end
+
 local function close_overview_window(group)
   local win = group.overview_win
   local buf = group.overview_buf
   group.overview_win = nil
   group.overview_buf = nil
+  restore_overview_cursor(group)
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_close(win, true)
   end
@@ -3109,6 +3134,25 @@ show_inspection_overview = function(group)
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_buf = buf
   group.overview_win = win
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = sync_group,
+    buffer = buf,
+    callback = function()
+      if overview_window_is_open(group)
+        and vim.api.nvim_get_current_win() == group.overview_win
+      then
+        hide_overview_cursor(group)
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("WinLeave", {
+    group = sync_group,
+    buffer = buf,
+    callback = function()
+      restore_overview_cursor(group)
+    end,
+  })
+  hide_overview_cursor(group)
   vim.wo[win].wrap = false
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
