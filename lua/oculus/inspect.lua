@@ -3108,7 +3108,7 @@ local function overview_window_config(config, _)
     config.width = width
   end
   if type(config.height) == "number" then
-    local height = math.max(1, config.height - 2)
+    local height = math.max(1, config.height - 3)
     config.row = (tonumber(config.row) or 0)
       + math.ceil((config.height - height) / 2)
     config.height = height
