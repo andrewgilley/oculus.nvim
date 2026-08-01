@@ -117,7 +117,9 @@ M.state = {
   opening_search = false,
   closing_search = false,
   opening_account_prompt = false,
+  origin_tab = nil,
   origin_win = nil,
+  origin_view = nil,
   origin_window_options = nil,
   opts = {},
 }
@@ -3076,6 +3078,9 @@ local function map_keys(buf)
 end
 
 function M.close()
+  local origin_tab = M.state.origin_tab
+  local origin_win = M.state.origin_win
+  local origin_view = vim.deepcopy(M.state.origin_view)
   M.state.request_id = M.state.request_id + 1
   stop_activity_page_loading()
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
@@ -3092,6 +3097,9 @@ function M.close()
   clear_search_state()
   if is_valid_win(M.state.win) then
     M.state.restore_cursor = vim.api.nvim_win_get_cursor(M.state.win)
+    if vim.api.nvim_get_current_win() ~= M.state.win then
+      vim.api.nvim_set_current_win(M.state.win)
+    end
     vim.api.nvim_win_close(M.state.win, true)
   end
   M.state.buf = nil
@@ -3113,6 +3121,19 @@ function M.close()
   M.state.filter_scope = nil
   M.state.shortcut_return = nil
   M.state.opening_account_prompt = false
+  if origin_tab and vim.api.nvim_tabpage_is_valid(origin_tab) then
+    vim.api.nvim_set_current_tabpage(origin_tab)
+    if is_valid_win(origin_win)
+      and vim.api.nvim_win_get_tabpage(origin_win) == origin_tab
+    then
+      vim.api.nvim_set_current_win(origin_win)
+      if origin_view then
+        vim.api.nvim_win_call(origin_win, function()
+          vim.fn.winrestview(origin_view)
+        end)
+      end
+    end
+  end
 end
 
 function M.inspection_window_options()
@@ -3141,7 +3162,11 @@ function M.open(opts)
   end
 
   local origin_win = vim.api.nvim_get_current_win()
+  M.state.origin_tab = vim.api.nvim_get_current_tabpage()
   M.state.origin_win = origin_win
+  M.state.origin_view = vim.api.nvim_win_call(origin_win, function()
+    return vim.fn.winsaveview()
+  end)
   M.state.origin_window_options = {
     number = vim.wo[origin_win].number,
     relativenumber = vim.wo[origin_win].relativenumber,

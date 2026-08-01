@@ -30,6 +30,23 @@ matches = window._fuzzy_contributors(contributors, "@andrk")
 assert(matches[1].username == "andrewrk")
 
 local origin_win = vim.api.nvim_get_current_win()
+local origin_tab = vim.api.nvim_get_current_tabpage()
+local origin_buf = vim.api.nvim_win_get_buf(origin_win)
+vim.api.nvim_buf_set_lines(
+  origin_buf,
+  0,
+  -1,
+  false,
+  vim.tbl_map(function(index)
+    return ("origin line %d with enough text"):format(index)
+  end, vim.fn.range(1, 40))
+)
+vim.bo[origin_buf].modified = false
+vim.api.nvim_win_set_cursor(origin_win, { 20, 5 })
+vim.api.nvim_win_call(origin_win, function()
+  vim.fn.winrestview({ topline = 10, lnum = 20, col = 5 })
+end)
+local origin_view = vim.api.nvim_win_call(origin_win, vim.fn.winsaveview)
 vim.wo[origin_win].number = true
 vim.wo[origin_win].relativenumber = true
 window.open({
@@ -825,7 +842,37 @@ local returned_user_lines =
 assert(returned_user_lines[returned_window_height]
   == "  a add  / search  ?: help  q quit")
 
-window.close()
+do
+  vim.cmd("tabnew")
+  local inspect_tab_one = vim.api.nvim_get_current_tabpage()
+  vim.cmd("tabnew")
+  local inspect_tab_two = vim.api.nvim_get_current_tabpage()
+  vim.api.nvim_set_current_tabpage(origin_tab)
+  vim.api.nvim_set_current_win(state.win)
+  local inspect_tabs_before_close = vim.api.nvim_list_tabpages()
+  vim.api.nvim_win_set_cursor(origin_win, { 30, 0 })
+  vim.api.nvim_win_call(origin_win, function()
+    vim.fn.winrestview({ topline = 20, lnum = 30, col = 0 })
+  end)
+  vim.api.nvim_set_current_tabpage(inspect_tab_two)
+  window.close()
+  assert(vim.deep_equal(
+    vim.api.nvim_list_tabpages(),
+    inspect_tabs_before_close
+  ))
+  assert(vim.api.nvim_tabpage_is_valid(inspect_tab_one))
+  assert(vim.api.nvim_tabpage_is_valid(inspect_tab_two))
+  assert(vim.api.nvim_get_current_tabpage() == origin_tab)
+  assert(vim.api.nvim_get_current_win() == origin_win)
+  local restored_view = vim.api.nvim_win_call(
+    origin_win,
+    vim.fn.winsaveview
+  )
+  assert(restored_view.lnum == origin_view.lnum)
+  assert(restored_view.col == origin_view.col)
+  assert(restored_view.topline == origin_view.topline)
+  assert(restored_view.leftcol == origin_view.leftcol)
+end
 do
   local original_repository_events = github.repository_events
   local repository_forces = {}

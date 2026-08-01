@@ -2012,8 +2012,6 @@ local function replace_inspection_lines(endpoint, lines)
   vim.bo[endpoint.buf].readonly = false
   vim.bo[endpoint.buf].modifiable = true
   vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, lines)
-  vim.bo[endpoint.buf].modifiable = false
-  vim.bo[endpoint.buf].readonly = true
   vim.b[endpoint.buf].oculus_inspect_highlighting_refreshed = false
   return true
 end
@@ -4003,8 +4001,8 @@ local function load_tab(
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
-  vim.bo[buf].modifiable = false
-  vim.bo[buf].readonly = true
+  vim.bo[buf].modifiable = true
+  vim.bo[buf].readonly = false
   vim.b[buf].oculus_inspect_repository = path
   vim.b[buf].oculus_inspect_directory = working_directory
   vim.b[buf].oculus_inspect_source_path =
