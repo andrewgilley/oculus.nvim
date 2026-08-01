@@ -408,6 +408,20 @@ assert(inspect._sidebar_target_role(
   "change",
   { pair_index = 1 }
 ) == "change")
+assert(inspect._sidebar_target_role(
+  1,
+  "parent",
+  { pair_index = 2 },
+  { kind = "commit", [2] = { last_role = "change" } },
+  "parent"
+) == "change")
+assert(inspect._chunk_navigation_role(
+  { kind = "commit" },
+  {},
+  "change",
+  { last_role = "change" },
+  true
+) == "change")
 
 assert(inspect._inspection_directory(
   root,
@@ -2405,12 +2419,12 @@ if integration_root and (integration_sha or integration_url) then
       buffer = sidebar_buf,
     })
     assert(vim.wait(1000, function()
-      return vim.api.nvim_get_current_tabpage() == tabs[2]
+      return vim.api.nvim_get_current_tabpage() == tabs[3]
     end), "sidebar cursor did not return to the first changed file")
     assert(vim.api.nvim_get_current_win()
-      == assert(sidebar_window(tabs[2])))
+      == assert(sidebar_window(tabs[3])))
     vim.cmd("wincmd h")
-    assert(vim.api.nvim_get_current_win() == parent_win)
+    assert(vim.api.nvim_get_current_win() == change_win)
   end
   local linked_line = math.min(
     2,
