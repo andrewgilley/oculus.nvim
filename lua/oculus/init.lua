@@ -55,6 +55,12 @@ local defaults = {
       provider = "github",
       description = "Fil-C provides completely compatible memory safety for C and C++.",
     },
+    {
+      name = "WebAssembly Component Model",
+      repository = "WebAssembly/component-model",
+      provider = "github",
+      description = "Repository for design and specification of the Component Model.",
+    },
   },
   persist_filters = true,
   persist_contributors = true,
@@ -79,7 +85,18 @@ local defaults = {
   },
   token = nil,
 
-  contributors = {},
+  contributors = {
+    {
+      name = "Luke Wagner",
+      username = "lukewagner",
+      provider = "github",
+    },
+    {
+      name = "Alex Crichton",
+      username = "alexcrichton",
+      provider = "github",
+    },
+  },
 }
 
 M.config = vim.deepcopy(defaults)
@@ -119,8 +136,6 @@ function M.setup(opts)
 
   if opts.contributors ~= nil then
     M.config.contributors = vim.deepcopy(opts.contributors)
-  else
-    M.config.contributors = {}
   end
 
   if M.config.persist_filters or M.config.persist_contributors then
