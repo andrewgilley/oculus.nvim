@@ -2982,15 +2982,15 @@ end
 local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
   if type(config.width) == "number" then
-    local width = math.max(1, config.width - 4)
+    local width = math.max(1, config.width - 6)
     config.col = (tonumber(config.col) or 0)
       + math.floor((config.width - width) / 2)
     config.width = width
   end
   if type(config.height) == "number" then
-    local height = math.max(1, config.height - 4)
+    local height = math.max(1, config.height - 3)
     config.row = (tonumber(config.row) or 0)
-      + math.floor((config.height - height) / 2)
+      + math.ceil((config.height - height) / 2)
     config.height = height
   end
   config.zindex = 70
