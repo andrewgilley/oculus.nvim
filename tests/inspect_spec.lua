@@ -63,6 +63,22 @@ assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
 assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
 assert(oculus.config.inspect_next_file == nil)
+assert(inspect._progressed_chunk_role({ kind = "commit" }, "change")
+  == "parent")
+assert(inspect._progressed_chunk_role({ kind = "commit" }, "parent")
+  == "parent")
+assert(inspect._progressed_chunk_role({ kind = "issue" }, "issue")
+  == "issue")
+assert(inspect._chunk_start_for_role(
+  { old_start = 7, new_start = 12 },
+  "parent",
+  12
+) == 7)
+assert(inspect._chunk_start_for_role(
+  { old_start = 7, new_start = 12 },
+  "change",
+  12
+) == 12)
 
 for group, expected in pairs({
   OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
@@ -1716,11 +1732,13 @@ if integration_root and (integration_sha or integration_url) then
   vim.g.oculus_test_main_tab_chunk =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
   toggle_mapped.callback()
-  assert(vim.api.nvim_get_current_win() == change_win)
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_win() == parent_win)
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
     assert(active.pair_index == vim.g.oculus_test_main_tab_pair)
     assert(active.chunk_index == vim.g.oculus_test_main_tab_chunk + 1)
+    assert(active.role == "parent")
     local active_sidebar_win = assert(sidebar_window(
       vim.api.nvim_get_current_tabpage()
     ))
@@ -1847,23 +1865,24 @@ if integration_root and (integration_sha or integration_url) then
       == vim.g.oculus_test_chunk_count
   )
   toggle_mapped.callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win()
-    == assert(sidebar_window(tabs[3])))
+    == assert(sidebar_window(tabs[2])))
   assert(vim.api.nvim_win_get_cursor(
-    assert(sidebar_window(tabs[3]))
+    assert(sidebar_window(tabs[2]))
   )[1] == file_lines[1])
-  assert(vim.api.nvim_win_get_cursor(change_win)[1] == 1)
+  assert(vim.api.nvim_win_get_cursor(parent_win)[1] == 1)
   assert(vim.api.nvim_win_call(
-    change_win,
+    parent_win,
     vim.fn.winsaveview
   ).topline == 1)
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index == 1)
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.role == "parent")
   previous_mapped.callback()
   assert(vim.api.nvim_get_current_tabpage()
-    == tabs[pair_count * 2 + 1])
+    == tabs[pair_count * 2])
   assert(vim.api.nvim_get_current_win()
-    == assert(sidebar_window(tabs[pair_count * 2 + 1])))
+    == assert(sidebar_window(tabs[pair_count * 2])))
   assert(
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
       == pair_count
@@ -1873,7 +1892,7 @@ if integration_root and (integration_sha or integration_url) then
       == vim.g.oculus_test_chunk_count
   )
   toggle_mapped.callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
   overview_sidebar_win = assert(sidebar_window(tabs[3]))

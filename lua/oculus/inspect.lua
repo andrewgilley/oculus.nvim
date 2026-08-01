@@ -2212,6 +2212,29 @@ local function previous_inspection_chunk(group, session, current_chunk)
   end
 end
 
+local function progressed_chunk_role(group, current_role)
+  if group.kind == "issue" then
+    return current_role
+  end
+  return "parent"
+end
+
+local function chunk_start_for_role(hunk, role, change_start)
+  return role == "parent"
+      and hunk_start(hunk, "parent")
+    or change_start
+end
+
+local function render_chunk_for_role(session, role, chunk_index)
+  local hunk = session.hunks and session.hunks[chunk_index] or nil
+  if not hunk then
+    return
+  end
+  local change_start = render_focused_chunk(session, chunk_index)
+    or focused_hunk_start(hunk)
+  return chunk_start_for_role(hunk, role, change_start)
+end
+
 local function focus_inspection_chunk(group, session, role, chunk_index)
   local endpoint = group.kind == "issue"
       and session.issue
@@ -2225,8 +2248,7 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
     session.active_chunk = chunk_index
     start = chunks[chunk_index] and chunks[chunk_index].line
   else
-    start = render_focused_chunk(session, chunk_index)
-      or focused_hunk_start(chunks[chunk_index])
+    start = render_chunk_for_role(session, role, chunk_index)
   end
   select_endpoint(endpoint)
   if start then
@@ -2286,7 +2308,12 @@ local function map_file_navigation(endpoint, session, role, group)
       local next_session, _, next_chunk =
         next_inspection_chunk(group, session, current_chunk)
       if next_session then
-        focus_inspection_chunk(group, next_session, role, next_chunk)
+        focus_inspection_chunk(
+          group,
+          next_session,
+          progressed_chunk_role(group, role),
+          next_chunk
+        )
       end
     end, {
       buffer = endpoint.buf,
@@ -3406,7 +3433,7 @@ local function inspection_statusline(win)
   )
 end
 
-local function open_sidebar_selection(group)
+local function open_sidebar_selection(group, preferred_role)
   if sidebar_navigating or overview_window_is_open(group) then
     return
   end
@@ -3415,7 +3442,10 @@ local function open_sidebar_selection(group)
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
-  role = sidebar_target_role(active_index, role, entry, group)
+  role = group.kind == "issue"
+      and "issue"
+    or preferred_role
+    or sidebar_target_role(active_index, role, entry, group)
   local endpoint = sidebar_endpoint(group, session, role)
   if not valid_endpoint(endpoint) then
     return
@@ -3436,8 +3466,11 @@ local function open_sidebar_selection(group)
       local section = session.sections[entry.chunk_index]
       start = section and section.line
     else
-      start = render_focused_chunk(session, entry.chunk_index)
-        or focused_hunk_start(session.hunks[entry.chunk_index])
+      start = render_chunk_for_role(
+        session,
+        role,
+        entry.chunk_index
+      )
     end
     if start then
       set_change_cursor(endpoint.win, start)
@@ -3464,7 +3497,7 @@ local function open_sidebar_selection(group)
   sidebar_navigating = false
 end
 
-local function select_sidebar_entry(group, direction)
+local function select_sidebar_entry(group, direction, preferred_role)
   if
     overview_window_is_open(group)
     or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
@@ -3507,11 +3540,11 @@ local function select_sidebar_entry(group, direction)
   vim.api.nvim_win_set_cursor(sidebar_win, { target_line, 0 })
   group.focused_win = sidebar_win
   sidebar_navigating = false
-  open_sidebar_selection(group)
+  open_sidebar_selection(group, preferred_role)
 end
 
 select_next_sidebar_chunk = function(group)
-  select_sidebar_entry(group, 1)
+  select_sidebar_entry(group, 1, "parent")
 end
 
 select_previous_sidebar_chunk = function(group)
@@ -3555,8 +3588,7 @@ focus_sidebar_selection = function(group)
   group.focused_win = nil
   vim.api.nvim_set_current_win(endpoint.win)
   if hunk then
-    local start = render_focused_chunk(session, chunk_index)
-      or focused_hunk_start(hunk)
+    local start = render_chunk_for_role(session, role, chunk_index)
     set_change_cursor(endpoint.win, start)
   elseif section then
     set_change_cursor(endpoint.win, section.line)
@@ -4738,6 +4770,8 @@ M._inspect_sidebar_width = inspect_sidebar_width
 M._sidebar_chunk_row = sidebar_chunk_row
 M._sidebar_file = sidebar_file
 M._sidebar_target_role = sidebar_target_role
+M._progressed_chunk_role = progressed_chunk_role
+M._chunk_start_for_role = chunk_start_for_role
 M._is_foreign_sidebar_window = is_foreign_sidebar_window
 M._comment_float = comment_float
 
