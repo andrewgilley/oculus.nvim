@@ -313,7 +313,7 @@ local function render_activity_footer()
   local width = config.width
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
-    activity_commands = activity_commands .. "   u refresh"
+    activity_commands = activity_commands .. "   p past   r recent"
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -1864,8 +1864,8 @@ local function render_shortcuts()
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Refresh the current activity page" },
-    { "l / <Right> / p", "Load the next eight older activity items" },
-    { "j / <Left> / r", "Load newer results or leave page one" },
+    { "p", "Load the next eight older activity items" },
+    { "r", "Load newer activity items" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
@@ -2975,7 +2975,6 @@ local function move_left()
     and not M.state.activity_commit_page
     and (M.state.activity_page or 1) > 1
   then
-    previous_activity_page()
     return
   end
   go_back()
@@ -2985,7 +2984,6 @@ local function move_right()
   if M.state.view == "activity"
     and not M.state.activity_commit_page
   then
-    next_activity_page()
     return
   end
   select_current()
