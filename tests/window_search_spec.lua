@@ -709,7 +709,7 @@ browser.open = original_browser_open
 local activity_before_page_load =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 deferred_activity_request = true
-older_mapping.callback()
+past_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
 assert(state.events[1].id == "1")
@@ -773,10 +773,19 @@ assert(not footer_text:find("l/→", 1, true))
 assert(not footer_text:find("j/←", 1, true))
 assert(not footer_text:find("? shortcuts", 1, true))
 assert(footer_text:find("b browser", 1, true))
-assert(footer_text:find("u refresh", 1, true))
+assert(footer_text:find("p past", 1, true))
+assert(footer_text:find("r recent", 1, true))
+assert(not footer_text:find("u refresh", 1, true))
 assert(footer_text:find("q close", 1, true))
 
+older_mapping.callback()
 older_arrow_mapping.callback()
+newer_mapping.callback()
+newer_arrow_mapping.callback()
+assert(state.activity_page == 2)
+assert(requested_per_page[3] == nil)
+
+past_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 3)
 assert(#state.events == 4)
@@ -790,7 +799,7 @@ assert(last_activity_text:find("GitHub (3/3)", 1, true))
 
 local recent_mapping = vim.fn.maparg("r", "n", false, true)
 assert(recent_mapping.desc == "Load more recent Oculus activity")
-newer_mapping.callback()
+recent_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
 assert(#state.events == 8)
@@ -810,7 +819,7 @@ local recent_activity_text = table.concat(
 )
 assert(recent_activity_text:find("GitHub (2/3)", 1, true))
 
-newer_arrow_mapping.callback()
+recent_mapping.callback()
 assert(state.activity_page == 1)
 assert(requested_per_page[5] == 30)
 local page_one_activity_text = table.concat(
@@ -1065,10 +1074,9 @@ do
   assert(not project_activity_text:find("• Merged by", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
-  local project_older_mapping =
-    vim.fn.maparg("<Right>", "n", false, true)
+  local project_past_mapping = vim.fn.maparg("p", "n", false, true)
   deferred_project_request = true
-  project_older_mapping.callback()
+  project_past_mapping.callback()
   assert(state.activity_page == 2)
   assert(#state.events == 8)
   local project_title_line = vim.api.nvim_buf_get_lines(
@@ -1104,12 +1112,12 @@ do
     -1,
     {}
   ) == 0)
-  project_older_mapping.callback()
+  project_past_mapping.callback()
   assert(state.activity_page == 2)
   assert(state.activity_has_past == false)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
-  local project_newer_mapping = vim.fn.maparg("<Left>", "n", false, true)
-  project_newer_mapping.callback()
+  local project_recent_mapping = vim.fn.maparg("r", "n", false, true)
+  project_recent_mapping.callback()
   assert(state.activity_page == 1)
   assert(#state.events == 8)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
