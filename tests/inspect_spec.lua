@@ -543,6 +543,7 @@ local pull_request_overview_text = table.concat(
   inspect._sidebar_overview_lines(pull_request_overview, 28),
   "\n"
 )
+assert(not pull_request_overview_text:match("\n$"))
 assert(pull_request_overview_text:find(
   "OVERVIEW",
   1,
@@ -630,6 +631,8 @@ do
   assert(commit_config.height == main_config.height - 3)
   assert(commit_config.col == main_config.col + 3)
   assert(commit_config.row == main_config.row + 2)
+  assert(commit_config.footer == " ")
+  assert(commit_config.footer_pos == "left")
   local pull_request_config = inspect._overview_window_config(
     main_config,
     { kind = "pull_request" }
@@ -638,6 +641,8 @@ do
   assert(pull_request_config.height == main_config.height - 3)
   assert(pull_request_config.col == main_config.col + 3)
   assert(pull_request_config.row == main_config.row + 2)
+  assert(pull_request_config.footer == " ")
+  assert(pull_request_config.footer_pos == "left")
 end
 
 local issue_context = inspect.activity_context({
@@ -2026,6 +2031,7 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_buf_get_lines(overview_saved.buf, 0, -1, false),
     "\n"
   )
+  assert(not overview_text:match("\n$"))
   assert(overview_text:match("^  Title\n"))
   assert(overview_text:find("\n  Description\n", 1, true))
   assert(overview_text:find("\n  Author\n", 1, true))

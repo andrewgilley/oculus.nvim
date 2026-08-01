@@ -2701,6 +2701,9 @@ local function sidebar_overview_lines(overview, width)
       )
     field("Status", value_or(status, "Unknown"))
   end
+  if lines[#lines] == "" then
+    table.remove(lines)
+  end
   return lines
 end
 
@@ -3113,6 +3116,8 @@ local function overview_window_config(config, _)
       + math.ceil((config.height - height) / 2)
     config.height = height
   end
+  config.footer = " "
+  config.footer_pos = "left"
   config.zindex = 70
   return config
 end
@@ -3193,6 +3198,7 @@ show_inspection_overview = function(group)
     "NormalFloat:OculusNormal",
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
+    "FloatFooter:OculusBorder",
   }, ",")
   local section_labels = {
     Title = true,
