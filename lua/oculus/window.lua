@@ -322,24 +322,10 @@ local function render_activity_footer()
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
     activity_commands = activity_commands .. "   u refresh"
-    if M.state.activity_scope ~= "project"
-      or M.state.activity_has_past ~= false
-    then
-      activity_commands = activity_commands .. "   l/→ past"
-    end
-  end
-  local left_command = "j/← back"
-  if
-    not M.state.activity_commit_page
-    and (M.state.activity_page or 1) > 1
-  then
-    left_command = "j/← recent"
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    activity_commands
-      .. "   " .. left_command
-      .. "   ? shortcuts   q close",
+    activity_commands .. "   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

@@ -600,18 +600,18 @@ do
     main_config,
     { kind = "commit" }
   )
-  assert(commit_config.width == main_config.width)
-  assert(commit_config.height == main_config.height)
-  assert(commit_config.col == main_config.col)
-  assert(commit_config.row == main_config.row)
+  assert(commit_config.width == main_config.width - 4)
+  assert(commit_config.height == main_config.height - 4)
+  assert(commit_config.col == main_config.col + 2)
+  assert(commit_config.row == main_config.row + 2)
   local pull_request_config = inspect._overview_window_config(
     main_config,
     { kind = "pull_request" }
   )
-  assert(pull_request_config.width == main_config.width)
-  assert(pull_request_config.height == main_config.height)
-  assert(pull_request_config.col == main_config.col)
-  assert(pull_request_config.row == main_config.row)
+  assert(pull_request_config.width == main_config.width - 4)
+  assert(pull_request_config.height == main_config.height - 4)
+  assert(pull_request_config.col == main_config.col + 2)
+  assert(pull_request_config.row == main_config.row + 2)
 end
 
 local issue_context = inspect.activity_context({
@@ -1948,13 +1948,13 @@ if integration_root and (integration_sha or integration_url) then
     local main_overview_config =
       require("oculus.window").window_config({})
     assert(overview_saved.config.width
-      == main_overview_config.width)
+      == main_overview_config.width - 4)
     assert(overview_saved.config.height
-      == main_overview_config.height)
+      == main_overview_config.height - 4)
     assert(overview_saved.config.row
-      == main_overview_config.row)
+      == main_overview_config.row + 2)
     assert(overview_saved.config.col
-      == main_overview_config.col)
+      == main_overview_config.col + 2)
   end
   assert(overview_saved.config.title == nil
     or overview_saved.config.title == "")
