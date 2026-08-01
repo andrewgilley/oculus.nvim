@@ -79,6 +79,19 @@ assert(inspect._chunk_start_for_role(
   "change",
   12
 ) == 12)
+assert(vim.deep_equal(
+  inspect._inspection_endpoints({}, {
+    parent = "parent",
+    change = "change",
+  }),
+  { "parent", "change" }
+))
+assert(vim.deep_equal(
+  inspect._inspection_endpoints({ kind = "issue" }, {
+    issue = "issue",
+  }),
+  { "issue" }
+))
 
 for group, expected in pairs({
   OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
@@ -1522,6 +1535,8 @@ if integration_root and (integration_sha or integration_url) then
     local branch =
       line:match("^  ├─ %d+%-%d+ %([+-]?%d+%)$")
         or line:match("^  └─ %d+%-%d+ %([+-]?%d+%)$")
+        or line:match("^  ├─ %d+%-%d+$")
+        or line:match("^  └─ %d+%-%d+$")
     if branch then
       chunk_lines = chunk_lines + 1
     else
