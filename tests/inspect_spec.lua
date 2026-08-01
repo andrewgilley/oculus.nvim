@@ -125,6 +125,18 @@ assert(vim.api.nvim_get_hl(
   0,
   { name = "OculusInspectCursorLine", link = false }
 ).nocombine ~= true)
+assert(vim.api.nvim_get_hl(
+  0,
+  { name = "OculusOilChange", link = false }
+).fg == 0xfbd38d)
+assert(vim.api.nvim_get_hl(
+  0,
+  { name = "OculusOilChange", link = false }
+).bg == 0x101820)
+assert(vim.api.nvim_get_hl(
+  0,
+  { name = "OculusOilChange", link = false }
+).bold == true)
 
 local dimming_win = vim.api.nvim_get_current_win()
 local original_winhighlight = vim.wo[dimming_win].winhighlight
@@ -2430,6 +2442,7 @@ if integration_root and (integration_sha or integration_url) then
       watch_for_changes = false,
       keymaps = {
         ["<CR>"] = false,
+        ["q"] = { "actions.close", mode = "n" },
         ["l"] = {
           callback = function()
             oil.select({ tab = true, close = true })
@@ -2489,7 +2502,8 @@ if integration_root and (integration_sha or integration_url) then
       { details = true }
     )
     assert(#oil_marks > 0)
-    assert(oil_marks[1][4].sign_text)
+    assert(vim.trim(oil_marks[1][4].sign_text) == "●")
+    assert(oil_marks[1][4].sign_hl_group == "OculusOilChange")
     assert(oil_marks[1][4].virt_text == nil)
     assert(vim.wo[vim.api.nvim_get_current_win()].signcolumn == "yes")
     local oil_highlight = vim.api.nvim_get_hl(0, {
@@ -2529,8 +2543,11 @@ if integration_root and (integration_sha or integration_url) then
           -1,
           { details = true }
         )) do
-          if mark[4].sign_text ~= "•" then
-            return cursor_line == mark[2] + 1
+          if vim.trim(mark[4].sign_text) == "●"
+            and cursor_line == mark[2] + 1
+          then
+            local entry = oil.get_entry_on_line(current_buf, cursor_line)
+            return entry and entry.type ~= "directory"
           end
         end
         return false
@@ -2554,19 +2571,46 @@ if integration_root and (integration_sha or integration_url) then
       "unexpected Oil select mapping: "
         .. vim.inspect(oil_select_mapping)
     )
-    oil_select_mapping.callback()
+    ;(function()
+      local origin_tab = vim.api.nvim_get_current_tabpage()
+      local entered_tabs = {}
+      local tab_enter = vim.api.nvim_create_autocmd("TabEnter", {
+        callback = function()
+          entered_tabs[#entered_tabs + 1] =
+            vim.api.nvim_get_current_tabpage()
+        end,
+      })
+      local close_mapping = vim.fn.maparg("q", "n", false, true)
+      assert(type(close_mapping.callback) == "function")
+      close_mapping.callback()
+      assert(vim.wait(10000, function()
+        return vim.api.nvim_get_current_buf() == change_buf
+          and sidebar_window(origin_tab) ~= nil
+      end), "Oil did not restore its originating inspect page")
+      vim.api.nvim_del_autocmd(tab_enter)
+      assert(vim.api.nvim_get_current_tabpage() == origin_tab)
+      for _, entered_tab in ipairs(entered_tabs) do
+        assert(entered_tab == origin_tab, "Oil close cycled inspect pages")
+      end
+    end)()
     assert(vim.api.nvim_get_current_buf() == change_buf)
     assert(#vim.api.nvim_list_tabpages() == tabs_before_oil)
     assert(vim.bo[vim.api.nvim_get_current_buf()].filetype ~= "oil")
-    assert(vim.wait(10000, function()
+    assert(sidebar_window(tabs[3]))
+    ;(function()
       for pair_index = 1, pair_count do
-        if not sidebar_window(tabs[pair_index * 2])
-          or not sidebar_window(tabs[pair_index * 2 + 1])
-        then
-          return false
+        for _, tab in ipairs({
+          tabs[pair_index * 2],
+          tabs[pair_index * 2 + 1],
+        }) do
+          vim.api.nvim_set_current_tabpage(tab)
+          assert(vim.wait(10000, function()
+            return sidebar_window(tab) ~= nil
+          end), "Inspect sidebar was not restored when its page was shown")
         end
       end
-      return true
-    end), "Inspect sidebar was not restored after closing Oil")
+    end)()
+    vim.api.nvim_set_current_tabpage(tabs[3])
+    vim.api.nvim_set_current_win(change_win)
   end
 end

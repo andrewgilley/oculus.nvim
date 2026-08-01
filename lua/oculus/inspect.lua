@@ -1357,17 +1357,19 @@ local function oil_entry_status(session, role, path, directory)
   end
 end
 
+local oil_change_marker = {
+  sign = "●",
+  highlight = "OculusOilChange",
+}
+
 local oil_status = {
-  A = { sign = "+", highlight = "OculusOilAdded" },
-  C = { sign = "+", highlight = "OculusOilAdded" },
-  D = { sign = "-", highlight = "OculusOilDeleted" },
-  M = { sign = "~", highlight = "OculusOilModified" },
-  R = { sign = "→", highlight = "OculusOilRenamed" },
-  T = { sign = "~", highlight = "OculusOilModified" },
-  directory = {
-    sign = "•",
-    highlight = "OculusOilDirectory",
-  },
+  A = oil_change_marker,
+  C = oil_change_marker,
+  D = oil_change_marker,
+  M = oil_change_marker,
+  R = oil_change_marker,
+  T = oil_change_marker,
+  directory = oil_change_marker,
 }
 
 local function decorate_oil_buffer(buf)
@@ -1613,7 +1615,8 @@ restore_inspection_sidebar_for_buffer = function(buf)
         and open_inspection_sidebar
       then
         context.restore_sidebar = false
-        open_inspection_sidebar(group)
+        local endpoint = context.session and context.session[context.role]
+        open_inspection_sidebar(group, endpoint and endpoint.tab or nil)
       end
       return
     end
@@ -1757,25 +1760,10 @@ end
 
 local function set_oil_highlights()
   local background = highlight_background("Normal")
-  vim.api.nvim_set_hl(0, "OculusOilAdded", {
-    fg = highlight_foreground("DiagnosticOk", 0x9ae6b4),
+  vim.api.nvim_set_hl(0, "OculusOilChange", {
+    fg = 0xfbd38d,
     bg = background,
-  })
-  vim.api.nvim_set_hl(0, "OculusOilDeleted", {
-    fg = highlight_foreground("DiagnosticError", 0xf87171),
-    bg = background,
-  })
-  vim.api.nvim_set_hl(0, "OculusOilModified", {
-    fg = highlight_foreground("DiagnosticWarn", 0xfbd38d),
-    bg = background,
-  })
-  vim.api.nvim_set_hl(0, "OculusOilRenamed", {
-    fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
-    bg = background,
-  })
-  vim.api.nvim_set_hl(0, "OculusOilDirectory", {
-    fg = highlight_foreground("DiagnosticInfo", 0x7dd3fc),
-    bg = background,
+    bold = true,
   })
 end
 
@@ -2898,7 +2886,7 @@ close_inspection_sidebar = function(group)
   sidebar_navigating = false
 end
 
-open_inspection_sidebar = function(group)
+open_inspection_sidebar = function(group, target_tab)
   if group.sidebar_displaced_by_foreign then
     return
   end
@@ -2907,12 +2895,19 @@ open_inspection_sidebar = function(group)
   group.sidebar_windows = {}
   group.sidebar_visible = true
   sidebar_navigating = true
-  for _, session in ipairs(group) do
-    if group.kind == "issue" then
-      create_sidebar_window(group, session.issue)
-    else
-      create_sidebar_window(group, session.parent)
-      create_sidebar_window(group, session.change)
+  if target_tab then
+    local endpoint = endpoint_for_tab(group, target_tab)
+    if endpoint then
+      create_sidebar_window(group, endpoint)
+    end
+  else
+    for _, session in ipairs(group) do
+      if group.kind == "issue" then
+        create_sidebar_window(group, session.issue)
+      else
+        create_sidebar_window(group, session.parent)
+        create_sidebar_window(group, session.change)
+      end
     end
   end
   if vim.api.nvim_tabpage_is_valid(origin_tab)
@@ -2923,6 +2918,31 @@ open_inspection_sidebar = function(group)
   end
   sidebar_navigating = false
   refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+end
+
+local function ensure_inspection_sidebar_on_tab(group, tab)
+  if sidebar_navigating
+    or not group.sidebar_visible
+    or group.sidebar_displaced_by_foreign
+  then
+    return
+  end
+  local sidebar_win = group.sidebar_windows
+    and group.sidebar_windows[tab]
+  if sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+    return
+  end
+  local endpoint = endpoint_for_tab(group, tab)
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  local origin_win = vim.api.nvim_get_current_win()
+  sidebar_navigating = true
+  create_sidebar_window(group, endpoint)
+  if vim.api.nvim_win_is_valid(origin_win) then
+    vim.api.nvim_set_current_win(origin_win)
+  end
+  sidebar_navigating = false
 end
 
 local function toggle_inspection_sidebar(group)
@@ -3679,6 +3699,7 @@ vim.api.nvim_create_autocmd("TabEnter", {
   callback = function()
     local tab = vim.api.nvim_get_current_tabpage()
     for _, group in ipairs(sidebar_groups) do
+      ensure_inspection_sidebar_on_tab(group, tab)
       local endpoint = endpoint_for_tab(group, tab)
       if endpoint then
         apply_inspection_filetype(endpoint.buf, true)

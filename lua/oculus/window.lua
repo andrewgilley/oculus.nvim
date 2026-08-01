@@ -883,6 +883,47 @@ local function project_push_author(event)
   return type(author) == "string" and author ~= "" and author or nil
 end
 
+local function activity_identity(value)
+  if type(value) == "string" then
+    return value ~= "" and value or nil
+  end
+  if type(value) ~= "table" then
+    return nil
+  end
+  local handle = value.login or value.username or value.handle
+  if type(handle) == "string" and handle ~= "" then
+    return "@" .. handle:gsub("^@", "")
+  end
+  return type(value.name) == "string" and value.name ~= ""
+      and value.name
+    or nil
+end
+
+local function project_pull_request_title(event, text)
+  local payload = event.payload or {}
+  local pull_request = payload.pull_request or {}
+  local merged = payload.action == "merged"
+    or (payload.action == "closed" and (
+      pull_request.merged == true
+      or pull_request.merged_at ~= nil
+      or pull_request.merged_by ~= nil
+    ))
+  if not merged then
+    return text
+  end
+  local author = activity_identity(
+    pull_request.user or pull_request.author
+  )
+  local merger = activity_identity(pull_request.merged_by)
+    or activity_identity(event.actor)
+  local pull_request_text = text:gsub("^merged%s+", "", 1)
+  if author then
+    pull_request_text = author .. "'s " .. pull_request_text
+  end
+  return pull_request_text,
+    merger and ("• Merged by " .. merger) or nil
+end
+
 local function render_preview_panel(items)
   if
     M.state.view ~= "contributors"
@@ -1606,6 +1647,10 @@ local function render_activity(events, cached, notice, opts)
       if author then
         item.text = author .. " " .. item.text
       end
+    elseif project and event.type == "PullRequestEvent" then
+      local title, merger = project_pull_request_title(event, item.text)
+      item.text = title
+      item.summary = merger or item.summary
     end
     local inspect_context = inspect.activity_context(event)
     local expands_commits = not M.state.activity_commit_page

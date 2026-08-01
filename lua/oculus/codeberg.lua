@@ -3,6 +3,7 @@ local M = {}
 
 local cache = {}
 local repository_cache = {}
+local activity_pull_request_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
 local base_url = "https://codeberg.org"
@@ -130,6 +131,7 @@ local function pull_request_event(activity, action, merged)
       number = number,
       title = title,
       merged = merged or false,
+      merged_by = merged and activity.act_user or nil,
       html_url = url,
     },
   }, url)
@@ -421,10 +423,85 @@ function M.repository_events(repository_name, opts, callback)
   end)
 end
 
-function M.enrich_pull_requests(events, _, callback)
-  vim.schedule(function()
-    callback(events)
-  end)
+local function activity_pull_request_key(event)
+  if event.type ~= "PullRequestEvent" then
+    return nil
+  end
+  local repo = event.repo and event.repo.name
+  local payload = event.payload or {}
+  local pull_request = payload.pull_request or {}
+  local number = pull_request.number or payload.number
+  local merged = payload.action == "merged"
+    or (payload.action == "closed" and pull_request.merged == true)
+  if not merged or not repo or not number or pull_request.user then
+    return nil
+  end
+  return ("%s#%s"):format(repo, number), repo, number
+end
+
+local function apply_activity_pull_request(event, details)
+  event.payload = event.payload or {}
+  event.payload.pull_request = event.payload.pull_request or {}
+  local pull_request = event.payload.pull_request
+  pull_request.title = pull_request.title or details.title
+  pull_request.html_url = pull_request.html_url or details.html_url
+  if not pull_request.user and details.author then
+    pull_request.user = { login = details.author }
+  end
+  if not pull_request.merged_by and details.merged_by then
+    pull_request.merged_by = { login = details.merged_by }
+  end
+end
+
+function M.enrich_pull_requests(events, opts, callback)
+  opts = opts or {}
+  local pending = 0
+
+  local function complete()
+    pending = pending - 1
+    if pending == 0 then
+      callback(events)
+    end
+  end
+
+  for _, event in ipairs(events) do
+    local key, repo, number = activity_pull_request_key(event)
+    if key then
+      local cached = activity_pull_request_cache[key]
+      if type(cached) == "table" then
+        apply_activity_pull_request(event, cached)
+      elseif cached == nil then
+        pending = pending + 1
+        local url = ("%s/api/v1/repos/%s/pulls/%s"):format(
+          base_url,
+          repo,
+          number
+        )
+        request_json(url, opts, function(pull_request)
+          if pull_request then
+            local details = {
+              title = pull_request.title,
+              html_url = pull_request.html_url,
+              author = pull_request.user and pull_request.user.login,
+              merged_by = pull_request.merged_by
+                and pull_request.merged_by.login,
+            }
+            activity_pull_request_cache[key] = details
+            apply_activity_pull_request(event, details)
+          else
+            activity_pull_request_cache[key] = false
+          end
+          complete()
+        end)
+      end
+    end
+  end
+
+  if pending == 0 then
+    vim.schedule(function()
+      callback(events)
+    end)
+  end
 end
 
 function M.enrich_pushes(events, _, callback)
