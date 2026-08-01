@@ -3285,13 +3285,18 @@ local function map_inspection_sidebar_toggle(group)
     overview_lhs = default_overview_toggle
   end
   local function map_buffer(buf)
-    if type(sidebar_lhs) == "string" and sidebar_lhs ~= "" then
-      vim.keymap.set("n", sidebar_lhs, function()
-        toggle_inspection_sidebar(group)
-      end, vim.tbl_extend("force", sidebar_opts, {
-        buffer = buf,
-      }))
+    local opts = vim.tbl_extend(
+      "force",
+      sidebar_opts,
+      { buffer = buf }
+    )
+    local function toggle_sidebar()
+      toggle_inspection_sidebar(group)
     end
+    if type(sidebar_lhs) == "string" and sidebar_lhs ~= "" then
+      vim.keymap.set("n", sidebar_lhs, toggle_sidebar, opts)
+    end
+    vim.keymap.set("n", "<C-i>", toggle_sidebar, opts)
     if type(overview_lhs) == "string" and overview_lhs ~= "" then
       vim.keymap.set("n", overview_lhs, function()
         if overview_window_is_open(group) then
