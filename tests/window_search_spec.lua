@@ -663,6 +663,11 @@ assert(not table.concat(activity_before_page_load, "\n"):find(
   1,
   true
 ))
+assert(activity_before_page_load[3]:find(
+  "@" .. state.contributor.username,
+  1,
+  true
+))
 local activity_page_loading_namespace =
   vim.api.nvim_get_namespaces().oculus_activity_page_loading
 local activity_page_loading_marks = vim.api.nvim_buf_get_extmarks(
@@ -785,6 +790,7 @@ do
   local repository_per_page
   local repository_pages = {}
   local project_pushes_enriched = false
+  local deferred_project_request
   github.repository_events = function(repository, opts, callback)
     assert(repository == "neovim/neovim")
     repository_forces[#repository_forces + 1] = opts.force
@@ -821,6 +827,13 @@ do
           created_at = "2026-07-06T12:00:00Z",
           payload = { size = 1 },
         }
+      end
+      if deferred_project_request == true then
+        deferred_project_request = {
+          callback = callback,
+          events = events,
+        }
+        return
       end
       callback(events, nil, false)
       return
@@ -957,12 +970,45 @@ do
   assert(project_activity_text:find("@project-author pushed", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
-  local project_older_mapping = vim.fn.maparg("l", "n", false, true)
+  local project_older_mapping =
+    vim.fn.maparg("<Right>", "n", false, true)
+  deferred_project_request = true
   project_older_mapping.callback()
   assert(state.activity_page == 2)
   assert(#state.events == 8)
+  local project_title_line = vim.api.nvim_buf_get_lines(
+    state.buf,
+    2,
+    3,
+    false
+  )[1]
+  assert(project_title_line:find("neovim/neovim", 1, true))
+  local project_loading_marks = vim.api.nvim_buf_get_extmarks(
+    state.buf,
+    activity_page_loading_namespace,
+    0,
+    -1,
+    { details = true }
+  )
+  assert(#project_loading_marks == 1)
+  assert(project_loading_marks[1][2] == 2)
+  assert(project_loading_marks[1][4].virt_text[1][1]:match("^ "))
+  local pending_project_request = deferred_project_request
+  deferred_project_request = nil
+  pending_project_request.callback(
+    pending_project_request.events,
+    nil,
+    false
+  )
   assert(state.activity_has_past == true)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
+  assert(#vim.api.nvim_buf_get_extmarks(
+    state.buf,
+    activity_page_loading_namespace,
+    0,
+    -1,
+    {}
+  ) == 0)
   project_older_mapping.callback()
   assert(state.activity_page == 2)
   assert(state.activity_has_past == false)
