@@ -33,6 +33,7 @@ local select_previous_sidebar_chunk
 local switch_sidebar_version
 local close_inspection_sidebar
 local open_inspection_sidebar
+local ensure_inspection_sidebar_on_tab
 local restore_inspection_sidebar_for_buffer
 local show_inspection_overview
 local show_sidebar_files
@@ -2135,7 +2136,7 @@ local function remember_session_role(session, role)
   end
 end
 
-local function select_endpoint(endpoint, session, role)
+local function select_endpoint(endpoint, session, role, group)
   if not valid_endpoint(endpoint) then
     return
   end
@@ -2145,6 +2146,9 @@ local function select_endpoint(endpoint, session, role)
   vim.api.nvim_set_current_win(endpoint.win)
   show_inspection_path(endpoint.buf)
   sidebar_navigating = false
+  if group and ensure_inspection_sidebar_on_tab then
+    ensure_inspection_sidebar_on_tab(group, endpoint.tab)
+  end
 end
 
 local function move_cursor_to_line_end(win)
@@ -2265,7 +2269,7 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
   else
     start = render_chunk_for_role(session, role, chunk_index)
   end
-  select_endpoint(endpoint, session, role)
+  select_endpoint(endpoint, session, role, group)
   if start then
     set_change_cursor(endpoint.win, start)
   end
@@ -2283,7 +2287,7 @@ local function map_file_navigation(endpoint, session, role, group)
     end
     local target = role == "parent" and session.change or session.parent
     local target_role = role == "parent" and "change" or "parent"
-    select_endpoint(target, session, target_role)
+    select_endpoint(target, session, target_role, group)
     move_cursor_to_line_end(target.win)
   end
   local version_lhs = group.version_switch
@@ -2993,7 +2997,7 @@ open_inspection_sidebar = function(group, target_tab, restore_only)
   end
 end
 
-local function ensure_inspection_sidebar_on_tab(group, tab)
+ensure_inspection_sidebar_on_tab = function(group, tab)
   if sidebar_navigating
     or not group.sidebar_visible
     or group.sidebar_displaced_by_foreign
@@ -3231,6 +3235,31 @@ show_inspection_overview = function(group)
       desc = "Close Oculus Inspect overview",
     })
   end
+  vim.keymap.set("n", "<C-t>", function()
+    show_sidebar_files(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Close Oculus Inspect overview",
+  })
+  local function map_scroll(lhs, key, desc)
+    vim.keymap.set("n", lhs, function()
+      vim.cmd.normal({
+        vim.api.nvim_replace_termcodes(key, true, false, true),
+        bang = true,
+      })
+    end, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = desc,
+    })
+  end
+  map_scroll("j", "<C-e>", "Scroll Oculus Inspect overview down")
+  map_scroll("<Down>", "<C-e>", "Scroll Oculus Inspect overview down")
+  map_scroll("k", "<C-y>", "Scroll Oculus Inspect overview up")
+  map_scroll("<Up>", "<C-y>", "Scroll Oculus Inspect overview up")
   vim.api.nvim_set_current_win(win)
 end
 
@@ -3293,24 +3322,30 @@ local function map_inspection_sidebar_toggle(group)
     local function toggle_sidebar()
       toggle_inspection_sidebar(group)
     end
+    local function toggle_overview()
+      if overview_window_is_open(group) then
+        show_sidebar_files(group)
+      else
+        show_inspection_overview(group)
+      end
+    end
     if type(sidebar_lhs) == "string" and sidebar_lhs ~= "" then
       vim.keymap.set("n", sidebar_lhs, toggle_sidebar, opts)
     end
-    vim.keymap.set("n", "<C-t>", toggle_sidebar, opts)
     if type(overview_lhs) == "string" and overview_lhs ~= "" then
-      vim.keymap.set("n", overview_lhs, function()
-        if overview_window_is_open(group) then
-          show_sidebar_files(group)
-        else
-          show_inspection_overview(group)
-        end
-      end, {
+      vim.keymap.set("n", overview_lhs, toggle_overview, {
         buffer = buf,
         nowait = true,
         silent = true,
         desc = "Toggle Oculus Inspect overview",
       })
     end
+    vim.keymap.set("n", "<C-t>", toggle_overview, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = "Toggle Oculus Inspect overview",
+    })
   end
   for _, session in ipairs(group) do
     local endpoints = group.kind == "issue"
@@ -3801,6 +3836,7 @@ switch_sidebar_version = function(group)
   if not valid_endpoint(endpoint) then
     return
   end
+  ensure_inspection_sidebar_on_tab(group, endpoint.tab)
   local sidebar_win = group.sidebar_windows[endpoint.tab]
   if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
     return

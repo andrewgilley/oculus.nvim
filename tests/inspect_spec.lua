@@ -1700,14 +1700,9 @@ if integration_root and (integration_sha or integration_url) then
   local toggle_mapped = false
   local switch_mapped = false
   local next_file_mapping
-  local main_ctrl_t_mapped = false
-  local sidebar_ctrl_t_mapped = false
   local sidebar_tab_mapped = false
   local sidebar_leader_toggle
   for _, mapping in ipairs(jump_maps) do
-    if mapping.lhs == "<C-T>" then
-      main_ctrl_t_mapped = mapping
-    end
     if mapping.desc == "Previous Oculus change" then
       previous_mapped = mapping.lhs == "<C-Left>"
     elseif mapping.desc == "Previous Oculus changed chunk" then
@@ -1723,15 +1718,17 @@ if integration_root and (integration_sha or integration_url) then
     elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapping = mapping
     elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
-      if mapping.lhs == "<C-T>" then
-        sidebar_ctrl_t_mapped = mapping
-      elseif mapping.lhs == "<Tab>" then
+      if mapping.lhs == "<Tab>" then
         sidebar_tab_mapped = true
       else
         sidebar_leader_toggle = mapping
       end
     elseif mapping.desc == "Toggle Oculus Inspect overview" then
-      jump_maps.main_overview = mapping
+      if mapping.lhs == "<C-T>" then
+        jump_maps.main_ctrl_t_overview = mapping
+      else
+        jump_maps.main_overview = mapping
+      end
     end
   end
   assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
@@ -1739,9 +1736,6 @@ if integration_root and (integration_sha or integration_url) then
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
   assert(switch_mapped)
   assert(not next_file_mapping)
-  assert(main_ctrl_t_mapped
-    and main_ctrl_t_mapped.desc == "Toggle Oculus Inspect sidebar")
-  assert(sidebar_ctrl_t_mapped)
   assert(not sidebar_tab_mapped)
   assert(sidebar_leader_toggle
     and sidebar_leader_toggle.lhs
@@ -1749,24 +1743,40 @@ if integration_root and (integration_sha or integration_url) then
   assert(jump_maps.main_overview
     and jump_maps.main_overview.lhs
       == (vim.g.mapleader or "\\") .. "op")
+  assert(jump_maps.main_ctrl_t_overview
+    and jump_maps.main_ctrl_t_overview.lhs == "<C-T>")
   do
     vim.api.nvim_set_current_tabpage(tabs[3])
     vim.api.nvim_set_current_win(change_win)
     local cursor = vim.api.nvim_win_get_cursor(change_win)
     local view = vim.api.nvim_win_call(change_win, vim.fn.winsaveview)
     local guicursor = vim.o.guicursor
-    jump_maps.main_overview.callback()
+    jump_maps.main_ctrl_t_overview.callback()
     local overview_win = vim.api.nvim_get_current_win()
     local overview_buf = vim.api.nvim_get_current_buf()
     assert(vim.b[overview_buf].oculus_inspect_overview == true)
     assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
+    local overview_down = vim.fn.maparg("<Down>", "n", false, true)
+    local overview_up = vim.fn.maparg("<Up>", "n", false, true)
+    assert(overview_down.desc == "Scroll Oculus Inspect overview down")
+    assert(overview_up.desc == "Scroll Oculus Inspect overview up")
+    vim.api.nvim_win_set_height(overview_win, 4)
+    local overview_topline = vim.fn.winsaveview().topline
+    overview_down.callback()
+    assert(vim.fn.winsaveview().topline > overview_topline)
+    overview_up.callback()
+    assert(vim.fn.winsaveview().topline == overview_topline)
     vim.api.nvim_set_current_win(change_win)
     assert(vim.o.guicursor == guicursor)
     vim.api.nvim_set_current_win(overview_win)
     assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
     local close_mapping = vim.fn.maparg("q", "n", false, true)
+    local ctrl_t_close_mapping =
+      vim.fn.maparg("<C-t>", "n", false, true)
     assert(close_mapping.desc == "Close Oculus Inspect overview")
-    close_mapping.callback()
+    assert(ctrl_t_close_mapping.desc
+      == "Close Oculus Inspect overview")
+    ctrl_t_close_mapping.callback()
     assert(not vim.api.nvim_win_is_valid(overview_win))
     assert(not vim.api.nvim_buf_is_valid(overview_buf))
     assert(vim.o.guicursor == guicursor)
@@ -1851,7 +1861,6 @@ if integration_root and (integration_sha or integration_url) then
   vim.g.oculus_test_main_file_pair = nil
   vim.g.oculus_test_main_file_chunks = nil
 
-  local sidebar_ctrl_t_from_sidebar = false
   local sidebar_tab_from_sidebar = false
   local sidebar_leader_toggle_from_sidebar
   local sidebar_open_mapping
@@ -1862,9 +1871,7 @@ if integration_root and (integration_sha or integration_url) then
     "n"
   )) do
     if mapping.desc == "Toggle Oculus Inspect sidebar" then
-      if mapping.lhs == "<C-T>" then
-        sidebar_ctrl_t_from_sidebar = mapping
-      elseif mapping.lhs == "<Tab>" then
+      if mapping.lhs == "<Tab>" then
         sidebar_tab_from_sidebar = true
       else
         sidebar_leader_toggle_from_sidebar = mapping
@@ -1874,7 +1881,11 @@ if integration_root and (integration_sha or integration_url) then
     elseif mapping.desc == "Switch Oculus file version" then
       sidebar_switch_mapping = mapping
     elseif mapping.desc == "Toggle Oculus Inspect overview" then
-      sidebar_overview_mapping = mapping
+      if mapping.lhs == "<C-T>" then
+        jump_maps.sidebar_ctrl_t_overview = mapping
+      else
+        sidebar_overview_mapping = mapping
+      end
     elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapping = mapping
     elseif mapping.desc == "Next Oculus changed chunk" then
@@ -1883,7 +1894,6 @@ if integration_root and (integration_sha or integration_url) then
       previous_mapped = mapping
     end
   end
-  assert(sidebar_ctrl_t_from_sidebar)
   assert(not sidebar_tab_from_sidebar)
   assert(sidebar_leader_toggle_from_sidebar
     and sidebar_leader_toggle_from_sidebar.lhs
@@ -1895,6 +1905,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(sidebar_overview_mapping
     and sidebar_overview_mapping.lhs
       == (vim.g.mapleader or "\\") .. "op")
+  assert(jump_maps.sidebar_ctrl_t_overview
+    and jump_maps.sidebar_ctrl_t_overview.lhs == "<C-T>")
   assert(not next_file_mapping)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
   assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
@@ -2084,7 +2096,7 @@ if integration_root and (integration_sha or integration_url) then
       vim.b[sidebar_buf].oculus_inspect_sidebar_active
     ),
   }
-  sidebar_ctrl_t_from_sidebar.callback()
+  sidebar_leader_toggle_from_sidebar.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
   for pair_index = 1, pair_count do
     assert(#vim.api.nvim_tabpage_list_wins(
@@ -2094,6 +2106,14 @@ if integration_root and (integration_sha or integration_url) then
       tabs[pair_index * 2 + 1]
     ) == 1)
   end
+  vim.fn.maparg("gS", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == change_win)
+  assert(sidebar_window(tabs[3]) == nil)
+  vim.fn.maparg("gS", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_win() == parent_win)
+  assert(sidebar_window(tabs[2]) == nil)
   vim.g.oculus_test_toggle_entered_tabs = {}
   vim.g.oculus_test_toggle_tab_enter =
     vim.api.nvim_create_autocmd("TabEnter", {
@@ -2103,7 +2123,7 @@ if integration_root and (integration_sha or integration_url) then
         vim.g.oculus_test_toggle_entered_tabs = entered
       end,
     })
-  main_ctrl_t_mapped.callback()
+  sidebar_leader_toggle.callback()
   vim.api.nvim_del_autocmd(vim.g.oculus_test_toggle_tab_enter)
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
@@ -2135,6 +2155,14 @@ if integration_root and (integration_sha or integration_url) then
       end
     end
   end
+  vim.fn.maparg("gS", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == change_win)
+  assert(sidebar_window(tabs[3]) ~= nil)
+  vim.fn.maparg("gS", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_win() == parent_win)
+  assert(sidebar_window(tabs[2]) ~= nil)
   for pair_index = 1, pair_count do
     for _, tab in ipairs({
       tabs[pair_index * 2],
