@@ -198,7 +198,20 @@ local function pull_request_key(event)
   local payload = event.payload or {}
   local pull_request = payload.pull_request or {}
   local number = pull_request.number or payload.number
-  if not repo or not number or pull_request.title then
+  if not repo or not number then
+    return nil
+  end
+  local merged = payload.action == "merged"
+    or (payload.action == "closed" and (
+      pull_request.merged == true
+      or pull_request.merged_at ~= nil
+      or pull_request.merged_by ~= nil
+    ))
+  local author = pull_request.user or pull_request.author
+  local merger = pull_request.merged_by or event.actor
+  if pull_request.title
+    and (not merged or (author and merger))
+  then
     return nil
   end
   return ("%s#%s"):format(repo, number), repo, number
@@ -207,11 +220,18 @@ end
 local function apply_pull_request_details(event, details)
   event.payload = event.payload or {}
   event.payload.pull_request = event.payload.pull_request or {}
-  event.payload.pull_request.title = details.title
+  event.payload.pull_request.title = event.payload.pull_request.title
+    or details.title
   event.payload.pull_request.number = event.payload.pull_request.number
     or details.number
   event.payload.pull_request.html_url = event.payload.pull_request.html_url
     or details.html_url
+  if not event.payload.pull_request.user and details.author then
+    event.payload.pull_request.user = { login = details.author }
+  end
+  if not event.payload.pull_request.merged_by and details.merged_by then
+    event.payload.pull_request.merged_by = { login = details.merged_by }
+  end
 end
 
 function M.apply_pull_request(event, pull_request)
@@ -219,6 +239,8 @@ function M.apply_pull_request(event, pull_request)
     number = pull_request.number,
     title = pull_request.title,
     html_url = pull_request.html_url,
+    author = pull_request.user and pull_request.user.login,
+    merged_by = pull_request.merged_by and pull_request.merged_by.login,
   })
   return event
 end
@@ -252,6 +274,9 @@ function M.enrich_pull_requests(events, opts, callback)
               number = pull_request.number or number,
               title = pull_request.title,
               html_url = pull_request.html_url,
+              author = pull_request.user and pull_request.user.login,
+              merged_by = pull_request.merged_by
+                and pull_request.merged_by.login,
             }
             pull_request_cache[key] = details
             apply_pull_request_details(event, details)

@@ -308,6 +308,38 @@ assert(state.search_win == nil)
 assert(vim.api.nvim_win_is_valid(state.win))
 
 local github = require("oculus.github")
+do
+  local enriched_pull_request = github.apply_pull_request({
+    type = "PullRequestEvent",
+    payload = { pull_request = { number = 42 } },
+  }, {
+    number = 42,
+    title = "Preserve project identities",
+    html_url = "https://github.com/example/repository/pull/42",
+    user = { login = "pull-author" },
+    merged_by = { login = "merge-maintainer" },
+  })
+  assert(enriched_pull_request.payload.pull_request.user.login
+    == "pull-author")
+  assert(enriched_pull_request.payload.pull_request.merged_by.login
+    == "merge-maintainer")
+end
+do
+  local codeberg = require("oculus.codeberg")
+  local merged_pull_request = codeberg.normalize_activity({
+    id = 42,
+    op_type = "merge_pull_request",
+    act_user = { login = "codeberg-merger" },
+    repo = {
+      full_name = "ziglang/zig",
+      html_url = "https://codeberg.org/ziglang/zig",
+    },
+    content = vim.json.encode({ 123, "Merge parser update" }),
+    created = "2026-08-01T12:00:00Z",
+  })
+  assert(merged_pull_request.payload.pull_request.merged_by.login
+    == "codeberg-merger")
+end
 local original_events = github.events
 local original_enrich_pull_requests = github.enrich_pull_requests
 local original_enrich_pushes = github.enrich_pushes
@@ -853,12 +885,14 @@ do
       {
         type = "PullRequestEvent",
         repo = { name = repository },
+        actor = { login = "merge-maintainer" },
         created_at = "2026-07-02T12:00:00Z",
         payload = {
           action = "merged",
           pull_request = {
             number = 10,
             title = "Improve startup",
+            user = { login = "pull-author" },
           },
         },
       },
@@ -968,6 +1002,12 @@ do
   assert(project_activity_text:find("  PROJECT", 1, true))
   assert(project_activity_text:find("neovim/neovim", 1, true))
   assert(project_activity_text:find("@project-author pushed", 1, true))
+  assert(project_activity_text:find(
+    "@pull%-author's pull request #10"
+  ))
+  assert(project_activity_text:find(
+    "• Merged by @merge%-maintainer"
+  ))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
   local project_older_mapping =
