@@ -388,14 +388,68 @@ local function clamp_list_cursor()
     return
   end
 
+  if M.state.view == "contributors" then
+    local selectable = {}
+    local selected_line
+    for line, target in pairs(M.state.line_targets) do
+      if type(target) == "table" then
+        selectable[#selectable + 1] = line
+        if target.kind == "project" then
+          if target.project.repository
+            == (M.state.selected_project or {}).repository
+          then
+            selected_line = line
+          end
+        elseif target.username == M.state.selected_username then
+          selected_line = line
+        end
+      end
+    end
+    table.sort(selectable)
+    if #selectable == 0 then
+      return
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+    if type(M.state.line_targets[cursor[1]]) == "table" then
+      return
+    end
+
+    local line
+    if selected_line and cursor[1] > selected_line then
+      line = selectable[#selectable]
+      for _, candidate in ipairs(selectable) do
+        if candidate >= cursor[1] then
+          line = candidate
+          break
+        end
+      end
+    elseif selected_line and cursor[1] < selected_line then
+      line = selectable[1]
+      for index = #selectable, 1, -1 do
+        if selectable[index] <= cursor[1] then
+          line = selectable[index]
+          break
+        end
+      end
+    else
+      line = selectable[1]
+      for _, candidate in ipairs(selectable) do
+        if math.abs(candidate - cursor[1]) < math.abs(line - cursor[1]) then
+          line = candidate
+        end
+      end
+    end
+    vim.api.nvim_win_set_cursor(M.state.win, { line, 0 })
+    return
+  end
+
   local min_line
   local max_line
   if M.state.view == "activity" then
     min_line = M.state.activity_cursor_min_line
     max_line = M.state.activity_scroll_limit_line
-  elseif M.state.view == "contributors"
-    or M.state.view == "filters"
-  then
+  elseif M.state.view == "filters" then
     for line, target in pairs(M.state.line_targets) do
       if type(target) == "table" then
         min_line = math.min(min_line or line, line)

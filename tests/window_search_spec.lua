@@ -112,6 +112,14 @@ vim.api.nvim_win_set_cursor(
 )
 vim.api.nvim_exec_autocmds("CursorMoved", { buffer = state.buf })
 assert(vim.api.nvim_win_get_cursor(state.win)[1] == last_list_line)
+for line = 1, vim.api.nvim_buf_line_count(state.buf) do
+  if type(state.line_targets[line]) ~= "table" then
+    vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = state.buf })
+    local landed_line = vim.api.nvim_win_get_cursor(state.win)[1]
+    assert(type(state.line_targets[landed_line]) == "table")
+  end
+end
 local first_username = state.selected_username
 main_down_mapping.callback()
 local second_username = state.selected_username
