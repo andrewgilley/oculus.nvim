@@ -1360,7 +1360,7 @@ local function oil_entry_status(session, role, path, directory)
 end
 
 local oil_change_marker = {
-  sign = "●",
+  sign = "•",
   highlight = "OculusOilChange",
 }
 
@@ -1765,7 +1765,6 @@ local function set_oil_highlights()
   vim.api.nvim_set_hl(0, "OculusOilChange", {
     fg = 0xfbd38d,
     bg = background,
-    bold = true,
   })
 end
 
@@ -3109,7 +3108,7 @@ local function overview_window_config(config, _)
     config.width = width
   end
   if type(config.height) == "number" then
-    local height = math.max(1, config.height - 3)
+    local height = math.max(1, config.height - 2)
     config.row = (tonumber(config.row) or 0)
       + math.ceil((config.height - height) / 2)
     config.height = height
@@ -3243,12 +3242,26 @@ show_inspection_overview = function(group)
     silent = true,
     desc = "Close Oculus Inspect overview",
   })
-  local function map_scroll(lhs, key, desc)
+  local function map_scroll(lhs, direction, desc)
     vim.keymap.set("n", lhs, function()
-      vim.cmd.normal({
-        vim.api.nvim_replace_termcodes(key, true, false, true),
-        bang = true,
-      })
+      local view = vim.fn.winsaveview()
+      local height = vim.api.nvim_win_get_height(win)
+      local line_count = vim.api.nvim_buf_line_count(buf)
+      local max_topline = math.max(
+        1,
+        math.min(line_count, line_count - height + 2)
+      )
+      local topline = math.max(
+        1,
+        math.min(max_topline, view.topline + direction)
+      )
+      if topline == view.topline then
+        return
+      end
+      vim.api.nvim_win_set_cursor(win, { topline, 0 })
+      view = vim.fn.winsaveview()
+      view.topline = topline
+      vim.fn.winrestview(view)
     end, {
       buffer = buf,
       nowait = true,
@@ -3256,10 +3269,10 @@ show_inspection_overview = function(group)
       desc = desc,
     })
   end
-  map_scroll("j", "<C-e>", "Scroll Oculus Inspect overview down")
-  map_scroll("<Down>", "<C-e>", "Scroll Oculus Inspect overview down")
-  map_scroll("k", "<C-y>", "Scroll Oculus Inspect overview up")
-  map_scroll("<Up>", "<C-y>", "Scroll Oculus Inspect overview up")
+  map_scroll("k", 1, "Scroll Oculus Inspect overview down")
+  map_scroll("<Down>", 1, "Scroll Oculus Inspect overview down")
+  map_scroll("i", -1, "Scroll Oculus Inspect overview up")
+  map_scroll("<Up>", -1, "Scroll Oculus Inspect overview up")
   vim.api.nvim_set_current_win(win)
 end
 
