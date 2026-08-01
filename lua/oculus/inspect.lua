@@ -16,7 +16,6 @@ local sidebar_navigating = false
 local inspection_tabs_loading = false
 local oil_contexts = {}
 local oil_window_contexts = {}
-local foreign_sidebar_reconcile_pending = false
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "<leader>ow"
 local default_version_switch = "<C-s>"
@@ -2114,7 +2113,7 @@ normalize_inspection_view = function(win)
       return
     end
     local keys = vim.api.nvim_replace_termcodes(
-      "zt10<C-y>^",
+      "zt10<C-y>$",
       true,
       false,
       true
@@ -3338,15 +3337,17 @@ local function is_foreign_sidebar_window(win)
   return vim.wo[win].winfixwidth
 end
 
+local function inspection_endpoints(group, session)
+  return group.kind == "issue"
+      and { session.issue }
+    or { session.parent, session.change }
+end
+
 local function group_foreign_sidebar_state(group)
   local tabs = {}
   local has_endpoint = false
   for _, session in ipairs(group) do
-    for _, endpoint in ipairs({
-      session.issue,
-      session.parent,
-      session.change,
-    }) do
+    for _, endpoint in ipairs(inspection_endpoints(group, session)) do
       if valid_endpoint(endpoint) then
         has_endpoint = true
         tabs[endpoint.tab] = true
@@ -3361,6 +3362,34 @@ local function group_foreign_sidebar_state(group)
     end
   end
   return false, has_endpoint
+end
+
+local function queue_displaced_sidebar_restore(group)
+  if group.sidebar_foreign_restore_pending then
+    return
+  end
+  group.sidebar_foreign_restore_pending = true
+  -- WinClosed and its accompanying WinEnter fire before Neovim permits a
+  -- replacement split. Recheck on the next event-loop turn before restoring.
+  vim.schedule(function()
+    group.sidebar_foreign_restore_pending = nil
+    local has_foreign_sidebar, has_endpoint =
+      group_foreign_sidebar_state(group)
+    if not has_endpoint then
+      group.sidebar_displaced_by_foreign = nil
+      group.sidebar_restore_after_foreign = nil
+      return
+    end
+    if has_foreign_sidebar or not group.sidebar_displaced_by_foreign then
+      return
+    end
+    local restore = group.sidebar_restore_after_foreign
+    group.sidebar_displaced_by_foreign = nil
+    group.sidebar_restore_after_foreign = nil
+    if restore and not group.sidebar_visible then
+      open_inspection_sidebar(group)
+    end
+  end)
 end
 
 local function reconcile_foreign_sidebars()
@@ -3379,25 +3408,9 @@ local function reconcile_foreign_sidebars()
         close_inspection_sidebar(group)
       end
     elseif group.sidebar_displaced_by_foreign then
-      local restore = group.sidebar_restore_after_foreign
-      group.sidebar_displaced_by_foreign = nil
-      group.sidebar_restore_after_foreign = nil
-      if restore and not group.sidebar_visible then
-        open_inspection_sidebar(group)
-      end
+      queue_displaced_sidebar_restore(group)
     end
   end
-end
-
-local function queue_foreign_sidebar_reconciliation()
-  if foreign_sidebar_reconcile_pending then
-    return
-  end
-  foreign_sidebar_reconcile_pending = true
-  vim.schedule(function()
-    foreign_sidebar_reconcile_pending = false
-    reconcile_foreign_sidebars()
-  end)
 end
 
 vim.api.nvim_create_autocmd({
@@ -3408,7 +3421,7 @@ vim.api.nvim_create_autocmd({
   "WinClosed",
 }, {
   group = sync_group,
-  callback = queue_foreign_sidebar_reconciliation,
+  callback = reconcile_foreign_sidebars,
 })
 
 local function inspection_statusline(win)
@@ -4773,6 +4786,7 @@ M._sidebar_target_role = sidebar_target_role
 M._progressed_chunk_role = progressed_chunk_role
 M._chunk_start_for_role = chunk_start_for_role
 M._is_foreign_sidebar_window = is_foreign_sidebar_window
+M._inspection_endpoints = inspection_endpoints
 M._comment_float = comment_float
 
 return M
