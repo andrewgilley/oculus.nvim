@@ -136,7 +136,7 @@ assert(vim.api.nvim_get_hl(
 assert(vim.api.nvim_get_hl(
   0,
   { name = "OculusOilChange", link = false }
-).bold == true)
+).bold ~= true)
 
 local dimming_win = vim.api.nvim_get_current_win()
 local original_winhighlight = vim.wo[dimming_win].winhighlight
@@ -627,17 +627,17 @@ do
     { kind = "commit" }
   )
   assert(commit_config.width == main_config.width - 6)
-  assert(commit_config.height == main_config.height - 3)
+  assert(commit_config.height == main_config.height - 2)
   assert(commit_config.col == main_config.col + 3)
-  assert(commit_config.row == main_config.row + 2)
+  assert(commit_config.row == main_config.row + 1)
   local pull_request_config = inspect._overview_window_config(
     main_config,
     { kind = "pull_request" }
   )
   assert(pull_request_config.width == main_config.width - 6)
-  assert(pull_request_config.height == main_config.height - 3)
+  assert(pull_request_config.height == main_config.height - 2)
   assert(pull_request_config.col == main_config.col + 3)
-  assert(pull_request_config.row == main_config.row + 2)
+  assert(pull_request_config.row == main_config.row + 1)
 end
 
 local issue_context = inspect.activity_context({
@@ -1756,8 +1756,8 @@ if integration_root and (integration_sha or integration_url) then
     local overview_buf = vim.api.nvim_get_current_buf()
     assert(vim.b[overview_buf].oculus_inspect_overview == true)
     assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
-    local overview_down = vim.fn.maparg("<Down>", "n", false, true)
-    local overview_up = vim.fn.maparg("<Up>", "n", false, true)
+    local overview_down = vim.fn.maparg("k", "n", false, true)
+    local overview_up = vim.fn.maparg("i", "n", false, true)
     assert(overview_down.desc == "Scroll Oculus Inspect overview down")
     assert(overview_up.desc == "Scroll Oculus Inspect overview up")
     vim.api.nvim_win_set_height(overview_win, 4)
@@ -1765,6 +1765,18 @@ if integration_root and (integration_sha or integration_url) then
     overview_down.callback()
     assert(vim.fn.winsaveview().topline > overview_topline)
     overview_up.callback()
+    assert(vim.fn.winsaveview().topline == overview_topline)
+    for _ = 1, vim.api.nvim_buf_line_count(overview_buf) + 4 do
+      overview_down.callback()
+    end
+    assert(vim.fn.winsaveview().topline == math.max(
+      1,
+      vim.api.nvim_buf_line_count(overview_buf)
+        - vim.api.nvim_win_get_height(overview_win)
+        + 2
+    ))
+    overview_topline = vim.fn.winsaveview().topline
+    overview_down.callback()
     assert(vim.fn.winsaveview().topline == overview_topline)
     vim.api.nvim_set_current_win(change_win)
     assert(vim.o.guicursor == guicursor)
@@ -2002,9 +2014,9 @@ if integration_root and (integration_sha or integration_url) then
     assert(overview_saved.config.width
       == main_overview_config.width - 6)
     assert(overview_saved.config.height
-      == main_overview_config.height - 3)
+      == main_overview_config.height - 2)
     assert(overview_saved.config.row
-      == main_overview_config.row + 2)
+      == main_overview_config.row + 1)
     assert(overview_saved.config.col
       == main_overview_config.col + 3)
   end
@@ -2608,7 +2620,7 @@ if integration_root and (integration_sha or integration_url) then
       { details = true }
     )
     assert(#oil_marks > 0)
-    assert(vim.trim(oil_marks[1][4].sign_text) == "●")
+    assert(vim.trim(oil_marks[1][4].sign_text) == "•")
     assert(oil_marks[1][4].sign_hl_group == "OculusOilChange")
     assert(oil_marks[1][4].virt_text == nil)
     assert(vim.wo[vim.api.nvim_get_current_win()].signcolumn == "yes")
@@ -2649,7 +2661,7 @@ if integration_root and (integration_sha or integration_url) then
           -1,
           { details = true }
         )) do
-          if vim.trim(mark[4].sign_text) == "●"
+          if vim.trim(mark[4].sign_text) == "•"
             and cursor_line == mark[2] + 1
           then
             local entry = oil.get_entry_on_line(current_buf, cursor_line)
