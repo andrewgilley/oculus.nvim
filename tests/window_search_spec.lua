@@ -358,6 +358,12 @@ do
     "merged pull request #42 in example/repository"
   ) == "@merge-maintainer merged pr #42 from @pull-author "
     .. "in example/repository")
+  enriched_pull_request.payload.pull_request.user.login =
+    "Merge-Maintainer"
+  assert(window._project_pull_request_title(
+    enriched_pull_request,
+    "merged pull request #42 in example/repository"
+  ) == "@merge-maintainer merged pr #42 in example/repository")
 end
 do
   local codeberg = require("oculus.codeberg")
@@ -904,7 +910,7 @@ do
     repository_pages[#repository_pages + 1] = opts.page
     if opts.page == 2 then
       local events = {}
-      for index = 1, 5 do
+      for index = 1, 4 do
         events[#events + 1] = {
           type = "PushEvent",
           repo = { name = repository },
@@ -912,7 +918,7 @@ do
           payload = { size = 1 },
         }
       end
-      for index = 6, 100 do
+      for index = 5, 100 do
         events[#events + 1] = {
           type = "CreateEvent",
           repo = { name = repository },
@@ -967,6 +973,20 @@ do
             number = 10,
             title = "Improve startup",
             user = { login = "pull-author" },
+          },
+        },
+      },
+      {
+        type = "PullRequestEvent",
+        repo = { name = repository },
+        actor = { login = "self-maintainer" },
+        created_at = "2026-07-02T13:00:00Z",
+        payload = {
+          action = "merged",
+          pull_request = {
+            number = 12,
+            title = "Refine defaults",
+            user = { login = "self-maintainer" },
           },
         },
       },
@@ -1079,6 +1099,10 @@ do
   assert(project_activity_text:find(
     "@merge%-maintainer merged pr #10"
   ))
+  assert(project_activity_text:find(
+    "@self%-maintainer merged pr #12 in "
+  ))
+  assert(not project_activity_text:find("pr #12 from", 1, true))
   assert(not project_activity_text:find("• Merged by", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))

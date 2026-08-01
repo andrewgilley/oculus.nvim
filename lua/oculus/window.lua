@@ -976,6 +976,13 @@ local function project_pull_request_title(event, text)
   local repository = event.repo
     and (event.repo.name or event.repo.full_name)
   if merger and author and number and repository then
+    if merger:lower() == author:lower() then
+      return ("%s merged pr #%s in %s"):format(
+        merger,
+        number,
+        repository
+      )
+    end
     return ("%s merged pr #%s from %s in %s"):format(
       merger,
       number,
