@@ -1607,6 +1607,10 @@ if integration_root and (integration_sha or integration_url) then
   local change_win = assert(inspection_window(tabs[3]))
   local parent_buf = vim.api.nvim_win_get_buf(parent_win)
   local change_buf = vim.api.nvim_win_get_buf(change_win)
+  assert(vim.bo[parent_buf].modifiable)
+  assert(not vim.bo[parent_buf].readonly)
+  assert(vim.bo[change_buf].modifiable)
+  assert(not vim.bo[change_buf].readonly)
   vim.g.oculus_test_statusline_path = vim.fs.basename(
     vim.fs.normalize(change_state.repository)
   ) .. "/" .. change_state.file:gsub("\\", "/")
@@ -1759,6 +1763,8 @@ if integration_root and (integration_sha or integration_url) then
   vim.g.oculus_test_main_tab_chunk =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
   toggle_mapped.callback()
+  assert(vim.bo[change_buf].modifiable)
+  assert(not vim.bo[change_buf].readonly)
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win() == parent_win)
   do
