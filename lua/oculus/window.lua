@@ -1925,8 +1925,8 @@ local function render_shortcuts()
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Refresh the current activity page" },
-    { "p", "Load the next eight older activity items" },
-    { "r", "Load newer activity items" },
+    { "p / l / <Right>", "Load the next eight older activity items" },
+    { "r / j / <Left>", "Load newer activity items" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
@@ -3036,6 +3036,7 @@ local function move_left()
     and not M.state.activity_commit_page
     and (M.state.activity_page or 1) > 1
   then
+    previous_activity_page()
     return
   end
   go_back()
@@ -3045,6 +3046,7 @@ local function move_right()
   if M.state.view == "activity"
     and not M.state.activity_commit_page
   then
+    next_activity_page()
     return
   end
   select_current()

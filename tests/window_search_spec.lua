@@ -793,13 +793,6 @@ assert(not footer_text:find("u refresh", 1, true))
 assert(footer_text:find("q close", 1, true))
 
 older_mapping.callback()
-older_arrow_mapping.callback()
-newer_mapping.callback()
-newer_arrow_mapping.callback()
-assert(state.activity_page == 2)
-assert(requested_per_page[3] == nil)
-
-past_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 3)
 assert(#state.events == 4)
@@ -813,7 +806,7 @@ assert(last_activity_text:find("GitHub (3/3)", 1, true))
 
 local recent_mapping = vim.fn.maparg("r", "n", false, true)
 assert(recent_mapping.desc == "Load more recent Oculus activity")
-recent_mapping.callback()
+newer_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
 assert(#state.events == 8)
@@ -833,9 +826,15 @@ local recent_activity_text = table.concat(
 )
 assert(recent_activity_text:find("GitHub (2/3)", 1, true))
 
+older_arrow_mapping.callback()
+assert(state.activity_page == 3)
+assert(requested_per_page[5] == 46)
+newer_arrow_mapping.callback()
+assert(state.activity_page == 2)
+assert(requested_per_page[6] == 38)
 recent_mapping.callback()
 assert(state.activity_page == 1)
-assert(requested_per_page[5] == 30)
+assert(requested_per_page[7] == 30)
 local page_one_activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
@@ -1108,7 +1107,7 @@ do
   assert(project_activity_text:find("Second project commit", 1, true))
   local project_past_mapping = vim.fn.maparg("p", "n", false, true)
   deferred_project_request = true
-  project_past_mapping.callback()
+  vim.fn.maparg("<Right>", "n", false, true).callback()
   assert(state.activity_page == 2)
   assert(#state.events == 8)
   local project_title_line = vim.api.nvim_buf_get_lines(
@@ -1148,8 +1147,7 @@ do
   assert(state.activity_page == 2)
   assert(state.activity_has_past == false)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
-  local project_recent_mapping = vim.fn.maparg("r", "n", false, true)
-  project_recent_mapping.callback()
+  vim.fn.maparg("<Left>", "n", false, true).callback()
   assert(state.activity_page == 1)
   assert(#state.events == 8)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
