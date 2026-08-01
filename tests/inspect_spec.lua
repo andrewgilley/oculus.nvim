@@ -1753,15 +1753,22 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_set_current_win(change_win)
     local cursor = vim.api.nvim_win_get_cursor(change_win)
     local view = vim.api.nvim_win_call(change_win, vim.fn.winsaveview)
+    local guicursor = vim.o.guicursor
     jump_maps.main_overview.callback()
     local overview_win = vim.api.nvim_get_current_win()
     local overview_buf = vim.api.nvim_get_current_buf()
     assert(vim.b[overview_buf].oculus_inspect_overview == true)
+    assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
+    vim.api.nvim_set_current_win(change_win)
+    assert(vim.o.guicursor == guicursor)
+    vim.api.nvim_set_current_win(overview_win)
+    assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
     local close_mapping = vim.fn.maparg("q", "n", false, true)
     assert(close_mapping.desc == "Close Oculus Inspect overview")
     close_mapping.callback()
     assert(not vim.api.nvim_win_is_valid(overview_win))
     assert(not vim.api.nvim_buf_is_valid(overview_buf))
+    assert(vim.o.guicursor == guicursor)
     assert(vim.api.nvim_get_current_win() == change_win)
     assert(vim.deep_equal(
       vim.api.nvim_win_get_cursor(change_win),
