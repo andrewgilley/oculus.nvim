@@ -9,7 +9,15 @@ oculus.setup({
   persist_filters = false,
   persist_contributors = false,
 })
-assert(#oculus.config.contributors == 0)
+assert(#oculus.config.contributors == 2)
+assert(oculus.config.contributors[1].username == "lukewagner")
+assert(oculus.config.contributors[1].provider == "github")
+assert(oculus.config.contributors[2].username == "alexcrichton")
+assert(oculus.config.contributors[2].provider == "github")
+assert(#oculus.config.projects == 5)
+assert(oculus.config.projects[5].repository
+  == "WebAssembly/component-model")
+assert(oculus.config.projects[5].provider == "github")
 assert(oculus.config.suggested_contributors == nil)
 
 local state_file = vim.fn.tempname()
@@ -30,8 +38,10 @@ oculus.setup({
   persist_filters = false,
   persist_contributors = true,
 })
-assert(#oculus.config.contributors == 1)
-assert(oculus.config.contributors[1].username == "saved-user")
+assert(#oculus.config.contributors == 3)
+assert(oculus.config.contributors[1].username == "lukewagner")
+assert(oculus.config.contributors[2].username == "alexcrichton")
+assert(oculus.config.contributors[3].username == "saved-user")
 oculus.setup({
   state_file = state_file,
   persist_filters = false,
