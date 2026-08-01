@@ -2075,6 +2075,14 @@ if integration_root and (integration_sha or integration_url) then
   )[1]:find("• ", 1, true))
 
   vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
+  vim.g.oculus_test_toggled_sidebar_state = {
+    cursor = vim.api.nvim_win_get_cursor(0),
+    view = vim.fn.winsaveview(),
+    lines = vim.api.nvim_buf_get_lines(sidebar_buf, 0, -1, false),
+    active = vim.deepcopy(
+      vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    ),
+  }
   sidebar_leader_toggle_from_sidebar.callback()
   assert(vim.api.nvim_get_current_win() == parent_win)
   for pair_index = 1, pair_count do
@@ -2085,18 +2093,62 @@ if integration_root and (integration_sha or integration_url) then
       tabs[pair_index * 2 + 1]
     ) == 1)
   end
+  vim.g.oculus_test_toggle_entered_tabs = {}
+  vim.g.oculus_test_toggle_tab_enter =
+    vim.api.nvim_create_autocmd("TabEnter", {
+      callback = function()
+        local entered = vim.g.oculus_test_toggle_entered_tabs
+        entered[#entered + 1] = vim.api.nvim_get_current_tabpage()
+        vim.g.oculus_test_toggle_entered_tabs = entered
+      end,
+    })
   sidebar_leader_toggle.callback()
+  vim.api.nvim_del_autocmd(vim.g.oculus_test_toggle_tab_enter)
   assert(vim.api.nvim_get_current_win() == parent_win)
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(#vim.g.oculus_test_toggle_entered_tabs == 0)
+  vim.g.oculus_test_restored_sidebar_win = assert(sidebar_window(tabs[2]))
+  assert(vim.deep_equal(
+    vim.api.nvim_win_get_cursor(vim.g.oculus_test_restored_sidebar_win),
+    vim.g.oculus_test_toggled_sidebar_state.cursor
+  ))
+  assert(vim.api.nvim_win_call(
+    vim.g.oculus_test_restored_sidebar_win,
+    vim.fn.winsaveview
+  ).topline == vim.g.oculus_test_toggled_sidebar_state.view.topline)
+  assert(vim.deep_equal(
+    vim.api.nvim_buf_get_lines(sidebar_buf, 0, -1, false),
+    vim.g.oculus_test_toggled_sidebar_state.lines
+  ))
+  assert(vim.deep_equal(
+    vim.b[sidebar_buf].oculus_inspect_sidebar_active,
+    vim.g.oculus_test_toggled_sidebar_state.active
+  ))
   for pair_index = 1, pair_count do
     for _, tab in ipairs({
       tabs[pair_index * 2],
       tabs[pair_index * 2 + 1],
     }) do
+      if tab ~= tabs[2] then
+        assert(sidebar_window(tab) == nil)
+      end
+    end
+  end
+  for pair_index = 1, pair_count do
+    for _, tab in ipairs({
+      tabs[pair_index * 2],
+      tabs[pair_index * 2 + 1],
+    }) do
+      vim.api.nvim_set_current_tabpage(tab)
       assert(#vim.api.nvim_tabpage_list_wins(tab) == 2)
       assert(vim.api.nvim_win_get_buf(assert(sidebar_window(tab)))
         == sidebar_buf)
     end
   end
+  vim.g.oculus_test_toggled_sidebar_state = nil
+  vim.g.oculus_test_toggle_entered_tabs = nil
+  vim.g.oculus_test_toggle_tab_enter = nil
+  vim.g.oculus_test_restored_sidebar_win = nil
 
   vim.api.nvim_set_current_tabpage(tabs[2])
   local sidebar_active = vim.b[sidebar_buf]

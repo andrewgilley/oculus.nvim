@@ -2879,12 +2879,18 @@ local function create_sidebar_window(group, endpoint)
   if not valid_endpoint(endpoint) then
     return
   end
+  local saved_state = group.sidebar_window_states
+      and group.sidebar_window_states[endpoint.tab]
+    or nil
   vim.api.nvim_set_current_tabpage(endpoint.tab)
   vim.api.nvim_set_current_win(endpoint.win)
   vim.cmd("botright vsplit")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, group.sidebar_buf)
-  vim.api.nvim_win_set_width(win, group.sidebar_width)
+  vim.api.nvim_win_set_width(
+    win,
+    saved_state and saved_state.width or group.sidebar_width
+  )
   vim.wo[win].winfixwidth = true
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
@@ -2898,6 +2904,13 @@ local function create_sidebar_window(group, endpoint)
   end
   prevent_window_dimming(win)
   group.sidebar_windows[endpoint.tab] = win
+  if saved_state then
+    vim.api.nvim_win_set_cursor(win, saved_state.cursor)
+    vim.api.nvim_win_call(win, function()
+      vim.fn.winrestview(saved_state.view)
+    end)
+    group.sidebar_window_states[endpoint.tab] = nil
+  end
   vim.api.nvim_set_current_win(endpoint.win)
 end
 
@@ -2917,11 +2930,19 @@ close_inspection_sidebar = function(group)
   group.sidebar_focus_generation =
     (group.sidebar_focus_generation or 0) + 1
   group.focused_win = nil
+  group.sidebar_window_states = group.sidebar_window_states or {}
   sidebar_navigating = true
   for tab, win in pairs(group.sidebar_windows or {}) do
     if vim.api.nvim_tabpage_is_valid(tab)
       and vim.api.nvim_win_is_valid(win)
     then
+      group.sidebar_window_states[tab] = {
+        cursor = vim.api.nvim_win_get_cursor(win),
+        view = vim.api.nvim_win_call(win, function()
+          return vim.fn.winsaveview()
+        end),
+        width = vim.api.nvim_win_get_width(win),
+      }
       vim.api.nvim_win_close(win, true)
     end
   end
@@ -2936,7 +2957,7 @@ close_inspection_sidebar = function(group)
   sidebar_navigating = false
 end
 
-open_inspection_sidebar = function(group, target_tab)
+open_inspection_sidebar = function(group, target_tab, restore_only)
   if group.sidebar_displaced_by_foreign then
     return
   end
@@ -2967,7 +2988,9 @@ open_inspection_sidebar = function(group, target_tab)
     vim.api.nvim_set_current_win(origin_win)
   end
   sidebar_navigating = false
-  refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  if not restore_only then
+    refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  end
 end
 
 local function ensure_inspection_sidebar_on_tab(group, tab)
@@ -3004,7 +3027,11 @@ local function toggle_inspection_sidebar(group)
   if group.sidebar_visible then
     close_inspection_sidebar(group)
   else
-    open_inspection_sidebar(group)
+    open_inspection_sidebar(
+      group,
+      vim.api.nvim_get_current_tabpage(),
+      true
+    )
   end
 end
 
@@ -3798,6 +3825,9 @@ end
 vim.api.nvim_create_autocmd("TabEnter", {
   group = sync_group,
   callback = function()
+    if sidebar_navigating then
+      return
+    end
     local tab = vim.api.nvim_get_current_tabpage()
     for _, group in ipairs(sidebar_groups) do
       if not sidebar_navigating then
@@ -3852,6 +3882,9 @@ vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
 vim.api.nvim_create_autocmd("WinEnter", {
   group = sync_group,
   callback = function(args)
+    if sidebar_navigating then
+      return
+    end
     local current_win = vim.api.nvim_get_current_win()
     for _, candidate in ipairs(sidebar_groups) do
       if candidate.focused_win ~= current_win then
