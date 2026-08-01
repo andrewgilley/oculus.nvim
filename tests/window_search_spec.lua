@@ -481,6 +481,7 @@ local commit_footer_lines = table.concat(
   "\n"
 )
 assert(not commit_footer_lines:find("p past", 1, true))
+assert(not commit_footer_lines:find("l/→ past", 1, true))
 vim.fn.maparg("j", "n", false, true).callback()
 assert(state.activity_commit_page == false)
 assert(#state.events == 8)
@@ -615,6 +616,14 @@ inspect.open = original_inspect_open
 
 local past_mapping = vim.fn.maparg("p", "n", false, true)
 assert(past_mapping.desc == "Load past Oculus activity")
+local older_mapping = vim.fn.maparg("l", "n", false, true)
+local older_arrow_mapping = vim.fn.maparg("<Right>", "n", false, true)
+local newer_mapping = vim.fn.maparg("j", "n", false, true)
+local newer_arrow_mapping = vim.fn.maparg("<Left>", "n", false, true)
+assert(older_mapping.desc == "Move right in Oculus")
+assert(older_arrow_mapping.desc == "Move right in Oculus")
+assert(newer_mapping.desc == "Move left in Oculus")
+assert(newer_arrow_mapping.desc == "Move left in Oculus")
 local browser_mapping = vim.fn.maparg("b", "n", false, true)
 assert(browser_mapping.desc == "Open Oculus activity in browser")
 local original_browser_open = browser.open
@@ -639,7 +648,7 @@ browser.open = original_browser_open
 local activity_before_page_load =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 deferred_activity_request = true
-past_mapping.callback()
+older_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
 assert(state.events[1].id == "1")
@@ -694,11 +703,11 @@ local footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(footer_text:find("p past", 1, true))
-assert(footer_text:find("r recent", 1, true))
+assert(footer_text:find("l/→ past", 1, true))
+assert(footer_text:find("j/← recent", 1, true))
 assert(footer_text:find("b browser", 1, true))
 
-past_mapping.callback()
+older_arrow_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 3)
 assert(#state.events == 4)
@@ -712,7 +721,7 @@ assert(last_activity_text:find("GitHub (3/3)", 1, true))
 
 local recent_mapping = vim.fn.maparg("r", "n", false, true)
 assert(recent_mapping.desc == "Load more recent Oculus activity")
-recent_mapping.callback()
+newer_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_page == 2)
 assert(#state.events == 8)
@@ -723,15 +732,15 @@ local recent_footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(recent_footer_text:find("p past", 1, true))
-assert(recent_footer_text:find("r recent", 1, true))
+assert(recent_footer_text:find("l/→ past", 1, true))
+assert(recent_footer_text:find("j/← recent", 1, true))
 local recent_activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
 assert(recent_activity_text:find("GitHub (2/3)", 1, true))
 
-recent_mapping.callback()
+newer_arrow_mapping.callback()
 assert(state.activity_page == 1)
 assert(requested_per_page[5] == 30)
 local page_one_activity_text = table.concat(
@@ -743,16 +752,17 @@ local page_one_footer_text = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
-assert(page_one_footer_text:find("p past", 1, true))
-assert(not page_one_footer_text:find("r recent", 1, true))
-local user_refresh_mapping = vim.fn.maparg("R", "n", false, true)
+assert(page_one_footer_text:find("l/→ past", 1, true))
+assert(not page_one_footer_text:find("j/← recent", 1, true))
+assert(page_one_footer_text:find("j/← back", 1, true))
+local user_refresh_mapping = vim.fn.maparg("u", "n", false, true)
 assert(user_refresh_mapping.desc == "Refresh Oculus activity")
+assert(vim.fn.maparg("R", "n", false, true).desc == nil)
 user_refresh_mapping.callback()
 assert(requested_force[#requested_force] == true)
 assert(state.activity_page == 1)
 
-local back_mapping = vim.fn.maparg("j", "n", false, true)
-back_mapping.callback()
+newer_mapping.callback()
 assert(state.view == "contributors")
 assert(state.footer_win == nil)
 assert(state.footer_buf == nil)
@@ -941,22 +951,22 @@ do
   assert(project_activity_text:find("@project-author pushed", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
-  local project_past_mapping = vim.fn.maparg("p", "n", false, true)
-  project_past_mapping.callback()
+  local project_older_mapping = vim.fn.maparg("l", "n", false, true)
+  project_older_mapping.callback()
   assert(state.activity_page == 2)
   assert(#state.events == 8)
   assert(state.activity_has_past == true)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
-  project_past_mapping.callback()
+  project_older_mapping.callback()
   assert(state.activity_page == 2)
   assert(state.activity_has_past == false)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
-  local project_recent_mapping = vim.fn.maparg("r", "n", false, true)
-  project_recent_mapping.callback()
+  local project_newer_mapping = vim.fn.maparg("<Left>", "n", false, true)
+  project_newer_mapping.callback()
   assert(state.activity_page == 1)
   assert(#state.events == 8)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
-  local refresh_mapping = vim.fn.maparg("R", "n", false, true)
+  local refresh_mapping = vim.fn.maparg("u", "n", false, true)
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()
   assert(repository_forces[#repository_forces] == true)
