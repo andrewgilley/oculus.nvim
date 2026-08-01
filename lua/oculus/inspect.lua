@@ -2142,12 +2142,12 @@ local function select_endpoint(endpoint, session, role)
   sidebar_navigating = false
 end
 
-local function move_cursor_to_first_nonblank(win)
+local function move_cursor_to_line_end(win)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
   vim.api.nvim_win_call(win, function()
-    vim.cmd("normal! ^")
+    vim.cmd("normal! $")
   end)
 end
 
@@ -2279,7 +2279,7 @@ local function map_file_navigation(endpoint, session, role, group)
     local target = role == "parent" and session.change or session.parent
     local target_role = role == "parent" and "change" or "parent"
     select_endpoint(target, session, target_role)
-    move_cursor_to_first_nonblank(target.win)
+    move_cursor_to_line_end(target.win)
   end
   local version_lhs = group.version_switch
   if version_lhs == nil then
@@ -3747,7 +3747,7 @@ switch_sidebar_version = function(group)
   vim.api.nvim_set_current_win(sidebar_win)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
-  move_cursor_to_first_nonblank(sidebar_win)
+  move_cursor_to_line_end(sidebar_win)
   sidebar_navigating = false
 end
 
