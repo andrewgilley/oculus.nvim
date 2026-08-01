@@ -627,17 +627,17 @@ do
     { kind = "commit" }
   )
   assert(commit_config.width == main_config.width - 6)
-  assert(commit_config.height == main_config.height - 2)
+  assert(commit_config.height == main_config.height - 3)
   assert(commit_config.col == main_config.col + 3)
-  assert(commit_config.row == main_config.row + 1)
+  assert(commit_config.row == main_config.row + 2)
   local pull_request_config = inspect._overview_window_config(
     main_config,
     { kind = "pull_request" }
   )
   assert(pull_request_config.width == main_config.width - 6)
-  assert(pull_request_config.height == main_config.height - 2)
+  assert(pull_request_config.height == main_config.height - 3)
   assert(pull_request_config.col == main_config.col + 3)
-  assert(pull_request_config.row == main_config.row + 1)
+  assert(pull_request_config.row == main_config.row + 2)
 end
 
 local issue_context = inspect.activity_context({
@@ -2014,9 +2014,9 @@ if integration_root and (integration_sha or integration_url) then
     assert(overview_saved.config.width
       == main_overview_config.width - 6)
     assert(overview_saved.config.height
-      == main_overview_config.height - 2)
+      == main_overview_config.height - 3)
     assert(overview_saved.config.row
-      == main_overview_config.row + 1)
+      == main_overview_config.row + 2)
     assert(overview_saved.config.col
       == main_overview_config.col + 3)
   end
