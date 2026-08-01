@@ -58,7 +58,7 @@ do
   vim.api.nvim_set_current_win(original_win)
   vim.api.nvim_buf_delete(aerial_buf, { force = true })
 end
-assert(oculus.config.inspect_overview_toggle == "<leader>ow")
+assert(oculus.config.inspect_overview_toggle == "<leader>op")
 assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
 assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
@@ -1717,7 +1717,7 @@ if integration_root and (integration_sha or integration_url) then
       == (vim.g.mapleader or "\\") .. "oi")
   assert(jump_maps.main_overview
     and jump_maps.main_overview.lhs
-      == (vim.g.mapleader or "\\") .. "ow")
+      == (vim.g.mapleader or "\\") .. "op")
   do
     vim.api.nvim_set_current_tabpage(tabs[3])
     vim.api.nvim_set_current_win(change_win)
@@ -1854,7 +1854,7 @@ if integration_root and (integration_sha or integration_url) then
     and sidebar_switch_mapping.lhs == "gS")
   assert(sidebar_overview_mapping
     and sidebar_overview_mapping.lhs
-      == (vim.g.mapleader or "\\") .. "ow")
+      == (vim.g.mapleader or "\\") .. "op")
   assert(not next_file_mapping)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
   assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")

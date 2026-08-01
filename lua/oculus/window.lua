@@ -321,22 +321,25 @@ local function render_activity_footer()
   local width = config.width
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
-    activity_commands = activity_commands .. "   R refresh"
+    activity_commands = activity_commands .. "   u refresh"
     if M.state.activity_scope ~= "project"
       or M.state.activity_has_past ~= false
     then
-      activity_commands = activity_commands .. "   p past"
+      activity_commands = activity_commands .. "   l/→ past"
     end
   end
+  local left_command = "j/← back"
   if
     not M.state.activity_commit_page
     and (M.state.activity_page or 1) > 1
   then
-    activity_commands = activity_commands .. "   r recent"
+    left_command = "j/← recent"
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    activity_commands .. "   ? shortcuts   j/← back   q close",
+    activity_commands
+      .. "   " .. left_command
+      .. "   ? shortcuts   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1831,9 +1834,9 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
-    { "R", "Refresh the current activity page" },
-    { "p", "Load the next eight past activity items" },
-    { "r", "Load the previous page of recent activity" },
+    { "u", "Refresh the current activity page" },
+    { "l / <Right> / p", "Load the next eight older activity items" },
+    { "j / <Left> / r", "Load newer results or leave page one" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
@@ -2938,6 +2941,27 @@ local function go_back()
   end
 end
 
+local function move_left()
+  if M.state.view == "activity"
+    and not M.state.activity_commit_page
+    and (M.state.activity_page or 1) > 1
+  then
+    previous_activity_page()
+    return
+  end
+  go_back()
+end
+
+local function move_right()
+  if M.state.view == "activity"
+    and not M.state.activity_commit_page
+  then
+    next_activity_page()
+    return
+  end
+  select_current()
+end
+
 local function toggle_shortcuts()
   if M.state.view == "shortcuts" then
     go_back()
@@ -2978,8 +3002,8 @@ local function map_keys(buf)
   map("s", open_search, "Fuzzy-search Oculus users")
   map("/", open_search, "Fuzzy-search Oculus users")
   map("<CR>", select_current, "Select Oculus item")
-  map("l", select_current, "Move right in Oculus")
-  map("<Right>", select_current, "Move right in Oculus")
+  map("l", move_right, "Move right in Oculus")
+  map("<Right>", move_right, "Move right in Oculus")
   map("<Space>", toggle_filter_type, "Toggle Oculus item")
   map("o", open_current, "Open Oculus contributor profile")
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
@@ -3002,14 +3026,14 @@ local function map_keys(buf)
   end, "Disable all Oculus activity filters")
   map("p", next_activity_page, "Load past Oculus activity")
   map("r", previous_activity_page, "Load more recent Oculus activity")
-  map("R", refresh_activity, "Refresh Oculus activity")
+  map("u", refresh_activity, "Refresh Oculus activity")
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
   map("k", function()
     move_cursor(1)
   end, "Move down in Oculus")
-  map("j", go_back, "Move left in Oculus")
-  map("<Left>", go_back, "Move left in Oculus")
+  map("j", move_left, "Move left in Oculus")
+  map("<Left>", move_left, "Move left in Oculus")
   map("<Down>", function()
     move_cursor(1)
   end, "Select next Oculus contributor")
