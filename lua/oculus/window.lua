@@ -916,13 +916,21 @@ local function project_pull_request_title(event, text)
   )
   local merger = activity_identity(pull_request.merged_by)
     or activity_identity(event.actor)
-  local pull_request_text = text:gsub("^merged%s+", "", 1)
-  if author then
-    pull_request_text = author .. "'s " .. pull_request_text
+  local number = pull_request.number or payload.number
+  local repository = event.repo
+    and (event.repo.name or event.repo.full_name)
+  if merger and author and number and repository then
+    return ("%s merged pr #%s from %s in %s"):format(
+      merger,
+      number,
+      author,
+      repository
+    )
   end
-  return pull_request_text,
-    merger and ("• Merged by " .. merger) or nil
+  return text
 end
+
+M._project_pull_request_title = project_pull_request_title
 
 local function render_preview_panel(items)
   if
@@ -1648,9 +1656,7 @@ local function render_activity(events, cached, notice, opts)
         item.text = author .. " " .. item.text
       end
     elseif project and event.type == "PullRequestEvent" then
-      local title, merger = project_pull_request_title(event, item.text)
-      item.text = title
-      item.summary = merger or item.summary
+      item.text = project_pull_request_title(event, item.text)
     end
     local inspect_context = inspect.activity_context(event)
     local expands_commits = not M.state.activity_commit_page

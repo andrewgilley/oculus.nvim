@@ -311,7 +311,12 @@ local github = require("oculus.github")
 do
   local enriched_pull_request = github.apply_pull_request({
     type = "PullRequestEvent",
-    payload = { pull_request = { number = 42 } },
+    repo = { name = "example/repository" },
+    actor = { login = "merge-maintainer" },
+    payload = {
+      action = "merged",
+      pull_request = { number = 42 },
+    },
   }, {
     number = 42,
     title = "Preserve project identities",
@@ -323,6 +328,11 @@ do
     == "pull-author")
   assert(enriched_pull_request.payload.pull_request.merged_by.login
     == "merge-maintainer")
+  assert(window._project_pull_request_title(
+    enriched_pull_request,
+    "merged pull request #42 in example/repository"
+  ) == "@merge-maintainer merged pr #42 from @pull-author "
+    .. "in example/repository")
 end
 do
   local codeberg = require("oculus.codeberg")
@@ -1003,11 +1013,9 @@ do
   assert(project_activity_text:find("neovim/neovim", 1, true))
   assert(project_activity_text:find("@project-author pushed", 1, true))
   assert(project_activity_text:find(
-    "@pull%-author's pull request #10"
+    "@merge%-maintainer merged pr #10"
   ))
-  assert(project_activity_text:find(
-    "• Merged by @merge%-maintainer"
-  ))
+  assert(not project_activity_text:find("• Merged by", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
   local project_older_mapping =
