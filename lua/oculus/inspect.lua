@@ -4190,6 +4190,8 @@ local function load_tab(
   vim.cmd("tcd " .. vim.fn.fnameescape(working_directory))
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
+  local initial_undolevels = vim.bo[buf].undolevels
+  vim.bo[buf].undolevels = -1
   local lines = role == "change"
       and inspection.change_lines
     or inspection.parent_lines
@@ -4235,10 +4237,23 @@ local function load_tab(
     tab = vim.api.nvim_get_current_tabpage(),
     win = vim.api.nvim_get_current_win(),
     buf = vim.api.nvim_get_current_buf(),
+    initial_undolevels = initial_undolevels,
   }
   vim.wo[loaded.win].signcolumn = "yes"
   vim.wo[loaded.win].wrap = false
   return loaded
+end
+
+local function finish_inspection_buffer_initialization(endpoint)
+  if not endpoint or not vim.api.nvim_buf_is_valid(endpoint.buf) then
+    return
+  end
+  local undolevels = endpoint.initial_undolevels
+  endpoint.initial_undolevels = nil
+  if undolevels ~= nil then
+    vim.bo[endpoint.buf].undolevels = undolevels
+  end
+  vim.bo[endpoint.buf].modified = false
 end
 
 local function make_inspection_tab()
@@ -4387,6 +4402,10 @@ local function open_tabs(
       normalize_inspection_view(session.change.win)
     end
     setup_inspection_comment(inspection_sessions, comment)
+    for _, session in ipairs(inspection_sessions) do
+      finish_inspection_buffer_initialization(session.parent)
+      finish_inspection_buffer_initialization(session.change)
+    end
     restore_staging_window()
 
     local first = inspection_sessions[1]

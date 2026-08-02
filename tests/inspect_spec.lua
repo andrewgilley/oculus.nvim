@@ -1630,6 +1630,36 @@ if integration_root and (integration_sha or integration_url) then
   assert(not vim.bo[parent_buf].readonly)
   assert(vim.bo[change_buf].modifiable)
   assert(not vim.bo[change_buf].readonly)
+  do
+    local initial_lines = vim.api.nvim_buf_get_lines(
+      change_buf,
+      0,
+      -1,
+      false
+    )
+    vim.api.nvim_set_current_win(change_win)
+    vim.cmd("silent undo")
+    assert(vim.deep_equal(
+      vim.api.nvim_buf_get_lines(change_buf, 0, -1, false),
+      initial_lines
+    ))
+    vim.api.nvim_buf_set_lines(
+      change_buf,
+      0,
+      1,
+      false,
+      { "oculus undo baseline probe" }
+    )
+    assert(not vim.deep_equal(
+      vim.api.nvim_buf_get_lines(change_buf, 0, -1, false),
+      initial_lines
+    ))
+    vim.cmd("silent undo")
+    assert(vim.deep_equal(
+      vim.api.nvim_buf_get_lines(change_buf, 0, -1, false),
+      initial_lines
+    ))
+  end
   vim.g.oculus_test_statusline_path = vim.fs.basename(
     vim.fs.normalize(change_state.repository)
   ) .. "/" .. change_state.file:gsub("\\", "/")
