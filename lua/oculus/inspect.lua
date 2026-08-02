@@ -3634,7 +3634,16 @@ vim.api.nvim_create_autocmd({
   "WinClosed",
 }, {
   group = sync_group,
-  callback = reconcile_foreign_sidebars,
+  callback = function(args)
+    reconcile_foreign_sidebars()
+    if args.event == "WinClosed" then
+      for _, group in ipairs(sidebar_groups) do
+        if group.sidebar_displaced_by_foreign then
+          queue_displaced_sidebar_restore(group)
+        end
+      end
+    end
+  end,
 })
 
 local function inspection_statusline(win)
