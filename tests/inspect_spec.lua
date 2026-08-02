@@ -1813,6 +1813,14 @@ if integration_root and (integration_sha or integration_url) then
     overview_topline = vim.fn.winsaveview().topline
     overview_down.callback()
     assert(vim.fn.winsaveview().topline == overview_topline)
+    vim.api.nvim_win_set_height(
+      overview_win,
+      require("oculus.window").window_config({}).height - 3
+    )
+    for _ = 1, vim.api.nvim_buf_line_count(overview_buf) do
+      overview_down.callback()
+    end
+    local restored_overview_view = vim.fn.winsaveview()
     vim.api.nvim_set_current_win(change_win)
     assert(vim.o.guicursor == guicursor)
     vim.api.nvim_set_current_win(overview_win)
@@ -1836,6 +1844,16 @@ if integration_root and (integration_sha or integration_url) then
       vim.api.nvim_win_call(change_win, vim.fn.winsaveview),
       view
     ))
+    jump_maps.main_ctrl_t_overview.callback()
+    overview_win = vim.api.nvim_get_current_win()
+    overview_buf = vim.api.nvim_get_current_buf()
+    assert(vim.b[overview_buf].oculus_inspect_overview == true)
+    assert(vim.deep_equal(
+      vim.fn.winsaveview(),
+      restored_overview_view
+    ))
+    vim.fn.maparg("<C-t>", "n", false, true).callback()
+    assert(vim.api.nvim_get_current_win() == change_win)
   end
   vim.g.oculus_test_main_tab_pair =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index

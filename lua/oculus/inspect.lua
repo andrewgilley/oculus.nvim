@@ -3087,6 +3087,11 @@ end
 local function close_overview_window(group)
   local win = group.overview_win
   local buf = group.overview_buf
+  if win and vim.api.nvim_win_is_valid(win) then
+    group.overview_view = vim.api.nvim_win_call(win, function()
+      return vim.fn.winsaveview()
+    end)
+  end
   group.overview_win = nil
   group.overview_buf = nil
   restore_overview_cursor(group)
@@ -3275,6 +3280,11 @@ show_inspection_overview = function(group)
   map_scroll("<Down>", 1, "Scroll Oculus Inspect overview down")
   map_scroll("i", -1, "Scroll Oculus Inspect overview up")
   map_scroll("<Up>", -1, "Scroll Oculus Inspect overview up")
+  if group.overview_view then
+    vim.api.nvim_win_call(win, function()
+      vim.fn.winrestview(group.overview_view)
+    end)
+  end
   vim.api.nvim_set_current_win(win)
 end
 
