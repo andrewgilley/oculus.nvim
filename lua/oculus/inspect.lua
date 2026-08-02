@@ -3117,7 +3117,7 @@ local function overview_window_config(config, _)
       + math.ceil((config.height - height) / 2)
     config.height = height
   end
-  config.footer = " "
+  config.footer = "─"
   config.footer_pos = "left"
   config.zindex = 70
   return config
