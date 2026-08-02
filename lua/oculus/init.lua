@@ -61,6 +61,12 @@ local defaults = {
       provider = "github",
       description = "Repository for design and specification of the Component Model.",
     },
+    {
+      name = "lazy.nvim",
+      repository = "folke/lazy.nvim",
+      provider = "github",
+      description = "A modern plugin manager for Neovim.",
+    },
   },
   persist_filters = true,
   persist_contributors = true,
@@ -94,6 +100,11 @@ local defaults = {
     {
       name = "Alex Crichton",
       username = "alexcrichton",
+      provider = "github",
+    },
+    {
+      name = "folke",
+      username = "folke",
       provider = "github",
     },
   },

@@ -9,15 +9,19 @@ oculus.setup({
   persist_filters = false,
   persist_contributors = false,
 })
-assert(#oculus.config.contributors == 2)
+assert(#oculus.config.contributors == 3)
 assert(oculus.config.contributors[1].username == "lukewagner")
 assert(oculus.config.contributors[1].provider == "github")
 assert(oculus.config.contributors[2].username == "alexcrichton")
 assert(oculus.config.contributors[2].provider == "github")
-assert(#oculus.config.projects == 5)
+assert(oculus.config.contributors[3].username == "folke")
+assert(oculus.config.contributors[3].provider == "github")
+assert(#oculus.config.projects == 6)
 assert(oculus.config.projects[5].repository
   == "WebAssembly/component-model")
 assert(oculus.config.projects[5].provider == "github")
+assert(oculus.config.projects[6].repository == "folke/lazy.nvim")
+assert(oculus.config.projects[6].provider == "github")
 assert(oculus.config.suggested_contributors == nil)
 
 local state_file = vim.fn.tempname()
@@ -38,10 +42,11 @@ oculus.setup({
   persist_filters = false,
   persist_contributors = true,
 })
-assert(#oculus.config.contributors == 3)
+assert(#oculus.config.contributors == 4)
 assert(oculus.config.contributors[1].username == "lukewagner")
 assert(oculus.config.contributors[2].username == "alexcrichton")
-assert(oculus.config.contributors[3].username == "saved-user")
+assert(oculus.config.contributors[3].username == "folke")
+assert(oculus.config.contributors[4].username == "saved-user")
 oculus.setup({
   state_file = state_file,
   persist_filters = false,
@@ -61,6 +66,14 @@ window.open({
 })
 
 local state = window.state
+local project_start_lines = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(project_start_lines:find("PROJECTS", 1, true))
+assert(not project_start_lines:find("No users added.", 1, true))
+assert(project_start_lines:find("v users", 1, true))
+vim.fn.maparg("v", "n", false, true).callback()
 local empty_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
@@ -95,6 +108,7 @@ oculus.setup({
   contributors = {},
 })
 window.open(oculus.config)
+vim.fn.maparg("v", "n", false, true).callback()
 vim.ui.select = function(items, _, callback)
   callback(items[1])
 end
@@ -117,6 +131,7 @@ oculus.setup({
 assert(#oculus.config.contributors == 1)
 assert(oculus.config.contributors[1].username == "remember-me")
 window.open(oculus.config)
+vim.fn.maparg("v", "n", false, true).callback()
 local restarted_lines = table.concat(
   vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false),
   "\n"
