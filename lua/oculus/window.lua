@@ -85,6 +85,7 @@ M.state = {
   preview_contributor = nil,
   preview_project = nil,
   contributors = {},
+  community_view = "projects",
   selected_username = nil,
   selected_project = nil,
   contributor_offset = 1,
@@ -1185,6 +1186,10 @@ local function render_contributors()
 
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 10 Generalize the contributor list for multiple forges
   local searching = type(M.state.search_query) == "string"
+  local community_view = searching
+      and "users"
+    or (M.state.community_view or "projects")
+  local showing_users = community_view == "users"
   local lines = searching
       and {
         "",
@@ -1194,13 +1199,13 @@ local function render_contributors()
       }
     or {
       "",
-      "  COMMUNITY ACTIVITY",
+      "  ACTIVITY",
       "",
       "",
     }
 
-  local contributors = visible_contributors()
-  local projects = not searching
+  local contributors = showing_users and visible_contributors() or {}
+  local projects = not showing_users
       and display_projects(M.state.opts.projects)
     or {}
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
@@ -1212,7 +1217,7 @@ local function render_contributors()
 
   local project_lines = {}
   local project_heading_line
-  if #projects > 0 then
+  if not showing_users then
     project_heading_line = #lines + 1
     lines[#lines + 1] = "  PROJECTS"
     for _, project in ipairs(projects) do
@@ -1227,11 +1232,16 @@ local function render_contributors()
       }
       project_lines[#project_lines + 1] = line
     end
-    lines[#lines + 1] = ""
+    if #projects == 0 then
+      lines[#lines + 1] = "  No projects configured."
+    end
   end
 
-  local user_heading_line = #lines + 1
-  lines[#lines + 1] = "  " .. pad_cell("USERS", username_width)
+  local user_heading_line
+  if showing_users then
+    user_heading_line = #lines + 1
+    lines[#lines + 1] = "  " .. pad_cell("USERS", username_width)
+  end
 
   local selected_index = 1
   for index, contributor in ipairs(contributors) do
@@ -1261,17 +1271,19 @@ local function render_contributors()
   end
   M.state.contributor_offset = offset
 
-  for index = offset, math.min(#contributors, offset + list_limit - 1) do
-    local contributor = contributors[index]
-    local line = #lines + 1
-    local handle = "@" .. contributor.username
-    local prefix = "  " .. pad_cell(handle, username_width)
-    lines[line] = pad_cell(prefix, left_width)
-    M.state.line_targets[line] = contributor
+  if showing_users then
+    for index = offset, math.min(#contributors, offset + list_limit - 1) do
+      local contributor = contributors[index]
+      local line = #lines + 1
+      local handle = "@" .. contributor.username
+      local prefix = "  " .. pad_cell(handle, username_width)
+      lines[line] = pad_cell(prefix, left_width)
+      M.state.line_targets[line] = contributor
+    end
   end
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 10
 
-  if #contributors == 0 then
+  if showing_users and #contributors == 0 then
     if searching then
       lines[#lines + 1] = "  No matching users."
     else
@@ -1286,7 +1298,9 @@ local function render_contributors()
   local separator_line = #lines
   lines[#lines + 1] = searching
       and "  esc cancel"
-    or "  a add  / search  ?: help  q quit"
+    or showing_users
+        and "  v projects  a add  / search  ?: help  q quit"
+      or "  v users  ?: help  q quit"
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
@@ -1296,7 +1310,9 @@ local function render_contributors()
   if project_heading_line then
     highlight(project_heading_line, 2, -1, "Title")
   end
-  highlight(user_heading_line, 2, -1, "Title")
+  if user_heading_line then
+    highlight(user_heading_line, 2, -1, "Title")
+  end
   for line, _ in pairs(M.state.line_targets) do
     local target = M.state.line_targets[line]
     highlight(
@@ -1324,9 +1340,15 @@ local function render_contributors()
       break
     end
   end
-  selected_line = selected_line
-    or project_lines[1]
-    or (M.state.line_targets[6] and 6)
+  if not selected_line then
+    for line, target in pairs(M.state.line_targets) do
+      if type(target) == "table"
+        and (not selected_line or line < selected_line)
+      then
+        selected_line = line
+      end
+    end
+  end
   if selected_line and is_valid_win(M.state.win) then
     local target = M.state.line_targets[selected_line]
     if target.kind == "project" then
@@ -1363,7 +1385,10 @@ local function render_contributors()
       queue_preview(preview_contributor)
     else
       render_preview_panel({
-        [2] = { "USER", "Title" },
+        [2] = {
+          showing_users and "USER" or "PROJECT",
+          "Title",
+        },
       })
     end
   end
@@ -1912,7 +1937,8 @@ local function render_shortcuts()
     { "j / <Left>", "Return to the previous page" },
   })
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
-  section("STARTUP USER LIST", {
+  section("STARTUP LISTS", {
+    { "v", "Switch between project and user lists" },
     { "s /", "Fuzzy-search contributor names and handles" },
     { "a", "Add a GitHub or Codeberg account" },
     { "x", "Remove the selected account" },
@@ -3076,6 +3102,23 @@ local function toggle_shortcuts()
   render_shortcuts()
 end
 
+local function toggle_community_view()
+  if M.state.view ~= "contributors"
+    or M.state.search_query ~= nil
+  then
+    return
+  end
+  if M.state.community_view == "users" then
+    M.state.community_view = "projects"
+    M.state.selected_username = nil
+  else
+    M.state.community_view = "users"
+    M.state.selected_project = nil
+    M.state.contributor_offset = 1
+  end
+  render_contributors()
+end
+
 local function map_keys(buf)
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, {
@@ -3089,6 +3132,7 @@ local function map_keys(buf)
   map("q", M.close, "Close Oculus")
   map("<Esc>", M.close, "Close Oculus")
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
+  map("v", toggle_community_view, "Switch Oculus project and user lists")
   map("s", open_search, "Fuzzy-search Oculus users")
   map("/", open_search, "Fuzzy-search Oculus users")
   map("<CR>", select_current, "Select Oculus item")
@@ -3279,9 +3323,11 @@ function M.open(opts)
       or nil
     M.state.contributor = contributor
     if M.state.activity_project then
+      M.state.community_view = "projects"
       M.state.selected_project = M.state.activity_project
       M.state.selected_username = nil
     else
+      M.state.community_view = "users"
       M.state.selected_username = contributor.username
     end
     render_activity(
@@ -3292,6 +3338,7 @@ function M.open(opts)
     )
     restore_cursor()
   else
+    M.state.community_view = "projects"
     render_contributors()
     restore_cursor()
   end

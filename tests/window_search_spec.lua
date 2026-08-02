@@ -55,6 +55,14 @@ window.open({
   border = "rounded",
   contributor_list_limit = 20,
   contributors = contributors,
+  projects = {
+    {
+      name = "Test project",
+      repository = "example/project",
+      provider = "github",
+      description = "A project used by the startup list test.",
+    },
+  },
 })
 
 local state = window.state
@@ -79,6 +87,21 @@ assert(not vim.wo[state.win].winhighlight:find(
 assert(vim.wo[state.win].number == false)
 assert(vim.wo[state.win].relativenumber == false)
 local initial_window_height = vim.api.nvim_win_get_height(state.win)
+local initial_project_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(initial_project_text:find("  PROJECTS", 1, true))
+assert(initial_project_text:find("  ACTIVITY", 1, true))
+assert(not initial_project_text:find("COMMUNITY ACTIVITY", 1, true))
+assert(initial_project_text:find("example/project", 1, true))
+assert(not initial_project_text:find("  USERS", 1, true))
+assert(not initial_project_text:find("@mitchellh", 1, true))
+assert(initial_project_text:find("v users", 1, true))
+local community_view_mapping = vim.fn.maparg("v", "n", false, true)
+assert(community_view_mapping.desc
+  == "Switch Oculus project and user lists")
+community_view_mapping.callback()
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 local initial_user_text = table.concat(initial_user_lines, "\n")
@@ -89,7 +112,7 @@ assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
 assert(initial_user_lines[initial_window_height]
-  == "  a add  / search  ?: help  q quit")
+  == "  v projects  a add  / search  ?: help  q quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local main_up_mapping =
@@ -184,7 +207,7 @@ local initial_search_lines = table.concat(
 )
 assert(initial_search_lines:find("  esc cancel", 1, true))
 assert(not initial_search_lines:find("  SEARCH", 1, true))
-assert(not initial_search_lines:find("  COMMUNITY ACTIVITY", 1, true))
+assert(not initial_search_lines:find("  ACTIVITY", 1, true))
 assert(not initial_search_lines:find("Keep typing to refine", 1, true))
 assert(not initial_search_lines:find("arrows preview", 1, true))
 assert(not initial_search_lines:find("enter open", 1, true))
@@ -862,7 +885,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  a add  / search  ?: help  q quit")
+  == "  v projects  a add  / search  ?: help  q quit")
 
 do
   vim.cmd("tabnew")
@@ -1050,9 +1073,10 @@ do
     "\n"
   )
   assert(startpage_text:find("  PROJECTS", 1, true))
-  assert(startpage_text:find("  USERS", 1, true))
+  assert(not startpage_text:find("  USERS", 1, true))
   assert(not startpage_text:find("PROJECT ACTIVITY", 1, true))
   assert(startpage_text:find("neovim/neovim", 1, true))
+  assert(startpage_text:find("v users", 1, true))
   local preview_text = {}
   for _, item in pairs(state.preview_items) do
     preview_text[#preview_text + 1] = item[1]
