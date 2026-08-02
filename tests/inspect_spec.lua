@@ -631,7 +631,7 @@ do
   assert(commit_config.height == main_config.height - 3)
   assert(commit_config.col == main_config.col + 3)
   assert(commit_config.row == main_config.row + 2)
-  assert(commit_config.footer == " ")
+  assert(commit_config.footer == "─")
   assert(commit_config.footer_pos == "left")
   local pull_request_config = inspect._overview_window_config(
     main_config,
@@ -641,7 +641,7 @@ do
   assert(pull_request_config.height == main_config.height - 3)
   assert(pull_request_config.col == main_config.col + 3)
   assert(pull_request_config.row == main_config.row + 2)
-  assert(pull_request_config.footer == " ")
+  assert(pull_request_config.footer == "─")
   assert(pull_request_config.footer_pos == "left")
 end
 
