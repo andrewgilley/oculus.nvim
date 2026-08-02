@@ -1388,7 +1388,6 @@ if integration_root and (integration_sha or integration_url) then
       return true
     end), "Inspect sidebar remained open beside Aerial")
     vim.api.nvim_win_close(foreign_win, true)
-    vim.api.nvim_buf_delete(foreign_buf, { force = true })
     assert(vim.wait(10000, function()
       for pair_index = 1, pair_count do
         if not sidebar_window(tabs[pair_index * 2])
@@ -1399,6 +1398,7 @@ if integration_root and (integration_sha or integration_url) then
       end
       return true
     end), "Inspect sidebar was not restored after closing Aerial")
+    vim.api.nvim_buf_delete(foreign_buf, { force = true })
   end
   for pair_index = 1, pair_count do
     local old_tab = tabs[pair_index * 2]
