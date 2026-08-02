@@ -369,10 +369,10 @@ assert(inspect._sidebar_chunk_row(
 ) == "  └─ 40-41")
 assert(inspect._sidebar_file(
   "a/very/long/path/to/a/changed/file.lua"
-) == "changed/file.lua")
+) == "file.lua")
 assert(inspect._sidebar_file(
   "lua\\oculus\\inspect.lua"
-) == "oculus/inspect.lua")
+) == "inspect.lua")
 assert(inspect._sidebar_file("README.md") == "README.md")
 vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
   { change_file = "tests/unit/inspect_spec.lua" },
@@ -1581,7 +1581,7 @@ if integration_root and (integration_sha or integration_url) then
         :gsub("^• ", "")
         :gsub("^…", "")
       local _, separators = displayed_file:gsub("/", "")
-      assert(separators <= 1)
+      assert(separators == 0)
     end
   end
   assert(#file_lines == pair_count)
