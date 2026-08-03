@@ -67,6 +67,18 @@ local defaults = {
       provider = "github",
       description = "A modern plugin manager for Neovim.",
     },
+    {
+      name = "oculus.nvim",
+      repository = "andrewgilley/oculus.nvim",
+      provider = "github",
+      description = "Neovim browser for public GitHub activity of community members.",
+    },
+    {
+      name = "Zug",
+      repository = "andrewgilley/zug",
+      provider = "github",
+      description = "WebAssembly runtime.",
+    },
   },
   persist_filters = true,
   persist_contributors = true,
@@ -106,6 +118,11 @@ local defaults = {
     {
       name = "folke",
       username = "folke",
+      provider = "github",
+    },
+    {
+      name = "Andrew Gilley",
+      username = "andrewgilley",
       provider = "github",
     },
   },

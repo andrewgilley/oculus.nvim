@@ -21,6 +21,7 @@ local default_overview_toggle = "<leader>op"
 local default_version_switch = "<C-s>"
 local default_next_chunk = "<Tab>"
 local default_previous_chunk = "<S-Tab>"
+local changed_file_read_concurrency = 8
 local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
 local inspection_statusline_option =
   "%!v:lua.require('oculus.inspect')._inspection_statusline()"
@@ -68,6 +69,74 @@ local function run_raw(command, callback)
       callback(result.stdout or "")
     end)
   end)
+end
+
+local function map_concurrently(items, limit, worker, callback)
+  local count = #items
+  if count == 0 then
+    callback({})
+    return
+  end
+
+  limit = math.max(1, math.floor(tonumber(limit) or 1))
+  local results = {}
+  local completed = {}
+  local next_index = 1
+  local active_count = 0
+  local completed_count = 0
+  local stopped = false
+  local pumping = false
+  local repump = false
+  local pump
+
+  local function finish(index, result, err)
+    if stopped or completed[index] then
+      return
+    end
+    completed[index] = true
+    active_count = active_count - 1
+    if err then
+      stopped = true
+      callback(nil, err)
+      return
+    end
+    results[index] = result
+    completed_count = completed_count + 1
+    if completed_count == count then
+      stopped = true
+      callback(results)
+      return
+    end
+    pump()
+  end
+
+  pump = function()
+    if stopped then
+      return
+    end
+    if pumping then
+      repump = true
+      return
+    end
+    pumping = true
+    repeat
+      repump = false
+      while not stopped
+        and active_count < limit
+        and next_index <= count
+      do
+        local index = next_index
+        next_index = next_index + 1
+        active_count = active_count + 1
+        worker(items[index], index, function(result, err)
+          finish(index, result, err)
+        end)
+      end
+    until not repump
+    pumping = false
+  end
+
+  pump()
 end
 
 local function parse_commit_url(url)
@@ -4602,17 +4671,20 @@ local function read_revision_diff(
       return
     end
     local changed_files = parse_changed_files(changes)
-    local inspections = {}
-    local file_index = 1
-    local function read_file_diff()
-      local changed_file = changed_files[file_index]
-      if not changed_file then
-        callback(inspections)
-        return
-      end
-
+    local reads = {}
+    local tasks = {}
+    for file_index, changed_file in ipairs(changed_files) do
       local parent_file = changed_file.old_path
       local change_file = changed_file.new_path
+      local read = {
+        changed_file = changed_file,
+        parent_file = parent_file,
+        change_file = change_file,
+        parent_lines = changed_file.status == "A" and { "" } or nil,
+        change_lines = changed_file.status == "D" and { "" } or nil,
+      }
+      reads[file_index] = read
+
       local diff_command = {
         "git",
         "-C",
@@ -4630,59 +4702,92 @@ local function read_revision_diff(
       if change_file ~= parent_file then
         diff_command[#diff_command + 1] = change_file
       end
-      run(diff_command, function(patch, patch_err)
-        if patch_err then
-          callback(nil, "could not read file hunks: " .. patch_err)
+
+      tasks[#tasks + 1] = function(done)
+        run(diff_command, function(patch, patch_err)
+          if patch_err then
+            done(nil, "could not read file hunks: " .. patch_err)
+            return
+          end
+          read.patch = patch
+          done(true)
+        end)
+      end
+      if changed_file.status ~= "A" then
+        tasks[#tasks + 1] = function(done)
+          read_revision_file(
+            repository,
+            pair.parent,
+            parent_file,
+            false,
+            function(parent_lines, parent_err)
+              if parent_err then
+                done(nil, parent_err)
+                return
+              end
+              read.parent_lines = parent_lines
+              done(true)
+            end
+          )
+        end
+      end
+      if changed_file.status ~= "D" then
+        tasks[#tasks + 1] = function(done)
+          read_revision_file(
+            repository,
+            pair.commit,
+            change_file,
+            false,
+            function(change_lines, change_err)
+              if change_err then
+                done(nil, change_err)
+                return
+              end
+              read.change_lines = change_lines
+              done(true)
+            end
+          )
+        end
+      end
+    end
+
+    map_concurrently(
+      tasks,
+      changed_file_read_concurrency,
+      function(task, _, done)
+        task(done)
+      end,
+      function(_, read_err)
+        if read_err then
+          callback(nil, read_err)
           return
         end
-        read_revision_file(
-          repository,
-          pair.parent,
-          parent_file,
-          changed_file.status == "A",
-          function(parent_lines, parent_err)
-            if parent_err then
-              callback(nil, parent_err)
-              return
-            end
-            read_revision_file(
-              repository,
-              pair.commit,
-              change_file,
-              changed_file.status == "D",
-              function(change_lines_value, change_err)
-                if change_err then
-                  callback(nil, change_err)
-                  return
-                end
-                inspections[file_index] = {
-                  kind = info.kind,
-                  parent = pair.parent,
-                  commit = pair.commit,
-                  parent_role = info.kind == "pull_request"
-                      and "old"
-                    or "parent",
-                  repository = repository,
-                  parent_file = parent_file,
-                  change_file = change_file,
-                  parent_lines = parent_lines,
-                  change_lines = change_lines_value,
-                  changes = changed_files,
-                  hunks = parse_hunks(patch),
-                  commit_index = commit_index,
-                  file_index = file_index,
-                  file_count = #changed_files,
-                  status = changed_file.status,
-                }
-                file_index = file_index + 1
-                read_file_diff()
-              end
-            )
-          end
-        )
-      end)
-    end
-    read_file_diff()
+        local inspections = {}
+        for file_index, read in ipairs(reads) do
+          local changed_file = read.changed_file
+          inspections[file_index] = {
+            kind = info.kind,
+            parent = pair.parent,
+            commit = pair.commit,
+            parent_role = info.kind == "pull_request"
+                and "old"
+              or "parent",
+            repository = repository,
+            parent_file = read.parent_file,
+            change_file = read.change_file,
+            parent_lines = read.parent_lines,
+            change_lines = read.change_lines,
+            changes = changed_files,
+            hunks = parse_hunks(read.patch),
+            commit_index = commit_index,
+            file_index = file_index,
+            file_count = #changed_files,
+            status = changed_file.status,
+          }
+        end
+        callback(inspections)
+      end
+    )
   end)
 end
 
@@ -5153,6 +5258,7 @@ M._inspection_statusline = inspection_statusline
 M._inspection_statusline_option = inspection_statusline_option
 M._inspection_sidebar_statusline_option =
   inspection_sidebar_statusline_option
+M._map_concurrently = map_concurrently
 M._sort_inspections = sort_inspections
 M._sidebar_row = sidebar_row
 M._inspect_sidebar_width = inspect_sidebar_width

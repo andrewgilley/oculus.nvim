@@ -24,6 +24,37 @@ end
 
 local inspect = require("oculus.inspect")
 local oculus = require("oculus")
+do
+  local completions = {}
+  local active_count = 0
+  local maximum_active = 0
+  local mapped
+  inspect._map_concurrently(
+    { 10, 20, 30, 40 },
+    2,
+    function(value, index, done)
+      active_count = active_count + 1
+      maximum_active = math.max(maximum_active, active_count)
+      completions[index] = function()
+        active_count = active_count - 1
+        done(value + 1)
+      end
+    end,
+    function(results, err)
+      assert(not err, err)
+      mapped = results
+    end
+  )
+  assert(active_count == 2)
+  completions[2]()
+  assert(active_count == 2)
+  completions[1]()
+  assert(active_count == 2)
+  completions[4]()
+  completions[3]()
+  assert(maximum_active == 2)
+  assert(vim.deep_equal(mapped, { 11, 21, 31, 41 }))
+end
 assert(oculus.config.inspect_sidebar_toggle == "<leader>oi")
 assert(math.abs(
   oculus.config.inspect_sidebar_width - (28 / vim.o.columns)
