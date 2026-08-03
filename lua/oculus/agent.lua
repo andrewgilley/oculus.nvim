@@ -151,7 +151,10 @@ function M.normalize_models(values)
   local models = {}
   for _, value in ipairs(values or {}) do
     local id = value.model or value.id
-    if type(id) == "string" and id ~= "" and not value.hidden then
+    if type(id) == "string"
+      and (id == "gpt-5.6" or id:match("^gpt%-5%.6%-"))
+      and not value.hidden
+    then
       models[#models + 1] = {
         id = id,
         display_name = type(value.displayName) == "string"
