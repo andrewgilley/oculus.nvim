@@ -2966,6 +2966,19 @@ local function open_url(url)
   end
 end
 
+local function open_activity_expansion()
+  if M.state.view ~= "activity" or not is_valid_win(M.state.win) then
+    return false
+  end
+  local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  local event = M.state.activity_expansion_targets[line]
+  if not event then
+    return false
+  end
+  open_commit_activity(event)
+  return true
+end
+
 local function select_current()
   local target = target_on_cursor()
   if M.state.view == "contributors" and type(target) == "table" then
@@ -2979,11 +2992,7 @@ local function select_current()
       load_activity(target, false)
     end
   elseif M.state.view == "activity" then
-    local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
-    local event = M.state.activity_expansion_targets[line]
-    if event then
-      open_commit_activity(event)
-    end
+    open_activity_expansion()
   elseif M.state.view == "filters" then
     toggle_filter_type()
   end
@@ -3319,6 +3328,9 @@ local function move_left()
 end
 
 local function move_right()
+  if open_activity_expansion() then
+    return
+  end
   if M.state.view == "activity"
     and not M.state.activity_commit_page
   then

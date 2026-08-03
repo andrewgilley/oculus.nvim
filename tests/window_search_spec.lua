@@ -596,6 +596,28 @@ end
 assert(not listed_commit_urls[
   "https://github.com/example/repository/commit/dddddddd"
 ])
+local expansion_detail_line
+for line, title_line in pairs(state.activity_title_lines) do
+  if title_line == expansion_line and line ~= expansion_line then
+    expansion_detail_line = line
+    break
+  end
+end
+assert(expansion_detail_line)
+vim.api.nvim_win_set_cursor(state.win, { expansion_detail_line, 0 })
+vim.fn.maparg("l", "n", false, true).callback()
+assert(state.activity_commit_page == true)
+assert(#state.events == 5)
+vim.fn.maparg("j", "n", false, true).callback()
+assert(state.activity_commit_page == false)
+assert(vim.api.nvim_win_get_cursor(state.win)[1] == expansion_detail_line)
+vim.api.nvim_win_set_cursor(state.win, { expansion_line, 0 })
+vim.fn.maparg("<Right>", "n", false, true).callback()
+assert(state.activity_commit_page == true)
+assert(#state.events == 5)
+vim.fn.maparg("j", "n", false, true).callback()
+assert(state.activity_commit_page == false)
+assert(vim.api.nvim_win_get_cursor(state.win)[1] == expansion_line)
 vim.api.nvim_win_set_cursor(state.win, { expansion_line, 0 })
 select_mapping.callback()
 assert(state.view == "activity")
@@ -1200,9 +1222,15 @@ do
   local project_older_arrow_mapping =
     vim.fn.maparg("<Right>", "n", false, true)
   project_older_mapping.callback()
+  assert(state.activity_commit_page == true)
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.activity_commit_page == false)
   assert(state.activity_page == 1)
   assert(vim.deep_equal(repository_pages, { 1, 2 }))
   project_older_arrow_mapping.callback()
+  assert(state.activity_commit_page == true)
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.activity_commit_page == false)
   assert(state.activity_page == 1)
   assert(vim.deep_equal(repository_pages, { 1, 2 }))
   deferred_project_request = true
@@ -1251,6 +1279,15 @@ do
   assert(state.activity_page == 1)
   assert(#state.events == 8)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
+  local ordinary_project_line
+  for line, title_line in pairs(state.activity_title_lines) do
+    if line == title_line and not state.activity_expansion_targets[line] then
+      ordinary_project_line = line
+      break
+    end
+  end
+  assert(ordinary_project_line)
+  vim.api.nvim_win_set_cursor(state.win, { ordinary_project_line, 0 })
   project_older_mapping.callback()
   assert(state.activity_page == 2)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
