@@ -53,14 +53,18 @@ function M.prompt(group)
         and "Inspect the local repository in read-only mode to find at most five"
       or "Return exactly one concise paragraph of natural-language text.",
     include_locations
-        and "existing repository-relative files or directories where a patch"
+        and "existing files or directories where a patch could likely be added."
       or "Focus on intent and purpose rather than mechanically listing files.",
   }
   if include_locations then
+    local project_folder = vim.fs.basename(repository)
     vim.list_extend(lines, {
-      "could likely be implemented. Return only valid JSON with this shape:",
+      "Write every location from the project folder, beginning each path with",
+      ("the `%s/` project-folder prefix. Return only valid JSON with this shape:")
+        :format(project_folder),
       '{"explanation":"one concise paragraph","locations":[',
-      '{"path":"relative/path","reason":"short reason"}]}',
+      ('{"path":"%s/relative/path","reason":"short reason"}]}')
+        :format(project_folder),
       "The locations array may contain zero to five entries. Do not use Markdown",
       "fences and do not include fields outside this schema.",
     })
@@ -137,7 +141,42 @@ function M.normalize(value)
   return value ~= "" and value or nil
 end
 
-function M.normalize_result(value, include_locations)
+local function project_location(path, repository)
+  if type(repository) ~= "string" or repository == "" then
+    return path
+  end
+  path = path:gsub("\\", "/"):gsub("/+", "/"):gsub("^%./", "")
+  local root = vim.fs.normalize(repository):gsub("\\", "/"):gsub("/+$", "")
+  local folder = vim.fs.basename(root)
+  local comparable_path = path:lower()
+  local comparable_root = root:lower()
+  if comparable_path == comparable_root then
+    path = folder
+  elseif comparable_path:sub(1, #comparable_root + 1)
+      == comparable_root .. "/"
+  then
+    path = path:sub(#root + 2)
+  end
+  local embedded = path:lower():find(
+    "/" .. folder:lower() .. "/",
+    1,
+    true
+  )
+  if embedded then
+    path = path:sub(embedded + 1)
+  end
+  path = path:gsub("^/+", "")
+  local relative = path:lower()
+  local folder_prefix = folder:lower()
+  if relative ~= folder_prefix
+    and relative:sub(1, #folder_prefix + 1) ~= folder_prefix .. "/"
+  then
+    path = folder .. "/" .. path
+  end
+  return path
+end
+
+function M.normalize_result(value, include_locations, repository)
   if not include_locations then
     return M.normalize(value), {}
   end
@@ -163,7 +202,7 @@ function M.normalize_result(value, include_locations)
       local path = M.normalize(location.path)
       if path then
         locations[#locations + 1] = {
-          path = path,
+          path = project_location(path, repository),
           reason = M.normalize(location.reason),
         }
       end
