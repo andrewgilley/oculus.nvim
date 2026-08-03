@@ -697,6 +697,14 @@ assert(require("oculus.agent").model_from_stderr(table.concat({
   "model: gpt-test-agent",
   "provider: openai",
 }, "\n")) == "gpt-test-agent")
+local normalized_models = require("oculus.agent").normalize_models({
+  { model = "gpt-secondary", displayName = "Secondary" },
+  { model = "gpt-default", displayName = "Default", isDefault = true },
+  { model = "gpt-hidden", displayName = "Hidden", hidden = true },
+})
+assert(#normalized_models == 2)
+assert(normalized_models[1].id == "gpt-default")
+assert(normalized_models[1].is_default)
 do
   local main_config = require("oculus.window").window_config({})
   local commit_config = inspect._overview_window_config(
@@ -936,7 +944,7 @@ local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 1)
 local issue_tab = issue_tabs_after[#issue_tabs_after]
 assert(vim.api.nvim_get_current_tabpage() == issue_tab)
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 4)
 local issue_state = vim.api.nvim_tabpage_get_var(issue_tab, "oculus_inspect")
 assert(issue_state.kind == "issue")
 assert(issue_state.role == "issue")
@@ -956,13 +964,29 @@ local issue_overview_lines = vim.api.nvim_buf_get_lines(
   -1,
   false
 )
-assert(issue_overview_lines[#issue_overview_lines - 3]
-  == "  Date opened")
-assert(issue_overview_lines[#issue_overview_lines - 2]
-  :match("^  %d%d/%d%d/%d%d%d%d$"))
 assert(issue_overview_lines[#issue_overview_lines - 1]
-  :find("  ─", 1, true) == 1)
-assert(issue_overview_lines[#issue_overview_lines] == "  a agent")
+  == "  Date opened")
+assert(issue_overview_lines[#issue_overview_lines]
+  :match("^  %d%d/%d%d/%d%d%d%d$"))
+local overview_footer_buf
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
+  local candidate = vim.api.nvim_win_get_buf(win)
+  if vim.b[candidate].oculus_inspect_overview_footer then
+    overview_footer_buf = candidate
+    assert(not vim.api.nvim_win_get_config(win).focusable)
+  end
+end
+assert(overview_footer_buf)
+assert(vim.deep_equal(
+  vim.api.nvim_buf_get_lines(overview_footer_buf, 0, -1, false),
+  {
+    "  " .. string.rep(
+      "─",
+      math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
+    ),
+    "  a agent",
+  }
+))
 assert(issue_overview:find("  Title\n", 1, true))
 assert(issue_overview:find("Issue inspect fixture", 1, true))
 assert(issue_overview:find("  Description\n", 1, true))
@@ -978,8 +1002,24 @@ assert(issue_overview:find("#77", 1, true))
 assert(issue_overview:find("Status", 1, true))
 assert(issue_overview:find("Open", 1, true))
 local agent = require("oculus.agent")
+local original_agent_models = agent.models
 local original_agent_explain = agent.explain
 local agent_request
+agent.models = function(callback)
+  callback({
+    {
+      id = "gpt-test-agent",
+      display_name = "GPT Test Agent",
+      is_default = true,
+    },
+    {
+      id = "gpt-test-fast",
+      display_name = "GPT Test Fast",
+      is_default = false,
+    },
+  })
+  return {}
+end
 agent.explain = function(request, callback)
   agent_request = request
   callback(table.concat({
@@ -995,10 +1035,41 @@ local agent_explanation_mapping = vim.fn.maparg(
   true
 )
 assert(agent_explanation_mapping.desc
-  == "Generate Oculus agent explanation")
+  == "Choose Oculus agent model")
+local overview_config = vim.api.nvim_win_get_config(overview_win)
 agent_explanation_mapping.callback()
+local model_win = vim.api.nvim_get_current_win()
+local model_buf = vim.api.nvim_get_current_buf()
+local model_config = vim.api.nvim_win_get_config(model_win)
+assert(model_win ~= overview_win)
+assert(vim.b[model_buf].oculus_inspect_agent == "models")
+assert(model_config.width == overview_config.width)
+assert(model_config.height == overview_config.height)
+assert(vim.deep_equal(model_config.row, overview_config.row))
+assert(vim.deep_equal(model_config.col, overview_config.col))
+local model_text = table.concat(
+  vim.api.nvim_buf_get_lines(model_buf, 0, -1, false),
+  "\n"
+)
+assert(model_text:find("MODELS", 1, true))
+assert(model_text:find("GPT Test Agent", 1, true))
+assert(model_text:find("gpt-test-fast", 1, true))
+local select_agent_model = vim.fn.maparg("<CR>", "n", false, true)
+assert(select_agent_model.desc == "Select Oculus agent model")
+select_agent_model.callback()
+local explanation_win = vim.api.nvim_get_current_win()
+local explanation_buf = vim.api.nvim_get_current_buf()
+local explanation_config = vim.api.nvim_win_get_config(explanation_win)
+assert(not vim.api.nvim_win_is_valid(model_win))
+assert(vim.b[explanation_buf].oculus_inspect_agent == "explanation")
+assert(explanation_config.width == overview_config.width)
+assert(explanation_config.height == overview_config.height)
+assert(vim.deep_equal(explanation_config.row, overview_config.row))
+assert(vim.deep_equal(explanation_config.col, overview_config.col))
+agent.models = original_agent_models
 agent.explain = original_agent_explain
 assert(vim.fs.normalize(agent_request.cwd) == vim.fs.normalize(root))
+assert(agent_request.model == "gpt-test-agent")
 assert(agent_request.prompt:find(
   "Repository: andrewgilley/oculus.nvim",
   1,
@@ -1009,21 +1080,26 @@ assert(agent_request.prompt:find(
   1,
   true
 ))
-issue_overview = table.concat(
-  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
+local explanation_text = table.concat(
+  vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
 )
-assert(issue_overview:find(
-  "  Agent explanation (gpt-test-agent)\n",
+assert(explanation_text:find(
+  "AGENT EXPLANATION (gpt-test-agent)\n",
   1,
   true
 ))
-assert(issue_overview:gsub("%s+", " "):find(
+assert(explanation_text:gsub("%s+", " "):find(
   "The issue appears intended to make inspections useful even when an "
     .. "activity item does not identify particular files.",
   1,
   true
 ))
+local close_agent_window = vim.fn.maparg("q", "n", false, true)
+assert(close_agent_window.desc == "Close Oculus agent window")
+close_agent_window.callback()
+assert(not vim.api.nvim_win_is_valid(explanation_win))
+assert(vim.api.nvim_get_current_win() == overview_win)
 
 local issue_main_win
 local issue_sidebar_win
@@ -1067,6 +1143,7 @@ local close_issue_overview = vim.fn.maparg("q", "n", false, true)
 assert(close_issue_overview.desc == "Close Oculus Inspect overview")
 close_issue_overview.callback()
 assert(not vim.api.nvim_win_is_valid(overview_win))
+assert(not vim.api.nvim_buf_is_valid(overview_footer_buf))
 assert(vim.api.nvim_get_current_win() == issue_main_win)
 assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
 vim.cmd("tabclose")
