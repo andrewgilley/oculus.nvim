@@ -616,11 +616,11 @@ assert(pull_request_overview_text:find("\n  Author\n", 1, true))
 assert(pull_request_overview_text:find("\n  URL\n", 1, true))
 assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
 assert(pull_request_overview_text:find("\n  Status\n", 1, true))
-assert(pull_request_overview_text:find("\n  Date opened\n", 1, true))
+assert(pull_request_overview_text:find("\n  Date\n", 1, true))
 local pull_request_overview_lines =
   inspect._sidebar_overview_lines(pull_request_overview, 28)
 assert(pull_request_overview_lines[#pull_request_overview_lines - 1]
-  == "  Date opened")
+  == "  Date")
 assert(pull_request_overview_lines[#pull_request_overview_lines]
   :match("^  %d%d/%d%d/%d%d%d%d$"))
 assert(not pull_request_overview_text:find("Repository", 1, true))
@@ -676,11 +676,11 @@ assert(commit_overview_text:find("\n  Title\n", 1, true))
 assert(commit_overview_text:find("\n  Description\n", 1, true))
 assert(commit_overview_text:find("\n  Author\n", 1, true))
 assert(commit_overview_text:find("\n  URL\n", 1, true))
-assert(commit_overview_text:find("\n  Date opened\n", 1, true))
+assert(commit_overview_text:find("\n  Date\n", 1, true))
 local commit_overview_lines =
   inspect._sidebar_overview_lines(commit_overview, 28)
 assert(commit_overview_lines[#commit_overview_lines - 1]
-  == "  Date opened")
+  == "  Date")
 assert(commit_overview_lines[#commit_overview_lines]
   :match("^  %d%d/%d%d/%d%d%d%d$"))
 assert(not commit_overview_text:find("Repository", 1, true))
@@ -998,7 +998,7 @@ local issue_overview_lines = vim.api.nvim_buf_get_lines(
   false
 )
 assert(issue_overview_lines[#issue_overview_lines - 1]
-  == "  Date opened")
+  == "  Date")
 assert(issue_overview_lines[#issue_overview_lines]
   :match("^  %d%d/%d%d/%d%d%d%d$"))
 local overview_footer_buf
@@ -1134,7 +1134,7 @@ local model_text = table.concat(
 assert(model_text:find("Agent explanation", 1, true))
 assert(model_text:find("GPT 5.6 Test Agent", 1, true))
 assert(model_text:find("gpt-5.6-test-fast", 1, true))
-assert(model_text:find("Date opened", 1, true)
+assert(model_text:find("\n  Date\n", 1, true)
   < model_text:find("Agent explanation", 1, true))
 local model_selection_mark
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
