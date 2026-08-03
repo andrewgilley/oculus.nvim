@@ -1947,6 +1947,8 @@ local function set_change_highlights()
     bold = true,
   })
   vim.api.nvim_set_hl(0, "OculusInspectHiddenCursor", {
+    fg = normal.bg,
+    bg = normal.bg,
     blend = 100,
     nocombine = true,
   })
@@ -3255,6 +3257,7 @@ end
 
 local function hide_overview_cursor(group)
   if group.overview_cursor_hidden then
+    vim.o.guicursor = hidden_overview_guicursor
     return
   end
   group.overview_saved_guicursor = vim.o.guicursor
@@ -3503,8 +3506,6 @@ function M._overview_ui.render(group)
         targets[#lines] = model
       end
       group.overview_agent_model_lines = targets
-    elseif group.overview_agent_mode == "loading_models" then
-      lines[#lines + 1] = "  Loading available Codex models…"
     elseif group.overview_agent_mode == "error" then
       append_sidebar_text(
         lines,
@@ -3587,8 +3588,15 @@ function M._overview_ui.render(group)
       priority = 90,
     })
   end
-  if group.overview_agent_mode == "generating" then
+  if group.overview_agent_mode == "generating"
+    or group.overview_agent_mode == "loading_models"
+  then
     M._overview_ui.draw_agent_spinner(group)
+  end
+  if overview_window_is_open(group)
+    and vim.api.nvim_get_current_win() == group.overview_win
+  then
+    hide_overview_cursor(group)
   end
   return lines
 end
@@ -3596,7 +3604,8 @@ end
 function M._overview_ui.draw_agent_spinner(group)
   local buf = group.overview_buf
   local line = group.overview_agent_heading_line
-  if group.overview_agent_mode ~= "generating"
+  if (group.overview_agent_mode ~= "generating"
+      and group.overview_agent_mode ~= "loading_models")
     or not buf
     or not line
     or not vim.api.nvim_buf_is_valid(buf)
@@ -3656,7 +3665,8 @@ function M._overview_ui.start_agent_spinner(group)
   group.overview_agent_spinner_timer = timer
   timer:start(80, 80, vim.schedule_wrap(function()
     if group.overview_agent_spinner_timer ~= timer
-      or group.overview_agent_mode ~= "generating"
+      or (group.overview_agent_mode ~= "generating"
+        and group.overview_agent_mode ~= "loading_models")
     then
       return
     end
@@ -3725,6 +3735,7 @@ function M._overview_ui.render_models(group, models, err)
   if group.overview_agent_mode ~= "loading_models" then
     return
   end
+  M._overview_ui.stop_agent_spinner(group)
   group.overview_agent_model_process = nil
   if err then
     group.overview_agent_mode = "error"
@@ -3823,6 +3834,7 @@ function M._overview_ui.open_model_picker(group)
   group.overview_agent_locations = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
+  M._overview_ui.start_agent_spinner(group)
   local responded = false
   local process, err = require("oculus.agent").models(function(models, load_err)
     responded = true
@@ -4088,6 +4100,17 @@ show_sidebar_files = function(group)
   sidebar_navigating = true
   group.sidebar_anchor_line = return_state and return_state.anchor_line or nil
   close_overview_window(group)
+  set_change_highlights()
+  for _, session in ipairs(group) do
+    for _, endpoint in ipairs(group.kind == "issue"
+        and { session.issue }
+      or { session.parent, session.change })
+    do
+      if valid_endpoint(endpoint) then
+        vim.wo[endpoint.win].signcolumn = "yes"
+      end
+    end
+  end
   local tab = return_state
       and vim.api.nvim_tabpage_is_valid(return_state.tab)
       and return_state.tab
@@ -4761,6 +4784,10 @@ vim.api.nvim_create_autocmd("WinEnter", {
       return
     end
     local current_win = vim.api.nvim_get_current_win()
+    if type(vim.b[args.buf].oculus_inspect) == "table" then
+      set_change_highlights()
+      vim.wo[current_win].signcolumn = "yes"
+    end
     for _, candidate in ipairs(sidebar_groups) do
       if candidate.focused_win ~= current_win then
         candidate.sidebar_focus_generation =

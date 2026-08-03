@@ -168,6 +168,13 @@ assert(vim.api.nvim_get_hl(
   0,
   { name = "OculusInspectCursorLine", link = false }
 ).nocombine ~= true)
+local hidden_cursor_hl = vim.api.nvim_get_hl(
+  0,
+  { name = "OculusInspectHiddenCursor", link = false }
+)
+assert(hidden_cursor_hl.fg == 0x101820)
+assert(hidden_cursor_hl.bg == 0x101820)
+assert(hidden_cursor_hl.blend == 100)
 assert(vim.api.nvim_get_hl(
   0,
   { name = "OculusOilChange", link = false }
@@ -1026,8 +1033,13 @@ local original_agent_models = agent.models
 local original_agent_explain = agent.explain
 local agent_request
 local agent_callback
+local agent_models_callback
 agent.models = function(callback)
-  callback({
+  agent_models_callback = callback
+  return {}
+end
+local function finish_agent_models()
+  agent_models_callback({
     {
       id = "gpt-5.6-test-agent",
       display_name = "GPT 5.6 Test Agent",
@@ -1039,7 +1051,6 @@ agent.models = function(callback)
       is_default = false,
     },
   })
-  return {}
 end
 agent.explain = function(request, callback)
   agent_request = request
@@ -1074,6 +1085,35 @@ assert(agent_explanation_mapping.desc
   == "Choose Oculus agent model")
 local overview_config = vim.api.nvim_win_get_config(overview_win)
 agent_explanation_mapping.callback()
+local loading_models_text = table.concat(
+  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
+  "\n"
+)
+assert(loading_models_text:find("Agent explanation", 1, true))
+assert(not loading_models_text:find(
+  "Loading available Codex models",
+  1,
+  true
+))
+local model_loading_spinner = vim.api.nvim_buf_get_extmarks(
+  overview_buf,
+  inspect._overview_ui.agent_spinner_ns,
+  0,
+  -1,
+  { details = true }
+)
+assert(#model_loading_spinner == 1)
+assert(model_loading_spinner[1][4].virt_text[1][1]:match("^ ⠋$"))
+assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
+finish_agent_models()
+assert(#vim.api.nvim_buf_get_extmarks(
+  overview_buf,
+  inspect._overview_ui.agent_spinner_ns,
+  0,
+  -1,
+  {}
+) == 0)
+assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
 local model_win = vim.api.nvim_get_current_win()
 local model_buf = vim.api.nvim_get_current_buf()
 local model_config = vim.api.nvim_win_get_config(model_win)
@@ -2216,11 +2256,35 @@ if integration_root and (integration_sha or integration_url) then
     assert(close_mapping.desc == "Close Oculus Inspect overview")
     assert(ctrl_t_close_mapping.desc
       == "Close Oculus Inspect overview")
+    vim.api.nvim_set_hl(0, "OculusInspectAdded", { fg = 1, bg = 2 })
+    vim.api.nvim_set_hl(0, "OculusInspectRemoved", { fg = 1, bg = 2 })
     ctrl_t_close_mapping.callback()
     assert(not vim.api.nvim_win_is_valid(overview_win))
     assert(not vim.api.nvim_buf_is_valid(overview_buf))
     assert(vim.o.guicursor == guicursor)
     assert(vim.api.nvim_get_current_win() == change_win)
+    assert(vim.wo[change_win].signcolumn == "yes")
+    for name, expected in pairs({
+      OculusInspectAdded = { fg = 0xdcfce7, bg = 0x166534 },
+      OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
+    }) do
+      local highlight = vim.api.nvim_get_hl(0, {
+        name = name,
+        link = false,
+      })
+      assert(highlight.fg == expected.fg)
+      assert(highlight.bg == expected.bg)
+    end
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+      change_buf,
+      signs,
+      0,
+      -1,
+      { details = true }
+    )) do
+      assert(mark[4].sign_hl_group == "OculusInspectAdded"
+        or mark[4].sign_hl_group == "OculusInspectRemoved")
+    end
     assert(vim.deep_equal(
       vim.api.nvim_win_get_cursor(change_win),
       cursor
