@@ -787,18 +787,21 @@ assert(require("oculus.agent").model_from_stderr(table.concat({
   "provider: openai",
 }, "\n")) == "gpt-test-agent")
 local normalized_models = require("oculus.agent").normalize_models({
-  { model = "gpt-5.6-secondary", displayName = "Secondary" },
   {
-    model = "gpt-5.6-default",
-    displayName = "Default",
+    model = "gpt-5.6-terra",
+    displayName = "Terra",
     isDefault = true,
   },
+  { model = "gpt-5.6-luna", displayName = "Luna" },
+  { model = "gpt-5.6-sol", displayName = "Sol" },
   { model = "gpt-5.6-hidden", displayName = "Hidden", hidden = true },
   { model = "gpt-5.4", displayName = "GPT 5.4" },
 })
-assert(#normalized_models == 2)
-assert(normalized_models[1].id == "gpt-5.6-default")
-assert(normalized_models[1].is_default)
+assert(#normalized_models == 3)
+assert(normalized_models[1].id == "gpt-5.6-sol")
+assert(normalized_models[2].id == "gpt-5.6-terra")
+assert(normalized_models[2].is_default)
+assert(normalized_models[3].id == "gpt-5.6-luna")
 local normalized_explanation, normalized_locations =
   require("oculus.agent").normalize_result(vim.json.encode({
     explanation = "A structured explanation.",
@@ -1131,12 +1134,12 @@ local function finish_agent_models()
     {
       id = "gpt-5.6-test-agent",
       display_name = "GPT 5.6 Test Agent",
-      is_default = true,
+      is_default = false,
     },
     {
       id = "gpt-5.6-test-fast",
       display_name = "GPT 5.6 Test Fast",
-      is_default = false,
+      is_default = true,
     },
   })
 end
@@ -1235,6 +1238,19 @@ end
 assert(model_selection_mark)
 assert(vim.api.nvim_win_get_cursor(model_win)[1]
   == model_selection_mark[2] + 1)
+local first_explanation_model_line
+for index, line in ipairs(vim.api.nvim_buf_get_lines(
+  model_buf,
+  0,
+  -1,
+  false
+)) do
+  if line:find("GPT 5.6 Test Agent", 1, true) then
+    first_explanation_model_line = index
+    break
+  end
+end
+assert(model_selection_mark[2] + 1 == first_explanation_model_line)
 local model_selection_hl = vim.api.nvim_get_hl(0, {
   name = "OculusInspectAgentModelSelected",
   link = false,
@@ -1339,6 +1355,19 @@ end
 assert(directions_selection_mark)
 assert(vim.api.nvim_win_get_cursor(overview_win)[1]
   == directions_selection_mark[2] + 1)
+local first_directions_model_line
+for index, line in ipairs(vim.api.nvim_buf_get_lines(
+  overview_buf,
+  0,
+  -1,
+  false
+)) do
+  if line:find("GPT 5.6 Test Agent", 1, true) then
+    first_directions_model_line = index
+    break
+  end
+end
+assert(directions_selection_mark[2] + 1 == first_directions_model_line)
 select_agent_model.callback()
 local directions_request = agent_request
 assert(directions_request.model == "gpt-5.6-test-agent")
