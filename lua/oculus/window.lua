@@ -2147,6 +2147,56 @@ end
 
 M._filter_project_events = filter_project_events
 
+local function add_project_feed_event(feed, event)
+  local payload = event.payload or {}
+  if event.type == "PushEvent" then
+    local shas = {}
+    for _, commit in ipairs(payload.commits or {}) do
+      if type(commit.sha) == "string" and commit.sha ~= "" then
+        shas[#shas + 1] = commit.sha
+      end
+    end
+    if #shas == 0 and type(payload.head) == "string" then
+      shas[1] = payload.head
+    end
+    if #shas > 0 then
+      for _, sha in ipairs(shas) do
+        if feed.seen_commits[sha] then
+          return false
+        end
+      end
+      for _, sha in ipairs(shas) do
+        feed.seen_commits[sha] = true
+      end
+    end
+  elseif event.type == "PullRequestEvent" then
+    local pull_request = payload.pull_request or {}
+    local number = pull_request.number or payload.number
+    local merged = payload.action == "merged"
+      or (payload.action == "closed" and (
+        pull_request.merged == true
+        or pull_request.merged_at ~= nil
+        or pull_request.merged_by ~= nil
+      ))
+    if number and merged then
+      local key = tostring(number)
+      if feed.seen_pull_requests[key] then
+        return false
+      end
+      feed.seen_pull_requests[key] = true
+    end
+  end
+  local event_key = event.id and tostring(event.id) or nil
+  if event_key and feed.seen[event_key] then
+    return false
+  end
+  feed.events[#feed.events + 1] = event
+  if event_key then
+    feed.seen[event_key] = true
+  end
+  return true
+end
+
 load_project_activity = function(project, force, page)
   local previous_page = M.state.activity_page or 1
   local preserve_activity_page = page ~= nil
@@ -2195,7 +2245,10 @@ load_project_activity = function(project, force, page)
       key = feed_key,
       events = {},
       seen = {},
+      seen_commits = {},
+      seen_pull_requests = {},
       next_page = 1,
+      using_updates = false,
       complete = #activity_types == 0,
       cached = true,
       notice = nil,
@@ -2204,6 +2257,29 @@ load_project_activity = function(project, force, page)
   end
   local required_events = requested_page * M.state.activity_page_size
   local max_source_pages = 10
+  request_opts.activity_types = activity_types
+
+  local function use_repository_updates()
+    if feed.using_updates
+      or type(provider.repository_updates) ~= "function"
+    then
+      return false
+    end
+    local useful = false
+    for _, category in ipairs(activity_types) do
+      if category == "push" or category == "merged_pull_request" then
+        useful = true
+        break
+      end
+    end
+    if not useful then
+      return false
+    end
+    feed.using_updates = true
+    feed.next_page = 1
+    feed.complete = false
+    return true
+  end
 
   local function render_project_results()
     local filtered = filter_project_events(feed.events, project)
@@ -2254,14 +2330,21 @@ load_project_activity = function(project, force, page)
       return
     end
     if feed.next_page > max_source_pages then
-      feed.complete = true
-      render_project_results()
+      if use_repository_updates() then
+        ensure_project_page()
+      else
+        feed.complete = true
+        render_project_results()
+      end
       return
     end
 
     local source_page = feed.next_page
     request_opts.page = source_page
-    provider.repository_events(project.repository, request_opts, function(
+    local request = feed.using_updates
+        and provider.repository_updates
+      or provider.repository_events
+    request(project.repository, request_opts, function(
       events,
       err,
       cached,
@@ -2281,15 +2364,14 @@ load_project_activity = function(project, force, page)
       local source = events or {}
       local added = 0
       for _, event in ipairs(source) do
-        local event_key = event.id and tostring(event.id) or nil
-        if not event_key or not feed.seen[event_key] then
-          feed.events[#feed.events + 1] = event
-          if event_key then
-            feed.seen[event_key] = true
-          end
+        if add_project_feed_event(feed, event) then
           added = added + 1
         end
       end
+      table.sort(feed.events, function(left, right)
+        return tostring(left.created_at or "")
+          > tostring(right.created_at or "")
+      end)
       feed.next_page = source_page + 1
       feed.cached = feed.cached and cached == true
       feed.notice = feed.notice or notice
@@ -2298,7 +2380,9 @@ load_project_activity = function(project, force, page)
       -- per_page=100). Only an empty or no-progress page proves this feed is
       -- exhausted; otherwise continue until the grouped activity page is full.
       if #source == 0 or added == 0 then
-        feed.complete = true
+        if not use_repository_updates() then
+          feed.complete = true
+        end
       end
       ensure_project_page()
     end)
