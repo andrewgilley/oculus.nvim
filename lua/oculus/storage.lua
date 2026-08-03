@@ -31,6 +31,7 @@ function M.save(path, config)
     user_activity_types = config.user_activity_types or {},
     project_activity_types = config.project_activity_types,
     contributors = config.contributors or {},
+    projects = config.projects or {},
   }
   local ok_encode, encoded = pcall(vim.json.encode, payload)
   if not ok_encode then

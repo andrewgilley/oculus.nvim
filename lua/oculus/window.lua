@@ -111,6 +111,7 @@ M.state = {
   search_buf = nil,
   search_win = nil,
   search_query = nil,
+  search_kind = nil,
   search_backspace_pending = false,
   search_results = nil,
   search_index = 1,
@@ -556,6 +557,19 @@ local function project_title(project)
   return project.repository
 end
 
+local function has_project(projects, candidate)
+  local key = project_key(candidate)
+  if not key then
+    return false
+  end
+  for _, project in ipairs(projects or {}) do
+    if project_key(project) == key then
+      return true
+    end
+  end
+  return false
+end
+
 local function contributor_key(contributor)
   if type(contributor) ~= "table" or not contributor.username then
     return nil
@@ -682,11 +696,59 @@ end
 
 M._fuzzy_contributors = fuzzy_contributors
 
+local function fuzzy_projects(projects, query)
+  query = tostring(query or "")
+    :gsub("^%s+", "")
+    :gsub("%s+$", "")
+  if query == "" then
+    return display_projects(projects)
+  end
+
+  local matches = {}
+  for index, project in ipairs(display_projects(projects)) do
+    local name_score = fuzzy_score(project.name or "", query)
+    local repository_score = fuzzy_score(project.repository, query)
+    local score = math.max(
+      name_score or -math.huge,
+      repository_score or -math.huge
+    )
+    if score > -math.huge then
+      matches[#matches + 1] = {
+        project = project,
+        score = score,
+        index = index,
+      }
+    end
+  end
+  table.sort(matches, function(left, right)
+    if left.score == right.score then
+      return left.index < right.index
+    end
+    return left.score > right.score
+  end)
+  local result = {}
+  for _, match in ipairs(matches) do
+    result[#result + 1] = match.project
+  end
+  return result
+end
+
+M._fuzzy_projects = fuzzy_projects
+
 local function visible_contributors()
   if M.state.search_query ~= nil then
     return M.state.search_results or {}
   end
   return M.state.contributors
+end
+
+local function visible_projects()
+  if M.state.search_query ~= nil
+    and M.state.search_kind == "projects"
+  then
+    return M.state.search_results or {}
+  end
+  return display_projects(M.state.opts.projects)
 end
 
 local function utc_time(year, month, day, hour, minute, second)
@@ -1187,7 +1249,7 @@ local function render_contributors()
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 10 Generalize the contributor list for multiple forges
   local searching = type(M.state.search_query) == "string"
   local community_view = searching
-      and "users"
+      and (M.state.search_kind or M.state.community_view)
     or (M.state.community_view or "projects")
   local showing_users = community_view == "users"
   local lines = searching
@@ -1206,7 +1268,7 @@ local function render_contributors()
 
   local contributors = showing_users and visible_contributors() or {}
   local projects = not showing_users
-      and display_projects(M.state.opts.projects)
+      and visible_projects()
     or {}
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
   local username_width = 5
@@ -1300,7 +1362,7 @@ local function render_contributors()
       and "  esc cancel"
     or showing_users
         and "  t projects  a add  / search  ?: help  q quit"
-      or "  t users  ?: help  q quit"
+      or "  t users  a add  / search  ?: help  q quit"
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
@@ -1371,6 +1433,9 @@ local function render_contributors()
     local previous_username = M.state.search_return
         and M.state.search_return.selected_username
       or nil
+    local previous_project = M.state.search_return
+        and M.state.search_return.selected_project
+      or nil
     if not preview_contributor and previous_username then
       for _, contributor in ipairs(M.state.contributors) do
         if contributor.username == previous_username then
@@ -1381,6 +1446,8 @@ local function render_contributors()
     end
     if preview_project then
       queue_project_preview(preview_project)
+    elseif previous_project then
+      queue_project_preview(previous_project)
     elseif preview_contributor then
       queue_preview(preview_contributor)
     else
@@ -1448,6 +1515,22 @@ local function persist_contributors()
   if not ok then
     vim.notify(
       "Oculus could not save users: " .. tostring(err),
+      vim.log.levels.ERROR
+    )
+  end
+end
+
+local function persist_projects()
+  if not M.state.opts.persist_projects then
+    return
+  end
+  local ok, err = require("oculus.storage").save(
+    M.state.opts.state_file,
+    M.state.opts
+  )
+  if not ok then
+    vim.notify(
+      "Oculus could not save projects: " .. tostring(err),
       vim.log.levels.ERROR
     )
   end
@@ -1939,8 +2022,8 @@ local function render_shortcuts()
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
   section("STARTUP LISTS", {
     { "t", "Switch between project and user lists" },
-    { "s /", "Fuzzy-search contributor names and handles" },
-    { "a", "Add a GitHub or Codeberg account" },
+    { "s /", "Fuzzy-search projects or user handles" },
+    { "a", "Add a GitHub or Codeberg project or account" },
     { "x", "Remove the selected account" },
     { "f", "Edit filters for the selected user or project" },
     { "F", "Edit global activity filters" },
@@ -2394,6 +2477,7 @@ end
 
 local function clear_search_state()
   M.state.search_query = nil
+  M.state.search_kind = nil
   M.state.search_backspace_pending = false
   M.state.search_results = nil
   M.state.search_index = 1
@@ -2408,7 +2492,9 @@ local function cancel_search()
   clear_search_window()
   clear_search_state()
   if return_state then
+    M.state.community_view = return_state.community_view
     M.state.selected_username = return_state.selected_username
+    M.state.selected_project = return_state.selected_project
     M.state.contributor_offset = return_state.contributor_offset
   end
   if is_valid_win(M.state.win) then
@@ -2433,6 +2519,23 @@ end
 
 M._prompt_query = prompt_query
 
+local function matching_search_items(query)
+  if M.state.search_kind == "projects" then
+    return fuzzy_projects(M.state.opts.projects, query)
+  end
+  return fuzzy_contributors(M.state.contributors, query)
+end
+
+local function select_search_item(item)
+  if M.state.search_kind == "projects" then
+    M.state.selected_project = item
+    M.state.selected_username = nil
+  else
+    M.state.selected_username = item and item.username or nil
+    M.state.selected_project = nil
+  end
+end
+
 local function update_search_results()
   if
     M.state.search_query == nil
@@ -2450,11 +2553,11 @@ local function update_search_results()
     return
   end
   M.state.search_query = line
-  M.state.search_results = fuzzy_contributors(M.state.contributors, line)
+  M.state.search_results = matching_search_items(line)
   M.state.search_index = 1
   M.state.contributor_offset = 1
   local first = M.state.search_results[1]
-  M.state.selected_username = first and first.username or nil
+  select_search_item(first)
   render_contributors()
 end
 
@@ -2466,23 +2569,30 @@ local function move_search_selection(direction)
   M.state.search_index = (
     (M.state.search_index - 1 + direction) % #results
   ) + 1
-  local contributor = results[M.state.search_index]
-  M.state.selected_username = contributor.username
+  select_search_item(results[M.state.search_index])
   render_contributors()
 end
 
 local function accept_search()
   local results = M.state.search_results or {}
-  local contributor = results[M.state.search_index]
-  if not contributor then
+  local item = results[M.state.search_index]
+  if not item then
     return
   end
+  local search_kind = M.state.search_kind
   clear_search_window()
   clear_search_state()
-  M.state.selected_username = contributor.username
   if is_valid_win(M.state.win) then
     vim.api.nvim_set_current_win(M.state.win)
-    load_activity(contributor, false)
+    if search_kind == "projects" then
+      M.state.selected_project = item
+      M.state.selected_username = nil
+      load_project_activity(item, false)
+    else
+      M.state.selected_username = item.username
+      M.state.selected_project = nil
+      load_activity(item, false)
+    end
   end
 end
 
@@ -2497,15 +2607,22 @@ local function open_search()
   end
 
   M.state.search_return = {
+    community_view = M.state.community_view,
     selected_username = M.state.selected_username,
+    selected_project = M.state.selected_project,
     contributor_offset = M.state.contributor_offset,
   }
+  M.state.search_kind = M.state.community_view or "projects"
   M.state.search_query = ""
   M.state.search_backspace_pending = false
-  M.state.search_results = fuzzy_contributors(M.state.contributors, "")
+  M.state.search_results = matching_search_items("")
   M.state.search_index = 1
-  for index, contributor in ipairs(M.state.search_results) do
-    if contributor.username == M.state.selected_username then
+  for index, item in ipairs(M.state.search_results) do
+    local selected = M.state.search_kind == "projects"
+        and project_key(item) == project_key(M.state.selected_project)
+      or M.state.search_kind == "users"
+        and item.username == M.state.selected_username
+    if selected then
       M.state.search_index = index
       break
     end
@@ -2548,8 +2665,11 @@ local function open_search()
       desc = desc,
     })
   end
-  search_map("<Esc>", cancel_search, "Cancel Oculus user search")
-  search_map("<C-c>", cancel_search, "Cancel Oculus user search")
+  local item_kind = M.state.search_kind == "projects"
+      and "project"
+    or "user"
+  search_map("<Esc>", cancel_search, "Cancel Oculus " .. item_kind .. " search")
+  search_map("<C-c>", cancel_search, "Cancel Oculus " .. item_kind .. " search")
   vim.keymap.set("i", "<BS>", function()
     if prompt_query(buf) == "" then
       cancel_search()
@@ -2562,24 +2682,24 @@ local function open_search()
     expr = true,
     nowait = true,
     silent = true,
-    desc = "Close empty Oculus user search",
+    desc = "Close empty Oculus " .. item_kind .. " search",
   })
-  search_map("<CR>", accept_search, "Open searched Oculus user")
+  search_map("<CR>", accept_search, "Open searched Oculus " .. item_kind)
   search_map("<Down>", function()
     move_search_selection(1)
-  end, "Preview next Oculus user search result")
+  end, "Preview next Oculus " .. item_kind .. " search result")
   search_map("<Up>", function()
     move_search_selection(-1)
-  end, "Preview previous Oculus user search result")
+  end, "Preview previous Oculus " .. item_kind .. " search result")
   search_map("<C-n>", function()
     move_search_selection(1)
-  end, "Preview next Oculus user search result")
+  end, "Preview next Oculus " .. item_kind .. " search result")
   search_map("<C-p>", function()
     move_search_selection(-1)
-  end, "Preview previous Oculus user search result")
+  end, "Preview previous Oculus " .. item_kind .. " search result")
   search_map("<C-k>", function()
     move_search_selection(1)
-  end, "Move down in Oculus user search results")
+  end, "Move down in Oculus " .. item_kind .. " search results")
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = autocmd_group,
@@ -2637,10 +2757,46 @@ local function add_contributor(contributor)
   return true
 end
 
+local function add_project(project)
+  local repository = vim.trim(tostring(project.repository or ""))
+    :gsub("^/+", "")
+    :gsub("/+$", "")
+    :gsub("%.git$", "")
+  if not repository:match("^[%w%._%-]+/[%w%._%-]+$") then
+    vim.notify(
+      "Oculus: enter a repository as owner/repo",
+      vim.log.levels.WARN
+    )
+    return false
+  end
+
+  local added = vim.deepcopy(project)
+  added.repository = repository
+  added.provider = added.provider == "codeberg" and "codeberg" or "github"
+  added.name = added.name or repository:match("([^/]+)$")
+  if has_project(M.state.opts.projects, added) then
+    vim.notify(
+      ("Oculus: %s is already in your %s project list"):format(
+        repository,
+        provider_name(added)
+      ),
+      vim.log.levels.INFO
+    )
+    return false
+  end
+
+  M.state.opts.projects = M.state.opts.projects or {}
+  M.state.opts.projects[#M.state.opts.projects + 1] = added
+  M.state.selected_project = added
+  persist_projects()
+  return true
+end
+
 local function prompt_add_account()
   if M.state.view ~= "contributors" then
     return
   end
+  local adding_project = M.state.community_view == "projects"
   M.state.opening_account_prompt = true
   vim.ui.select(
     {
@@ -2648,7 +2804,9 @@ local function prompt_add_account()
       { provider = "codeberg", label = "Codeberg" },
     },
     {
-      prompt = "Add account from:",
+      prompt = adding_project
+          and "Add project from:"
+        or "Add account from:",
       format_item = function(item)
         return item.label
       end,
@@ -2659,17 +2817,24 @@ local function prompt_add_account()
         return
       end
       vim.ui.input(
-        { prompt = choice.label .. " handle: @" },
-        function(username)
+        {
+          prompt = choice.label
+              .. (adding_project and " repository: " or " handle: @"),
+        },
+        function(value)
           M.state.opening_account_prompt = false
-          if
-            username
-            and add_contributor({
-              username = username,
-              provider = choice.provider,
-            })
-            and is_valid_win(M.state.win)
-          then
+          local added = value and (
+            adding_project
+                and add_project({
+                  repository = value,
+                  provider = choice.provider,
+                })
+              or add_contributor({
+                username = value,
+                provider = choice.provider,
+              })
+          )
+          if added and is_valid_win(M.state.win) then
             vim.api.nvim_set_current_win(M.state.win)
             render_contributors()
           end
@@ -3133,8 +3298,8 @@ local function map_keys(buf)
   map("<Esc>", M.close, "Close Oculus")
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
   map("t", toggle_community_view, "Switch Oculus project and user lists")
-  map("s", open_search, "Fuzzy-search Oculus users")
-  map("/", open_search, "Fuzzy-search Oculus users")
+  map("s", open_search, "Fuzzy-search Oculus projects or users")
+  map("/", open_search, "Fuzzy-search Oculus projects or users")
   map("<CR>", select_current, "Select Oculus item")
   map("l", move_right, "Move right in Oculus")
   map("<Right>", move_right, "Move right in Oculus")
@@ -3153,7 +3318,7 @@ local function map_keys(buf)
     else
       set_all_filter_types(true)
     end
-  end, "Add an Oculus user or enable all filters")
+  end, "Add an Oculus project or user, or enable all filters")
   map("x", remove_current_contributor, "Remove selected Oculus user")
   map("n", function()
     set_all_filter_types(false)

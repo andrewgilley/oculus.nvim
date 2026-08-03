@@ -28,6 +28,12 @@ assert(matches[1].username == "ThePrimeagen")
 
 matches = window._fuzzy_contributors(contributors, "@andrk")
 assert(matches[1].username == "andrewrk")
+local project_matches = window._fuzzy_projects({
+  { name = "Neovim", repository = "neovim/neovim" },
+  { name = "lazy.nvim", repository = "folke/lazy.nvim" },
+}, "folkelazy")
+assert(#project_matches == 1)
+assert(project_matches[1].repository == "folke/lazy.nvim")
 
 local origin_win = vim.api.nvim_get_current_win()
 local origin_tab = vim.api.nvim_get_current_tabpage()
@@ -98,6 +104,30 @@ assert(initial_project_text:find("example/project", 1, true))
 assert(not initial_project_text:find("  USERS", 1, true))
 assert(not initial_project_text:find("@mitchellh", 1, true))
 assert(initial_project_text:find("t users", 1, true))
+assert(initial_project_text:find("a add", 1, true))
+assert(initial_project_text:find("/ search", 1, true))
+do
+  local project_search = vim.fn.maparg("/", "n", false, true)
+  assert(project_search.desc == "Fuzzy-search Oculus projects or users")
+  project_search.callback()
+  vim.api.nvim_buf_set_lines(
+    state.search_buf,
+    0,
+    -1,
+    false,
+    { "exampleproject" }
+  )
+  vim.api.nvim_exec_autocmds("TextChangedI", {
+    buffer = state.search_buf,
+  })
+  assert(state.search_kind == "projects")
+  assert(#state.search_results == 1)
+  assert(state.search_results[1].repository == "example/project")
+  assert(vim.fn.maparg("<CR>", "i", false, true).desc
+    == "Open searched Oculus project")
+  vim.fn.maparg("<Esc>", "n", false, true).callback()
+  assert(state.community_view == "projects")
+end
 local community_view_mapping = vim.fn.maparg("t", "n", false, true)
 assert(community_view_mapping.desc
   == "Switch Oculus project and user lists")
@@ -171,9 +201,9 @@ local third_page = window._activity_page(page_events, 3, 8)
 assert(#third_page == 4)
 assert(third_page[1].id == "17")
 local search_mapping = vim.fn.maparg("s", "n", false, true)
-assert(search_mapping.desc == "Fuzzy-search Oculus users")
+assert(search_mapping.desc == "Fuzzy-search Oculus projects or users")
 local slash_search_mapping = vim.fn.maparg("/", "n", false, true)
-assert(slash_search_mapping.desc == "Fuzzy-search Oculus users")
+assert(slash_search_mapping.desc == "Fuzzy-search Oculus projects or users")
 assert(slash_search_mapping.callback == search_mapping.callback)
 search_mapping.callback()
 vim.wait(10)
