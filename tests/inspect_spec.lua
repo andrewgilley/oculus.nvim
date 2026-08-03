@@ -710,6 +710,21 @@ local normalized_models = require("oculus.agent").normalize_models({
 assert(#normalized_models == 2)
 assert(normalized_models[1].id == "gpt-5.6-default")
 assert(normalized_models[1].is_default)
+local normalized_explanation, normalized_locations =
+  require("oculus.agent").normalize_result(vim.json.encode({
+    explanation = "A structured explanation.",
+    locations = {
+      { path = "one.lua", reason = "First" },
+      { path = "two.lua", reason = "Second" },
+      { path = "three.lua", reason = "Third" },
+      { path = "four.lua", reason = "Fourth" },
+      { path = "five.lua", reason = "Fifth" },
+      { path = "six.lua", reason = "Must be omitted" },
+    },
+  }), true)
+assert(normalized_explanation == "A structured explanation.")
+assert(#normalized_locations == 5)
+assert(normalized_locations[5].path == "five.lua")
 do
   local main_config = require("oculus.window").window_config({})
   local commit_config = inspect._overview_window_config(
@@ -1032,10 +1047,22 @@ agent.explain = function(request, callback)
   return {}
 end
 local function finish_agent_explanation()
-  agent_callback(table.concat({
-    "The issue appears intended to make inspections useful even when",
-    "an activity item does not identify particular files.",
-  }, "\n"), nil, { model = "gpt-5.6-test-agent" })
+  agent_callback(vim.json.encode({
+    explanation = table.concat({
+      "The issue appears intended to make inspections useful even when",
+      "an activity item does not identify particular files.",
+    }, "\n"),
+    locations = {
+      {
+        path = "lua/oculus/inspect.lua",
+        reason = "The fileless issue inspection workflow is implemented here.",
+      },
+      {
+        path = "lua/oculus/agent.lua",
+        reason = "Agent context and output handling live here.",
+      },
+    },
+  }), nil, { model = "gpt-5.6-test-agent" })
 end
 local agent_explanation_mapping = vim.fn.maparg(
   "a",
@@ -1063,6 +1090,28 @@ assert(model_text:find("GPT 5.6 Test Agent", 1, true))
 assert(model_text:find("gpt-5.6-test-fast", 1, true))
 assert(model_text:find("Date opened", 1, true)
   < model_text:find("Agent explanation", 1, true))
+local model_selection_mark
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  model_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  if mark[4].hl_group == "OculusInspectAgentModelSelected" then
+    model_selection_mark = mark
+    break
+  end
+end
+assert(model_selection_mark)
+assert(vim.api.nvim_win_get_cursor(model_win)[1]
+  == model_selection_mark[2] + 1)
+local model_selection_hl = vim.api.nvim_get_hl(0, {
+  name = "OculusInspectAgentModelSelected",
+  link = false,
+})
+assert(model_selection_hl.fg)
+assert(not model_selection_hl.bg)
 local select_agent_model = vim.fn.maparg("<CR>", "n", false, true)
 assert(select_agent_model.desc == "Select Oculus agent model")
 select_agent_model.callback()
@@ -1116,6 +1165,8 @@ assert(agent_request.prompt:find(
   1,
   true
 ))
+assert(agent_request.prompt:find("at most five", 1, true))
+assert(agent_request.prompt:find("Return only valid JSON", 1, true))
 local explanation_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
@@ -1128,6 +1179,14 @@ assert(explanation_text:find(
 assert(explanation_text:gsub("%s+", " "):find(
   "The issue appears intended to make inspections useful even when an "
     .. "activity item does not identify particular files.",
+  1,
+  true
+))
+assert(explanation_text:find("Possible patch locations", 1, true))
+assert(explanation_text:find("1. lua/oculus/inspect.lua", 1, true))
+assert(explanation_text:find("2. lua/oculus/agent.lua", 1, true))
+assert(explanation_text:gsub("%s+", " "):find(
+  "The fileless issue inspection workflow is implemented here.",
   1,
   true
 ))
@@ -1178,6 +1237,37 @@ assert(not vim.api.nvim_win_is_valid(overview_win))
 assert(not vim.api.nvim_buf_is_valid(overview_footer_buf))
 assert(vim.api.nvim_get_current_win() == issue_main_win)
 assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
+local reopen_issue_overview = vim.fn.maparg("<C-t>", "n", false, true)
+assert(reopen_issue_overview.desc == "Toggle Oculus Inspect overview")
+reopen_issue_overview.callback()
+local restored_overview_win = vim.api.nvim_get_current_win()
+local restored_overview_text = table.concat(
+  vim.api.nvim_buf_get_lines(0, 0, -1, false),
+  "\n"
+)
+assert(restored_overview_text:find(
+  "Agent explanation (gpt-5.6-test-agent)",
+  1,
+  true
+))
+assert(restored_overview_text:gsub("%s+", " "):find(
+  "The issue appears intended to make inspections useful even when an "
+    .. "activity item does not identify particular files.",
+  1,
+  true
+))
+assert(restored_overview_text:find(
+  "Possible patch locations",
+  1,
+  true
+))
+assert(restored_overview_text:find(
+  "lua/oculus/inspect.lua",
+  1,
+  true
+))
+vim.fn.maparg("q", "n", false, true).callback()
+assert(not vim.api.nvim_win_is_valid(restored_overview_win))
 vim.cmd("tabclose")
 vim.api.nvim_set_current_win(issue_origin_win)
 vim.wo[issue_origin_win].number = issue_origin_number
