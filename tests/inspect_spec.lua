@@ -110,6 +110,18 @@ assert(inspect._chunk_start_for_role(
   "change",
   12
 ) == 12)
+assert(inspect._chunk_start_for_role(
+  { old_start = 7, new_start = 2, new_count = 3 },
+  "change",
+  8,
+  { "before", "", "  ", "changed" }
+) == 10)
+assert(inspect._chunk_start_for_role(
+  { old_start = 7, new_start = 2, new_count = 2 },
+  "change",
+  8,
+  { "before", "", "  " }
+) == 8)
 assert(vim.deep_equal(
   inspect._inspection_endpoints({}, {
     parent = "parent",

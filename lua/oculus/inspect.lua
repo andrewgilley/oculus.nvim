@@ -2138,15 +2138,22 @@ local function render_full_file(session)
   return true
 end
 
-local function set_change_cursor(win, line)
+local function position_change_cursor(win, line)
   if not vim.api.nvim_win_is_valid(win) then
-    return
+    return false
   end
   local buf = vim.api.nvim_win_get_buf(win)
   local line_count = vim.api.nvim_buf_line_count(buf)
   line = math.min(math.max(1, line), line_count)
   vim.api.nvim_win_set_cursor(win, { line, 0 })
   normalize_inspection_view(win)
+  return true
+end
+
+local function set_change_cursor(win, line)
+  if not position_change_cursor(win, line) then
+    return
+  end
   sync_window(win)
 end
 
@@ -2317,10 +2324,23 @@ local function chunk_navigation_role(
   return current_role
 end
 
-local function chunk_start_for_role(hunk, role, change_start)
-  return role == "parent"
-      and hunk_start(hunk, "parent")
-    or change_start
+local function chunk_start_for_role(
+  hunk,
+  role,
+  change_start,
+  change_content
+)
+  if role == "parent" then
+    return hunk_start(hunk, "parent")
+  end
+  for offset = 0, math.max(0, hunk.new_count or 0) - 1 do
+    local line = change_content
+      and change_content[(hunk.new_start or 1) + offset]
+    if type(line) == "string" and line:find("%S") then
+      return change_start + offset
+    end
+  end
+  return change_start
 end
 
 local function version_switch_line(session, role, chunk_index)
@@ -2334,7 +2354,12 @@ local function version_switch_line(session, role, chunk_index)
   else
     change_start = session.focused_start or focused_hunk_start(hunk)
   end
-  return chunk_start_for_role(hunk, role, change_start)
+  return chunk_start_for_role(
+    hunk,
+    role,
+    change_start,
+    session.change_content
+  )
 end
 
 local function render_chunk_for_role(session, role, chunk_index)
@@ -2344,7 +2369,12 @@ local function render_chunk_for_role(session, role, chunk_index)
   end
   local change_start = render_focused_chunk(session, chunk_index)
     or focused_hunk_start(hunk)
-  return chunk_start_for_role(hunk, role, change_start)
+  return chunk_start_for_role(
+    hunk,
+    role,
+    change_start,
+    session.change_content
+  )
 end
 
 local function focus_inspection_chunk(group, session, role, chunk_index)
@@ -4572,7 +4602,14 @@ local function open_tabs(
         set_change_cursor(parent.win, chunk_start_for_role(
           first_hunk,
           "parent",
-          focused_start
+          focused_start,
+          session.change_content
+        ))
+        position_change_cursor(change.win, chunk_start_for_role(
+          first_hunk,
+          "change",
+          focused_start,
+          session.change_content
         ))
       elseif session.parent_lines[1] then
         set_change_cursor(parent.win, session.parent_lines[1])
