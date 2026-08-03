@@ -2883,10 +2883,6 @@ local function sidebar_overview_lines(overview, width)
     "Date opened",
     overview_date(overview.created_at or details.authored_at)
   )
-  local explanation_label = overview.agent_explanation_model
-      and ("Agent explanation (" .. overview.agent_explanation_model .. ")")
-    or "Agent explanation"
-  field(explanation_label, overview.agent_explanation)
   if lines[#lines] == "" then
     table.remove(lines)
   end
@@ -3280,6 +3276,12 @@ local function close_overview_window(group)
       return vim.fn.winsaveview()
     end)
   end
+  if M._overview_ui and M._overview_ui.close_footer then
+    M._overview_ui.close_footer(group)
+  end
+  if M._overview_ui and M._overview_ui.close_agent_window then
+    M._overview_ui.close_agent_window(group, false)
+  end
   group.overview_win = nil
   group.overview_buf = nil
   restore_overview_cursor(group)
@@ -3322,7 +3324,6 @@ M._overview_ui = {
     ["Issue number"] = true,
     Status = true,
     ["Date opened"] = true,
-    ["Agent explanation"] = true,
   },
 }
 
@@ -3334,9 +3335,115 @@ function M._overview_ui.float_lines(overview, width)
       table.remove(lines, 1)
     end
   end
-  lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 2))
-  lines[#lines + 1] = "  a agent"
   return lines
+end
+
+function M._overview_ui.close_footer(group)
+  local win = group.overview_footer_win
+  local buf = group.overview_footer_buf
+  group.overview_footer_win = nil
+  group.overview_footer_buf = nil
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_win_close(win, true)
+  end
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+end
+
+function M._overview_ui.render_footer(group)
+  local overview_win = group.overview_win
+  if not overview_win or not vim.api.nvim_win_is_valid(overview_win) then
+    return
+  end
+  local overview_config = vim.api.nvim_win_get_config(overview_win)
+  local width = vim.api.nvim_win_get_width(overview_win)
+  local height = vim.api.nvim_win_get_height(overview_win)
+  local config = {
+    relative = "editor",
+    width = width,
+    height = 2,
+    row = (tonumber(overview_config.row) or 0) + height - 1,
+    col = (tonumber(overview_config.col) or 0) + 1,
+    style = "minimal",
+    focusable = false,
+    zindex = (tonumber(overview_config.zindex) or 70) + 1,
+  }
+  local buf = group.overview_footer_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    buf = vim.api.nvim_create_buf(false, true)
+    group.overview_footer_buf = buf
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = "oculus-inspect-overview-footer"
+    vim.b[buf].oculus_inspect_overview_footer = true
+  end
+  local footer_lines = {
+    "  " .. string.rep("─", math.max(1, width - 4)),
+    "  a agent",
+  }
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, footer_lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(
+    buf,
+    M._overview_ui.footer_ns,
+    0,
+    -1
+  )
+  vim.api.nvim_buf_set_extmark(
+    buf,
+    M._overview_ui.footer_ns,
+    0,
+    2,
+    {
+      end_col = #footer_lines[1],
+      hl_group = "WinSeparator",
+      priority = 100,
+    }
+  )
+  vim.api.nvim_buf_set_extmark(
+    buf,
+    M._overview_ui.footer_ns,
+    1,
+    2,
+    {
+      end_col = #footer_lines[2],
+      hl_group = "Comment",
+      priority = 100,
+    }
+  )
+
+  local footer_win = group.overview_footer_win
+  if footer_win and vim.api.nvim_win_is_valid(footer_win) then
+    vim.api.nvim_win_set_config(footer_win, config)
+  else
+    footer_win = vim.api.nvim_open_win(buf, false, config)
+    group.overview_footer_win = footer_win
+  end
+  vim.wo[footer_win].wrap = false
+  vim.wo[footer_win].cursorline = false
+  vim.wo[footer_win].number = false
+  vim.wo[footer_win].relativenumber = false
+  vim.wo[footer_win].signcolumn = "no"
+  vim.wo[footer_win].winhighlight = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+  }, ",")
+end
+
+function M._overview_ui.content_height(group)
+  local win = group.overview_win
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return 1
+  end
+  local height = vim.api.nvim_win_get_height(win)
+  local footer = group.overview_footer_win
+  if footer and vim.api.nvim_win_is_valid(footer) then
+    height = height - vim.api.nvim_win_get_height(footer)
+  end
+  return math.max(1, height)
 end
 
 function M._overview_ui.render(group)
@@ -3360,38 +3467,12 @@ function M._overview_ui.render(group)
   )
   for index, line in ipairs(lines) do
     local label = line:match("^  (.-)%s*$")
-    if M._overview_ui.section_labels[label]
-      or (label and label:match("^Agent explanation %(.+%)$"))
-    then
+    if M._overview_ui.section_labels[label] then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
         end_col = #line,
         hl_group = "OculusInspectOverviewSection",
         priority = 100,
       })
-    elseif index == #lines - 1 then
-      vim.api.nvim_buf_set_extmark(
-        buf,
-        M._overview_ui.footer_ns,
-        index - 1,
-        2,
-        {
-          end_col = #line,
-          hl_group = "WinSeparator",
-          priority = 100,
-        }
-      )
-    elseif line == "  a agent" then
-      vim.api.nvim_buf_set_extmark(
-        buf,
-        M._overview_ui.footer_ns,
-        index - 1,
-        2,
-        {
-          end_col = #line,
-          hl_group = "Comment",
-          priority = 100,
-        }
-      )
     end
   end
   return lines
@@ -3408,7 +3489,7 @@ function M._overview_ui.scroll_to_bottom(group)
     return
   end
   local line_count = vim.api.nvim_buf_line_count(buf)
-  local height = vim.api.nvim_win_get_height(win)
+  local height = M._overview_ui.content_height(group)
   local topline = math.max(1, line_count - height + 2)
   vim.api.nvim_win_set_cursor(win, { line_count, 0 })
   vim.api.nvim_win_call(win, function()
@@ -3418,26 +3499,351 @@ function M._overview_ui.scroll_to_bottom(group)
   end)
 end
 
-function M._overview_ui.request_explanation(group)
-  if group.overview_agent_pending then
+function M._overview_ui.agent_config(group)
+  if not overview_window_is_open(group) then
     return
   end
+  local source = vim.api.nvim_win_get_config(group.overview_win)
+  return {
+    relative = source.relative,
+    width = source.width,
+    height = source.height,
+    row = source.row,
+    col = source.col,
+    anchor = source.anchor,
+    style = "minimal",
+    border = source.border,
+    focusable = true,
+    zindex = (tonumber(source.zindex) or 70) + 3,
+  }
+end
+
+function M._overview_ui.close_agent_window(group, return_to_overview)
+  local win = group.overview_agent_win
+  local buf = group.overview_agent_buf
+  group.overview_agent_win = nil
+  group.overview_agent_buf = nil
+  group.overview_agent_mode = nil
+  group.overview_agent_model_lines = nil
+  local discovery = group.overview_agent_model_process
+  group.overview_agent_model_process = nil
+  if discovery
+    and type(discovery.is_closing) == "function"
+    and not discovery:is_closing()
+  then
+    pcall(discovery.kill, discovery, 15)
+  end
+  local generation = group.overview_agent_process
+  group.overview_agent_process = nil
+  group.overview_agent_pending = nil
+  if generation
+    and type(generation.is_closing) == "function"
+    and not generation:is_closing()
+  then
+    pcall(generation.kill, generation, 15)
+  end
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_win_close(win, true)
+  end
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+  if return_to_overview and overview_window_is_open(group) then
+    vim.api.nvim_set_current_win(group.overview_win)
+  end
+end
+
+function M._overview_ui.set_agent_lines(group, lines, filetype)
+  local buf = group.overview_agent_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return false
+  end
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  if filetype then
+    vim.bo[buf].filetype = filetype
+  end
+  vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+  if lines[1] and lines[1] ~= "" then
+    vim.api.nvim_buf_set_extmark(buf, sidebar_ns, 0, 0, {
+      end_col = #lines[1],
+      hl_group = "OculusInspectOverviewSection",
+      priority = 100,
+    })
+  end
+  return true
+end
+
+function M._overview_ui.open_agent_window(group, mode, lines)
+  local config = M._overview_ui.agent_config(group)
+  if not config then
+    return
+  end
+  M._overview_ui.close_agent_window(group, false)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.b[buf].oculus_inspect_agent = mode
+  group.overview_agent_buf = buf
+  group.overview_agent_mode = mode
+  M._overview_ui.set_agent_lines(
+    group,
+    lines,
+    mode == "models"
+        and "oculus-inspect-agent-models"
+      or "oculus-inspect-agent-explanation"
+  )
+  local win = vim.api.nvim_open_win(buf, true, config)
+  group.overview_agent_win = win
+  vim.wo[win].wrap = false
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].cursorline = mode == "models"
+  vim.wo[win].winhighlight = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+    "FloatBorder:OculusBorder",
+    "CursorLine:OculusCursorLine",
+  }, ",")
+  local function close()
+    M._overview_ui.close_agent_window(group, true)
+  end
+  vim.keymap.set("n", "q", close, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Close Oculus agent window",
+  })
+  vim.keymap.set("n", "<Esc>", close, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Close Oculus agent window",
+  })
+  return win, buf
+end
+
+function M._overview_ui.render_models(group, models, err)
+  if group.overview_agent_mode ~= "models" then
+    return
+  end
+  group.overview_agent_model_process = nil
+  if err then
+    M._overview_ui.set_agent_lines(group, {
+      "MODELS",
+      "",
+      "  Could not load Codex models.",
+      "",
+      "  " .. tostring(err),
+    })
+    return
+  end
+  local lines = { "MODELS", "" }
+  local targets = {}
+  local configured = require("oculus.agent").configured_model(
+    require("oculus.agent").repository(group)
+  )
+  local selected_line
+  for _, model in ipairs(models or {}) do
+    local suffix = model.is_default and "  default" or ""
+    lines[#lines + 1] = ("  %s  %s%s"):format(
+      model.display_name,
+      model.id,
+      suffix
+    )
+    targets[#lines] = model
+    if model.id == configured or (not selected_line and model.is_default) then
+      selected_line = #lines
+    end
+  end
+  group.overview_agent_model_lines = targets
+  M._overview_ui.set_agent_lines(group, lines)
+  local win = group.overview_agent_win
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_win_set_cursor(win, { selected_line or 3, 2 })
+  end
+end
+
+function M._overview_ui.select_agent_model(group)
+  local win = group.overview_agent_win
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  local line = vim.api.nvim_win_get_cursor(win)[1]
+  local model = group.overview_agent_model_lines
+    and group.overview_agent_model_lines[line]
+  if model then
+    M._overview_ui.open_explanation(group, model)
+  end
+end
+
+function M._overview_ui.move_model_cursor(group, direction)
+  local win = group.overview_agent_win
+  local targets = group.overview_agent_model_lines or {}
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  local lines = {}
+  for line in pairs(targets) do
+    lines[#lines + 1] = line
+  end
+  table.sort(lines)
+  if #lines == 0 then
+    return
+  end
+  local current = vim.api.nvim_win_get_cursor(win)[1]
+  local current_index = 1
+  for index, line in ipairs(lines) do
+    if line >= current then
+      current_index = index
+      break
+    end
+  end
+  local next_index = ((current_index + direction - 1) % #lines) + 1
+  vim.api.nvim_win_set_cursor(win, { lines[next_index], 2 })
+end
+
+function M._overview_ui.map_model_picker(group)
+  local buf = group.overview_agent_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  for _, mapping in ipairs({
+    { "j", 1 },
+    { "<Down>", 1 },
+    { "k", -1 },
+    { "<Up>", -1 },
+  }) do
+    vim.keymap.set("n", mapping[1], function()
+      M._overview_ui.move_model_cursor(group, mapping[2])
+    end, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = "Navigate Oculus agent models",
+    })
+  end
+  vim.keymap.set("n", "<CR>", function()
+    M._overview_ui.select_agent_model(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Select Oculus agent model",
+  })
+end
+
+function M._overview_ui.open_model_picker(group)
+  local win = M._overview_ui.open_agent_window(group, "models", {
+    "MODELS",
+    "",
+    "  Loading available Codex models…",
+  })
+  if not win then
+    return
+  end
+  M._overview_ui.map_model_picker(group)
+  local responded = false
+  local process, err = require("oculus.agent").models(function(models, load_err)
+    responded = true
+    M._overview_ui.render_models(group, models, load_err)
+  end)
+  if not process then
+    M._overview_ui.render_models(group, nil, err)
+  elseif not responded then
+    group.overview_agent_model_process = process
+  end
+end
+
+function M._overview_ui.render_explanation(group, model, text, err)
+  if group.overview_agent_mode ~= "explanation" then
+    return
+  end
+  local lines = {
+    "AGENT EXPLANATION (" .. tostring(model) .. ")",
+    "",
+  }
+  append_sidebar_text(
+    lines,
+    text or ("Generation failed: " .. tostring(err)),
+    math.max(12, vim.api.nvim_win_get_width(group.overview_agent_win) - 4),
+    "  "
+  )
+  M._overview_ui.set_agent_lines(group, lines)
+end
+
+function M._overview_ui.scroll_agent_window(group, direction)
+  local win = group.overview_agent_win
+  local buf = group.overview_agent_buf
+  if not win
+    or not buf
+    or not vim.api.nvim_win_is_valid(win)
+    or not vim.api.nvim_buf_is_valid(buf)
+  then
+    return
+  end
+  local view = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+  local height = vim.api.nvim_win_get_height(win)
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  local maximum = math.max(1, line_count - height + 2)
+  local topline = math.max(1, math.min(maximum, view.topline + direction))
+  if topline == view.topline then
+    return
+  end
+  vim.api.nvim_win_set_cursor(win, { topline, 0 })
+  vim.api.nvim_win_call(win, function()
+    view = vim.fn.winsaveview()
+    view.topline = topline
+    vim.fn.winrestview(view)
+  end)
+end
+
+function M._overview_ui.map_explanation_scroll(group)
+  local buf = group.overview_agent_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  for _, mapping in ipairs({
+    { "k", 1 },
+    { "<Down>", 1 },
+    { "i", -1 },
+    { "<Up>", -1 },
+    { "<C-i>", -10 },
+    { "<C-k>", 10 },
+  }) do
+    vim.keymap.set("n", mapping[1], function()
+      M._overview_ui.scroll_agent_window(group, mapping[2])
+    end, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = "Scroll Oculus agent explanation",
+    })
+  end
+end
+
+function M._overview_ui.open_explanation(group, model)
   local agent = require("oculus.agent")
   local repository = agent.repository(group)
+  M._overview_ui.open_agent_window(group, "explanation", {
+    "AGENT EXPLANATION (" .. tostring(model.id) .. ")",
+    "",
+    "  Generating explanation…",
+  })
+  M._overview_ui.map_explanation_scroll(group)
   if not repository then
-    group.overview.agent_explanation =
-      "Agent explanation failed: local repository information is unavailable."
-    M._overview_ui.render(group)
-    M._overview_ui.scroll_to_bottom(group)
+    M._overview_ui.render_explanation(
+      group,
+      model.id,
+      nil,
+      "local repository information is unavailable"
+    )
     return
   end
-
   group.overview_agent_pending = true
-  group.overview.agent_explanation_model = nil
-  group.overview.agent_explanation = "Generating agent explanation…"
-  M._overview_ui.render(group)
-  M._overview_ui.scroll_to_bottom(group)
-
   local finished = false
   local function finish(explanation, err, metadata)
     if finished then
@@ -3447,23 +3853,20 @@ function M._overview_ui.request_explanation(group)
     group.overview_agent_pending = nil
     group.overview_agent_process = nil
     local normalized = agent.normalize(explanation)
-    group.overview.agent_explanation_model = normalized
-        and metadata
-        and metadata.model
-      or nil
-    group.overview.agent_explanation = normalized or (
-      "Agent explanation failed: "
-      .. tostring(err or "Codex returned no explanation")
+    local actual_model = metadata and metadata.model or model.id
+    group.overview_agent_explanation = normalized
+    group.overview_agent_explanation_model = actual_model
+    M._overview_ui.render_explanation(
+      group,
+      actual_model,
+      normalized,
+      err or "Codex returned no explanation"
     )
-    if overview_window_is_open(group) then
-      M._overview_ui.render(group)
-      M._overview_ui.scroll_to_bottom(group)
-    end
   end
-
   local process, err = agent.explain({
     cwd = repository,
     prompt = agent.prompt(group),
+    model = model.id,
   }, finish)
   if not process and not finished then
     finish(nil, err)
@@ -3510,6 +3913,7 @@ show_inspection_overview = function(group)
   M._overview_ui.render(group)
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_win = win
+  M._overview_ui.render_footer(group)
   vim.api.nvim_create_autocmd("WinEnter", {
     group = sync_group,
     buffer = buf,
@@ -3542,12 +3946,12 @@ show_inspection_overview = function(group)
     "FloatFooter:OculusBorder",
   }, ",")
   vim.keymap.set("n", "a", function()
-    M._overview_ui.request_explanation(group)
+    M._overview_ui.open_model_picker(group)
   end, {
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Generate Oculus agent explanation",
+    desc = "Choose Oculus agent model",
   })
   vim.keymap.set("n", "q", function()
     show_sidebar_files(group)
@@ -3582,7 +3986,7 @@ show_inspection_overview = function(group)
   local function map_scroll(lhs, direction, desc)
     vim.keymap.set("n", lhs, function()
       local view = vim.fn.winsaveview()
-      local height = vim.api.nvim_win_get_height(win)
+      local height = M._overview_ui.content_height(group)
       local line_count = vim.api.nvim_buf_line_count(buf)
       local max_topline = math.max(
         1,

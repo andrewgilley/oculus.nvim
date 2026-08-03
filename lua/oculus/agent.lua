@@ -147,6 +147,158 @@ function M.model_from_stderr(stderr)
   end
 end
 
+function M.normalize_models(values)
+  local models = {}
+  for _, value in ipairs(values or {}) do
+    local id = value.model or value.id
+    if type(id) == "string" and id ~= "" and not value.hidden then
+      models[#models + 1] = {
+        id = id,
+        display_name = type(value.displayName) == "string"
+            and value.displayName
+          or id,
+        is_default = value.isDefault == true,
+      }
+    end
+  end
+  table.sort(models, function(left, right)
+    if left.is_default ~= right.is_default then
+      return left.is_default
+    end
+    return left.display_name:lower() < right.display_name:lower()
+  end)
+  return models
+end
+
+function M.models(callback)
+  if type(callback) ~= "function" then
+    return nil, "model discovery requires a callback"
+  end
+  local executable = vim.fn.exepath("codex")
+  if executable == "" then
+    return nil, "Codex is not installed or is not available on PATH"
+  end
+
+  local process
+  local stdout_buffer = ""
+  local stderr_buffer = ""
+  local finished = false
+  local function stop()
+    if process and not process:is_closing() then
+      pcall(process.write, process, nil)
+      pcall(process.kill, process, 15)
+    end
+  end
+  local function finish(models, err)
+    if finished then
+      return
+    end
+    finished = true
+    stop()
+    vim.schedule(function()
+      callback(models, err)
+    end)
+  end
+  local function send(message)
+    if process and not process:is_closing() then
+      process:write(vim.json.encode(message) .. "\n")
+    end
+  end
+  local function receive(message)
+    if message.id == 1 then
+      if message.error then
+        finish(nil, message.error.message or "Codex initialization failed")
+        return
+      end
+      send({ method = "initialized", params = {} })
+      send({
+        method = "model/list",
+        id = 2,
+        params = { limit = 100, includeHidden = false },
+      })
+    elseif message.id == 2 then
+      if message.error then
+        finish(nil, message.error.message or "could not list Codex models")
+        return
+      end
+      local models = M.normalize_models(
+        message.result and message.result.data or {}
+      )
+      if #models == 0 then
+        finish(nil, "Codex reported no available models")
+        return
+      end
+      finish(models)
+    end
+  end
+
+  local ok, result = pcall(vim.system, {
+    executable,
+    "app-server",
+  }, {
+    stdin = true,
+    text = true,
+    stdout = function(err, data)
+      if err then
+        finish(nil, err)
+        return
+      end
+      if not data then
+        return
+      end
+      stdout_buffer = stdout_buffer .. data
+      while true do
+        local newline = stdout_buffer:find("\n", 1, true)
+        if not newline then
+          break
+        end
+        local line = stdout_buffer:sub(1, newline - 1)
+        stdout_buffer = stdout_buffer:sub(newline + 1)
+        if line ~= "" then
+          local decoded, message = pcall(vim.json.decode, line)
+          if decoded then
+            vim.schedule(function()
+              receive(message)
+            end)
+          end
+        end
+      end
+    end,
+    stderr = function(_, data)
+      stderr_buffer = stderr_buffer .. (data or "")
+    end,
+  }, function(completed)
+    if not finished then
+      local err = vim.trim(stderr_buffer)
+      finish(nil, err ~= "" and err or (
+        "Codex model discovery exited with code "
+        .. tostring(completed.code)
+      ))
+    end
+  end)
+  if not ok then
+    return nil, tostring(result)
+  end
+  process = result
+  send({
+    method = "initialize",
+    id = 1,
+    params = {
+      clientInfo = {
+        name = "oculus_nvim",
+        title = "Oculus.nvim",
+        version = "0.1.0",
+      },
+    },
+  })
+  vim.defer_fn(function()
+    if not finished then
+      finish(nil, "Codex model discovery timed out")
+    end
+  end, 15000)
+  return process
+end
+
 local function codex_command(model)
   local executable = vim.fn.exepath("codex")
   if executable == "" then
