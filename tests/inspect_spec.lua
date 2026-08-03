@@ -627,9 +627,9 @@ do
     main_config,
     { kind = "commit" }
   )
-  assert(commit_config.width == main_config.width - 9)
+  assert(commit_config.width == main_config.width - 12)
   assert(commit_config.height == main_config.height - 3)
-  assert(commit_config.col == main_config.col + 4)
+  assert(commit_config.col == main_config.col + 6)
   assert(commit_config.row == main_config.row + 2)
   assert(commit_config.footer == "─")
   assert(commit_config.footer_pos == "left")
@@ -637,9 +637,9 @@ do
     main_config,
     { kind = "pull_request" }
   )
-  assert(pull_request_config.width == main_config.width - 9)
+  assert(pull_request_config.width == main_config.width - 12)
   assert(pull_request_config.height == main_config.height - 3)
-  assert(pull_request_config.col == main_config.col + 4)
+  assert(pull_request_config.col == main_config.col + 6)
   assert(pull_request_config.row == main_config.row + 2)
   assert(pull_request_config.footer == "─")
   assert(pull_request_config.footer_pos == "left")
@@ -1793,13 +1793,30 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
     local overview_down = vim.fn.maparg("k", "n", false, true)
     local overview_up = vim.fn.maparg("i", "n", false, true)
+    local overview_page_up = vim.fn.maparg("<C-i>", "n", false, true)
+    local overview_page_down = vim.fn.maparg("<C-k>", "n", false, true)
     assert(overview_down.desc == "Scroll Oculus Inspect overview down")
     assert(overview_up.desc == "Scroll Oculus Inspect overview up")
+    assert(overview_page_up.desc
+      == "Scroll Oculus Inspect overview up 10 lines")
+    assert(overview_page_down.desc
+      == "Scroll Oculus Inspect overview down 10 lines")
     vim.api.nvim_win_set_height(overview_win, 4)
     local overview_topline = vim.fn.winsaveview().topline
     overview_down.callback()
     assert(vim.fn.winsaveview().topline > overview_topline)
     overview_up.callback()
+    assert(vim.fn.winsaveview().topline == overview_topline)
+    overview_page_down.callback()
+    local overview_max_topline = math.max(
+      1,
+      vim.api.nvim_buf_line_count(overview_buf)
+        - vim.api.nvim_win_get_height(overview_win)
+        + 2
+    )
+    assert(vim.fn.winsaveview().topline
+      == math.min(overview_max_topline, overview_topline + 10))
+    overview_page_up.callback()
     assert(vim.fn.winsaveview().topline == overview_topline)
     for _ = 1, vim.api.nvim_buf_line_count(overview_buf) + 4 do
       overview_down.callback()
@@ -2065,13 +2082,13 @@ if integration_root and (integration_sha or integration_url) then
     local main_overview_config =
       require("oculus.window").window_config({})
     assert(overview_saved.config.width
-      == main_overview_config.width - 9)
+      == main_overview_config.width - 12)
     assert(overview_saved.config.height
       == main_overview_config.height - 3)
     assert(overview_saved.config.row
       == main_overview_config.row + 2)
     assert(overview_saved.config.col
-      == main_overview_config.col + 4)
+      == main_overview_config.col + 6)
   end
   assert(overview_saved.config.title == nil
     or overview_saved.config.title == "")
