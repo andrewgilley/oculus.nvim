@@ -571,6 +571,8 @@ local pull_request_overview_lines =
   inspect._sidebar_overview_lines(pull_request_overview, 28)
 assert(pull_request_overview_lines[#pull_request_overview_lines - 1]
   == "  Date opened")
+assert(pull_request_overview_lines[#pull_request_overview_lines]
+  :match("^  %d%d/%d%d/%d%d%d%d$"))
 assert(not pull_request_overview_text:find("Repository", 1, true))
 assert(not pull_request_overview_text:find("Branches", 1, true))
 assert(not pull_request_overview_text:find("Changes", 1, true))
@@ -629,6 +631,8 @@ local commit_overview_lines =
   inspect._sidebar_overview_lines(commit_overview, 28)
 assert(commit_overview_lines[#commit_overview_lines - 1]
   == "  Date opened")
+assert(commit_overview_lines[#commit_overview_lines]
+  :match("^  %d%d/%d%d/%d%d%d%d$"))
 assert(not commit_overview_text:find("Repository", 1, true))
 assert(not commit_overview_text:find("\nCommit\n", 1, true))
 assert(not commit_overview_text:find("Authored", 1, true))
@@ -894,6 +898,8 @@ local issue_overview_lines = vim.api.nvim_buf_get_lines(
 )
 assert(issue_overview_lines[#issue_overview_lines - 1]
   == "  Date opened")
+assert(issue_overview_lines[#issue_overview_lines]
+  :match("^  %d%d/%d%d/%d%d%d%d$"))
 assert(issue_overview:find("  Title\n", 1, true))
 assert(issue_overview:find("Issue inspect fixture", 1, true))
 assert(issue_overview:find("  Description\n", 1, true))
@@ -2543,7 +2549,10 @@ if integration_root and (integration_sha or integration_url) then
       cursor[1],
       false
     )[1]
-    assert(cursor[1] == first_changed_sign_line(parent_buf))
+    assert(cursor[1] == math.min(
+      first_changed_sign_line(parent_buf) + 1,
+      vim.api.nvim_buf_line_count(parent_buf)
+    ))
     assert(cursor[2] == math.max(0, #cursor_text - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
@@ -2602,7 +2611,10 @@ if integration_root and (integration_sha or integration_url) then
       cursor[1],
       false
     )[1]
-    assert(cursor[1] == first_changed_sign_line(parent_buf))
+    assert(cursor[1] == math.min(
+      first_changed_sign_line(parent_buf) + 1,
+      vim.api.nvim_buf_line_count(parent_buf)
+    ))
     assert(cursor[2] == math.max(0, #cursor_text - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
