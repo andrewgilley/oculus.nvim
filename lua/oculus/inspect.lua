@@ -2227,12 +2227,12 @@ local function select_endpoint(endpoint, session, role, group)
   end
 end
 
-local function move_cursor_to_line_end(win)
+local function move_cursor_to_line_start(win)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
   vim.api.nvim_win_call(win, function()
-    vim.cmd("normal! $")
+    vim.cmd("normal! ^")
   end)
 end
 
@@ -2243,7 +2243,7 @@ local function place_version_switch_cursor(endpoint, line)
   if line then
     set_change_cursor(endpoint.win, line)
   end
-  move_cursor_to_line_end(endpoint.win)
+  move_cursor_to_line_start(endpoint.win)
 end
 
 local function inspection_chunks(group, session)
@@ -2883,7 +2883,10 @@ local function sidebar_overview_lines(overview, width)
     "Date opened",
     overview_date(overview.created_at or details.authored_at)
   )
-  field("Agent explanation", overview.agent_explanation)
+  local explanation_label = overview.agent_explanation_model
+      and ("Agent explanation (" .. overview.agent_explanation_model .. ")")
+    or "Agent explanation"
+  field(explanation_label, overview.agent_explanation)
   if lines[#lines] == "" then
     table.remove(lines)
   end
@@ -3302,13 +3305,14 @@ local function overview_window_config(config, _)
       + math.ceil((config.height - height) / 2)
     config.height = height
   end
-  config.footer = " a agent "
-  config.footer_pos = "left"
+  config.footer = nil
+  config.footer_pos = nil
   config.zindex = 70
   return config
 end
 
 M._overview_ui = {
+  footer_ns = vim.api.nvim_create_namespace("oculus_inspect_overview_footer"),
   section_labels = {
     Title = true,
     Description = true,
@@ -3330,6 +3334,8 @@ function M._overview_ui.float_lines(overview, width)
       table.remove(lines, 1)
     end
   end
+  lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 2))
+  lines[#lines + 1] = "  a agent"
   return lines
 end
 
@@ -3346,14 +3352,46 @@ function M._overview_ui.render(group)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+  vim.api.nvim_buf_clear_namespace(
+    buf,
+    M._overview_ui.footer_ns,
+    0,
+    -1
+  )
   for index, line in ipairs(lines) do
     local label = line:match("^  (.-)%s*$")
-    if M._overview_ui.section_labels[label] then
+    if M._overview_ui.section_labels[label]
+      or (label and label:match("^Agent explanation %(.+%)$"))
+    then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
         end_col = #line,
         hl_group = "OculusInspectOverviewSection",
         priority = 100,
       })
+    elseif index == #lines - 1 then
+      vim.api.nvim_buf_set_extmark(
+        buf,
+        M._overview_ui.footer_ns,
+        index - 1,
+        2,
+        {
+          end_col = #line,
+          hl_group = "WinSeparator",
+          priority = 100,
+        }
+      )
+    elseif line == "  a agent" then
+      vim.api.nvim_buf_set_extmark(
+        buf,
+        M._overview_ui.footer_ns,
+        index - 1,
+        2,
+        {
+          end_col = #line,
+          hl_group = "Comment",
+          priority = 100,
+        }
+      )
     end
   end
   return lines
@@ -3395,12 +3433,13 @@ function M._overview_ui.request_explanation(group)
   end
 
   group.overview_agent_pending = true
+  group.overview.agent_explanation_model = nil
   group.overview.agent_explanation = "Generating agent explanation…"
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
 
   local finished = false
-  local function finish(explanation, err)
+  local function finish(explanation, err, metadata)
     if finished then
       return
     end
@@ -3408,6 +3447,10 @@ function M._overview_ui.request_explanation(group)
     group.overview_agent_pending = nil
     group.overview_agent_process = nil
     local normalized = agent.normalize(explanation)
+    group.overview.agent_explanation_model = normalized
+        and metadata
+        and metadata.model
+      or nil
     group.overview.agent_explanation = normalized or (
       "Agent explanation failed: "
       .. tostring(err or "Codex returned no explanation")
@@ -4187,7 +4230,7 @@ switch_sidebar_version = function(group)
   vim.api.nvim_set_current_win(sidebar_win)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
-  move_cursor_to_line_end(sidebar_win)
+  move_cursor_to_line_start(sidebar_win)
   sidebar_navigating = false
 end
 
