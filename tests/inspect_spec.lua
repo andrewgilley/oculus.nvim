@@ -727,12 +727,17 @@ assert(directions_chunk_prompt:find(
   true
 ))
 assert(directions_chunk_prompt:find(
-  "Write directly to the developer",
+  "related repository activity items",
   1,
   true
 ))
 assert(directions_chunk_prompt:find(
-  "plain, actionable language",
+  "could implement in the",
+  1,
+  true
+))
+assert(directions_chunk_prompt:find(
+  "future possibilities, not changes to the current patch",
   1,
   true
 ))
@@ -1223,7 +1228,19 @@ local spinner_marks = vim.api.nvim_buf_get_extmarks(
 )
 assert(#spinner_marks == 1)
 assert(spinner_marks[1][4].virt_text[1][1]:match("^ ⠋$"))
+local close_generating_explanation = vim.fn.maparg("q", "n", false, true)
+close_generating_explanation.callback()
+assert(not vim.api.nvim_win_is_valid(overview_win))
 finish_agent_explanation()
+local reopen_generating_explanation = vim.fn.maparg(
+  "<C-t>",
+  "n",
+  false,
+  true
+)
+reopen_generating_explanation.callback()
+overview_win = vim.api.nvim_get_current_win()
+overview_buf = vim.api.nvim_get_current_buf()
 assert(#vim.api.nvim_buf_get_extmarks(
   overview_buf,
   inspect._overview_ui.agent_spinner_ns,
@@ -1291,17 +1308,17 @@ select_agent_model.callback()
 local directions_request = agent_request
 assert(directions_request.model == "gpt-5.6-test-agent")
 assert(directions_request.prompt:find(
-  "practical directions",
+  "related repository activity items",
   1,
   true
 ))
 assert(directions_request.prompt:find(
-  "Write directly to the developer",
+  "could implement in the",
   1,
   true
 ))
 assert(directions_request.prompt:find(
-  "plain, actionable language",
+  "future possibilities, not changes to the current patch",
   1,
   true
 ))
@@ -1311,10 +1328,22 @@ assert(directions_request.prompt:find(
   true
 ))
 assert(not directions_request.prompt:find("Chunk reference:", 1, true))
+local close_generating_directions = vim.fn.maparg("q", "n", false, true)
+close_generating_directions.callback()
+assert(not vim.api.nvim_win_is_valid(overview_win))
 agent_callback(table.concat({
-  "A complementary patch could improve the issue-to-workflow transition",
-  "by making likely implementation areas immediately actionable.",
+  "Future related work could add saved issue workspaces, branch setup actions,",
+  "and focused tests for moving from issue context into an editable patch.",
 }, " "), nil, { model = "gpt-5.6-test-agent" })
+local reopen_generating_directions = vim.fn.maparg(
+  "<C-t>",
+  "n",
+  false,
+  true
+)
+reopen_generating_directions.callback()
+overview_win = vim.api.nvim_get_current_win()
+overview_buf = vim.api.nvim_get_current_buf()
 assert(#vim.api.nvim_buf_get_extmarks(
   overview_buf,
   inspect._overview_ui.directions_spinner_ns,
@@ -1322,6 +1351,7 @@ assert(#vim.api.nvim_buf_get_extmarks(
   -1,
   {}
 ) == 0)
+explanation_buf = overview_buf
 agent.models = original_agent_models
 agent.explain = original_agent_explain
 assert(vim.fs.normalize(explanation_request.cwd) == vim.fs.normalize(root))
@@ -1378,8 +1408,8 @@ assert(explanation_text:find(
   true
 ))
 assert(explanation_text:gsub("%s+", " "):find(
-  "A complementary patch could improve the issue-to-workflow transition "
-    .. "by making likely implementation areas immediately actionable.",
+  "Future related work could add saved issue workspaces, branch setup actions, "
+    .. "and focused tests for moving from issue context into an editable patch.",
   1,
   true
 ))
@@ -1393,7 +1423,7 @@ assert(not explanation_text:sub(directions_start):find(
   1,
   true
 ))
-assert(vim.api.nvim_win_is_valid(explanation_win))
+assert(vim.api.nvim_win_is_valid(overview_win))
 
 local issue_main_win
 local issue_sidebar_win

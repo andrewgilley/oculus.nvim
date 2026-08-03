@@ -3852,60 +3852,65 @@ end
 function M._overview_ui.close_agent_window(group, return_to_overview)
   M._overview_ui.stop_agent_spinner(group)
   M._overview_ui.stop_directions_spinner(group)
-  local preserve_explanation = group.overview_agent_mode == "explanation"
-    and type(group.overview_agent_explanation) == "string"
-    and group.overview_agent_explanation ~= ""
-  if not preserve_explanation then
-    group.overview_agent_mode = nil
-  end
-  group.overview_agent_models = nil
   group.overview_agent_model_lines = nil
-  group.overview_agent_selected_line = nil
-  local discovery = group.overview_agent_model_process
-  group.overview_agent_model_process = nil
-  if discovery
-    and type(discovery.is_closing) == "function"
-    and not discovery:is_closing()
-  then
-    pcall(discovery.kill, discovery, 15)
-  end
-  local generation = group.overview_agent_process
-  group.overview_agent_process = nil
-  group.overview_agent_pending = nil
-  if generation
-    and type(generation.is_closing) == "function"
-    and not generation:is_closing()
-  then
-    pcall(generation.kill, generation, 15)
-  end
-  local preserve_directions = group.overview_directions_mode == "directions"
-    and type(group.overview_directions_text) == "string"
-    and group.overview_directions_text ~= ""
-  if not preserve_directions then
-    group.overview_directions_mode = nil
-  end
-  group.overview_directions_models = nil
   group.overview_directions_model_lines = nil
-  group.overview_directions_selected_line = nil
-  local directions_discovery = group.overview_directions_model_process
-  group.overview_directions_model_process = nil
-  if directions_discovery
-    and type(directions_discovery.is_closing) == "function"
-    and not directions_discovery:is_closing()
-  then
-    pcall(directions_discovery.kill, directions_discovery, 15)
-  end
-  local directions = group.overview_directions_process
-  group.overview_directions_process = nil
-  if directions
-    and type(directions.is_closing) == "function"
-    and not directions:is_closing()
-  then
-    pcall(directions.kill, directions, 15)
-  end
   if return_to_overview and overview_window_is_open(group) then
     vim.api.nvim_set_current_win(group.overview_win)
   end
+end
+
+function M._overview_ui.restore_model_selection(group)
+  if group.overview_agent_mode ~= "models"
+    and group.overview_directions_mode ~= "models"
+  then
+    return false
+  end
+  local function restore(targets, selected_line, preferred)
+    if targets and selected_line and targets[selected_line] then
+      return selected_line
+    end
+    local first
+    local fallback
+    for line, model in pairs(targets or {}) do
+      if not first or line < first then
+        first = line
+      end
+      if model.id == preferred then
+        return line
+      end
+      if model.is_default and (not fallback or line < fallback) then
+        fallback = line
+      end
+    end
+    return fallback or first
+  end
+
+  local changed = false
+  local agent = require("oculus.agent")
+  local configured = agent.configured_model(agent.repository(group))
+  if group.overview_agent_mode == "models" then
+    local selected = restore(
+      group.overview_agent_model_lines,
+      group.overview_agent_selected_line,
+      configured
+    )
+    if selected ~= group.overview_agent_selected_line then
+      group.overview_agent_selected_line = selected
+      changed = true
+    end
+  end
+  if group.overview_directions_mode == "models" then
+    local selected = restore(
+      group.overview_directions_model_lines,
+      group.overview_directions_selected_line,
+      group.overview_agent_explanation_model or configured
+    )
+    if selected ~= group.overview_directions_selected_line then
+      group.overview_directions_selected_line = selected
+      changed = true
+    end
+  end
+  return changed
 end
 
 function M._overview_ui.render_models(group, models, err)
@@ -4350,9 +4355,22 @@ show_inspection_overview = function(group)
 
   group.overview_buf = buf
   M._overview_ui.render(group)
+  if M._overview_ui.restore_model_selection(group) then
+    M._overview_ui.render(group)
+  end
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_win = win
   M._overview_ui.render_footer(group)
+  if group.overview_agent_mode == "loading_models"
+    or group.overview_agent_mode == "generating"
+  then
+    M._overview_ui.start_agent_spinner(group)
+  end
+  if group.overview_directions_mode == "loading_model"
+    or group.overview_directions_mode == "generating"
+  then
+    M._overview_ui.start_directions_spinner(group)
+  end
   vim.api.nvim_create_autocmd("WinEnter", {
     group = sync_group,
     buffer = buf,
