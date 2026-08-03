@@ -680,6 +680,18 @@ assert(not commit_overview_text:find("Repository", 1, true))
 assert(not commit_overview_text:find("\nCommit\n", 1, true))
 assert(not commit_overview_text:find("Authored", 1, true))
 assert(not commit_overview_text:find("Changes", 1, true))
+local commit_agent_prompt = require("oculus.agent").prompt({
+  overview = commit_overview,
+  {
+    change_file = "lua/inspect.lua",
+    change_repository = root,
+    status = "M",
+    patch = "@@ -1 +1 @@\n-old behavior\n+new behavior",
+  },
+})
+assert(commit_agent_prompt:find("Repository: neovim/neovim", 1, true))
+assert(commit_agent_prompt:find("File: lua/inspect.lua", 1, true))
+assert(commit_agent_prompt:find("+new behavior", 1, true))
 do
   local main_config = require("oculus.window").window_config({})
   local commit_config = inspect._overview_window_config(
@@ -690,7 +702,7 @@ do
   assert(commit_config.height == main_config.height - 3)
   assert(commit_config.col == main_config.col + 6)
   assert(commit_config.row == main_config.row + 2)
-  assert(commit_config.footer == "─")
+  assert(commit_config.footer == " a agent ")
   assert(commit_config.footer_pos == "left")
   local pull_request_config = inspect._overview_window_config(
     main_config,
@@ -700,7 +712,7 @@ do
   assert(pull_request_config.height == main_config.height - 3)
   assert(pull_request_config.col == main_config.col + 6)
   assert(pull_request_config.row == main_config.row + 2)
-  assert(pull_request_config.footer == "─")
+  assert(pull_request_config.footer == " a agent ")
   assert(pull_request_config.footer_pos == "left")
 end
 
@@ -957,6 +969,49 @@ assert(issue_overview:find("Issue number", 1, true))
 assert(issue_overview:find("#77", 1, true))
 assert(issue_overview:find("Status", 1, true))
 assert(issue_overview:find("Open", 1, true))
+local agent = require("oculus.agent")
+local original_agent_explain = agent.explain
+local agent_request
+agent.explain = function(request, callback)
+  agent_request = request
+  callback(table.concat({
+    "The issue appears intended to make inspections useful even when",
+    "an activity item does not identify particular files.",
+  }, "\n"))
+  return {}
+end
+local agent_explanation_mapping = vim.fn.maparg(
+  "a",
+  "n",
+  false,
+  true
+)
+assert(agent_explanation_mapping.desc
+  == "Generate Oculus agent explanation")
+agent_explanation_mapping.callback()
+agent.explain = original_agent_explain
+assert(vim.fs.normalize(agent_request.cwd) == vim.fs.normalize(root))
+assert(agent_request.prompt:find(
+  "Repository: andrewgilley/oculus.nvim",
+  1,
+  true
+))
+assert(agent_request.prompt:find(
+  "No associated file changes are available",
+  1,
+  true
+))
+issue_overview = table.concat(
+  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
+  "\n"
+)
+assert(issue_overview:find("  Agent explanation\n", 1, true))
+assert(issue_overview:gsub("%s+", " "):find(
+  "The issue appears intended to make inspections useful even when an "
+    .. "activity item does not identify particular files.",
+  1,
+  true
+))
 
 local issue_main_win
 local issue_sidebar_win

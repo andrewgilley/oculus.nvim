@@ -2883,6 +2883,7 @@ local function sidebar_overview_lines(overview, width)
     "Date opened",
     overview_date(overview.created_at or details.authored_at)
   )
+  field("Agent explanation", overview.agent_explanation)
   if lines[#lines] == "" then
     table.remove(lines)
   end
@@ -3301,10 +3302,131 @@ local function overview_window_config(config, _)
       + math.ceil((config.height - height) / 2)
     config.height = height
   end
-  config.footer = "─"
+  config.footer = " a agent "
   config.footer_pos = "left"
   config.zindex = 70
   return config
+end
+
+M._overview_ui = {
+  section_labels = {
+    Title = true,
+    Description = true,
+    Author = true,
+    URL = true,
+    ["PR number"] = true,
+    ["Issue number"] = true,
+    Status = true,
+    ["Date opened"] = true,
+    ["Agent explanation"] = true,
+  },
+}
+
+function M._overview_ui.float_lines(overview, width)
+  local lines = sidebar_overview_lines(overview, width)
+  if lines[1] == "OVERVIEW" then
+    table.remove(lines, 1)
+    if lines[1] == "" then
+      table.remove(lines, 1)
+    end
+  end
+  return lines
+end
+
+function M._overview_ui.render(group)
+  local buf = group.overview_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local lines = M._overview_ui.float_lines(
+    group.overview,
+    group.overview_content_width or 28
+  )
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+  for index, line in ipairs(lines) do
+    local label = line:match("^  (.-)%s*$")
+    if M._overview_ui.section_labels[label] then
+      vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
+        end_col = #line,
+        hl_group = "OculusInspectOverviewSection",
+        priority = 100,
+      })
+    end
+  end
+  return lines
+end
+
+function M._overview_ui.scroll_to_bottom(group)
+  local win = group.overview_win
+  local buf = group.overview_buf
+  if not win
+    or not buf
+    or not vim.api.nvim_win_is_valid(win)
+    or not vim.api.nvim_buf_is_valid(buf)
+  then
+    return
+  end
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  local height = vim.api.nvim_win_get_height(win)
+  local topline = math.max(1, line_count - height + 2)
+  vim.api.nvim_win_set_cursor(win, { line_count, 0 })
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    view.topline = topline
+    vim.fn.winrestview(view)
+  end)
+end
+
+function M._overview_ui.request_explanation(group)
+  if group.overview_agent_pending then
+    return
+  end
+  local agent = require("oculus.agent")
+  local repository = agent.repository(group)
+  if not repository then
+    group.overview.agent_explanation =
+      "Agent explanation failed: local repository information is unavailable."
+    M._overview_ui.render(group)
+    M._overview_ui.scroll_to_bottom(group)
+    return
+  end
+
+  group.overview_agent_pending = true
+  group.overview.agent_explanation = "Generating agent explanation…"
+  M._overview_ui.render(group)
+  M._overview_ui.scroll_to_bottom(group)
+
+  local finished = false
+  local function finish(explanation, err)
+    if finished then
+      return
+    end
+    finished = true
+    group.overview_agent_pending = nil
+    group.overview_agent_process = nil
+    local normalized = agent.normalize(explanation)
+    group.overview.agent_explanation = normalized or (
+      "Agent explanation failed: "
+      .. tostring(err or "Codex returned no explanation")
+    )
+    if overview_window_is_open(group) then
+      M._overview_ui.render(group)
+      M._overview_ui.scroll_to_bottom(group)
+    end
+  end
+
+  local process, err = agent.explain({
+    cwd = repository,
+    prompt = agent.prompt(group),
+  }, finish)
+  if not process and not finished then
+    finish(nil, err)
+  elseif not finished then
+    group.overview_agent_process = process
+  end
 end
 
 show_inspection_overview = function(group)
@@ -3332,27 +3454,18 @@ show_inspection_overview = function(group)
     group.overview_window_config,
     group.overview
   )
-  local lines = sidebar_overview_lines(
-    group.overview,
+  group.overview_content_width =
     math.max(12, (config.width or 28) - 4)
-  )
-  if lines[1] == "OVERVIEW" then
-    table.remove(lines, 1)
-    if lines[1] == "" then
-      table.remove(lines, 1)
-    end
-  end
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "oculus-inspect-overview"
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
   vim.b[buf].oculus_inspect_overview = true
 
-  local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_buf = buf
+  M._overview_ui.render(group)
+  local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_win = win
   vim.api.nvim_create_autocmd("WinEnter", {
     group = sync_group,
@@ -3385,26 +3498,14 @@ show_inspection_overview = function(group)
     "FloatTitle:OculusBorder",
     "FloatFooter:OculusBorder",
   }, ",")
-  local section_labels = {
-    Title = true,
-    Description = true,
-    Author = true,
-    URL = true,
-    ["PR number"] = true,
-    ["Issue number"] = true,
-    Status = true,
-    ["Date opened"] = true,
-  }
-  for index, line in ipairs(lines) do
-    local label = line:match("^  (.-)%s*$")
-    if section_labels[label] then
-      vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
-        end_col = #line,
-        hl_group = "OculusInspectOverviewSection",
-        priority = 100,
-      })
-    end
-  end
+  vim.keymap.set("n", "a", function()
+    M._overview_ui.request_explanation(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Generate Oculus agent explanation",
+  })
   vim.keymap.set("n", "q", function()
     show_sidebar_files(group)
   end, {
@@ -4540,6 +4641,8 @@ local function open_tabs(
         hunks = paths.hunks,
         parent_content = vim.deepcopy(paths.parent_lines),
         change_content = vim.deepcopy(paths.change_lines),
+        patch = paths.patch,
+        status = paths.status,
         parent_lines = change_lines(paths.hunks, "parent"),
         change_lines = change_lines(paths.hunks),
         active_chunk = paths.hunks[1] and 1 or nil,
@@ -4814,6 +4917,7 @@ local function read_revision_diff(
             change_file = read.change_file,
             parent_lines = read.parent_lines,
             change_lines = read.change_lines,
+            patch = read.patch,
             changes = changed_files,
             hunks = parse_hunks(read.patch),
             commit_index = commit_index,
