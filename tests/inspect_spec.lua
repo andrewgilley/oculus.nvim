@@ -156,6 +156,43 @@ for group, expected in pairs({
   assert(sign_highlight.fg == expected.fg)
   assert(sign_highlight.bg == expected.bg)
 end
+do
+  local parent_buf = vim.api.nvim_create_buf(false, true)
+  local change_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(change_buf, 0, -1, false, { "one", "two" })
+  local addition = {
+    old_start = 0,
+    old_count = 0,
+    new_start = 1,
+    new_count = 2,
+  }
+  inspect._apply_change_signs(parent_buf, change_buf, { addition }, "A")
+  local signs = vim.api.nvim_get_namespaces().oculus_inspect_changes
+  assert(#vim.api.nvim_buf_get_extmarks(
+    parent_buf,
+    signs,
+    0,
+    -1,
+    {}
+  ) == 0)
+  assert(#vim.api.nvim_buf_get_extmarks(
+    change_buf,
+    signs,
+    0,
+    -1,
+    {}
+  ) == 0)
+  inspect._apply_change_signs(parent_buf, change_buf, { addition }, "M")
+  assert(#vim.api.nvim_buf_get_extmarks(
+    change_buf,
+    signs,
+    0,
+    -1,
+    {}
+  ) == 2)
+  vim.api.nvim_buf_delete(parent_buf, { force = true })
+  vim.api.nvim_buf_delete(change_buf, { force = true })
+end
 assert(vim.api.nvim_get_hl(
   0,
   { name = "OculusInspectCursorLine", link = false }
@@ -602,8 +639,17 @@ assert(pull_request_overview_text:find(
   true
 ))
 assert(pull_request_overview_text:match("^OVERVIEW\n"))
-assert(pull_request_overview_text:find("Test pull request", 1, true))
+assert(pull_request_overview_text:gsub("%s+", " "):find(
+  "PR #123 · Test pull request",
+  1,
+  true
+))
 assert(pull_request_overview_text:find("#123", 1, true))
+assert(pull_request_overview_text:find(
+  "\n  Title\n  PR #123 · Test pull",
+  1,
+  true
+))
 assert(pull_request_overview_text:find("@reviewer", 1, true))
 assert(pull_request_overview_text:find(
   "This pull request improves",
@@ -666,8 +712,13 @@ local commit_overview_text = table.concat(
   "\n"
 )
 assert(commit_overview_text:match("^OVERVIEW\n"))
+assert(commit_overview_text:gsub("%s+", " "):find(
+  "Commit bbbbbbb · Keep Inspect context visible",
+  1,
+  true
+))
 assert(commit_overview_text:find(
-  "Keep Inspect context",
+  "\n  Title\n  Commit bbbbbbb · Keep",
   1,
   true
 ))
@@ -1106,7 +1157,16 @@ assert(vim.deep_equal(
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
-assert(issue_overview:find("Issue inspect fixture", 1, true))
+assert(issue_overview:gsub("%s+", " "):find(
+  "Issue #77 · Issue inspect fixture",
+  1,
+  true
+))
+assert(issue_overview:find(
+  "  Title\n  Issue #77 · Issue inspect fixture",
+  1,
+  true
+))
 assert(issue_overview:find("  Description\n", 1, true))
 issue_overview = issue_overview:gsub("%s+", " ")
 assert(issue_overview:find("The issue information should open", 1, true))
@@ -2383,13 +2443,6 @@ if integration_root and (integration_sha or integration_url) then
     -1,
     { details = true }
   )
-  assert(#parent_marks > 0)
-  local parent_sign = vim.trim(parent_marks[1][4].sign_text)
-  assert(parent_sign == "-" or parent_sign == "+")
-  assert(parent_marks[1][4].sign_hl_group
-    == (parent_sign == "-"
-        and "OculusInspectRemoved"
-      or "OculusInspectAdded"))
   assert(vim.wo[parent_win].signcolumn == "yes")
   local change_marks = vim.api.nvim_buf_get_extmarks(
     change_buf,
@@ -2398,12 +2451,24 @@ if integration_root and (integration_sha or integration_url) then
     -1,
     {}
   )
-  assert(#change_marks > 0)
   assert(vim.wo[change_win].signcolumn == "yes")
-  assert(vim.api.nvim_win_get_cursor(parent_win)[1] == math.min(
-    parent_marks[1][2] + 1,
-    vim.api.nvim_buf_line_count(parent_buf)
-  ))
+  if change_state.status == "A" then
+    assert(#parent_marks == 0)
+    assert(#change_marks == 0)
+  else
+    assert(#parent_marks > 0)
+    local parent_sign = vim.trim(parent_marks[1][4].sign_text)
+    assert(parent_sign == "-" or parent_sign == "+")
+    assert(parent_marks[1][4].sign_hl_group
+      == (parent_sign == "-"
+          and "OculusInspectRemoved"
+        or "OculusInspectAdded"))
+    assert(#change_marks > 0)
+    assert(vim.api.nvim_win_get_cursor(parent_win)[1] == math.min(
+      parent_marks[1][2] + 1,
+      vim.api.nvim_buf_line_count(parent_buf)
+    ))
+  end
   local jump_maps = vim.api.nvim_buf_get_keymap(change_buf, "n")
   local previous_mapped = false
   local next_mapped = false

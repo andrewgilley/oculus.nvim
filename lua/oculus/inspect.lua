@@ -1974,10 +1974,13 @@ vim.api.nvim_create_autocmd("ColorScheme", {
   callback = set_change_highlights,
 })
 
-local function apply_change_signs(parent_buf, change_buf, hunks)
+local function apply_change_signs(parent_buf, change_buf, hunks, status)
   set_change_highlights()
   vim.api.nvim_buf_clear_namespace(parent_buf, change_ns, 0, -1)
   vim.api.nvim_buf_clear_namespace(change_buf, change_ns, 0, -1)
+  if status == "A" then
+    return
+  end
 
   for _, hunk in ipairs(hunks or {}) do
     place_range(
@@ -2120,7 +2123,7 @@ local function render_focused_chunk(session, chunk_index)
       new_start = start,
       new_count = hunk.new_count,
     },
-  })
+  }, session.status)
   refresh_buffer_highlighting(session.change.buf)
   return start
 end
@@ -2138,7 +2141,8 @@ local function render_full_file(session)
   apply_change_signs(
     session.parent.buf,
     session.change.buf,
-    session.hunks
+    session.hunks,
+    session.status
   )
   refresh_buffer_highlighting(session.change.buf)
   return true
@@ -2815,10 +2819,25 @@ local function sidebar_overview_lines(overview, width)
         and value
       or fallback
   end
-  field("Title", value_or(
+  local title = value_or(
     (is_pull_request or is_issue) and overview.title or details.subject,
     "Untitled"
-  ))
+  )
+  local identifier
+  if is_pull_request and overview.number then
+    identifier = "PR #" .. tostring(overview.number)
+  elseif is_issue and overview.number then
+    identifier = "Issue #" .. tostring(overview.number)
+  elseif not is_pull_request and not is_issue then
+    local sha = details.sha or overview.sha
+    if type(sha) == "string" and sha ~= "" then
+      identifier = "Commit " .. sha:sub(1, 7)
+    end
+  end
+  if identifier and not title:find(identifier, 1, true) then
+    title = identifier .. " · " .. title
+  end
+  field("Title", title)
   field("Description", value_or(
     (is_pull_request or is_issue) and overview.body or details.body,
     "No description provided."
@@ -5593,7 +5612,7 @@ local function open_tabs(
           and render_focused_chunk(session, session.active_chunk)
         or nil
       if not focused_start then
-        apply_change_signs(parent.buf, change.buf, {})
+        apply_change_signs(parent.buf, change.buf, {}, session.status)
       end
       map_file_navigation(
         parent,
@@ -6296,6 +6315,7 @@ M._entered_oil_subdirectory = entered_oil_subdirectory
 M._first_changed_oil_file_line = first_changed_oil_file_line
 M._change_lines = change_lines
 M._focused_change_lines = focused_change_lines
+M._apply_change_signs = apply_change_signs
 M._prevent_window_dimming = prevent_window_dimming
 M._preserve_cursorline_text_highlighting =
   preserve_cursorline_text_highlighting
