@@ -746,6 +746,41 @@ assert(not directions_chunk_prompt:find(
   1,
   true
 ))
+local chronological_agent_buf = vim.api.nvim_create_buf(false, true)
+local chronological_agent_group = {
+  overview = commit_overview,
+  overview_buf = chronological_agent_buf,
+  overview_content_width = 48,
+  overview_agent_mode = "explanation",
+  overview_agent_explanation_model = "gpt-5.6-test-agent",
+  overview_agent_explanation = "Explanation generated second.",
+  overview_directions_mode = "directions",
+  overview_directions_model = "gpt-5.6-test-agent",
+  overview_directions_text = "Directions generated first.",
+}
+inspect._overview_ui.mark_section_generated(
+  chronological_agent_group,
+  "overview_directions_section_order"
+)
+inspect._overview_ui.mark_section_generated(
+  chronological_agent_group,
+  "overview_agent_section_order"
+)
+inspect._overview_ui.render(chronological_agent_group)
+local chronological_agent_text = table.concat(
+  vim.api.nvim_buf_get_lines(chronological_agent_buf, 0, -1, false),
+  "\n"
+)
+assert(chronological_agent_text:find(
+  "Agent directions",
+  1,
+  true
+) < chronological_agent_text:find(
+  "Agent explanation",
+  1,
+  true
+))
+vim.api.nvim_buf_delete(chronological_agent_buf, { force = true })
 assert(require("oculus.agent").model_from_stderr(table.concat({
   "OpenAI Codex",
   "model: gpt-test-agent",
@@ -1064,7 +1099,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  a agent   d directions",
+    "  e explanation   d directions",
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
@@ -1129,13 +1164,13 @@ local function finish_agent_explanation()
   }), nil, { model = "gpt-5.6-test-agent" })
 end
 local agent_explanation_mapping = vim.fn.maparg(
-  "a",
+  "e",
   "n",
   false,
   true
 )
 assert(agent_explanation_mapping.desc
-  == "Choose Oculus agent model")
+  == "Choose Oculus explanation model")
 local overview_config = vim.api.nvim_win_get_config(overview_win)
 agent_explanation_mapping.callback()
 local loading_models_text = table.concat(
@@ -2312,20 +2347,6 @@ if integration_root and (integration_sha or integration_url) then
   local namespaces = vim.api.nvim_get_namespaces()
   local signs = namespaces.oculus_inspect_changes
   assert(signs)
-  local function first_changed_sign_line(buf)
-    local first
-    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
-      buf,
-      signs,
-      0,
-      -1,
-      {}
-    )) do
-      local line = mark[2] + 1
-      first = not first and line or math.min(first, line)
-    end
-    return first
-  end
   local parent_marks = vim.api.nvim_buf_get_extmarks(
     parent_buf,
     signs,
@@ -3079,8 +3100,8 @@ if integration_root and (integration_sha or integration_url) then
       and vim.api.nvim_get_current_win() == sidebar_parent_win
       and active.chunk_index == selected_chunk
   end), "sidebar chunk did not open in the main pane")
-  local selected_parent_line =
-    vim.api.nvim_win_get_cursor(parent_win)[1]
+  local selected_parent_cursor = vim.api.nvim_win_get_cursor(parent_win)
+  local selected_parent_line = selected_parent_cursor[1]
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.chunk_index == selected_chunk)
   local selected_view = vim.api.nvim_win_call(
@@ -3111,15 +3132,7 @@ if integration_root and (integration_sha or integration_url) then
     )[1]:find("%S") or 1) - 1))
   do
     local cursor = vim.api.nvim_win_get_cursor(change_win)
-    local cursor_text = vim.api.nvim_buf_get_lines(
-      change_buf,
-      cursor[1] - 1,
-      cursor[1],
-      false
-    )[1]
-    assert(cursor[1] == first_changed_sign_line(change_buf))
-    assert(cursor[2]
-      == math.max(0, (cursor_text:find("%S") or 1) - 1))
+    assert(vim.deep_equal(cursor, initial_cursor))
   end
   assert(vim.fn.winsaveview().topline
     == parent_sidebar_view.topline)
@@ -3133,15 +3146,7 @@ if integration_root and (integration_sha or integration_url) then
     == selected_chunk_line)
   do
     local cursor = vim.api.nvim_win_get_cursor(parent_win)
-    local cursor_text = vim.api.nvim_buf_get_lines(
-      parent_buf,
-      cursor[1] - 1,
-      cursor[1],
-      false
-    )[1]
-    assert(cursor[1] == first_changed_sign_line(parent_buf))
-    assert(cursor[2]
-      == math.max(0, (cursor_text:find("%S") or 1) - 1))
+    assert(vim.deep_equal(cursor, selected_parent_cursor))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
@@ -3169,15 +3174,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   do
     local cursor = vim.api.nvim_win_get_cursor(change_win)
-    local cursor_text = vim.api.nvim_buf_get_lines(
-      change_buf,
-      cursor[1] - 1,
-      cursor[1],
-      false
-    )[1]
-    assert(cursor[1] == first_changed_sign_line(change_buf))
-    assert(cursor[2]
-      == math.max(0, (cursor_text:find("%S") or 1) - 1))
+    assert(vim.deep_equal(cursor, initial_cursor))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
@@ -3194,15 +3191,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   do
     local cursor = vim.api.nvim_win_get_cursor(parent_win)
-    local cursor_text = vim.api.nvim_buf_get_lines(
-      parent_buf,
-      cursor[1] - 1,
-      cursor[1],
-      false
-    )[1]
-    assert(cursor[1] == first_changed_sign_line(parent_buf))
-    assert(cursor[2]
-      == math.max(0, (cursor_text:find("%S") or 1) - 1))
+    assert(vim.deep_equal(cursor, selected_parent_cursor))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")

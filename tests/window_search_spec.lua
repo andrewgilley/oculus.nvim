@@ -402,6 +402,23 @@ assert(direct_commit.type == "PushEvent")
 assert(direct_commit.repo.name == "folke/lazy.nvim")
 assert(direct_commit.actor.login == "folke")
 assert(direct_commit.payload.commits[1].sha == "directcommit")
+assert(github._push_needs_enrichment({
+  type = "PushEvent",
+  payload = {
+    size = 10,
+    commits = {
+      { sha = "one" },
+      { sha = "two" },
+      { sha = "three" },
+      { sha = "four" },
+      { sha = "five" },
+    },
+  },
+}))
+assert(not github._push_needs_enrichment({
+  type = "PushEvent",
+  payload = { size = 5, commits = { {}, {}, {}, {}, {} } },
+}))
 local direct_pull_request = github._project_pull_request_event(
   "folke/lazy.nvim",
   {
@@ -462,6 +479,42 @@ do
   })
   assert(merged_pull_request.payload.pull_request.merged_by.login
     == "codeberg-merger")
+  local partial_push = codeberg.normalize_activity({
+    id = 43,
+    op_type = "commit_repo",
+    act_user = { login = "codeberg-author" },
+    repo = {
+      full_name = "ziglang/zig",
+      html_url = "https://codeberg.org/ziglang/zig",
+    },
+    content = vim.json.encode({
+      Len = 10,
+      CompareURL = "/ziglang/zig/compare/old...new",
+      HeadCommit = { Sha1 = "commit10", Message = "Commit 10" },
+      Commits = {
+        { Sha1 = "commit1", Message = "Commit 1" },
+        { Sha1 = "commit2", Message = "Commit 2" },
+        { Sha1 = "commit3", Message = "Commit 3" },
+        { Sha1 = "commit4", Message = "Commit 4" },
+        { Sha1 = "commit5", Message = "Commit 5" },
+      },
+    }),
+    created = "2026-08-01T12:00:00Z",
+  })
+  assert(codeberg._push_needs_enrichment(partial_push))
+  local comparison_commits = {}
+  for index = 1, 10 do
+    comparison_commits[index] = {
+      sha = "commit" .. index,
+      commit = { message = "Commit " .. index },
+    }
+  end
+  assert(codeberg._apply_push_comparison(partial_push, {
+    total_commits = 10,
+    commits = comparison_commits,
+  }))
+  assert(#partial_push.payload.commits == 10)
+  assert(not codeberg._push_needs_enrichment(partial_push))
 end
 local original_events = github.events
 local original_enrich_pull_requests = github.enrich_pull_requests
@@ -500,17 +553,22 @@ for index = 1, 20 do
     payload = {
       ref = "refs/heads/main",
       before = "00000000",
-      head = "eeeeeeee",
-      size = 5,
+      head = "44444444",
+      size = 10,
       commits = {
         { sha = "aaaaaaaa", message = "First grouped commit" },
         { sha = "bbbbbbbb", message = "Second grouped commit" },
         { sha = "cccccccc", message = "Third grouped commit" },
         { sha = "dddddddd", message = "Fourth grouped commit" },
         { sha = "eeeeeeee", message = "Fifth grouped commit" },
+        { sha = "ffffffff", message = "Sixth grouped commit" },
+        { sha = "11111111", message = "Seventh grouped commit" },
+        { sha = "22222222", message = "Eighth grouped commit" },
+        { sha = "33333333", message = "Ninth grouped commit" },
+        { sha = "44444444", message = "Tenth grouped commit" },
       },
     },
-    url = "https://github.com/example/repository/commit/eeeeeeee",
+    url = "https://github.com/example/repository/commit/44444444",
     group_url =
       "https://github.com/example/repository/compare/aaaaaaaa...eeeeeeee",
   } or {
@@ -607,14 +665,14 @@ assert(expansion_detail_line)
 vim.api.nvim_win_set_cursor(state.win, { expansion_detail_line, 0 })
 vim.fn.maparg("l", "n", false, true).callback()
 assert(state.activity_commit_page == true)
-assert(#state.events == 5)
+assert(#state.events == 10)
 vim.fn.maparg("j", "n", false, true).callback()
 assert(state.activity_commit_page == false)
 assert(vim.api.nvim_win_get_cursor(state.win)[1] == expansion_detail_line)
 vim.api.nvim_win_set_cursor(state.win, { expansion_line, 0 })
 vim.fn.maparg("<Right>", "n", false, true).callback()
 assert(state.activity_commit_page == true)
-assert(#state.events == 5)
+assert(#state.events == 10)
 vim.fn.maparg("j", "n", false, true).callback()
 assert(state.activity_commit_page == false)
 assert(vim.api.nvim_win_get_cursor(state.win)[1] == expansion_line)
@@ -622,12 +680,12 @@ vim.api.nvim_win_set_cursor(state.win, { expansion_line, 0 })
 select_mapping.callback()
 assert(state.view == "activity")
 assert(state.activity_commit_page == true)
-assert(#state.events == 5)
+assert(#state.events == 10)
 local commit_page_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(not commit_page_lines:find("5 commits", 1, true))
+assert(not commit_page_lines:find("10 commits", 1, true))
 assert(not commit_page_lines:find("pushed 1 commit", 1, true))
 assert(commit_page_lines:find(
   "pushed commit to example/repository",
@@ -639,7 +697,18 @@ for index, event in ipairs(state.events) do
   assert(event.payload.size == 1)
   assert(#event.payload.commits == 1)
   assert(event.payload.head
-    == ({ "aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd", "eeeeeeee" })[index])
+    == ({
+      "aaaaaaaa",
+      "bbbbbbbb",
+      "cccccccc",
+      "dddddddd",
+      "eeeeeeee",
+      "ffffffff",
+      "11111111",
+      "22222222",
+      "33333333",
+      "44444444",
+    })[index])
   local found_url = false
   for _, url in pairs(state.line_targets) do
     if

@@ -338,6 +338,19 @@ local function apply_push_details(event, details)
   event.payload.commits = details.commits
 end
 
+local function push_needs_enrichment(event)
+  if event.type ~= "PushEvent" then
+    return false
+  end
+  local payload = event.payload or {}
+  local commits = payload.commits
+  if type(commits) ~= "table" or #commits == 0 then
+    return true
+  end
+  local expected = tonumber(payload.size or payload.distinct_size)
+  return expected ~= nil and expected > #commits
+end
+
 function M.apply_push_comparison(event, comparison)
   local commits = {}
   for _, commit in ipairs(comparison.commits or {}) do
@@ -480,11 +493,7 @@ function M.enrich_pushes(events, opts, callback)
     if selected >= limit then
       break
     end
-    local commits = event.payload and event.payload.commits
-    if
-      event.type == "PushEvent"
-      and (type(commits) ~= "table" or #commits == 0)
-    then
+    if push_needs_enrichment(event) then
       local key = push_key(event)
       if key then
         selected = selected + 1
@@ -630,5 +639,6 @@ end
 
 M._project_commit_event = project_commit_event
 M._project_pull_request_event = project_pull_request_event
+M._push_needs_enrichment = push_needs_enrichment
 
 return M

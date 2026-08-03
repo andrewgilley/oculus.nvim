@@ -2242,16 +2242,6 @@ local function move_cursor_to_line_start(win)
   end)
 end
 
-local function place_version_switch_cursor(endpoint, line)
-  if not valid_endpoint(endpoint) then
-    return
-  end
-  if line then
-    set_change_cursor(endpoint.win, line)
-  end
-  move_cursor_to_line_start(endpoint.win)
-end
-
 local function inspection_chunks(group, session)
   return group.kind == "issue"
       and (session.sections or {})
@@ -2349,25 +2339,6 @@ local function chunk_start_for_role(
   return change_start
 end
 
-local function version_switch_line(session, role, chunk_index)
-  local hunk = session.hunks and session.hunks[chunk_index] or nil
-  if not hunk then
-    return
-  end
-  local change_start
-  if not session.focused_chunks or chunk_index ~= session.active_chunk then
-    change_start = render_focused_chunk(session, chunk_index)
-  else
-    change_start = session.focused_start or focused_hunk_start(hunk)
-  end
-  return chunk_start_for_role(
-    hunk,
-    role,
-    change_start,
-    session.change_content
-  )
-end
-
 local function render_chunk_for_role(session, role, chunk_index)
   local hunk = session.hunks and session.hunks[chunk_index] or nil
   if not hunk then
@@ -2409,16 +2380,8 @@ end
 
 local function map_file_navigation(endpoint, session, role, group)
   local function toggle_version()
-    local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
-    local chunk_index = hunk_index_at_line(session, role, line)
-      or session.active_chunk
-      or (session.hunks and session.hunks[1] and 1)
     local target = role == "parent" and session.change or session.parent
     local target_role = role == "parent" and "change" or "parent"
-    local target_line = chunk_index
-        and version_switch_line(session, target_role, chunk_index)
-      or nil
-    place_version_switch_cursor(target, target_line)
     select_endpoint(target, session, target_role, group)
   end
   local version_lhs = group.version_switch
@@ -3408,7 +3371,7 @@ function M._overview_ui.render_footer(group)
   end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  a agent   d directions",
+    "  e explanation   d directions",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, footer_lines)
@@ -3486,7 +3449,10 @@ function M._overview_ui.render(group)
   group.overview_directions_model_lines = nil
   group.overview_agent_heading_line = nil
   group.overview_directions_heading_line = nil
-  if group.overview_agent_mode then
+  local function append_explanation()
+    if not group.overview_agent_mode then
+      return
+    end
     lines[#lines + 1] = ""
     local heading = "  Agent explanation"
     if (group.overview_agent_mode == "explanation"
@@ -3551,7 +3517,11 @@ function M._overview_ui.render(group)
       end
     end
   end
-  if group.overview_directions_mode then
+
+  local function append_directions()
+    if not group.overview_directions_mode then
+      return
+    end
     lines[#lines + 1] = ""
     local heading = "  Agent directions"
     if (group.overview_directions_mode == "directions"
@@ -3590,6 +3560,26 @@ function M._overview_ui.render(group)
         "  "
       )
     end
+  end
+
+  local directions_first = group.overview_directions_mode
+    and (
+      not group.overview_agent_mode
+      or (
+        group.overview_directions_section_order ~= nil
+        and (
+          group.overview_agent_section_order == nil
+          or group.overview_directions_section_order
+            < group.overview_agent_section_order
+        )
+      )
+    )
+  if directions_first then
+    append_directions()
+    append_explanation()
+  else
+    append_explanation()
+    append_directions()
   end
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -4060,6 +4050,7 @@ function M._overview_ui.open_model_picker(group)
   group.overview_agent_explanation_model = nil
   group.overview_agent_include_locations = nil
   group.overview_agent_locations = nil
+  group.overview_agent_section_order = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_agent_spinner(group)
@@ -4075,6 +4066,11 @@ function M._overview_ui.open_model_picker(group)
   end
 end
 
+function M._overview_ui.mark_section_generated(group, key)
+  group.overview_section_sequence = (group.overview_section_sequence or 0) + 1
+  group[key] = group.overview_section_sequence
+end
+
 function M._overview_ui.render_explanation(
   group,
   model,
@@ -4088,6 +4084,10 @@ function M._overview_ui.render_explanation(
   M._overview_ui.stop_agent_spinner(group)
   group.overview_agent_explanation_model = model
   if text then
+    M._overview_ui.mark_section_generated(
+      group,
+      "overview_agent_section_order"
+    )
     group.overview_agent_mode = "explanation"
     group.overview_agent_explanation = text
     group.overview_agent_locations = {}
@@ -4255,6 +4255,10 @@ function M._overview_ui.generate_directions(group, model)
     group.overview_directions_mode = "directions"
     group.overview_directions_model = metadata and metadata.model or model.id
     group.overview_directions_text = text
+    M._overview_ui.mark_section_generated(
+      group,
+      "overview_directions_section_order"
+    )
     M._overview_ui.render(group)
     M._overview_ui.scroll_to_bottom(group)
   end
@@ -4295,6 +4299,7 @@ function M._overview_ui.open_directions(group)
   group.overview_directions_model_lines = nil
   group.overview_directions_selected_line = nil
   group.overview_directions_text = nil
+  group.overview_directions_section_order = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_directions_spinner(group)
@@ -4402,13 +4407,13 @@ show_inspection_overview = function(group)
     "FloatTitle:OculusBorder",
     "FloatFooter:OculusBorder",
   }, ",")
-  vim.keymap.set("n", "a", function()
+  vim.keymap.set("n", "e", function()
     M._overview_ui.open_model_picker(group)
   end, {
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Choose Oculus agent model",
+    desc = "Choose Oculus explanation model",
   })
   vim.keymap.set("n", "d", function()
     M._overview_ui.open_directions(group)
@@ -5094,18 +5099,11 @@ switch_sidebar_version = function(group)
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
-  local chunk_index = entry
-      and entry.chunk_index
-    or session and session.active_chunk
-    or (session and session.hunks and session.hunks[1] and 1)
   local target_role = role == "parent" and "change" or "parent"
   local endpoint = session and session[target_role] or nil
   if not valid_endpoint(endpoint) then
     return
   end
-  local target_line = chunk_index
-      and version_switch_line(session, target_role, chunk_index)
-    or nil
   ensure_inspection_sidebar_on_tab(group, endpoint.tab)
   local sidebar_win = group.sidebar_windows[endpoint.tab]
   if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
@@ -5118,7 +5116,6 @@ switch_sidebar_version = function(group)
   end)
   remember_session_role(session, target_role)
   sidebar_navigating = true
-  place_version_switch_cursor(endpoint, target_line)
   vim.api.nvim_win_set_cursor(sidebar_win, { line, 0 })
   source_view.lnum = line
   source_view.col = 0

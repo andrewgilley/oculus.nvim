@@ -4,6 +4,7 @@ local M = {}
 local cache = {}
 local repository_cache = {}
 local activity_pull_request_cache = {}
+local push_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
 local base_url = "https://codeberg.org"
@@ -504,10 +505,102 @@ function M.enrich_pull_requests(events, opts, callback)
   end
 end
 
-function M.enrich_pushes(events, _, callback)
-  vim.schedule(function()
-    callback(events)
-  end)
+local function push_needs_enrichment(event)
+  if event.type ~= "PushEvent" then
+    return false
+  end
+  local payload = event.payload or {}
+  local commits = payload.commits
+  if type(commits) ~= "table" or #commits == 0 then
+    return true
+  end
+  local expected = tonumber(payload.size)
+  return expected ~= nil and expected > #commits
+end
+
+local function push_comparison_key(event)
+  local repository_name = event.repo and event.repo.name
+  local comparison_url = event.group_url
+  local basehead = type(comparison_url) == "string"
+      and comparison_url:match("/compare/([^/?#]+)")
+    or nil
+  if not repository_name or not basehead then
+    return nil
+  end
+  return repository_name .. ":" .. basehead, repository_name, basehead
+end
+
+local function apply_push_comparison(event, comparison)
+  local commits = {}
+  for _, commit in ipairs(comparison.commits or {}) do
+    local details = type(commit.commit) == "table" and commit.commit or {}
+    if type(commit.sha) == "string" and commit.sha ~= "" then
+      commits[#commits + 1] = {
+        sha = commit.sha,
+        message = details.message or commit.message,
+      }
+    end
+  end
+  if #commits == 0 then
+    return false
+  end
+  event.payload = event.payload or {}
+  event.payload.commits = commits
+  event.payload.size = tonumber(event.payload.size)
+    or tonumber(comparison.total_commits)
+    or #commits
+  return true
+end
+
+function M.enrich_pushes(events, opts, callback)
+  opts = opts or {}
+  local limit = opts.push_detail_limit or 10
+  local pending = 0
+  local selected = 0
+
+  local function complete()
+    pending = pending - 1
+    if pending == 0 then
+      callback(events)
+    end
+  end
+
+  for _, event in ipairs(events) do
+    if selected >= limit then
+      break
+    end
+    if push_needs_enrichment(event) then
+      local key, repository_name, basehead = push_comparison_key(event)
+      if key then
+        selected = selected + 1
+        local cached = push_cache[key]
+        if type(cached) == "table" then
+          apply_push_comparison(event, cached)
+        elseif cached == nil then
+          pending = pending + 1
+          local url = ("%s/api/v1/repos/%s/compare/%s"):format(
+            base_url,
+            repository_name,
+            basehead
+          )
+          request_json(url, opts, function(comparison)
+            if comparison and apply_push_comparison(event, comparison) then
+              push_cache[key] = comparison
+            else
+              push_cache[key] = false
+            end
+            complete()
+          end)
+        end
+      end
+    end
+  end
+
+  if pending == 0 then
+    vim.schedule(function()
+      callback(events)
+    end)
+  end
 end
 
 function M.pull_request(repo, number, opts, callback)
@@ -620,6 +713,9 @@ end
 function M.clear(username)
   cache[username] = nil
 end
+
+M._apply_push_comparison = apply_push_comparison
+M._push_needs_enrichment = push_needs_enrichment
 
 return M
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 2
