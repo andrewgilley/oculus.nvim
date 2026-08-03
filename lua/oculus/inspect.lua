@@ -2577,8 +2577,9 @@ end
 
 local function inspection_overview(info)
   local overview = vim.deepcopy(info or {})
-  local route = overview.kind == "pull_request"
-      and (
+  local route = overview.kind == "issue"
+      and ("issues/" .. tostring(overview.number))
+    or overview.kind == "pull_request" and (
         overview.forge == "codeberg"
             and ("pulls/" .. tostring(overview.number))
           or ("pull/" .. tostring(overview.number))
@@ -2650,6 +2651,7 @@ local function sidebar_overview_lines(overview, width)
   width = math.max(12, tonumber(width) or 28)
   local details = overview.commit_details or {}
   local is_pull_request = overview.kind == "pull_request"
+  local is_issue = overview.kind == "issue"
   local lines = {
     "OVERVIEW",
     "",
@@ -2668,15 +2670,15 @@ local function sidebar_overview_lines(overview, width)
       or fallback
   end
   field("Title", value_or(
-    is_pull_request and overview.title or details.subject,
+    (is_pull_request or is_issue) and overview.title or details.subject,
     "Untitled"
   ))
   field("Description", value_or(
-    is_pull_request and overview.body or details.body,
+    (is_pull_request or is_issue) and overview.body or details.body,
     "No description provided."
   ))
   local author
-  if is_pull_request then
+  if is_pull_request or is_issue then
     author = overview.author and ("@" .. overview.author)
   else
     author = details.author_name or ""
@@ -2686,8 +2688,11 @@ local function sidebar_overview_lines(overview, width)
   end
   field("Author", value_or(author, "Unknown"))
   field("URL", overview.url)
-  if is_pull_request then
-    field("PR number", "#" .. tostring(overview.number or ""))
+  if is_pull_request or is_issue then
+    field(
+      is_issue and "Issue number" or "PR number",
+      "#" .. tostring(overview.number or "")
+    )
     local status = overview.merged and "Merged"
       or overview.draft and "Draft"
       or (
@@ -2901,9 +2906,7 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
-  if group.kind ~= "issue" then
-    vim.wo[win].statusline = inspection_sidebar_statusline_option
-  end
+  vim.wo[win].statusline = inspection_sidebar_statusline_option
   prevent_window_dimming(win)
   group.sidebar_windows[endpoint.tab] = win
   if saved_state then
@@ -3207,6 +3210,7 @@ show_inspection_overview = function(group)
     Author = true,
     URL = true,
     ["PR number"] = true,
+    ["Issue number"] = true,
     Status = true,
   }
   for index, line in ipairs(lines) do
@@ -4768,93 +4772,70 @@ local function resolve_issue_details(info, opts, context, callback)
   )
 end
 
-local function append_issue_text(lines, text, fallback)
-  if type(text) ~= "string" or vim.trim(text) == "" then
-    lines[#lines + 1] = fallback
-    return
-  end
-  for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
-    lines[#lines + 1] = line:gsub("\r$", "")
-  end
-end
-
-local function issue_page_lines(info, details)
-  local number = details.number or info.number
-  local title = type(details.title) == "string"
-      and vim.trim(details.title)
-    or ""
-  if title == "" then
-    title = ("Issue #%s"):format(number)
-  end
-  local url = details.html_url
-    or ("https://%s/%s/%s/issues/%s"):format(
-      info.host,
-      info.owner,
-      info.repo,
-      number
-    )
-  local lines = {
-    "# " .. title,
-    "",
-    ("- Repository: `%s/%s`"):format(info.owner, info.repo),
-    ("- Issue: `#%s`"):format(number),
-    ("- Forge: `%s`"):format(info.forge),
-    ("- URL: %s"):format(url),
-    "",
-    "## Description",
-    "",
-  }
-  append_issue_text(lines, details.body, "_No description was provided._")
-  if type(details.comment) == "string"
-    and vim.trim(details.comment) ~= ""
-  then
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "## Activity comment"
-    lines[#lines + 1] = ""
-    append_issue_text(lines, details.comment, "")
-  end
-  return lines
-end
-
-local function open_issue_page(
+local function open_issue_inspection(
   info,
   details,
+  repository,
   loading,
   number_options,
+  opts,
   done
 )
   local staging_tab = vim.api.nvim_get_current_tabpage()
   local staging_win = vim.api.nvim_get_current_win()
   local page
   local ok, err = pcall(function()
-    vim.cmd("tabnew")
-    local tab = vim.api.nvim_get_current_tabpage()
-    local win = vim.api.nvim_get_current_win()
-    local buf = vim.api.nvim_get_current_buf()
+    local resolved = vim.deepcopy(info)
+    for _, key in ipairs({
+      "number",
+      "title",
+      "body",
+      "author",
+      "state",
+      "html_url",
+    }) do
+      if details[key] ~= nil then
+        resolved[key] = details[key]
+      end
+    end
+    if type(details.comment) == "string"
+      and vim.trim(details.comment) ~= ""
+    then
+      local description = type(resolved.body) == "string"
+          and vim.trim(resolved.body)
+        or ""
+      resolved.body = description ~= ""
+          and (description .. "\n\nActivity comment\n" .. details.comment)
+        or details.comment
+    end
+
+    local group = {
+      kind = "issue",
+      sidebar_toggle = opts.inspect_sidebar_toggle,
+      sidebar_width_proportion = opts.inspect_sidebar_width,
+      overview_toggle = opts.inspect_overview_toggle,
+      version_switch = opts.inspect_version_switch,
+      next_chunk = opts.inspect_next_chunk,
+      previous_chunk = opts.inspect_previous_chunk,
+      overview = inspection_overview(resolved),
+      overview_window_config =
+        require("oculus.window").window_config(opts),
+    }
+    local session = {
+      file = ("Issue #%s"):format(details.number or info.number),
+      repository = repository,
+      sections = {},
+      last_role = "issue",
+    }
+    group[1] = session
+    prepare_inspection_sidebar(group)
+
+    local endpoint = make_inspection_tab()
+    vim.cmd("tcd " .. vim.fn.fnameescape(repository))
+    local tab = endpoint.tab
+    local win = endpoint.win
+    local buf = endpoint.buf
     next_session = next_session + 1
-    vim.api.nvim_buf_set_name(
-      buf,
-      ("oculus-issue://%s/%s/%s/%s/%d"):format(
-        info.host,
-        info.owner,
-        info.repo,
-        details.number or info.number,
-        next_session
-      )
-    )
-    vim.api.nvim_buf_set_lines(
-      buf,
-      0,
-      -1,
-      false,
-      issue_page_lines(info, details)
-    )
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = "markdown"
-    vim.bo[buf].modifiable = false
-    vim.bo[buf].readonly = true
     local state = {
       kind = "issue",
       role = "issue",
@@ -4864,24 +4845,41 @@ local function open_issue_page(
       issue_number = details.number or info.number,
       issue_title = details.title,
       issue_url = details.html_url,
+      repository = repository,
+      directory = repository,
       loading = false,
     }
     vim.t.oculus_inspect = vim.deepcopy(state)
     vim.b[buf].oculus_inspect = vim.deepcopy(state)
-    vim.wo[win].wrap = true
-    vim.wo[win].linebreak = true
-    vim.wo[win].signcolumn = "no"
+    vim.b[buf].oculus_inspect_repository = repository
+    vim.b[buf].oculus_inspect_directory = repository
+    vim.b[buf].oculus_inspect_statusline_path = vim.fs.basename(repository)
+    vim.bo[buf].buftype = ""
+    vim.bo[buf].modifiable = true
+    vim.bo[buf].readonly = false
+    vim.bo[buf].modified = false
+    vim.wo[win].wrap = false
+    vim.wo[win].linebreak = false
+    vim.wo[win].signcolumn = "yes"
+    vim.wo[win].statusline = inspection_statusline_option
     apply_inspection_window_options(win, number_options)
+    session.issue = endpoint
+    activate_inspection_sidebar(group)
+    normalize_inspection_view(win)
     page = {
       tab = tab,
       win = win,
       buf = buf,
+      group = group,
     }
     stop_loading(loading)
     require("oculus.window").close()
     vim.api.nvim_set_current_tabpage(tab)
     vim.api.nvim_set_current_win(win)
     vim.api.nvim_win_set_cursor(win, { 1, 0 })
+    show_inspection_overview(group)
+    page.overview_win = group.overview_win
+    page.overview_buf = group.overview_buf
   end)
   if not ok then
     if vim.api.nvim_tabpage_is_valid(staging_tab) then
@@ -4890,7 +4888,7 @@ local function open_issue_page(
     if vim.api.nvim_win_is_valid(staging_win) then
       vim.api.nvim_set_current_win(staging_win)
     end
-    done(nil, "could not open issue information: " .. tostring(err))
+    done(nil, "could not open issue inspection: " .. tostring(err))
     return
   end
   vim.cmd("redraw")
@@ -4911,7 +4909,21 @@ local function open_issue(
       done(nil, details_err)
       return
     end
-    open_issue_page(info, details, loading, number_options, done)
+    ensure_repository(info, opts, function(repository, repository_err)
+      if not repository then
+        done(nil, repository_err or "could not find the issue repository")
+        return
+      end
+      open_issue_inspection(
+        info,
+        details,
+        repository,
+        loading,
+        number_options,
+        opts,
+        done
+      )
+    end)
   end)
 end
 
@@ -4923,7 +4935,7 @@ function M.open(url, opts, context, lifecycle)
       "inspect currently supports GitHub and Codeberg commit "
         .. "pull request, and issue activity"
   end
-  if info.kind ~= "issue" and vim.fn.executable("git") ~= 1 then
+  if vim.fn.executable("git") ~= 1 then
     return nil, "inspect requires git"
   end
   if active then
@@ -5024,7 +5036,6 @@ M._forge_repository = forge_repository
 M._download_destination = download_destination
 M._offer_repository_download = offer_repository_download
 M._find_local_repository = find_local_repository
-M._issue_page_lines = issue_page_lines
 M._parse_hunks = parse_hunks
 M._parse_revision_pairs = parse_revision_pairs
 M._blob_lines = blob_lines

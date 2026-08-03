@@ -806,36 +806,7 @@ assert(found_alias_fetch_source
   == "https://github.com/neovim/neovim.git")
 assert(vim.fn.delete(renamed_search_root, "rf") == 0)
 
-local issue_lines = inspect._issue_page_lines({
-  forge = "github",
-  host = "github.com",
-  owner = "andrewgilley",
-  repo = "oculus.nvim",
-  number = 77,
-}, {
-  number = 77,
-  title = "Issue inspect fixture",
-  body = "Issue body\nwith a second line.",
-  comment = "Activity comment fixture.",
-  html_url = "https://github.com/andrewgilley/oculus.nvim/issues/77",
-})
-local issue_text = table.concat(issue_lines, "\n")
-assert(issue_text:find("# Issue inspect fixture", 1, true))
-assert(issue_text:find("Repository: `andrewgilley/oculus.nvim`", 1, true))
-assert(issue_text:find("## Description", 1, true))
-assert(issue_text:find("Issue body\nwith a second line.", 1, true))
-assert(issue_text:find("## Activity comment", 1, true))
-assert(issue_text:find("Activity comment fixture.", 1, true))
-local empty_issue_text = table.concat(inspect._issue_page_lines({
-  forge = "codeberg",
-  host = "codeberg.org",
-  owner = "example",
-  repo = "project",
-  number = 8,
-}, { number = 8 }), "\n")
-assert(empty_issue_text:find("# Issue #8", 1, true))
-assert(empty_issue_text:find("_No description was provided._", 1, true))
-
+do
 local github = require("oculus.github")
 local original_issue = github.issue
 github.issue = function(repo, number, _, callback)
@@ -845,6 +816,8 @@ github.issue = function(repo, number, _, callback)
     number = number,
     title = "Issue inspect fixture",
     body = "The issue information should open without identifying files.",
+    author = "issue-author",
+    state = "open",
     html_url = "https://github.com/andrewgilley/oculus.nvim/issues/77",
   })
 end
@@ -858,7 +831,11 @@ local issue_lifecycle_complete = false
 local issue_lifecycle_error
 local issue_ok, issue_err = inspect.open(
   "https://github.com/andrewgilley/oculus.nvim/issues/77",
-  {},
+  {
+    inspect_repositories = {
+      ["andrewgilley/oculus.nvim"] = root,
+    },
+  },
   {
     issue = {
       comment = "The activity comment belongs on the information page.",
@@ -882,42 +859,84 @@ local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 1)
 local issue_tab = issue_tabs_after[#issue_tabs_after]
 assert(vim.api.nvim_get_current_tabpage() == issue_tab)
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 1)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
 local issue_state = vim.api.nvim_tabpage_get_var(issue_tab, "oculus_inspect")
 assert(issue_state.kind == "issue")
 assert(issue_state.role == "issue")
 assert(issue_state.issue_number == 77)
 assert(issue_state.issue_title == "Issue inspect fixture")
-local issue_buf = vim.api.nvim_get_current_buf()
-assert(vim.bo[issue_buf].buftype == "nofile")
-assert(vim.bo[issue_buf].filetype == "markdown")
-assert(vim.bo[issue_buf].readonly)
-assert(not vim.bo[issue_buf].modifiable)
-assert(vim.wo.wrap)
-assert(vim.wo.linebreak)
-assert(vim.wo.signcolumn == "no")
-assert(vim.wo.number)
-assert(vim.wo.relativenumber)
-local issue_page = table.concat(
-  vim.api.nvim_buf_get_lines(issue_buf, 0, -1, false),
+local overview_win = vim.api.nvim_get_current_win()
+local overview_buf = vim.api.nvim_get_current_buf()
+assert(vim.b[overview_buf].oculus_inspect_overview == true)
+assert(vim.api.nvim_win_get_config(overview_win).relative == "editor")
+local issue_overview = table.concat(
+  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
   "\n"
 )
-assert(issue_page:find("# Issue inspect fixture", 1, true))
-assert(issue_page:find(
-  "The issue information should open without identifying files.",
-  1,
-  true
+assert(issue_overview:find("  Title\n", 1, true))
+assert(issue_overview:find("Issue inspect fixture", 1, true))
+assert(issue_overview:find("  Description\n", 1, true))
+issue_overview = issue_overview:gsub("%s+", " ")
+assert(issue_overview:find("The issue information should open", 1, true))
+assert(issue_overview:find("without identifying files.", 1, true))
+assert(issue_overview:find("Activity comment", 1, true))
+assert(issue_overview:find("The activity comment belongs", 1, true))
+assert(issue_overview:find("on the information page.", 1, true))
+assert(issue_overview:find("@issue%-author"))
+assert(issue_overview:find("Issue number", 1, true))
+assert(issue_overview:find("#77", 1, true))
+assert(issue_overview:find("Status", 1, true))
+assert(issue_overview:find("Open", 1, true))
+
+local issue_main_win
+local issue_sidebar_win
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
+  local buf = vim.api.nvim_win_get_buf(win)
+  local state = vim.b[buf].oculus_inspect
+  if type(state) == "table" and state.role == "issue" then
+    issue_main_win = win
+  elseif vim.b[buf].oculus_inspect_sidebar_mode == "files" then
+    issue_sidebar_win = win
+  end
+end
+assert(issue_main_win)
+assert(issue_sidebar_win)
+assert(vim.wo[issue_sidebar_win].statusline
+  == inspect._inspection_sidebar_statusline_option)
+local issue_buf = vim.api.nvim_win_get_buf(issue_main_win)
+assert(vim.bo[issue_buf].buftype == "")
+assert(vim.bo[issue_buf].modifiable)
+assert(not vim.bo[issue_buf].readonly)
+assert(vim.api.nvim_buf_get_name(issue_buf) == "")
+assert(vim.deep_equal(
+  vim.api.nvim_buf_get_lines(issue_buf, 0, -1, false),
+  { "" }
 ))
-assert(issue_page:find("## Activity comment", 1, true))
-assert(issue_page:find(
-  "The activity comment belongs on the information page.",
-  1,
-  true
-))
+assert(vim.fs.normalize(vim.fn.getcwd()) == vim.fs.normalize(root))
+assert(vim.wo[issue_main_win].number)
+assert(vim.wo[issue_main_win].relativenumber)
+local issue_sidebar_text = table.concat(
+  vim.api.nvim_buf_get_lines(
+    vim.api.nvim_win_get_buf(issue_sidebar_win),
+    0,
+    -1,
+    false
+  ),
+  "\n"
+)
+assert(issue_sidebar_text:find("Issue #77", 1, true))
+
+local close_issue_overview = vim.fn.maparg("q", "n", false, true)
+assert(close_issue_overview.desc == "Close Oculus Inspect overview")
+close_issue_overview.callback()
+assert(not vim.api.nvim_win_is_valid(overview_win))
+assert(vim.api.nvim_get_current_win() == issue_main_win)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
 vim.cmd("tabclose")
 vim.api.nvim_set_current_win(issue_origin_win)
 vim.wo[issue_origin_win].number = issue_origin_number
 vim.wo[issue_origin_win].relativenumber = issue_origin_relativenumber
+end
 
 local parent, change = inspect._first_changed_paths("M\tlua/oculus/init.lua")
 assert(parent == "lua/oculus/init.lua")
