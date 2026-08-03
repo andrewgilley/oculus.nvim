@@ -3106,7 +3106,7 @@ end
 local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
   if type(config.width) == "number" then
-    local width = math.max(1, config.width - 9)
+    local width = math.max(1, config.width - 12)
     config.col = (tonumber(config.col) or 0)
       + math.floor((config.width - width) / 2)
     config.width = width
@@ -3280,6 +3280,8 @@ show_inspection_overview = function(group)
   map_scroll("<Down>", 1, "Scroll Oculus Inspect overview down")
   map_scroll("i", -1, "Scroll Oculus Inspect overview up")
   map_scroll("<Up>", -1, "Scroll Oculus Inspect overview up")
+  map_scroll("<C-i>", -10, "Scroll Oculus Inspect overview up 10 lines")
+  map_scroll("<C-k>", 10, "Scroll Oculus Inspect overview down 10 lines")
   if group.overview_view then
     vim.api.nvim_win_call(win, function()
       vim.fn.winrestview(group.overview_view)
