@@ -1161,8 +1161,17 @@ do
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
   local project_past_mapping = vim.fn.maparg("p", "n", false, true)
+  local project_older_mapping = vim.fn.maparg("l", "n", false, true)
+  local project_older_arrow_mapping =
+    vim.fn.maparg("<Right>", "n", false, true)
+  project_older_mapping.callback()
+  assert(state.activity_page == 1)
+  assert(vim.deep_equal(repository_pages, { 1, 2 }))
+  project_older_arrow_mapping.callback()
+  assert(state.activity_page == 1)
+  assert(vim.deep_equal(repository_pages, { 1, 2 }))
   deferred_project_request = true
-  vim.fn.maparg("<Right>", "n", false, true).callback()
+  project_past_mapping.callback()
   assert(state.activity_page == 2)
   assert(#state.events == 8)
   local project_title_line = vim.api.nvim_buf_get_lines(
@@ -1205,6 +1214,9 @@ do
   vim.fn.maparg("<Left>", "n", false, true).callback()
   assert(state.activity_page == 1)
   assert(#state.events == 8)
+  assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
+  project_older_mapping.callback()
+  assert(state.activity_page == 2)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
   local refresh_mapping = vim.fn.maparg("u", "n", false, true)
   assert(refresh_mapping.desc == "Refresh Oculus activity")

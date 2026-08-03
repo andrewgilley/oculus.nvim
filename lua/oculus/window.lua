@@ -3237,6 +3237,13 @@ local function move_right()
   if M.state.view == "activity"
     and not M.state.activity_commit_page
   then
+    if M.state.activity_project then
+      local page = M.state.activity_page or 1
+      if page < (M.state.activity_loaded_pages or 1) then
+        load_project_activity(M.state.activity_project, false, page + 1)
+      end
+      return
+    end
     next_activity_page()
     return
   end
