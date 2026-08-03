@@ -2265,7 +2265,8 @@ local function version_switch_line(session, role, chunk_index)
   else
     change_start = session.focused_start or focused_hunk_start(hunk)
   end
-  return chunk_start_for_role(hunk, role, change_start)
+  local line = chunk_start_for_role(hunk, role, change_start)
+  return role == "parent" and line + 1 or line
 end
 
 local function render_chunk_for_role(session, role, chunk_index)
@@ -2718,12 +2719,10 @@ local function overview_date(timestamp)
     opened = opened + (sign == "+" and -offset or offset)
   end
   local local_date = os.date("*t", opened)
-  local local_time = os.date("%I:%M %p", opened):gsub("^0", "")
-  return ("%02d/%02d/%02d — %s"):format(
+  return ("%02d/%02d/%04d"):format(
     local_date.month,
     local_date.day,
-    local_date.year % 100,
-    local_time
+    local_date.year
   )
 end
 
