@@ -556,6 +556,7 @@ function M.pull_request(repo, number, opts, callback)
       draft = pull_request.draft,
       merged = pull_request.merged,
       html_url = pull_request.html_url,
+      created_at = pull_request.created_at,
       base_sha = base_sha,
       base_ref = base.ref,
       head_sha = head.sha,
@@ -606,6 +607,7 @@ function M.issue(repo, number, opts, callback)
       author = issue.user and (issue.user.login or issue.user.username),
       state = issue.state,
       html_url = issue.html_url,
+      created_at = issue.created_at,
     }
     inspect_issue_cache[key] = {
       details = details,

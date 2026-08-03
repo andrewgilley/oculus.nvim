@@ -522,6 +522,7 @@ local resolved_pull_request = inspect._apply_pull_request(pull_request, {
   draft = false,
   merged = false,
   html_url = "https://github.com/neovim/neovim/pull/123",
+  created_at = "2026-07-30T12:00:00-04:00",
   base_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   base_ref = "main",
   head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -534,6 +535,7 @@ assert(resolved_pull_request.base_sha:match("^a+$"))
 assert(resolved_pull_request.head_sha:match("^b+$"))
 assert(resolved_pull_request.commit_count == 3)
 assert(resolved_pull_request.author == "reviewer")
+assert(resolved_pull_request.created_at == "2026-07-30T12:00:00-04:00")
 
 local pull_request_overview = inspect._inspection_overview(
   resolved_pull_request,
@@ -564,6 +566,11 @@ assert(pull_request_overview_text:find("\n  Author\n", 1, true))
 assert(pull_request_overview_text:find("\n  URL\n", 1, true))
 assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
 assert(pull_request_overview_text:find("\n  Status\n", 1, true))
+assert(pull_request_overview_text:find("\n  Date opened\n", 1, true))
+local pull_request_overview_lines =
+  inspect._sidebar_overview_lines(pull_request_overview, 28)
+assert(pull_request_overview_lines[#pull_request_overview_lines - 1]
+  == "  Date opened")
 assert(not pull_request_overview_text:find("Repository", 1, true))
 assert(not pull_request_overview_text:find("Branches", 1, true))
 assert(not pull_request_overview_text:find("Changes", 1, true))
@@ -617,6 +624,11 @@ assert(commit_overview_text:find("\n  Title\n", 1, true))
 assert(commit_overview_text:find("\n  Description\n", 1, true))
 assert(commit_overview_text:find("\n  Author\n", 1, true))
 assert(commit_overview_text:find("\n  URL\n", 1, true))
+assert(commit_overview_text:find("\n  Date opened\n", 1, true))
+local commit_overview_lines =
+  inspect._sidebar_overview_lines(commit_overview, 28)
+assert(commit_overview_lines[#commit_overview_lines - 1]
+  == "  Date opened")
 assert(not commit_overview_text:find("Repository", 1, true))
 assert(not commit_overview_text:find("\nCommit\n", 1, true))
 assert(not commit_overview_text:find("Authored", 1, true))
@@ -819,6 +831,7 @@ github.issue = function(repo, number, _, callback)
     author = "issue-author",
     state = "open",
     html_url = "https://github.com/andrewgilley/oculus.nvim/issues/77",
+    created_at = "2026-07-30T12:00:00-04:00",
   })
 end
 local issue_tabs_before = vim.api.nvim_list_tabpages()
@@ -873,6 +886,14 @@ local issue_overview = table.concat(
   vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
   "\n"
 )
+local issue_overview_lines = vim.api.nvim_buf_get_lines(
+  overview_buf,
+  0,
+  -1,
+  false
+)
+assert(issue_overview_lines[#issue_overview_lines - 1]
+  == "  Date opened")
 assert(issue_overview:find("  Title\n", 1, true))
 assert(issue_overview:find("Issue inspect fixture", 1, true))
 assert(issue_overview:find("  Description\n", 1, true))
@@ -1719,6 +1740,20 @@ if integration_root and (integration_sha or integration_url) then
   local namespaces = vim.api.nvim_get_namespaces()
   local signs = namespaces.oculus_inspect_changes
   assert(signs)
+  local function first_changed_sign_line(buf)
+    local first
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+      buf,
+      signs,
+      0,
+      -1,
+      {}
+    )) do
+      local line = mark[2] + 1
+      first = not first and line or math.min(first, line)
+    end
+    return first
+  end
   local parent_marks = vim.api.nvim_buf_get_extmarks(
     parent_buf,
     signs,
@@ -2479,6 +2514,17 @@ if integration_root and (integration_sha or integration_url) then
       selected_chunk_line,
       false
     )[1] - 1))
+  do
+    local cursor = vim.api.nvim_win_get_cursor(change_win)
+    local cursor_text = vim.api.nvim_buf_get_lines(
+      change_buf,
+      cursor[1] - 1,
+      cursor[1],
+      false
+    )[1]
+    assert(cursor[1] == first_changed_sign_line(change_buf))
+    assert(cursor[2] == math.max(0, #cursor_text - 1))
+  end
   assert(vim.fn.winsaveview().topline
     == parent_sidebar_view.topline)
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
@@ -2489,6 +2535,17 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
   assert(vim.api.nvim_win_get_cursor(sidebar_parent_win)[1]
     == selected_chunk_line)
+  do
+    local cursor = vim.api.nvim_win_get_cursor(parent_win)
+    local cursor_text = vim.api.nvim_buf_get_lines(
+      parent_buf,
+      cursor[1] - 1,
+      cursor[1],
+      false
+    )[1]
+    assert(cursor[1] == first_changed_sign_line(parent_buf))
+    assert(cursor[2] == math.max(0, #cursor_text - 1))
+  end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
   sidebar_open_mapping.callback()
@@ -2521,6 +2578,7 @@ if integration_root and (integration_sha or integration_url) then
       cursor[1],
       false
     )[1]
+    assert(cursor[1] == first_changed_sign_line(change_buf))
     assert(cursor[2] == math.max(0, #cursor_text - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
@@ -2536,6 +2594,17 @@ if integration_root and (integration_sha or integration_url) then
     false
   )
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  do
+    local cursor = vim.api.nvim_win_get_cursor(parent_win)
+    local cursor_text = vim.api.nvim_buf_get_lines(
+      parent_buf,
+      cursor[1] - 1,
+      cursor[1],
+      false
+    )[1]
+    assert(cursor[1] == first_changed_sign_line(parent_buf))
+    assert(cursor[2] == math.max(0, #cursor_text - 1))
+  end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
   vim.api.nvim_feedkeys(
