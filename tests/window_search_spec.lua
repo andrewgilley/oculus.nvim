@@ -108,7 +108,8 @@ assert(initial_project_text:find("a add", 1, true))
 assert(initial_project_text:find("/ search", 1, true))
 do
   local project_search = vim.fn.maparg("/", "n", false, true)
-  assert(project_search.desc == "Fuzzy-search Oculus projects or users")
+  assert(project_search.desc
+    == "Search Oculus activity, projects, or users")
   project_search.callback()
   vim.api.nvim_buf_set_lines(
     state.search_buf,
@@ -200,10 +201,37 @@ assert(second_page[8].id == "16")
 local third_page = window._activity_page(page_events, 3, 8)
 assert(#third_page == 4)
 assert(third_page[1].id == "17")
+local searched_activity = window._search_activity_events({
+  {
+    id = "search-match",
+    type = "PullRequestEvent",
+    actor = { login = "merge-maintainer" },
+    repo = { name = "example/project" },
+    payload = {
+      action = "merged",
+      pull_request = {
+        number = 42,
+        title = "Improve keyword navigation",
+      },
+    },
+  },
+  {
+    id = "search-miss",
+    type = "IssuesEvent",
+    repo = { name = "example/project" },
+    payload = {
+      action = "opened",
+      issue = { number = 7, title = "Unrelated report" },
+    },
+  },
+}, "merge-maintainer navigation")
+assert(#searched_activity == 1)
+assert(searched_activity[1].id == "search-match")
 local search_mapping = vim.fn.maparg("s", "n", false, true)
 assert(search_mapping.desc == "Fuzzy-search Oculus projects or users")
 local slash_search_mapping = vim.fn.maparg("/", "n", false, true)
-assert(slash_search_mapping.desc == "Fuzzy-search Oculus projects or users")
+assert(slash_search_mapping.desc
+  == "Search Oculus activity, projects, or users")
 assert(slash_search_mapping.callback == search_mapping.callback)
 search_mapping.callback()
 vim.wait(10)
@@ -908,6 +936,55 @@ user_refresh_mapping.callback()
 assert(requested_force[#requested_force] == true)
 assert(state.activity_page == 1)
 
+local activity_search_mapping = vim.fn.maparg("/", "n", false, true)
+assert(activity_search_mapping.desc
+  == "Search Oculus activity, projects, or users")
+activity_search_mapping.callback()
+assert(state.search_kind == "activity")
+assert(window._prompt_query(state.search_buf) == "")
+local activity_search_config = vim.api.nvim_win_get_config(state.search_win)
+assert(activity_search_config.width
+  == vim.api.nvim_win_get_width(state.win) - 8)
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { "page-17" }
+)
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+assert(state.search_query == "page-17")
+local accept_activity_search = vim.fn.maparg("<CR>", "n", false, true)
+assert(accept_activity_search.desc == "Search Oculus activity")
+accept_activity_search.callback()
+assert(state.search_win == nil)
+assert(state.activity_search_query == "page-17")
+assert(state.activity_page == 1)
+assert(#state.events == 1)
+assert(state.events[1].id == "17")
+assert(requested_per_page[#requested_per_page] == 100)
+local searched_activity_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(searched_activity_text:find('· "page%-17"'))
+assert(searched_activity_text:find('"page%-17"'))
+local searched_footer_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+  "\n"
+)
+assert(searched_footer_text:find("/ search", 1, true))
+
+activity_search_mapping.callback()
+assert(window._prompt_query(state.search_buf) == "page-17")
+vim.api.nvim_buf_set_lines(state.search_buf, 0, -1, false, { "" })
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+vim.fn.maparg("<CR>", "n", false, true).callback()
+assert(state.activity_search_query == nil)
+assert(#state.events == 8)
+assert(state.events[1].id == "1")
+assert(requested_per_page[#requested_per_page] == 30)
+
 newer_mapping.callback()
 assert(state.view == "contributors")
 assert(state.footer_win == nil)
@@ -1218,6 +1295,27 @@ do
   project_older_mapping.callback()
   assert(state.activity_page == 2)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
+  vim.fn.maparg("/", "n", false, true).callback()
+  assert(state.search_kind == "activity")
+  vim.api.nvim_buf_set_lines(
+    state.search_buf,
+    0,
+    -1,
+    false,
+    { "Improve startup" }
+  )
+  vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+  vim.fn.maparg("<CR>", "n", false, true).callback()
+  assert(state.activity_search_query == "Improve startup")
+  assert(#state.events == 1)
+  assert(state.events[1].payload.pull_request.number == 10)
+  assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
+  vim.fn.maparg("/", "n", false, true).callback()
+  vim.api.nvim_buf_set_lines(state.search_buf, 0, -1, false, { "" })
+  vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+  vim.fn.maparg("<CR>", "n", false, true).callback()
+  assert(state.activity_search_query == nil)
+  assert(#state.events == 8)
   local refresh_mapping = vim.fn.maparg("u", "n", false, true)
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()
