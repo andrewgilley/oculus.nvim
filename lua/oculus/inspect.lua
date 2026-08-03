@@ -3483,6 +3483,7 @@ function M._overview_ui.render(group)
     group.overview_content_width or 28
   )
   group.overview_agent_model_lines = nil
+  group.overview_directions_model_lines = nil
   group.overview_agent_heading_line = nil
   group.overview_directions_heading_line = nil
   if group.overview_agent_mode then
@@ -3564,7 +3565,17 @@ function M._overview_ui.render(group)
     end
     lines[#lines + 1] = heading
     group.overview_directions_heading_line = #lines
-    if group.overview_directions_mode == "error" then
+    if group.overview_directions_mode == "models" then
+      local targets = {}
+      for _, model in ipairs(group.overview_directions_models or {}) do
+        lines[#lines + 1] = ("  %s  %s"):format(
+          model.display_name,
+          model.id
+        )
+        targets[#lines] = model
+      end
+      group.overview_directions_model_lines = targets
+    elseif group.overview_directions_mode == "error" then
       append_sidebar_text(
         lines,
         group.overview_directions_error or "Directions request failed.",
@@ -3578,29 +3589,6 @@ function M._overview_ui.render(group)
         group.overview_content_width or 28,
         "  "
       )
-      lines[#lines + 1] = ""
-      lines[#lines + 1] = "    Possible patch locations"
-      local locations = group.overview_directions_locations or {}
-      if #locations == 0 then
-        lines[#lines + 1] = "    No likely locations identified."
-      else
-        for index, location in ipairs(locations) do
-          append_sidebar_text(
-            lines,
-            ("%d. %s"):format(index, location.path),
-            group.overview_content_width or 28,
-            "    "
-          )
-          if location.reason then
-            append_sidebar_text(
-              lines,
-              location.reason,
-              group.overview_content_width or 28,
-              "       "
-            )
-          end
-        end
-      end
     end
   end
   vim.bo[buf].modifiable = true
@@ -3650,6 +3638,25 @@ function M._overview_ui.render(group)
       hl_mode = "combine",
       priority = 90,
     })
+  end
+  local directions_selected = group.overview_directions_selected_line
+  if group.overview_directions_mode == "models"
+    and directions_selected
+    and group.overview_directions_model_lines
+    and group.overview_directions_model_lines[directions_selected]
+  then
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      sidebar_ns,
+      directions_selected - 1,
+      2,
+      {
+        end_col = #(lines[directions_selected] or ""),
+        hl_group = "OculusInspectAgentModelSelected",
+        hl_mode = "combine",
+        priority = 90,
+      }
+    )
   end
   if group.overview_agent_mode == "generating"
     or group.overview_agent_mode == "loading_models"
@@ -3877,6 +3884,9 @@ function M._overview_ui.close_agent_window(group, return_to_overview)
   if not preserve_directions then
     group.overview_directions_mode = nil
   end
+  group.overview_directions_models = nil
+  group.overview_directions_model_lines = nil
+  group.overview_directions_selected_line = nil
   local directions_discovery = group.overview_directions_model_process
   group.overview_directions_model_process = nil
   if directions_discovery
@@ -3946,10 +3956,56 @@ function M._overview_ui.render_models(group, models, err)
 end
 
 function M._overview_ui.select_agent_model(group)
+  if group.overview_directions_mode == "models" then
+    M._overview_ui.select_directions_model(group)
+    return
+  end
   local model = group.overview_agent_model_lines
     and group.overview_agent_model_lines[group.overview_agent_selected_line]
   if model then
     M._overview_ui.open_explanation(group, model)
+  end
+end
+
+function M._overview_ui.select_directions_model(group)
+  local model = group.overview_directions_model_lines
+    and group.overview_directions_model_lines[
+      group.overview_directions_selected_line
+    ]
+  if model then
+    M._overview_ui.generate_directions(group, model)
+  end
+end
+
+function M._overview_ui.move_directions_model_cursor(group, direction)
+  local targets = group.overview_directions_model_lines or {}
+  if group.overview_directions_mode ~= "models" then
+    return
+  end
+  local lines = {}
+  for line in pairs(targets) do
+    lines[#lines + 1] = line
+  end
+  table.sort(lines)
+  if #lines == 0 then
+    return
+  end
+  local current = group.overview_directions_selected_line or lines[1]
+  local current_index = 1
+  for index, line in ipairs(lines) do
+    if line >= current then
+      current_index = index
+      break
+    end
+  end
+  local next_index = ((current_index + direction - 1) % #lines) + 1
+  group.overview_directions_selected_line = lines[next_index]
+  M._overview_ui.render(group)
+  if overview_window_is_open(group) then
+    vim.api.nvim_win_set_cursor(group.overview_win, {
+      group.overview_directions_selected_line,
+      0,
+    })
   end
 end
 
@@ -4102,6 +4158,49 @@ function M._overview_ui.open_explanation(group, model)
   end
 end
 
+function M._overview_ui.render_directions_models(group, models, err)
+  if group.overview_directions_mode ~= "loading_model" then
+    return
+  end
+  M._overview_ui.stop_directions_spinner(group)
+  group.overview_directions_model_process = nil
+  if err then
+    M._overview_ui.render_directions_error(group, err)
+    return
+  end
+  group.overview_directions_mode = "models"
+  group.overview_directions_models = models or {}
+  local agent = require("oculus.agent")
+  local preferred = group.overview_agent_explanation_model
+    or agent.configured_model(agent.repository(group))
+  local selected_index = 1
+  for index, model in ipairs(group.overview_directions_models) do
+    if model.id == preferred or model.is_default then
+      selected_index = index
+      if model.id == preferred then
+        break
+      end
+    end
+  end
+  M._overview_ui.render(group)
+  local model_lines = {}
+  for line in pairs(group.overview_directions_model_lines or {}) do
+    model_lines[#model_lines + 1] = line
+  end
+  table.sort(model_lines)
+  group.overview_directions_selected_line = model_lines[selected_index]
+  M._overview_ui.render(group)
+  M._overview_ui.scroll_to_bottom(group)
+  if group.overview_directions_selected_line
+    and overview_window_is_open(group)
+  then
+    vim.api.nvim_win_set_cursor(group.overview_win, {
+      group.overview_directions_selected_line,
+      0,
+    })
+  end
+end
+
 function M._overview_ui.render_directions_error(group, err)
   M._overview_ui.stop_directions_spinner(group)
   group.overview_directions_mode = "error"
@@ -4123,6 +4222,9 @@ function M._overview_ui.generate_directions(group, model)
   M._overview_ui.stop_directions_spinner(group)
   group.overview_directions_mode = "generating"
   group.overview_directions_model = model.id
+  group.overview_directions_models = nil
+  group.overview_directions_model_lines = nil
+  group.overview_directions_selected_line = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_directions_spinner(group)
@@ -4136,7 +4238,7 @@ function M._overview_ui.generate_directions(group, model)
     if group.overview_directions_mode ~= "generating" then
       return
     end
-    local text, locations = agent.normalize_result(value, true, repository)
+    local text = agent.normalize(value)
     if not text then
       M._overview_ui.render_directions_error(
         group,
@@ -4148,7 +4250,6 @@ function M._overview_ui.generate_directions(group, model)
     group.overview_directions_mode = "directions"
     group.overview_directions_model = metadata and metadata.model or model.id
     group.overview_directions_text = text
-    group.overview_directions_locations = locations
     M._overview_ui.render(group)
     M._overview_ui.scroll_to_bottom(group)
   end
@@ -4185,8 +4286,10 @@ function M._overview_ui.open_directions(group)
   group.overview_directions_mode = "loading_model"
   group.overview_directions_error = nil
   group.overview_directions_model = nil
+  group.overview_directions_models = nil
+  group.overview_directions_model_lines = nil
+  group.overview_directions_selected_line = nil
   group.overview_directions_text = nil
-  group.overview_directions_locations = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_directions_spinner(group)
@@ -4202,28 +4305,7 @@ function M._overview_ui.open_directions(group)
       M._overview_ui.render_directions_error(group, load_err)
       return
     end
-    local repository = agent.repository(group)
-    local preferred = group.overview_agent_explanation_model
-      or agent.configured_model(repository)
-    local selected
-    for _, model in ipairs(models or {}) do
-      if model.id == preferred then
-        selected = model
-        break
-      end
-      if not selected and model.is_default then
-        selected = model
-      end
-    end
-    selected = selected or (models and models[1])
-    if not selected then
-      M._overview_ui.render_directions_error(
-        group,
-        "Codex reported no available GPT-5.6 models"
-      )
-      return
-    end
-    M._overview_ui.generate_directions(group, selected)
+    M._overview_ui.render_directions_models(group, models, load_err)
   end)
   if not process then
     M._overview_ui.render_directions_error(group, err)
@@ -4352,6 +4434,12 @@ show_inspection_overview = function(group)
     vim.keymap.set("n", lhs, function()
       if group.overview_agent_mode == "models" then
         M._overview_ui.move_model_cursor(group, direction < 0 and -1 or 1)
+        return
+      elseif group.overview_directions_mode == "models" then
+        M._overview_ui.move_directions_model_cursor(
+          group,
+          direction < 0 and -1 or 1
+        )
         return
       end
       local view = vim.fn.winsaveview()
