@@ -721,17 +721,23 @@ local normalized_explanation, normalized_locations =
   require("oculus.agent").normalize_result(vim.json.encode({
     explanation = "A structured explanation.",
     locations = {
-      { path = "one.lua", reason = "First" },
+      {
+        path = vim.fs.basename(root) .. "/one.lua",
+        reason = "First",
+      },
       { path = "two.lua", reason = "Second" },
       { path = "three.lua", reason = "Third" },
       { path = "four.lua", reason = "Fourth" },
       { path = "five.lua", reason = "Fifth" },
       { path = "six.lua", reason = "Must be omitted" },
     },
-  }), true)
+  }), true, root)
 assert(normalized_explanation == "A structured explanation.")
 assert(#normalized_locations == 5)
-assert(normalized_locations[5].path == "five.lua")
+assert(normalized_locations[1].path
+  == vim.fs.basename(root) .. "/one.lua")
+assert(normalized_locations[5].path
+  == vim.fs.basename(root) .. "/five.lua")
 do
   local main_config = require("oculus.window").window_config({})
   local commit_config = inspect._overview_window_config(
@@ -971,7 +977,7 @@ local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 1)
 local issue_tab = issue_tabs_after[#issue_tabs_after]
 assert(vim.api.nvim_get_current_tabpage() == issue_tab)
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 4)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
 local issue_state = vim.api.nvim_tabpage_get_var(issue_tab, "oculus_inspect")
 assert(issue_state.kind == "issue")
 assert(issue_state.role == "issue")
@@ -1207,6 +1213,9 @@ assert(agent_request.prompt:find(
 ))
 assert(agent_request.prompt:find("at most five", 1, true))
 assert(agent_request.prompt:find("Return only valid JSON", 1, true))
+assert(agent_request.prompt:find(
+  "`" .. vim.fs.basename(root) .. "/` project%-folder prefix"
+))
 local explanation_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
@@ -1223,8 +1232,16 @@ assert(explanation_text:gsub("%s+", " "):find(
   true
 ))
 assert(explanation_text:find("Possible patch locations", 1, true))
-assert(explanation_text:find("1. lua/oculus/inspect.lua", 1, true))
-assert(explanation_text:find("2. lua/oculus/agent.lua", 1, true))
+assert(explanation_text:find(
+  "1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua",
+  1,
+  true
+))
+assert(explanation_text:find(
+  "2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua",
+  1,
+  true
+))
 assert(explanation_text:gsub("%s+", " "):find(
   "The fileless issue inspection workflow is implemented here.",
   1,
@@ -1244,9 +1261,7 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   end
 end
 assert(issue_main_win)
-assert(issue_sidebar_win)
-assert(vim.wo[issue_sidebar_win].statusline
-  == inspect._inspection_sidebar_statusline_option)
+assert(not issue_sidebar_win)
 local issue_buf = vim.api.nvim_win_get_buf(issue_main_win)
 assert(vim.bo[issue_buf].buftype == "")
 assert(vim.bo[issue_buf].modifiable)
@@ -1259,6 +1274,32 @@ assert(vim.deep_equal(
 assert(vim.fs.normalize(vim.fn.getcwd()) == vim.fs.normalize(root))
 assert(vim.wo[issue_main_win].number)
 assert(vim.wo[issue_main_win].relativenumber)
+local close_issue_overview = vim.fn.maparg("q", "n", false, true)
+assert(close_issue_overview.desc == "Close Oculus Inspect overview")
+close_issue_overview.callback()
+assert(not vim.api.nvim_win_is_valid(overview_win))
+assert(not vim.api.nvim_buf_is_valid(overview_footer_buf))
+assert(vim.api.nvim_get_current_win() == issue_main_win)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 1)
+local issue_sidebar_toggle = vim.fn.maparg(
+  (vim.g.mapleader or "\\") .. "oi",
+  "n",
+  false,
+  true
+)
+assert(issue_sidebar_toggle.desc == "Toggle Oculus Inspect sidebar")
+issue_sidebar_toggle.callback()
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
+for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
+  local candidate_buf = vim.api.nvim_win_get_buf(candidate)
+  if vim.b[candidate_buf].oculus_inspect_sidebar_mode == "files" then
+    issue_sidebar_win = candidate
+    break
+  end
+end
+assert(issue_sidebar_win)
+assert(vim.wo[issue_sidebar_win].statusline
+  == inspect._inspection_sidebar_statusline_option)
 local issue_sidebar_text = table.concat(
   vim.api.nvim_buf_get_lines(
     vim.api.nvim_win_get_buf(issue_sidebar_win),
@@ -1269,14 +1310,9 @@ local issue_sidebar_text = table.concat(
   "\n"
 )
 assert(issue_sidebar_text:find("Issue #77", 1, true))
-
-local close_issue_overview = vim.fn.maparg("q", "n", false, true)
-assert(close_issue_overview.desc == "Close Oculus Inspect overview")
-close_issue_overview.callback()
-assert(not vim.api.nvim_win_is_valid(overview_win))
-assert(not vim.api.nvim_buf_is_valid(overview_footer_buf))
-assert(vim.api.nvim_get_current_win() == issue_main_win)
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
+issue_sidebar_toggle.callback()
+assert(not vim.api.nvim_win_is_valid(issue_sidebar_win))
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 1)
 local reopen_issue_overview = vim.fn.maparg("<C-t>", "n", false, true)
 assert(reopen_issue_overview.desc == "Toggle Oculus Inspect overview")
 reopen_issue_overview.callback()
@@ -1302,7 +1338,7 @@ assert(restored_overview_text:find(
   true
 ))
 assert(restored_overview_text:find(
-  "lua/oculus/inspect.lua",
+  vim.fs.basename(root) .. "/lua/oculus/inspect.lua",
   1,
   true
 ))

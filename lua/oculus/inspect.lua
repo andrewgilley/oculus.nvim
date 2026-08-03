@@ -3909,7 +3909,8 @@ function M._overview_ui.open_explanation(group, model)
     group.overview_agent_process = nil
     local normalized, locations = agent.normalize_result(
       explanation,
-      include_locations
+      include_locations,
+      repository
     )
     local actual_model = metadata and metadata.model or model.id
     group.overview_agent_explanation = normalized
@@ -4326,10 +4327,12 @@ local function prepare_inspection_sidebar(group)
   vim.bo[buf].filetype = "oculus-inspect-files"
 end
 
-local function activate_inspection_sidebar(group)
+local function activate_inspection_sidebar(group, open_immediately)
   map_inspection_sidebar_toggle(group)
   sidebar_groups[#sidebar_groups + 1] = group
-  open_inspection_sidebar(group)
+  if open_immediately ~= false then
+    open_inspection_sidebar(group)
+  end
 end
 
 local function sidebar_group_for_buffer(buf)
@@ -5740,7 +5743,7 @@ local function open_issue_inspection(
     vim.wo[win].statusline = inspection_statusline_option
     apply_inspection_window_options(win, number_options)
     session.issue = endpoint
-    activate_inspection_sidebar(group)
+    activate_inspection_sidebar(group, false)
     normalize_inspection_view(win)
     page = {
       tab = tab,
