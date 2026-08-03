@@ -72,8 +72,8 @@ local project_start_lines = table.concat(
 )
 assert(project_start_lines:find("PROJECTS", 1, true))
 assert(not project_start_lines:find("No users added.", 1, true))
-assert(project_start_lines:find("v users", 1, true))
-vim.fn.maparg("v", "n", false, true).callback()
+assert(project_start_lines:find("t users", 1, true))
+vim.fn.maparg("t", "n", false, true).callback()
 local empty_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
@@ -108,7 +108,7 @@ oculus.setup({
   contributors = {},
 })
 window.open(oculus.config)
-vim.fn.maparg("v", "n", false, true).callback()
+vim.fn.maparg("t", "n", false, true).callback()
 vim.ui.select = function(items, _, callback)
   callback(items[1])
 end
@@ -131,7 +131,7 @@ oculus.setup({
 assert(#oculus.config.contributors == 1)
 assert(oculus.config.contributors[1].username == "remember-me")
 window.open(oculus.config)
-vim.fn.maparg("v", "n", false, true).callback()
+vim.fn.maparg("t", "n", false, true).callback()
 local restarted_lines = table.concat(
   vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false),
   "\n"

@@ -97,10 +97,11 @@ assert(not initial_project_text:find("COMMUNITY ACTIVITY", 1, true))
 assert(initial_project_text:find("example/project", 1, true))
 assert(not initial_project_text:find("  USERS", 1, true))
 assert(not initial_project_text:find("@mitchellh", 1, true))
-assert(initial_project_text:find("v users", 1, true))
-local community_view_mapping = vim.fn.maparg("v", "n", false, true)
+assert(initial_project_text:find("t users", 1, true))
+local community_view_mapping = vim.fn.maparg("t", "n", false, true)
 assert(community_view_mapping.desc
   == "Switch Oculus project and user lists")
+assert(vim.fn.maparg("v", "n", false, true).desc == nil)
 community_view_mapping.callback()
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
@@ -112,7 +113,7 @@ assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
 assert(initial_user_lines[initial_window_height]
-  == "  v projects  a add  / search  ?: help  q quit")
+  == "  t projects  a add  / search  ?: help  q quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local main_up_mapping =
@@ -885,7 +886,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  v projects  a add  / search  ?: help  q quit")
+  == "  t projects  a add  / search  ?: help  q quit")
 
 do
   vim.cmd("tabnew")
@@ -1076,7 +1077,7 @@ do
   assert(not startpage_text:find("  USERS", 1, true))
   assert(not startpage_text:find("PROJECT ACTIVITY", 1, true))
   assert(startpage_text:find("neovim/neovim", 1, true))
-  assert(startpage_text:find("v users", 1, true))
+  assert(startpage_text:find("t users", 1, true))
   local preview_text = {}
   for _, item in pairs(state.preview_items) do
     preview_text[#preview_text + 1] = item[1]
