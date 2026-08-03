@@ -326,9 +326,20 @@ function M.normalize_models(values)
       }
     end
   end
+  local family_order = {
+    sol = 1,
+    terra = 2,
+    luna = 3,
+  }
+  local function family_rank(model)
+    local family = model.id:match("^gpt%-5%.6%-([^-]+)")
+    return family_order[family] or math.huge
+  end
   table.sort(models, function(left, right)
-    if left.is_default ~= right.is_default then
-      return left.is_default
+    local left_rank = family_rank(left)
+    local right_rank = family_rank(right)
+    if left_rank ~= right_rank then
+      return left_rank < right_rank
     end
     return left.display_name:lower() < right.display_name:lower()
   end)

@@ -3855,34 +3855,24 @@ function M._overview_ui.restore_model_selection(group)
   then
     return false
   end
-  local function restore(targets, selected_line, preferred)
+  local function restore(targets, selected_line)
     if targets and selected_line and targets[selected_line] then
       return selected_line
     end
     local first
-    local fallback
-    for line, model in pairs(targets or {}) do
+    for line in pairs(targets or {}) do
       if not first or line < first then
         first = line
       end
-      if model.id == preferred then
-        return line
-      end
-      if model.is_default and (not fallback or line < fallback) then
-        fallback = line
-      end
     end
-    return fallback or first
+    return first
   end
 
   local changed = false
-  local agent = require("oculus.agent")
-  local configured = agent.configured_model(agent.repository(group))
   if group.overview_agent_mode == "models" then
     local selected = restore(
       group.overview_agent_model_lines,
-      group.overview_agent_selected_line,
-      configured
+      group.overview_agent_selected_line
     )
     if selected ~= group.overview_agent_selected_line then
       group.overview_agent_selected_line = selected
@@ -3892,8 +3882,7 @@ function M._overview_ui.restore_model_selection(group)
   if group.overview_directions_mode == "models" then
     local selected = restore(
       group.overview_directions_model_lines,
-      group.overview_directions_selected_line,
-      group.overview_agent_explanation_model or configured
+      group.overview_directions_selected_line
     )
     if selected ~= group.overview_directions_selected_line then
       group.overview_directions_selected_line = selected
@@ -3919,25 +3908,13 @@ function M._overview_ui.render_models(group, models, err)
   end
   group.overview_agent_mode = "models"
   group.overview_agent_models = models or {}
-  local configured = require("oculus.agent").configured_model(
-    require("oculus.agent").repository(group)
-  )
-  local selected_index = 1
-  for index, model in ipairs(group.overview_agent_models) do
-    if model.id == configured or model.is_default then
-      selected_index = index
-      if model.id == configured then
-        break
-      end
-    end
-  end
   M._overview_ui.render(group)
   local model_lines = {}
   for line in pairs(group.overview_agent_model_lines or {}) do
     model_lines[#model_lines + 1] = line
   end
   table.sort(model_lines)
-  group.overview_agent_selected_line = model_lines[selected_index]
+  group.overview_agent_selected_line = model_lines[1]
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   if group.overview_agent_selected_line
@@ -4175,25 +4152,13 @@ function M._overview_ui.render_directions_models(group, models, err)
   end
   group.overview_directions_mode = "models"
   group.overview_directions_models = models or {}
-  local agent = require("oculus.agent")
-  local preferred = group.overview_agent_explanation_model
-    or agent.configured_model(agent.repository(group))
-  local selected_index = 1
-  for index, model in ipairs(group.overview_directions_models) do
-    if model.id == preferred or model.is_default then
-      selected_index = index
-      if model.id == preferred then
-        break
-      end
-    end
-  end
   M._overview_ui.render(group)
   local model_lines = {}
   for line in pairs(group.overview_directions_model_lines or {}) do
     model_lines[#model_lines + 1] = line
   end
   table.sort(model_lines)
-  group.overview_directions_selected_line = model_lines[selected_index]
+  group.overview_directions_selected_line = model_lines[1]
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   if group.overview_directions_selected_line
