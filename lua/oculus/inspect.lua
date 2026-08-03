@@ -2265,8 +2265,7 @@ local function version_switch_line(session, role, chunk_index)
   else
     change_start = session.focused_start or focused_hunk_start(hunk)
   end
-  local line = chunk_start_for_role(hunk, role, change_start)
-  return role == "parent" and line + 1 or line
+  return chunk_start_for_role(hunk, role, change_start)
 end
 
 local function render_chunk_for_role(session, role, chunk_index)
@@ -4497,8 +4496,15 @@ local function open_tabs(
         "change",
         inspection_sessions
       )
-      if focused_start then
-        set_change_cursor(parent.win, focused_start)
+      local first_hunk = session.active_chunk
+          and session.hunks[session.active_chunk]
+        or nil
+      if focused_start and first_hunk then
+        set_change_cursor(parent.win, chunk_start_for_role(
+          first_hunk,
+          "parent",
+          focused_start
+        ))
       elseif session.parent_lines[1] then
         set_change_cursor(parent.win, session.parent_lines[1])
       else

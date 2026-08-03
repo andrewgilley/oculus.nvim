@@ -387,6 +387,34 @@ assert(state.search_win == nil)
 assert(vim.api.nvim_win_is_valid(state.win))
 
 local github = require("oculus.github")
+local direct_commit = github._project_commit_event("folke/lazy.nvim", {
+  sha = "directcommit",
+  author = { login = "folke" },
+  commit = {
+    message = "fix: receive project updates",
+    author = {
+      name = "folke",
+      date = "2026-08-01T12:00:00Z",
+    },
+  },
+})
+assert(direct_commit.type == "PushEvent")
+assert(direct_commit.repo.name == "folke/lazy.nvim")
+assert(direct_commit.actor.login == "folke")
+assert(direct_commit.payload.commits[1].sha == "directcommit")
+local direct_pull_request = github._project_pull_request_event(
+  "folke/lazy.nvim",
+  {
+    number = 123,
+    title = "Fix project updates",
+    user = { login = "contributor" },
+    merged_at = "2026-08-02T12:00:00Z",
+    html_url = "https://github.com/folke/lazy.nvim/pull/123",
+  }
+)
+assert(direct_pull_request.type == "PullRequestEvent")
+assert(direct_pull_request.payload.action == "merged")
+assert(direct_pull_request.payload.pull_request.number == 123)
 do
   local enriched_pull_request = github.apply_pull_request({
     type = "PullRequestEvent",
@@ -951,9 +979,11 @@ do
 end
 do
   local original_repository_events = github.repository_events
+  local original_repository_updates = github.repository_updates
   local repository_forces = {}
   local repository_per_page
   local repository_pages = {}
+  local repository_update_pages = {}
   local project_pushes_enriched = false
   local deferred_project_request
   github.repository_events = function(repository, opts, callback)
@@ -1072,6 +1102,11 @@ do
       }
     end
     callback(events, nil, false)
+  end
+  github.repository_updates = function(repository, opts, callback)
+    assert(repository == "neovim/neovim")
+    repository_update_pages[#repository_update_pages + 1] = opts.page
+    callback({}, nil, false)
   end
   github.enrich_pull_requests = function(events, _, callback)
     callback(events)
@@ -1211,6 +1246,7 @@ do
   assert(state.activity_page == 2)
   assert(state.activity_has_past == false)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
+  assert(vim.deep_equal(repository_update_pages, { 1 }))
   vim.fn.maparg("<Left>", "n", false, true).callback()
   assert(state.activity_page == 1)
   assert(#state.events == 8)
@@ -1234,7 +1270,95 @@ do
   vim.fn.maparg("j", "n", false, true).callback()
   assert(state.view == "contributors")
   window.close()
+
+  local lazy_repository_pages = {}
+  local lazy_update_pages = {}
+  github.repository_events = function(repository, opts, callback)
+    assert(repository == "folke/lazy.nvim")
+    lazy_repository_pages[#lazy_repository_pages + 1] = opts.page
+    if opts.page == 1 then
+      callback({
+        {
+          id = "lazy-watch",
+          type = "WatchEvent",
+          repo = { name = repository },
+          created_at = "2026-08-03T12:00:00Z",
+          payload = { action = "started" },
+        },
+      }, nil, false)
+    else
+      callback({}, nil, false)
+    end
+  end
+  github.repository_updates = function(repository, opts, callback)
+    assert(repository == "folke/lazy.nvim")
+    assert(vim.deep_equal(opts.activity_types, {
+      "assigned_issue",
+      "merged_pull_request",
+      "push",
+    }))
+    lazy_update_pages[#lazy_update_pages + 1] = opts.page
+    local events = {}
+    if opts.page == 1 then
+      for index = 1, 8 do
+        events[#events + 1] = {
+          id = "lazy-direct-" .. index,
+          type = "PushEvent",
+          actor = { login = "folke" },
+          repo = { name = repository },
+          created_at = ("2026-08-%02dT12:00:00Z"):format(9 - index),
+          payload = {
+            size = 1,
+            head = "lazycommit" .. index,
+            commits = {
+              {
+                sha = "lazycommit" .. index,
+                message = "Lazy update " .. index,
+              },
+            },
+          },
+        }
+      end
+    end
+    callback(events, nil, false)
+  end
+  github.enrich_pushes = function(events, _, callback)
+    callback(events)
+  end
+  window.open({
+    width = 0.8,
+    height = 0.8,
+    border = "rounded",
+    results_limit = 8,
+    projects = {
+      {
+        name = "lazy.nvim",
+        repository = "folke/lazy.nvim",
+        provider = "github",
+      },
+    },
+  })
+  state = window.state
+  for line, target in pairs(state.line_targets) do
+    if target.kind == "project" then
+      vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+      break
+    end
+  end
+  vim.fn.maparg("<CR>", "n", false, true).callback()
+  assert(state.activity_project.repository == "folke/lazy.nvim")
+  assert(#state.events == 8)
+  assert(vim.deep_equal(lazy_repository_pages, { 1, 2 }))
+  assert(vim.deep_equal(lazy_update_pages, { 1 }))
+  local lazy_activity_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+    "\n"
+  )
+  assert(lazy_activity_text:find("@folke pushed", 1, true))
+  assert(lazy_activity_text:find("Lazy update 1", 1, true))
+  window.close()
   github.repository_events = original_repository_events
+  github.repository_updates = original_repository_updates
 end
 github.events = original_events
 github.enrich_pull_requests = original_enrich_pull_requests

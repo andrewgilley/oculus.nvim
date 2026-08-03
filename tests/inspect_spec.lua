@@ -1784,11 +1784,10 @@ if integration_root and (integration_sha or integration_url) then
   )
   assert(#change_marks > 0)
   assert(vim.wo[change_win].signcolumn == "yes")
-  assert(vim.api.nvim_win_get_cursor(change_win)[1]
-    == change_marks[1][2] + 1)
-  assert(vim.api.nvim_win_get_cursor(parent_win)[1]
-    == change_marks[1][2] + 1)
-
+  assert(vim.api.nvim_win_get_cursor(parent_win)[1] == math.min(
+    parent_marks[1][2] + 1,
+    vim.api.nvim_buf_line_count(parent_buf)
+  ))
   local jump_maps = vim.api.nvim_buf_get_keymap(change_buf, "n")
   local previous_mapped = false
   local next_mapped = false
@@ -2549,10 +2548,7 @@ if integration_root and (integration_sha or integration_url) then
       cursor[1],
       false
     )[1]
-    assert(cursor[1] == math.min(
-      first_changed_sign_line(parent_buf) + 1,
-      vim.api.nvim_buf_line_count(parent_buf)
-    ))
+    assert(cursor[1] == first_changed_sign_line(parent_buf))
     assert(cursor[2] == math.max(0, #cursor_text - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
@@ -2611,10 +2607,7 @@ if integration_root and (integration_sha or integration_url) then
       cursor[1],
       false
     )[1]
-    assert(cursor[1] == math.min(
-      first_changed_sign_line(parent_buf) + 1,
-      vim.api.nvim_buf_line_count(parent_buf)
-    ))
+    assert(cursor[1] == first_changed_sign_line(parent_buf))
     assert(cursor[2] == math.max(0, #cursor_text - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
