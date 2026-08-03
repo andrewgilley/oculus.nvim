@@ -2886,7 +2886,7 @@ local function sidebar_overview_lines(overview, width)
     field("Status", value_or(status, "Unknown"))
   end
   field(
-    "Date opened",
+    "Date",
     overview_date(overview.created_at or details.authored_at)
   )
   if lines[#lines] == "" then
@@ -3345,7 +3345,7 @@ M._overview_ui = {
     ["PR number"] = true,
     ["Issue number"] = true,
     Status = true,
-    ["Date opened"] = true,
+    Date = true,
     ["Agent explanation"] = true,
   },
 }
