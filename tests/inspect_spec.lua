@@ -707,24 +707,12 @@ assert(commit_agent_prompt:find("Repository: neovim/neovim", 1, true))
 assert(commit_agent_prompt:find("File: lua/inspect.lua", 1, true))
 assert(commit_agent_prompt:find("+new behavior", 1, true))
 assert(commit_agent_prompt:find(
-  "Chunk reference: "
-    .. vim.fs.basename(root)
-    .. "/lua/inspect.lua#chunk-1",
+  "Discuss file changes naturally without citing numbered diff chunks.",
   1,
   true
 ))
-assert(commit_agent_prompt:find(
-  "Chunk reference: "
-    .. vim.fs.basename(root)
-    .. "/lua/inspect.lua#chunk-2",
-  1,
-  true
-))
-assert(commit_agent_prompt:find(
-  "Directly reference relevant change chunks",
-  1,
-  true
-))
+assert(not commit_agent_prompt:find("Chunk reference:", 1, true))
+assert(not commit_agent_prompt:find("#chunk-", 1, true))
 local directions_chunk_prompt = require("oculus.agent").directions_prompt({
   overview = commit_overview,
   {
@@ -734,12 +722,22 @@ local directions_chunk_prompt = require("oculus.agent").directions_prompt({
   },
 })
 assert(directions_chunk_prompt:find(
-  "Directly cite exact `project/path#chunk-N` labels",
+  "Do not suggest repository paths and do not include chunk references.",
   1,
   true
 ))
 assert(directions_chunk_prompt:find(
-  vim.fs.basename(root) .. "/lua/inspect.lua#chunk-1",
+  "Write directly to the developer",
+  1,
+  true
+))
+assert(directions_chunk_prompt:find(
+  "plain, actionable language",
+  1,
+  true
+))
+assert(not directions_chunk_prompt:find(
+  "Chunk reference:",
   1,
   true
 ))
@@ -1260,37 +1258,63 @@ local directions_loading_spinner = vim.api.nvim_buf_get_extmarks(
 )
 assert(#directions_loading_spinner == 1)
 finish_agent_models()
+assert(#vim.api.nvim_buf_get_extmarks(
+  overview_buf,
+  inspect._overview_ui.directions_spinner_ns,
+  0,
+  -1,
+  {}
+) == 0)
+local directions_model_text = table.concat(
+  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
+  "\n"
+)
+assert(directions_model_text:find("GPT 5.6 Test Agent", 1, true))
+assert(directions_model_text:find("gpt-5.6-test-fast", 1, true))
+local directions_selection_mark
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  overview_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  if mark[4].hl_group == "OculusInspectAgentModelSelected" then
+    directions_selection_mark = mark
+    break
+  end
+end
+assert(directions_selection_mark)
+assert(vim.api.nvim_win_get_cursor(overview_win)[1]
+  == directions_selection_mark[2] + 1)
+select_agent_model.callback()
 local directions_request = agent_request
 assert(directions_request.model == "gpt-5.6-test-agent")
 assert(directions_request.prompt:find(
-  "additional patch directions",
+  "practical directions",
   1,
   true
 ))
 assert(directions_request.prompt:find(
-  "about the same length as a short activity explanation",
+  "Write directly to the developer",
   1,
   true
 ))
 assert(directions_request.prompt:find(
-  "`" .. vim.fs.basename(root) .. "/` project%-folder prefix"
+  "plain, actionable language",
+  1,
+  true
 ))
-agent_callback(vim.json.encode({
-  directions = table.concat({
-    "A complementary patch could improve the issue-to-workflow transition",
-    "by making likely implementation areas immediately actionable.",
-  }, " "),
-  locations = {
-    {
-      path = "lua/oculus/inspect.lua",
-      reason = "Add the overview directions workflow here.",
-    },
-    {
-      path = "tests/inspect_spec.lua",
-      reason = "Cover the suggested patch directions here.",
-    },
-  },
-}), nil, { model = "gpt-5.6-test-agent" })
+assert(directions_request.prompt:find(
+  "Do not suggest repository paths and do not include chunk references.",
+  1,
+  true
+))
+assert(not directions_request.prompt:find("Chunk reference:", 1, true))
+agent_callback(table.concat({
+  "A complementary patch could improve the issue-to-workflow transition",
+  "by making likely implementation areas immediately actionable.",
+}, " "), nil, { model = "gpt-5.6-test-agent" })
 assert(#vim.api.nvim_buf_get_extmarks(
   overview_buf,
   inspect._overview_ui.directions_spinner_ns,
@@ -1359,8 +1383,13 @@ assert(explanation_text:gsub("%s+", " "):find(
   1,
   true
 ))
-assert(explanation_text:find(
-  vim.fs.basename(root) .. "/tests/inspect_spec.lua",
+local directions_start = assert(explanation_text:find(
+  "Agent directions (gpt-5.6-test-agent)",
+  1,
+  true
+))
+assert(not explanation_text:sub(directions_start):find(
+  "Possible patch locations",
   1,
   true
 ))
@@ -1461,11 +1490,6 @@ assert(restored_overview_text:find(
 ))
 assert(restored_overview_text:find(
   "Agent directions (gpt-5.6-test-agent)",
-  1,
-  true
-))
-assert(restored_overview_text:find(
-  vim.fs.basename(root) .. "/tests/inspect_spec.lua",
   1,
   true
 ))
