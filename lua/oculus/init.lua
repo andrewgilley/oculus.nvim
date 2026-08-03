@@ -70,6 +70,7 @@ local defaults = {
   },
   persist_filters = true,
   persist_contributors = true,
+  persist_projects = true,
   state_file = vim.fn.stdpath("state") .. "/oculus.json",
   browser_command = nil,
   inspect_cache_ttl = 60,
@@ -141,6 +142,34 @@ local function merge_contributors(configured, saved)
   return result
 end
 
+local function project_key(project)
+  if type(project) ~= "table" or not project.repository then
+    return nil
+  end
+  return (project.provider == "codeberg" and "codeberg" or "github")
+    .. ":"
+    .. project.repository:lower()
+end
+
+local function merge_projects(configured, saved)
+  local result = vim.deepcopy(configured or {})
+  local present = {}
+  for _, project in ipairs(result) do
+    local key = project_key(project)
+    if key then
+      present[key] = true
+    end
+  end
+  for _, project in ipairs(saved or {}) do
+    local key = project_key(project)
+    if key and not present[key] then
+      result[#result + 1] = vim.deepcopy(project)
+      present[key] = true
+    end
+  end
+  return result
+end
+
 function M.setup(opts)
   opts = opts or {}
   M.config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts)
@@ -148,8 +177,14 @@ function M.setup(opts)
   if opts.contributors ~= nil then
     M.config.contributors = vim.deepcopy(opts.contributors)
   end
+  if opts.projects ~= nil then
+    M.config.projects = vim.deepcopy(opts.projects)
+  end
 
-  if M.config.persist_filters or M.config.persist_contributors then
+  if M.config.persist_filters
+    or M.config.persist_contributors
+    or M.config.persist_projects
+  then
     local saved = require("oculus.storage").load(M.config.state_file)
     if saved then
       if M.config.persist_filters then
@@ -170,6 +205,12 @@ function M.setup(opts)
         M.config.contributors = merge_contributors(
           M.config.contributors,
           saved.contributors
+        )
+      end
+      if M.config.persist_projects and type(saved.projects) == "table" then
+        M.config.projects = merge_projects(
+          M.config.projects,
+          saved.projects
         )
       end
     end

@@ -8,6 +8,7 @@ local window = require("oculus.window")
 oculus.setup({
   persist_filters = false,
   persist_contributors = false,
+  persist_projects = false,
 })
 assert(#oculus.config.contributors == 3)
 assert(oculus.config.contributors[1].username == "lukewagner")
@@ -23,6 +24,7 @@ assert(oculus.config.projects[5].provider == "github")
 assert(oculus.config.projects[6].repository == "folke/lazy.nvim")
 assert(oculus.config.projects[6].provider == "github")
 assert(oculus.config.suggested_contributors == nil)
+assert(oculus.config.persist_projects == false)
 
 local state_file = vim.fn.tempname()
 assert(storage.save(state_file, {
@@ -37,6 +39,7 @@ assert(storage.save(state_file, {
 local saved = storage.load(state_file)
 assert(#saved.contributors == 1)
 assert(saved.contributors[1].username == "saved-user")
+assert(vim.deep_equal(saved.projects, {}))
 oculus.setup({
   state_file = state_file,
   persist_filters = false,
@@ -62,6 +65,7 @@ window.open({
   height = 0.8,
   border = "rounded",
   persist_contributors = false,
+  persist_projects = false,
   contributors = {},
 })
 
@@ -73,6 +77,25 @@ local project_start_lines = table.concat(
 assert(project_start_lines:find("PROJECTS", 1, true))
 assert(not project_start_lines:find("No users added.", 1, true))
 assert(project_start_lines:find("t users", 1, true))
+local original_select = vim.ui.select
+local original_input = vim.ui.input
+vim.ui.select = function(items, _, callback)
+  callback(items[1])
+end
+vim.ui.input = function(_, callback)
+  callback("example/new-project")
+end
+local add_mapping = vim.fn.maparg("a", "n", false, true)
+add_mapping.callback()
+vim.ui.select = original_select
+vim.ui.input = original_input
+assert(#state.opts.projects == 1)
+assert(state.opts.projects[1].repository == "example/new-project")
+assert(state.opts.projects[1].provider == "github")
+assert(table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+):find("example/new-project", 1, true))
 vim.fn.maparg("t", "n", false, true).callback()
 local empty_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
@@ -82,15 +105,12 @@ assert(empty_lines:find("No users added.", 1, true))
 assert(empty_lines:find("a add account", 1, true))
 assert(vim.fn.maparg("g", "n", false, true).desc == nil)
 
-local original_select = vim.ui.select
-local original_input = vim.ui.input
 vim.ui.select = function(items, _, callback)
   callback(items[2])
 end
 vim.ui.input = function(_, callback)
   callback("@custom-codeberg")
 end
-local add_mapping = vim.fn.maparg("a", "n", false, true)
 add_mapping.callback()
 vim.ui.select = original_select
 vim.ui.input = original_input
@@ -108,6 +128,15 @@ oculus.setup({
   contributors = {},
 })
 window.open(oculus.config)
+vim.ui.select = function(items, _, callback)
+  callback(items[2])
+end
+vim.ui.input = function(_, callback)
+  callback("example/persisted-project")
+end
+vim.fn.maparg("a", "n", false, true).callback()
+vim.ui.select = original_select
+vim.ui.input = original_input
 vim.fn.maparg("t", "n", false, true).callback()
 vim.ui.select = function(items, _, callback)
   callback(items[1])
@@ -130,6 +159,10 @@ oculus.setup({
 })
 assert(#oculus.config.contributors == 1)
 assert(oculus.config.contributors[1].username == "remember-me")
+assert(oculus.config.projects[#oculus.config.projects].repository
+  == "example/persisted-project")
+assert(oculus.config.projects[#oculus.config.projects].provider
+  == "codeberg")
 window.open(oculus.config)
 vim.fn.maparg("t", "n", false, true).callback()
 local restarted_lines = table.concat(
