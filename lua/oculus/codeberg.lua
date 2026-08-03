@@ -603,6 +603,8 @@ function M.issue(repo, number, opts, callback)
       number = issue.number or number,
       title = issue.title,
       body = issue.body,
+      author = issue.user and (issue.user.login or issue.user.username),
+      state = issue.state,
       html_url = issue.html_url,
     }
     inspect_issue_cache[key] = {

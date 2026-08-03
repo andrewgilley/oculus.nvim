@@ -98,7 +98,6 @@ M.state = {
   activity_loaded_pages = 1,
   activity_page_size = 8,
   activity_source_events = nil,
-  activity_search_query = nil,
   activity_has_past = nil,
   project_activity_feed = nil,
   activity_cursor_min_line = 1,
@@ -316,7 +315,7 @@ local function render_activity_footer()
   local width = config.width
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
-    activity_commands = activity_commands .. "   / search   p past   r recent"
+    activity_commands = activity_commands .. "   p past   r recent"
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -1790,10 +1789,6 @@ local function render_activity(events, cached, notice, opts)
         activity_page_count
       )
     or ""
-  local search_suffix = not M.state.activity_commit_page
-      and M.state.activity_search_query
-      and (' · "%s"'):format(M.state.activity_search_query)
-    or ""
   local lines = project
       and {
         "",
@@ -1801,7 +1796,7 @@ local function render_activity(events, cached, notice, opts)
         ("  %s · %s%s"):format(
           project_title(project),
           provider_name(project),
-          context_suffix .. search_suffix
+          context_suffix
         ),
       }
     or {
@@ -1810,7 +1805,7 @@ local function render_activity(events, cached, notice, opts)
       ("  %s · %s%s"):format(
         "@" .. contributor.username,
         provider_name(contributor),
-        context_suffix .. search_suffix
+        context_suffix
       ),
     }
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 12
@@ -1896,15 +1891,9 @@ local function render_activity(events, cached, notice, opts)
   end
 
   if #events == 0 then
-    if M.state.activity_search_query then
-      lines[#lines + 1] = ('  No activity matching "%s" was returned.'):format(
-        M.state.activity_search_query
-      )
-    else
-      lines[#lines + 1] = M.state.activity_page > 1
-          and "  No past public activity was returned."
-        or "  No recent public activity was returned."
-    end
+    lines[#lines + 1] = M.state.activity_page > 1
+        and "  No past public activity was returned."
+      or "  No recent public activity was returned."
     scroll_limit_line = #lines
   end
   M.state.activity_scroll_limit_line = scroll_limit_line
@@ -2044,7 +2033,6 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
-    { "/", "Search activity by keyword" },
     { "u", "Refresh the current activity page" },
     { "p", "Load the next eight older activity items" },
     { "l / <Right>", "Open the next older activity page" },
@@ -2111,50 +2099,6 @@ end
 
 M._activity_page = activity_page
 
-local function collect_activity_search_text(value, parts, seen)
-  local value_type = type(value)
-  if value_type == "string" or value_type == "number" then
-    parts[#parts + 1] = tostring(value)
-    return
-  end
-  if value_type ~= "table" or seen[value] then
-    return
-  end
-  seen[value] = true
-  for _, child in pairs(value) do
-    collect_activity_search_text(child, parts, seen)
-  end
-end
-
-local function activity_matches_query(event, query)
-  query = vim.trim(tostring(query or "")):lower()
-  if query == "" then
-    return true
-  end
-  local parts = {}
-  collect_activity_search_text(event, parts, {})
-  collect_activity_search_text(actions.describe(event), parts, {})
-  local searchable = table.concat(parts, " "):lower()
-  for keyword in query:gmatch("%S+") do
-    if not searchable:find(keyword, 1, true) then
-      return false
-    end
-  end
-  return true
-end
-
-local function search_activity_events(events, query)
-  local results = {}
-  for _, event in ipairs(events or {}) do
-    if activity_matches_query(event, query) then
-      results[#results + 1] = event
-    end
-  end
-  return results
-end
-
-M._search_activity_events = search_activity_events
-
 local function project_event_allowed(event, project)
   local enabled = {}
   for _, category in ipairs(project_activity_types_for(project) or {}) do
@@ -2202,13 +2146,6 @@ local function filter_project_events(events, project)
 end
 
 M._filter_project_events = filter_project_events
-
-local function searched_project_events(events, project)
-  return search_activity_events(
-    filter_project_events(events, project),
-    M.state.activity_search_query
-  )
-end
 
 load_project_activity = function(project, force, page)
   local previous_page = M.state.activity_page or 1
@@ -2269,7 +2206,7 @@ load_project_activity = function(project, force, page)
   local max_source_pages = 10
 
   local function render_project_results()
-    local filtered = searched_project_events(feed.events, project)
+    local filtered = filter_project_events(feed.events, project)
     local first_event =
       (requested_page - 1) * M.state.activity_page_size + 1
     if requested_page > 1 and #filtered < first_event then
@@ -2311,7 +2248,7 @@ load_project_activity = function(project, force, page)
   end
 
   local function ensure_project_page()
-    local filtered = searched_project_events(feed.events, project)
+    local filtered = filter_project_events(feed.events, project)
     if #filtered >= required_events or feed.complete then
       render_project_results()
       return
@@ -2409,12 +2346,8 @@ local function load_activity(contributor, force, page)
   )
   local base_per_page =
     math.max(1, math.floor(tonumber(M.state.opts.per_page) or 30))
-  if M.state.activity_search_query then
-    request_opts.per_page = contributor.provider == "codeberg" and 50 or 100
-  else
-    request_opts.per_page = base_per_page
-      + (M.state.activity_page - 1) * M.state.activity_page_size
-  end
+  request_opts.per_page = base_per_page
+    + (M.state.activity_page - 1) * M.state.activity_page_size
   local callback = function(events, err, cached, notice)
     if request_id ~= M.state.request_id
       or M.state.view ~= "activity"
@@ -2425,10 +2358,7 @@ local function load_activity(contributor, force, page)
     if err then
       render_error(err)
     else
-      local filtered = search_activity_events(
-        actions.filter(events, activity_types_for(contributor)),
-        M.state.activity_search_query
-      )
+      local filtered = actions.filter(events, activity_types_for(contributor))
       M.state.activity_source_events = filtered
       M.state.activity_loaded_pages = math.max(
         M.state.activity_loaded_pages or 1,
@@ -2513,18 +2443,6 @@ local function search_win_config()
   end
   local position = vim.api.nvim_win_get_position(M.state.win)
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
-  if M.state.search_kind == "activity" then
-    return {
-      relative = "editor",
-      width = math.max(1, parent_width - 8),
-      height = 1,
-      row = position[1] + 1,
-      col = position[2] + 4,
-      style = "minimal",
-      border = M.state.opts.border or "rounded",
-      zindex = 70,
-    }
-  end
   local left_width = preview_left_width(parent_width)
   local search_col = position[2] + 2
   local search_width = math.max(1, left_width - 6)
@@ -2571,16 +2489,9 @@ local function cancel_search()
   if M.state.search_query == nil then
     return
   end
-  local search_kind = M.state.search_kind
   local return_state = M.state.search_return
   clear_search_window()
   clear_search_state()
-  if search_kind == "activity" then
-    if is_valid_win(M.state.win) then
-      vim.api.nvim_set_current_win(M.state.win)
-    end
-    return
-  end
   if return_state then
     M.state.community_view = return_state.community_view
     M.state.selected_username = return_state.selected_username
@@ -2643,9 +2554,6 @@ local function update_search_results()
     return
   end
   M.state.search_query = line
-  if M.state.search_kind == "activity" then
-    return
-  end
   M.state.search_results = matching_search_items(line)
   M.state.search_index = 1
   M.state.contributor_offset = 1
@@ -2667,25 +2575,6 @@ local function move_search_selection(direction)
 end
 
 local function accept_search()
-  if M.state.search_kind == "activity" then
-    local query = vim.trim(M.state.search_query or "")
-    local project = M.state.activity_project
-    local contributor = M.state.contributor
-    clear_search_window()
-    clear_search_state()
-    M.state.activity_search_query = query ~= "" and query or nil
-    M.state.activity_page = 1
-    M.state.activity_loaded_pages = 1
-    if is_valid_win(M.state.win) then
-      vim.api.nvim_set_current_win(M.state.win)
-      if project then
-        load_project_activity(project, false, 1)
-      elseif contributor then
-        load_activity(contributor, false, 1)
-      end
-    end
-    return
-  end
   local results = M.state.search_results or {}
   local item = results[M.state.search_index]
   if not item then
@@ -2696,7 +2585,6 @@ local function accept_search()
   clear_search_state()
   if is_valid_win(M.state.win) then
     vim.api.nvim_set_current_win(M.state.win)
-    M.state.activity_search_query = nil
     if search_kind == "projects" then
       M.state.selected_project = item
       M.state.selected_username = nil
@@ -2710,12 +2598,7 @@ local function accept_search()
 end
 
 local function open_search()
-  local activity_search = M.state.view == "activity"
-    and not M.state.activity_commit_page
-    and (M.state.contributor or M.state.activity_project)
-  if (M.state.view ~= "contributors" and not activity_search)
-    or not is_valid_win(M.state.win)
-  then
+  if M.state.view ~= "contributors" or not is_valid_win(M.state.win) then
     return
   end
   if is_valid_win(M.state.search_win) then
@@ -2724,38 +2607,28 @@ local function open_search()
     return
   end
 
-  M.state.search_return = activity_search
-      and { view = "activity" }
-    or {
-      community_view = M.state.community_view,
-      selected_username = M.state.selected_username,
-      selected_project = M.state.selected_project,
-      contributor_offset = M.state.contributor_offset,
-    }
-  M.state.search_kind = activity_search
-      and "activity"
-    or M.state.community_view or "projects"
-  M.state.search_query = activity_search
-      and (M.state.activity_search_query or "")
-    or ""
+  M.state.search_return = {
+    community_view = M.state.community_view,
+    selected_username = M.state.selected_username,
+    selected_project = M.state.selected_project,
+    contributor_offset = M.state.contributor_offset,
+  }
+  M.state.search_kind = M.state.community_view or "projects"
+  M.state.search_query = ""
   M.state.search_backspace_pending = false
-  M.state.search_results = activity_search
-      and {}
-    or matching_search_items("")
+  M.state.search_results = matching_search_items("")
   M.state.search_index = 1
-  if not activity_search then
-    for index, item in ipairs(M.state.search_results) do
-      local selected = M.state.search_kind == "projects"
-          and project_key(item) == project_key(M.state.selected_project)
-        or M.state.search_kind == "users"
-          and item.username == M.state.selected_username
-      if selected then
-        M.state.search_index = index
-        break
-      end
+  for index, item in ipairs(M.state.search_results) do
+    local selected = M.state.search_kind == "projects"
+        and project_key(item) == project_key(M.state.selected_project)
+      or M.state.search_kind == "users"
+        and item.username == M.state.selected_username
+    if selected then
+      M.state.search_index = index
+      break
     end
-    render_contributors()
   end
+  render_contributors()
 
   local buf = vim.api.nvim_create_buf(false, true)
   M.state.search_buf = buf
@@ -2764,11 +2637,6 @@ local function open_search()
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "oculus-search"
   vim.fn.prompt_setprompt(buf, "")
-  if M.state.search_query ~= "" then
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-      M.state.search_query,
-    })
-  end
 
   local config = search_win_config()
   if not config then
@@ -2800,8 +2668,6 @@ local function open_search()
   end
   local item_kind = M.state.search_kind == "projects"
       and "project"
-    or M.state.search_kind == "activity"
-      and "activity"
     or "user"
   search_map("<Esc>", cancel_search, "Cancel Oculus " .. item_kind .. " search")
   search_map("<C-c>", cancel_search, "Cancel Oculus " .. item_kind .. " search")
@@ -2819,26 +2685,22 @@ local function open_search()
     silent = true,
     desc = "Close empty Oculus " .. item_kind .. " search",
   })
-  search_map("<CR>", accept_search, M.state.search_kind == "activity"
-      and "Search Oculus activity"
-    or "Open searched Oculus " .. item_kind)
-  if M.state.search_kind ~= "activity" then
-    search_map("<Down>", function()
-      move_search_selection(1)
-    end, "Preview next Oculus " .. item_kind .. " search result")
-    search_map("<Up>", function()
-      move_search_selection(-1)
-    end, "Preview previous Oculus " .. item_kind .. " search result")
-    search_map("<C-n>", function()
-      move_search_selection(1)
-    end, "Preview next Oculus " .. item_kind .. " search result")
-    search_map("<C-p>", function()
-      move_search_selection(-1)
-    end, "Preview previous Oculus " .. item_kind .. " search result")
-    search_map("<C-k>", function()
-      move_search_selection(1)
-    end, "Move down in Oculus " .. item_kind .. " search results")
-  end
+  search_map("<CR>", accept_search, "Open searched Oculus " .. item_kind)
+  search_map("<Down>", function()
+    move_search_selection(1)
+  end, "Preview next Oculus " .. item_kind .. " search result")
+  search_map("<Up>", function()
+    move_search_selection(-1)
+  end, "Preview previous Oculus " .. item_kind .. " search result")
+  search_map("<C-n>", function()
+    move_search_selection(1)
+  end, "Preview next Oculus " .. item_kind .. " search result")
+  search_map("<C-p>", function()
+    move_search_selection(-1)
+  end, "Preview previous Oculus " .. item_kind .. " search result")
+  search_map("<C-k>", function()
+    move_search_selection(1)
+  end, "Move down in Oculus " .. item_kind .. " search results")
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = autocmd_group,
@@ -2855,7 +2717,7 @@ local function open_search()
       vim.schedule(cancel_search)
     end,
   })
-  vim.cmd(M.state.search_query ~= "" and "startinsert!" or "startinsert")
+  vim.cmd("startinsert")
 end
 
 local target_on_cursor
@@ -3023,7 +2885,6 @@ end
 local function select_current()
   local target = target_on_cursor()
   if M.state.view == "contributors" and type(target) == "table" then
-    M.state.activity_search_query = nil
     if target.kind == "project" then
       M.state.selected_project = target.project
       M.state.selected_username = nil
@@ -3446,7 +3307,7 @@ local function map_keys(buf)
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
   map("t", toggle_community_view, "Switch Oculus project and user lists")
   map("s", open_search, "Fuzzy-search Oculus projects or users")
-  map("/", open_search, "Search Oculus activity, projects, or users")
+  map("/", open_search, "Fuzzy-search Oculus projects or users")
   map("<CR>", select_current, "Select Oculus item")
   map("l", move_right, "Move right in Oculus")
   map("<Right>", move_right, "Move right in Oculus")
