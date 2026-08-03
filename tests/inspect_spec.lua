@@ -692,6 +692,11 @@ local commit_agent_prompt = require("oculus.agent").prompt({
 assert(commit_agent_prompt:find("Repository: neovim/neovim", 1, true))
 assert(commit_agent_prompt:find("File: lua/inspect.lua", 1, true))
 assert(commit_agent_prompt:find("+new behavior", 1, true))
+assert(require("oculus.agent").model_from_stderr(table.concat({
+  "OpenAI Codex",
+  "model: gpt-test-agent",
+  "provider: openai",
+}, "\n")) == "gpt-test-agent")
 do
   local main_config = require("oculus.window").window_config({})
   local commit_config = inspect._overview_window_config(
@@ -702,8 +707,8 @@ do
   assert(commit_config.height == main_config.height - 3)
   assert(commit_config.col == main_config.col + 6)
   assert(commit_config.row == main_config.row + 2)
-  assert(commit_config.footer == " a agent ")
-  assert(commit_config.footer_pos == "left")
+  assert(commit_config.footer == nil)
+  assert(commit_config.footer_pos == nil)
   local pull_request_config = inspect._overview_window_config(
     main_config,
     { kind = "pull_request" }
@@ -712,8 +717,8 @@ do
   assert(pull_request_config.height == main_config.height - 3)
   assert(pull_request_config.col == main_config.col + 6)
   assert(pull_request_config.row == main_config.row + 2)
-  assert(pull_request_config.footer == " a agent ")
-  assert(pull_request_config.footer_pos == "left")
+  assert(pull_request_config.footer == nil)
+  assert(pull_request_config.footer_pos == nil)
 end
 
 local issue_context = inspect.activity_context({
@@ -951,10 +956,13 @@ local issue_overview_lines = vim.api.nvim_buf_get_lines(
   -1,
   false
 )
-assert(issue_overview_lines[#issue_overview_lines - 1]
+assert(issue_overview_lines[#issue_overview_lines - 3]
   == "  Date opened")
-assert(issue_overview_lines[#issue_overview_lines]
+assert(issue_overview_lines[#issue_overview_lines - 2]
   :match("^  %d%d/%d%d/%d%d%d%d$"))
+assert(issue_overview_lines[#issue_overview_lines - 1]
+  :find("  ─", 1, true) == 1)
+assert(issue_overview_lines[#issue_overview_lines] == "  a agent")
 assert(issue_overview:find("  Title\n", 1, true))
 assert(issue_overview:find("Issue inspect fixture", 1, true))
 assert(issue_overview:find("  Description\n", 1, true))
@@ -977,7 +985,7 @@ agent.explain = function(request, callback)
   callback(table.concat({
     "The issue appears intended to make inspections useful even when",
     "an activity item does not identify particular files.",
-  }, "\n"))
+  }, "\n"), nil, { model = "gpt-test-agent" })
   return {}
 end
 local agent_explanation_mapping = vim.fn.maparg(
@@ -1005,7 +1013,11 @@ issue_overview = table.concat(
   vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
   "\n"
 )
-assert(issue_overview:find("  Agent explanation\n", 1, true))
+assert(issue_overview:find(
+  "  Agent explanation (gpt-test-agent)\n",
+  1,
+  true
+))
 assert(issue_overview:gsub("%s+", " "):find(
   "The issue appears intended to make inspections useful even when an "
     .. "activity item does not identify particular files.",
@@ -2611,12 +2623,12 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_win_get_cursor(sidebar_change_win)[1]
     == selected_chunk_line)
   assert(vim.api.nvim_win_get_cursor(sidebar_change_win)[2]
-    == math.max(0, #vim.api.nvim_buf_get_lines(
+    == math.max(0, (vim.api.nvim_buf_get_lines(
       sidebar_buf,
       selected_chunk_line - 1,
       selected_chunk_line,
       false
-    )[1] - 1))
+    )[1]:find("%S") or 1) - 1))
   do
     local cursor = vim.api.nvim_win_get_cursor(change_win)
     local cursor_text = vim.api.nvim_buf_get_lines(
@@ -2626,7 +2638,8 @@ if integration_root and (integration_sha or integration_url) then
       false
     )[1]
     assert(cursor[1] == first_changed_sign_line(change_buf))
-    assert(cursor[2] == math.max(0, #cursor_text - 1))
+    assert(cursor[2]
+      == math.max(0, (cursor_text:find("%S") or 1) - 1))
   end
   assert(vim.fn.winsaveview().topline
     == parent_sidebar_view.topline)
@@ -2647,7 +2660,8 @@ if integration_root and (integration_sha or integration_url) then
       false
     )[1]
     assert(cursor[1] == first_changed_sign_line(parent_buf))
-    assert(cursor[2] == math.max(0, #cursor_text - 1))
+    assert(cursor[2]
+      == math.max(0, (cursor_text:find("%S") or 1) - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
@@ -2682,7 +2696,8 @@ if integration_root and (integration_sha or integration_url) then
       false
     )[1]
     assert(cursor[1] == first_changed_sign_line(change_buf))
-    assert(cursor[2] == math.max(0, #cursor_text - 1))
+    assert(cursor[2]
+      == math.max(0, (cursor_text:find("%S") or 1) - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
@@ -2706,7 +2721,8 @@ if integration_root and (integration_sha or integration_url) then
       false
     )[1]
     assert(cursor[1] == first_changed_sign_line(parent_buf))
-    assert(cursor[2] == math.max(0, #cursor_text - 1))
+    assert(cursor[2]
+      == math.max(0, (cursor_text:find("%S") or 1) - 1))
   end
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")

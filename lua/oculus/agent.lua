@@ -103,19 +103,68 @@ function M.normalize(value)
   return value ~= "" and value or nil
 end
 
-local function codex_command()
+local function config_model(path)
+  if not path or vim.fn.filereadable(path) ~= 1 then
+    return nil
+  end
+  local ok, lines = pcall(vim.fn.readfile, path)
+  if not ok then
+    return nil
+  end
+  for _, line in ipairs(lines) do
+    if line:match("^%s*%[") then
+      break
+    end
+    local model = line:match('^%s*model%s*=%s*"([^"]+)"')
+      or line:match("^%s*model%s*=%s*'([^']+)'")
+    if model and model ~= "" then
+      return model
+    end
+  end
+end
+
+function M.configured_model(cwd)
+  local project_model = config_model(
+    cwd and vim.fs.joinpath(cwd, ".codex", "config.toml")
+  )
+  if project_model then
+    return project_model
+  end
+  local codex_home = vim.env.CODEX_HOME
+  if not codex_home or codex_home == "" then
+    codex_home = vim.fs.joinpath(vim.uv.os_homedir(), ".codex")
+  end
+  return config_model(vim.fs.joinpath(codex_home, "config.toml"))
+end
+
+function M.model_from_stderr(stderr)
+  for line in tostring(stderr or ""):gmatch("[^\r\n]+") do
+    line = line:gsub("\27%[[%d;]*m", "")
+    local model = line:match("^%s*[Mm]odel:%s*(%S+)")
+    if model and model ~= "" then
+      return model
+    end
+  end
+end
+
+local function codex_command(model)
   local executable = vim.fn.exepath("codex")
   if executable == "" then
     return nil, "Codex is not installed or is not available on PATH"
   end
-  return {
+  local command = {
     executable,
     "exec",
     "--ephemeral",
     "--sandbox",
     "read-only",
-    "-",
   }
+  if model then
+    command[#command + 1] = "--model"
+    command[#command + 1] = model
+  end
+  command[#command + 1] = "-"
+  return command
 end
 
 local function command_error(result)
@@ -140,7 +189,8 @@ function M.explain(request, callback)
     return nil, "an agent explanation requires a callback"
   end
 
-  local command, command_err = codex_command()
+  local configured_model = request.model or M.configured_model(request.cwd)
+  local command, command_err = codex_command(configured_model)
   if not command then
     return nil, command_err
   end
@@ -159,7 +209,9 @@ function M.explain(request, callback)
         callback(nil, "Codex returned an empty explanation")
         return
       end
-      callback(explanation)
+      callback(explanation, nil, {
+        model = M.model_from_stderr(result.stderr) or configured_model,
+      })
     end)
   end)
   if not ok then
