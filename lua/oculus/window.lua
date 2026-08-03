@@ -1299,8 +1299,8 @@ local function render_contributors()
   lines[#lines + 1] = searching
       and "  esc cancel"
     or showing_users
-        and "  v projects  a add  / search  ?: help  q quit"
-      or "  v users  ?: help  q quit"
+        and "  t projects  a add  / search  ?: help  q quit"
+      or "  t users  ?: help  q quit"
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
@@ -1938,7 +1938,7 @@ local function render_shortcuts()
   })
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
   section("STARTUP LISTS", {
-    { "v", "Switch between project and user lists" },
+    { "t", "Switch between project and user lists" },
     { "s /", "Fuzzy-search contributor names and handles" },
     { "a", "Add a GitHub or Codeberg account" },
     { "x", "Remove the selected account" },
@@ -3132,7 +3132,7 @@ local function map_keys(buf)
   map("q", M.close, "Close Oculus")
   map("<Esc>", M.close, "Close Oculus")
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
-  map("v", toggle_community_view, "Switch Oculus project and user lists")
+  map("t", toggle_community_view, "Switch Oculus project and user lists")
   map("s", open_search, "Fuzzy-search Oculus users")
   map("/", open_search, "Fuzzy-search Oculus users")
   map("<CR>", select_current, "Select Oculus item")
