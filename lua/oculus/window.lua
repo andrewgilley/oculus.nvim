@@ -315,7 +315,8 @@ local function render_activity_footer()
   local width = config.width
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
-    activity_commands = activity_commands .. "   p past   r recent"
+    activity_commands = activity_commands
+      .. "   p past   f forward   r refresh"
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -2033,10 +2034,10 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
-    { "u", "Refresh the current activity page" },
+    { "r", "Refresh the current activity page" },
     { "p", "Load the next eight older activity items" },
     { "l / <Right>", "Open the next older activity page" },
-    { "r / j / <Left>", "Load newer activity items" },
+    { "f", "Move forward to a newer activity page" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
@@ -3410,9 +3411,6 @@ local function map_keys(buf)
   map("<Space>", toggle_filter_type, "Toggle Oculus item")
   map("o", open_current, "Open Oculus contributor profile")
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
-  map("f", function()
-    open_filters(false)
-  end, "Edit activity categories")
   map("F", function()
     open_filters(true)
   end, "Edit global activity types")
@@ -3428,8 +3426,14 @@ local function map_keys(buf)
     set_all_filter_types(false)
   end, "Disable all Oculus activity filters")
   map("p", next_activity_page, "Load past Oculus activity")
-  map("r", previous_activity_page, "Load more recent Oculus activity")
-  map("u", refresh_activity, "Refresh Oculus activity")
+  map("f", function()
+    if M.state.view == "activity" then
+      previous_activity_page()
+    else
+      open_filters(false)
+    end
+  end, "Move forward or edit Oculus activity categories")
+  map("r", refresh_activity, "Refresh Oculus activity")
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
   map("k", function()
