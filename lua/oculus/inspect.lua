@@ -301,6 +301,7 @@ local function activity_context(event)
       body = issue_body,
       comment = comment_body,
       html_url = issue.html_url,
+      created_at = issue.created_at,
     },
   }
 end
@@ -2159,6 +2160,16 @@ local function move_cursor_to_line_end(win)
   end)
 end
 
+local function place_version_switch_cursor(endpoint, line)
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  if line then
+    set_change_cursor(endpoint.win, line)
+  end
+  move_cursor_to_line_end(endpoint.win)
+end
+
 local function inspection_chunks(group, session)
   return group.kind == "issue"
       and (session.sections or {})
@@ -2243,6 +2254,20 @@ local function chunk_start_for_role(hunk, role, change_start)
     or change_start
 end
 
+local function version_switch_line(session, role, chunk_index)
+  local hunk = session.hunks and session.hunks[chunk_index] or nil
+  if not hunk then
+    return
+  end
+  local change_start
+  if not session.focused_chunks or chunk_index ~= session.active_chunk then
+    change_start = render_focused_chunk(session, chunk_index)
+  else
+    change_start = session.focused_start or focused_hunk_start(hunk)
+  end
+  return chunk_start_for_role(hunk, role, change_start)
+end
+
 local function render_chunk_for_role(session, role, chunk_index)
   local hunk = session.hunks and session.hunks[chunk_index] or nil
   if not hunk then
@@ -2281,13 +2306,15 @@ local function map_file_navigation(endpoint, session, role, group)
   local function toggle_version()
     local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
     local chunk_index = hunk_index_at_line(session, role, line)
-    if chunk_index and chunk_index ~= session.active_chunk then
-      render_focused_chunk(session, chunk_index)
-    end
+      or session.active_chunk
+      or (session.hunks and session.hunks[1] and 1)
     local target = role == "parent" and session.change or session.parent
     local target_role = role == "parent" and "change" or "parent"
+    local target_line = chunk_index
+        and version_switch_line(session, target_role, chunk_index)
+      or nil
+    place_version_switch_cursor(target, target_line)
     select_endpoint(target, session, target_role, group)
-    move_cursor_to_line_end(target.win)
   end
   local version_lhs = group.version_switch
   if version_lhs == nil then
@@ -2647,6 +2674,59 @@ local function append_sidebar_text(lines, text, width, indent)
   end
 end
 
+local function utc_timestamp(year, month, day, hour, minute, second)
+  year = month <= 2 and year - 1 or year
+  local era = math.floor(year / 400)
+  local year_of_era = year - era * 400
+  local month_index = month > 2 and month - 3 or month + 9
+  local day_of_year = math.floor((153 * month_index + 2) / 5) + day - 1
+  local day_of_era = year_of_era * 365
+    + math.floor(year_of_era / 4)
+    - math.floor(year_of_era / 100)
+    + day_of_year
+  local days = era * 146097 + day_of_era - 719468
+  return days * 86400 + hour * 3600 + minute * 60 + second
+end
+
+local function overview_date(timestamp)
+  if type(timestamp) ~= "string" or timestamp == "" then
+    return "Unknown"
+  end
+  local year, month, day, hour, minute, second, sign, offset_hour,
+    offset_minute = timestamp:match(
+      "^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)([+-])(%d%d):(%d%d)$"
+    )
+  if not year then
+    year, month, day, hour, minute, second = timestamp:match(
+      "^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)Z$"
+    )
+  end
+  if not year then
+    return timestamp
+  end
+  local opened = utc_timestamp(
+    tonumber(year),
+    tonumber(month),
+    tonumber(day),
+    tonumber(hour),
+    tonumber(minute),
+    tonumber(second)
+  )
+  if sign then
+    local offset = tonumber(offset_hour) * 3600
+      + tonumber(offset_minute) * 60
+    opened = opened + (sign == "+" and -offset or offset)
+  end
+  local local_date = os.date("*t", opened)
+  local local_time = os.date("%I:%M %p", opened):gsub("^0", "")
+  return ("%02d/%02d/%02d — %s"):format(
+    local_date.month,
+    local_date.day,
+    local_date.year % 100,
+    local_time
+  )
+end
+
 local function sidebar_overview_lines(overview, width)
   width = math.max(12, tonumber(width) or 28)
   local details = overview.commit_details or {}
@@ -2702,6 +2782,10 @@ local function sidebar_overview_lines(overview, width)
       )
     field("Status", value_or(status, "Unknown"))
   end
+  field(
+    "Date opened",
+    overview_date(overview.created_at or details.authored_at)
+  )
   if lines[#lines] == "" then
     table.remove(lines)
   end
@@ -3212,6 +3296,7 @@ show_inspection_overview = function(group)
     ["PR number"] = true,
     ["Issue number"] = true,
     Status = true,
+    ["Date opened"] = true,
   }
   for index, line in ipairs(lines) do
     local label = line:match("^  (.-)%s*$")
@@ -3868,14 +3953,18 @@ switch_sidebar_version = function(group)
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
-  if entry and entry.chunk_index and session then
-    render_focused_chunk(session, entry.chunk_index)
-  end
+  local chunk_index = entry
+      and entry.chunk_index
+    or session and session.active_chunk
+    or (session and session.hunks and session.hunks[1] and 1)
   local target_role = role == "parent" and "change" or "parent"
   local endpoint = session and session[target_role] or nil
   if not valid_endpoint(endpoint) then
     return
   end
+  local target_line = chunk_index
+      and version_switch_line(session, target_role, chunk_index)
+    or nil
   ensure_inspection_sidebar_on_tab(group, endpoint.tab)
   local sidebar_win = group.sidebar_windows[endpoint.tab]
   if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
@@ -3888,6 +3977,7 @@ switch_sidebar_version = function(group)
   end)
   remember_session_role(session, target_role)
   sidebar_navigating = true
+  place_version_switch_cursor(endpoint, target_line)
   vim.api.nvim_win_set_cursor(sidebar_win, { line, 0 })
   source_view.lnum = line
   source_view.col = 0
@@ -4701,6 +4791,7 @@ local function apply_pull_request(info, details)
     "draft",
     "merged",
     "html_url",
+    "created_at",
     "base_sha",
     "base_ref",
     "head_sha",
@@ -4793,6 +4884,7 @@ local function open_issue_inspection(
       "author",
       "state",
       "html_url",
+      "created_at",
     }) do
       if details[key] ~= nil then
         resolved[key] = details[key]
