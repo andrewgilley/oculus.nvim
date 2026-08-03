@@ -698,12 +698,17 @@ assert(require("oculus.agent").model_from_stderr(table.concat({
   "provider: openai",
 }, "\n")) == "gpt-test-agent")
 local normalized_models = require("oculus.agent").normalize_models({
-  { model = "gpt-secondary", displayName = "Secondary" },
-  { model = "gpt-default", displayName = "Default", isDefault = true },
-  { model = "gpt-hidden", displayName = "Hidden", hidden = true },
+  { model = "gpt-5.6-secondary", displayName = "Secondary" },
+  {
+    model = "gpt-5.6-default",
+    displayName = "Default",
+    isDefault = true,
+  },
+  { model = "gpt-5.6-hidden", displayName = "Hidden", hidden = true },
+  { model = "gpt-5.4", displayName = "GPT 5.4" },
 })
 assert(#normalized_models == 2)
-assert(normalized_models[1].id == "gpt-default")
+assert(normalized_models[1].id == "gpt-5.6-default")
 assert(normalized_models[1].is_default)
 do
   local main_config = require("oculus.window").window_config({})
@@ -1005,16 +1010,17 @@ local agent = require("oculus.agent")
 local original_agent_models = agent.models
 local original_agent_explain = agent.explain
 local agent_request
+local agent_callback
 agent.models = function(callback)
   callback({
     {
-      id = "gpt-test-agent",
-      display_name = "GPT Test Agent",
+      id = "gpt-5.6-test-agent",
+      display_name = "GPT 5.6 Test Agent",
       is_default = true,
     },
     {
-      id = "gpt-test-fast",
-      display_name = "GPT Test Fast",
+      id = "gpt-5.6-test-fast",
+      display_name = "GPT 5.6 Test Fast",
       is_default = false,
     },
   })
@@ -1022,11 +1028,14 @@ agent.models = function(callback)
 end
 agent.explain = function(request, callback)
   agent_request = request
-  callback(table.concat({
+  agent_callback = callback
+  return {}
+end
+local function finish_agent_explanation()
+  agent_callback(table.concat({
     "The issue appears intended to make inspections useful even when",
     "an activity item does not identify particular files.",
-  }, "\n"), nil, { model = "gpt-test-agent" })
-  return {}
+  }, "\n"), nil, { model = "gpt-5.6-test-agent" })
 end
 local agent_explanation_mapping = vim.fn.maparg(
   "a",
@@ -1041,27 +1050,54 @@ agent_explanation_mapping.callback()
 local model_win = vim.api.nvim_get_current_win()
 local model_buf = vim.api.nvim_get_current_buf()
 local model_config = vim.api.nvim_win_get_config(model_win)
-assert(model_win ~= overview_win)
-assert(vim.b[model_buf].oculus_inspect_agent == "models")
+assert(model_win == overview_win)
+assert(model_buf == overview_buf)
 assert(model_config.width == overview_config.width)
 assert(model_config.height == overview_config.height)
-assert(vim.deep_equal(model_config.row, overview_config.row))
-assert(vim.deep_equal(model_config.col, overview_config.col))
 local model_text = table.concat(
   vim.api.nvim_buf_get_lines(model_buf, 0, -1, false),
   "\n"
 )
-assert(model_text:find("MODELS", 1, true))
-assert(model_text:find("GPT Test Agent", 1, true))
-assert(model_text:find("gpt-test-fast", 1, true))
+assert(model_text:find("Agent explanation", 1, true))
+assert(model_text:find("GPT 5.6 Test Agent", 1, true))
+assert(model_text:find("gpt-5.6-test-fast", 1, true))
+assert(model_text:find("Date opened", 1, true)
+  < model_text:find("Agent explanation", 1, true))
 local select_agent_model = vim.fn.maparg("<CR>", "n", false, true)
 assert(select_agent_model.desc == "Select Oculus agent model")
 select_agent_model.callback()
+local generating_text = table.concat(
+  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
+  "\n"
+)
+assert(generating_text:find(
+  "Agent explanation (gpt-5.6-test-agent)",
+  1,
+  true
+))
+assert(not generating_text:find("Generating explanation", 1, true))
+local spinner_marks = vim.api.nvim_buf_get_extmarks(
+  overview_buf,
+  inspect._overview_ui.agent_spinner_ns,
+  0,
+  -1,
+  { details = true }
+)
+assert(#spinner_marks == 1)
+assert(spinner_marks[1][4].virt_text[1][1]:match("^ ⠋$"))
+finish_agent_explanation()
+assert(#vim.api.nvim_buf_get_extmarks(
+  overview_buf,
+  inspect._overview_ui.agent_spinner_ns,
+  0,
+  -1,
+  {}
+) == 0)
 local explanation_win = vim.api.nvim_get_current_win()
 local explanation_buf = vim.api.nvim_get_current_buf()
 local explanation_config = vim.api.nvim_win_get_config(explanation_win)
-assert(not vim.api.nvim_win_is_valid(model_win))
-assert(vim.b[explanation_buf].oculus_inspect_agent == "explanation")
+assert(explanation_win == overview_win)
+assert(explanation_buf == overview_buf)
 assert(explanation_config.width == overview_config.width)
 assert(explanation_config.height == overview_config.height)
 assert(vim.deep_equal(explanation_config.row, overview_config.row))
@@ -1069,7 +1105,7 @@ assert(vim.deep_equal(explanation_config.col, overview_config.col))
 agent.models = original_agent_models
 agent.explain = original_agent_explain
 assert(vim.fs.normalize(agent_request.cwd) == vim.fs.normalize(root))
-assert(agent_request.model == "gpt-test-agent")
+assert(agent_request.model == "gpt-5.6-test-agent")
 assert(agent_request.prompt:find(
   "Repository: andrewgilley/oculus.nvim",
   1,
@@ -1085,7 +1121,7 @@ local explanation_text = table.concat(
   "\n"
 )
 assert(explanation_text:find(
-  "AGENT EXPLANATION (gpt-test-agent)\n",
+  "Agent explanation (gpt-5.6-test-agent)\n",
   1,
   true
 ))
@@ -1095,11 +1131,7 @@ assert(explanation_text:gsub("%s+", " "):find(
   1,
   true
 ))
-local close_agent_window = vim.fn.maparg("q", "n", false, true)
-assert(close_agent_window.desc == "Close Oculus agent window")
-close_agent_window.callback()
-assert(not vim.api.nvim_win_is_valid(explanation_win))
-assert(vim.api.nvim_get_current_win() == overview_win)
+assert(vim.api.nvim_win_is_valid(explanation_win))
 
 local issue_main_win
 local issue_sidebar_win
