@@ -4722,13 +4722,81 @@ switch_sidebar_version = function(group)
   sidebar_navigating = false
 end
 
+function M._adjacent_inspection_tab(tab, direction)
+  local tabs = vim.api.nvim_list_tabpages()
+  for index, candidate in ipairs(tabs) do
+    if candidate == tab then
+      return tabs[((index - 1 + direction) % #tabs) + 1]
+    end
+  end
+end
+
+function M._preserved_version_tab(source, entered_tab)
+  local group = source and source.group
+  if not group then
+    return entered_tab
+  end
+  local target_index, target_role = sidebar_active_item(group, entered_tab)
+  if not target_index then
+    return entered_tab
+  end
+
+  local target_tab = entered_tab
+  if target_index == source.index and target_role ~= source.role then
+    local direction = source.role == "parent" and 1 or -1
+    target_tab = M._adjacent_inspection_tab(entered_tab, direction)
+      or entered_tab
+    target_index = sidebar_active_item(group, target_tab)
+  end
+
+  if target_index and target_index ~= source.index then
+    local session = group[target_index]
+    local endpoint = session and session[source.role]
+    if valid_endpoint(endpoint) then
+      target_tab = endpoint.tab
+    end
+  end
+  return target_tab
+end
+
+vim.api.nvim_create_autocmd("TabLeave", {
+  group = sync_group,
+  callback = function()
+    M._tab_navigation_source = nil
+    if sidebar_navigating or inspection_tabs_loading then
+      return
+    end
+    local tab = vim.api.nvim_get_current_tabpage()
+    for _, group in ipairs(sidebar_groups) do
+      local index, role = sidebar_active_item(group, tab)
+      if index then
+        M._tab_navigation_source = {
+          group = group,
+          index = index,
+          role = role,
+        }
+        return
+      end
+    end
+  end,
+})
+
 vim.api.nvim_create_autocmd("TabEnter", {
   group = sync_group,
   callback = function()
     if sidebar_navigating then
       return
     end
+    local source = M._tab_navigation_source
+    M._tab_navigation_source = nil
     local tab = vim.api.nvim_get_current_tabpage()
+    local target = M._preserved_version_tab(source, tab)
+    if target ~= tab and vim.api.nvim_tabpage_is_valid(target) then
+      sidebar_navigating = true
+      vim.api.nvim_set_current_tabpage(target)
+      sidebar_navigating = false
+      tab = target
+    end
     for _, group in ipairs(sidebar_groups) do
       if not sidebar_navigating then
         local index, role = sidebar_active_item(group, tab)

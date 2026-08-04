@@ -135,6 +135,47 @@ assert(vim.deep_equal(
   }),
   { "issue" }
 ))
+do
+  local origin = vim.api.nvim_get_current_tabpage()
+  local endpoints = {}
+  for index = 1, 4 do
+    vim.cmd("tabnew")
+    endpoints[index] = {
+      tab = vim.api.nvim_get_current_tabpage(),
+      win = vim.api.nvim_get_current_win(),
+      buf = vim.api.nvim_get_current_buf(),
+    }
+  end
+  local group = {
+    { parent = endpoints[1], change = endpoints[2] },
+    { parent = endpoints[3], change = endpoints[4] },
+  }
+  assert(inspect._preserved_version_tab({
+    group = group,
+    index = 1,
+    role = "parent",
+  }, endpoints[2].tab) == endpoints[3].tab)
+  assert(inspect._preserved_version_tab({
+    group = group,
+    index = 1,
+    role = "change",
+  }, endpoints[3].tab) == endpoints[4].tab)
+  assert(inspect._preserved_version_tab({
+    group = group,
+    index = 2,
+    role = "parent",
+  }, endpoints[2].tab) == endpoints[1].tab)
+  assert(inspect._preserved_version_tab({
+    group = group,
+    index = 2,
+    role = "change",
+  }, endpoints[3].tab) == endpoints[2].tab)
+  for index = #endpoints, 1, -1 do
+    vim.api.nvim_set_current_tabpage(endpoints[index].tab)
+    vim.cmd("tabclose")
+  end
+  vim.api.nvim_set_current_tabpage(origin)
+end
 
 for group, expected in pairs({
   OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
