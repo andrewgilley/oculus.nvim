@@ -95,7 +95,7 @@ assert(oculus.config.inspect_next_chunk == "<Tab>")
 assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
 assert(oculus.config.inspect_next_file == nil)
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "change")
-  == "parent")
+  == "change")
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "parent")
   == "parent")
 assert(inspect._progressed_chunk_role({ kind = "issue" }, "issue")
@@ -668,7 +668,7 @@ local pull_request_overview_lines =
 assert(pull_request_overview_lines[#pull_request_overview_lines - 1]
   == "  Date")
 assert(pull_request_overview_lines[#pull_request_overview_lines]
-  :match("^  %d%d/%d%d/%d%d%d%d$"))
+  :match("^  %a+ %d%d?, %d%d%d%d$"))
 assert(not pull_request_overview_text:find("Repository", 1, true))
 assert(not pull_request_overview_text:find("Branches", 1, true))
 assert(not pull_request_overview_text:find("Changes", 1, true))
@@ -733,7 +733,7 @@ local commit_overview_lines =
 assert(commit_overview_lines[#commit_overview_lines - 1]
   == "  Date")
 assert(commit_overview_lines[#commit_overview_lines]
-  :match("^  %d%d/%d%d/%d%d%d%d$"))
+  :match("^  %a+ %d%d?, %d%d%d%d$"))
 assert(not commit_overview_text:find("Repository", 1, true))
 assert(not commit_overview_text:find("\nCommit\n", 1, true))
 assert(not commit_overview_text:find("Authored", 1, true))
@@ -1069,7 +1069,7 @@ local issue_overview_lines = vim.api.nvim_buf_get_lines(
 assert(issue_overview_lines[#issue_overview_lines - 1]
   == "  Date")
 assert(issue_overview_lines[#issue_overview_lines]
-  :match("^  %d%d/%d%d/%d%d%d%d$"))
+  :match("^  %a+ %d%d?, %d%d%d%d$"))
 local overview_footer_buf
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   local candidate = vim.api.nvim_win_get_buf(win)

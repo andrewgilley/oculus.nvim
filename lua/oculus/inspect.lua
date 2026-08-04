@@ -2302,11 +2302,8 @@ local function previous_inspection_chunk(group, session, current_chunk)
   end
 end
 
-local function progressed_chunk_role(group, current_role)
-  if group.kind == "issue" then
-    return current_role
-  end
-  return "parent"
+local function progressed_chunk_role(_, current_role)
+  return current_role
 end
 
 local function chunk_navigation_role(
@@ -2761,6 +2758,21 @@ local function utc_timestamp(year, month, day, hour, minute, second)
   return days * 86400 + hour * 3600 + minute * 60 + second
 end
 
+local overview_months = {
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+}
+
 local function overview_date(timestamp)
   if type(timestamp) ~= "string" or timestamp == "" then
     return "Unknown"
@@ -2791,8 +2803,8 @@ local function overview_date(timestamp)
     opened = opened + (sign == "+" and -offset or offset)
   end
   local local_date = os.date("*t", opened)
-  return ("%02d/%02d/%04d"):format(
-    local_date.month,
+  return ("%s %d, %d"):format(
+    overview_months[local_date.month],
     local_date.day,
     local_date.year
   )
@@ -4605,7 +4617,7 @@ local function select_sidebar_entry(group, direction, preferred_role)
 end
 
 select_next_sidebar_chunk = function(group)
-  select_sidebar_entry(group, 1, "parent")
+  select_sidebar_entry(group, 1)
 end
 
 select_previous_sidebar_chunk = function(group)
