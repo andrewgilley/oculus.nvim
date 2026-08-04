@@ -1832,8 +1832,13 @@ local function render_activity(events, cached, notice, opts)
     end
     local inspect_context = inspect.activity_context(event)
     local expands_commits = not M.state.activity_commit_page
-      and event.type == "PushEvent"
-      and #(event.payload and event.payload.commits or {}) > 1
+      and (
+        event.type == "PullRequestEvent"
+        or (
+          event.type == "PushEvent"
+          and #(event.payload and event.payload.commits or {}) > 1
+        )
+      )
     local event_line = #lines + 1
     M.state.activity_title_lines[event_line] = event_line
     if expands_commits then
@@ -1974,10 +1979,48 @@ local function commit_activity_events(event)
   return result
 end
 
-local function open_commit_activity(event)
-  local commits = commit_activity_events(event)
+local function pull_request_commit_events(event, commits)
+  local result = {}
+  for index, commit in ipairs(commits or {}) do
+    local sha = commit.sha
+    if type(sha) == "string" and sha ~= "" then
+      local details = type(commit.commit) == "table" and commit.commit or {}
+      local author = type(details.author) == "table" and details.author or {}
+      local account = type(commit.author) == "table" and commit.author or nil
+      local commit_event = vim.deepcopy(event)
+      commit_event.id = ("%s:commit:%d:%s"):format(
+        tostring(event.id or "pull-request"),
+        index,
+        sha
+      )
+      commit_event.type = "PushEvent"
+      commit_event.actor = account or { name = author.name }
+      commit_event.created_at = author.date or event.created_at
+      commit_event.payload = {
+        head = sha,
+        size = 1,
+        commits = {
+          {
+            sha = sha,
+            message = details.message or commit.message,
+            author = account or { name = author.name },
+          },
+        },
+      }
+      commit_event.url = commit.html_url
+        or commit_activity_url(event, sha)
+      commit_event.group_url = nil
+      commit_event.oculus_text = nil
+      commit_event.oculus_detail = nil
+      result[#result + 1] = commit_event
+    end
+  end
+  return result
+end
+
+local function show_commit_activity(commits)
   if #commits == 0 then
-    return
+    return false
   end
   M.state.activity_return = {
     events = M.state.events,
@@ -1990,6 +2033,60 @@ local function open_commit_activity(event)
     source_events = M.state.activity_source_events,
   }
   render_activity(commits, false, nil, { commit_page = true })
+  return true
+end
+
+local function open_commit_activity(event)
+  return show_commit_activity(commit_activity_events(event))
+end
+
+local function open_pull_request_activity(event)
+  local payload = event.payload or {}
+  local pull_request = payload.pull_request or {}
+  local repo = event.repo and event.repo.name
+  local number = pull_request.number or payload.number
+  local source = M.state.activity_project or M.state.contributor
+  local provider = activity_provider(source)
+  if not repo
+    or not number
+    or type(provider.pull_request_commits) ~= "function"
+  then
+    return false
+  end
+
+  M.state.request_id = M.state.request_id + 1
+  local request_id = M.state.request_id
+  start_activity_page_loading()
+  provider.pull_request_commits(repo, number, M.state.opts, function(
+    commits,
+    err
+  )
+    if request_id ~= M.state.request_id
+      or M.state.view ~= "activity"
+      or M.state.activity_commit_page
+      or not is_valid_win(M.state.win)
+    then
+      return
+    end
+    if not commits then
+      stop_activity_page_loading()
+      vim.notify(
+        "Oculus: " .. tostring(err or "could not load pull request commits"),
+        vim.log.levels.ERROR
+      )
+      return
+    end
+    if not show_commit_activity(
+      pull_request_commit_events(event, commits)
+    ) then
+      stop_activity_page_loading()
+      vim.notify(
+        "Oculus: this pull request has no commits",
+        vim.log.levels.INFO
+      )
+    end
+  end)
+  return true
 end
 
 local function render_shortcuts()
@@ -2979,8 +3076,10 @@ local function open_activity_expansion()
   if not event then
     return false
   end
-  open_commit_activity(event)
-  return true
+  if event.type == "PullRequestEvent" then
+    return open_pull_request_activity(event)
+  end
+  return open_commit_activity(event)
 end
 
 local function select_current()

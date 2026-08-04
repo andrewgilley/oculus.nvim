@@ -519,6 +519,7 @@ end
 local original_events = github.events
 local original_enrich_pull_requests = github.enrich_pull_requests
 local original_enrich_pushes = github.enrich_pushes
+local original_pull_request_commits = github.pull_request_commits
 local requested_per_page = {}
 local activity_events = {}
 for index = 1, 20 do
@@ -571,6 +572,21 @@ for index = 1, 20 do
     url = "https://github.com/example/repository/commit/44444444",
     group_url =
       "https://github.com/example/repository/compare/aaaaaaaa...eeeeeeee",
+  } or index == 3 and {
+    id = tostring(index),
+    type = "PullRequestEvent",
+    created_at = "2026-07-03T12:00:00Z",
+    actor = { login = "mitchellh" },
+    repo = { name = "example/repository" },
+    payload = {
+      action = "opened",
+      number = 42,
+      pull_request = {
+        number = 42,
+        title = "List pull request commits",
+        html_url = "https://github.com/example/repository/pull/42",
+      },
+    },
   } or {
     id = tostring(index),
     type = "CreateEvent",
@@ -602,6 +618,27 @@ github.enrich_pull_requests = function(events, _, callback)
 end
 github.enrich_pushes = function(events, _, callback)
   callback(events)
+end
+github.pull_request_commits = function(repo, number, _, callback)
+  assert(repo == "example/repository")
+  assert(number == 42)
+  local commits = {}
+  for index = 1, 3 do
+    commits[index] = {
+      sha = "prcommit" .. index,
+      html_url = "https://github.com/example/repository/commit/prcommit"
+        .. index,
+      author = { login = "pr-author-" .. index },
+      commit = {
+        message = "PR commit " .. index,
+        author = {
+          name = "PR Author " .. index,
+          date = ("2026-07-%02dT12:00:00Z"):format(index),
+        },
+      },
+    }
+  end
+  callback(commits)
 end
 
 local select_mapping = vim.fn.maparg("<CR>", "n", false, true)
@@ -735,6 +772,37 @@ assert(state.activity_commit_page == false)
 assert(#state.events == 8)
 assert(state.events[2].id == "2")
 assert(vim.api.nvim_win_get_cursor(state.win)[1] == expansion_line)
+local pull_request_line
+for line, event in pairs(state.activity_expansion_targets) do
+  if event.id == "3" and state.activity_title_lines[line] == line then
+    pull_request_line = line
+    break
+  end
+end
+assert(pull_request_line)
+vim.api.nvim_win_set_cursor(state.win, { pull_request_line, 0 })
+select_mapping.callback()
+assert(state.activity_commit_page == true)
+assert(#state.events == 3)
+local pull_request_commit_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+for index, event in ipairs(state.events) do
+  assert(event.type == "PushEvent")
+  assert(event.payload.size == 1)
+  assert(event.payload.head == "prcommit" .. index)
+  assert(event.payload.commits[1].message == "PR commit " .. index)
+  assert(pull_request_commit_text:find("PR commit " .. index, 1, true))
+end
+assert(pull_request_commit_text:find(
+  "pushed commit to example/repository",
+  1,
+  true
+))
+vim.fn.maparg("j", "n", false, true).callback()
+assert(state.activity_commit_page == false)
+assert(vim.api.nvim_win_get_cursor(state.win)[1] == pull_request_line)
 local review_context
 for _, context in pairs(state.inspect_targets) do
   review_context = context or review_context
@@ -1477,6 +1545,7 @@ end
 github.events = original_events
 github.enrich_pull_requests = original_enrich_pull_requests
 github.enrich_pushes = original_enrich_pushes
+github.pull_request_commits = original_pull_request_commits
 assert(state.search_query == nil)
 assert(state.search_win == nil)
 assert(state.win == nil)
