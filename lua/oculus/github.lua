@@ -5,6 +5,7 @@ local repository_cache = {}
 local repository_update_cache = {}
 local push_cache = {}
 local pull_request_cache = {}
+local pull_request_commits_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
 
@@ -586,6 +587,49 @@ function M.pull_request(repo, number, opts, callback)
     }
     callback(vim.deepcopy(details))
   end)
+end
+
+function M.pull_request_commits(repo, number, opts, callback)
+  opts = opts or {}
+  local key = ("%s#%s"):format(repo, number)
+  local cached = pull_request_commits_cache[key]
+  local ttl = opts.cache_ttl or 300
+  if cached
+    and not opts.force
+    and os.time() - cached.fetched_at < ttl
+  then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.commits))
+    end)
+    return
+  end
+
+  local commits = {}
+  local page = 1
+  local function load_page()
+    local url = (
+      "https://api.github.com/repos/%s/pulls/%s/commits"
+        .. "?per_page=100&page=%d"
+    ):format(repo, number, page)
+    request_json(url, opts, function(results, err)
+      if not results then
+        callback(nil, err)
+        return
+      end
+      vim.list_extend(commits, results)
+      if #results == 100 and #commits < 250 then
+        page = page + 1
+        load_page()
+        return
+      end
+      pull_request_commits_cache[key] = {
+        commits = vim.deepcopy(commits),
+        fetched_at = os.time(),
+      }
+      callback(vim.deepcopy(commits))
+    end)
+  end
+  load_page()
 end
 
 function M.issue(repo, number, opts, callback)
