@@ -2363,12 +2363,15 @@ load_project_activity = function(project, force, page)
         return
       end
       local source = events or {}
+      local allowed_before = #filter_project_events(feed.events, project)
       local added = 0
       for _, event in ipairs(source) do
         if add_project_feed_event(feed, event) then
           added = added + 1
         end
       end
+      local allowed_added = #filter_project_events(feed.events, project)
+        - allowed_before
       table.sort(feed.events, function(left, right)
         return tostring(left.created_at or "")
           > tostring(right.created_at or "")
@@ -2378,9 +2381,9 @@ load_project_activity = function(project, force, page)
       feed.notice = feed.notice or notice
       -- GitHub can return fewer rows than requested while still exposing older
       -- repository-event pages (for example, Neovim currently returns 99 for
-      -- per_page=100). Only an empty or no-progress page proves this feed is
-      -- exhausted; otherwise continue until the grouped activity page is full.
-      if #source == 0 or added == 0 then
+      -- per_page=100). An empty, duplicate-only, or unusable page switches to
+      -- the direct commits/merged-PR feed; otherwise keep filling the page.
+      if #source == 0 or added == 0 or allowed_added == 0 then
         if not use_repository_updates() then
           feed.complete = true
         end

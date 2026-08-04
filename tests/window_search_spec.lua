@@ -1462,7 +1462,7 @@ do
   vim.fn.maparg("<CR>", "n", false, true).callback()
   assert(state.activity_project.repository == "folke/lazy.nvim")
   assert(#state.events == 8)
-  assert(vim.deep_equal(lazy_repository_pages, { 1, 2 }))
+  assert(vim.deep_equal(lazy_repository_pages, { 1 }))
   assert(vim.deep_equal(lazy_update_pages, { 1 }))
   local lazy_activity_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
