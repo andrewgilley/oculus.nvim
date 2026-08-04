@@ -640,13 +640,13 @@ assert(pull_request_overview_text:find(
 ))
 assert(pull_request_overview_text:match("^OVERVIEW\n"))
 assert(pull_request_overview_text:gsub("%s+", " "):find(
-  "PR #123 · Test pull request",
+  "Title Test pull request",
   1,
   true
 ))
 assert(pull_request_overview_text:find("#123", 1, true))
 assert(pull_request_overview_text:find(
-  "\n  Title\n  PR #123 · Test pull",
+  "\n  Title\n  Test pull request",
   1,
   true
 ))
@@ -713,12 +713,12 @@ local commit_overview_text = table.concat(
 )
 assert(commit_overview_text:match("^OVERVIEW\n"))
 assert(commit_overview_text:gsub("%s+", " "):find(
-  "Commit bbbbbbb · Keep Inspect context visible",
+  "Title Keep Inspect context visible",
   1,
   true
 ))
 assert(commit_overview_text:find(
-  "\n  Title\n  Commit bbbbbbb · Keep",
+  "\n  Title\n  Keep Inspect context",
   1,
   true
 ))
@@ -764,74 +764,6 @@ assert(commit_agent_prompt:find(
 ))
 assert(not commit_agent_prompt:find("Chunk reference:", 1, true))
 assert(not commit_agent_prompt:find("#chunk-", 1, true))
-local directions_chunk_prompt = require("oculus.agent").directions_prompt({
-  overview = commit_overview,
-  {
-    change_file = "lua/inspect.lua",
-    change_repository = root,
-    patch = "@@ -1 +1 @@\n-old behavior\n+new behavior",
-  },
-})
-assert(directions_chunk_prompt:find(
-  "Do not suggest repository paths and do not include chunk references.",
-  1,
-  true
-))
-assert(directions_chunk_prompt:find(
-  "related repository activity items",
-  1,
-  true
-))
-assert(directions_chunk_prompt:find(
-  "could implement in the",
-  1,
-  true
-))
-assert(directions_chunk_prompt:find(
-  "future possibilities, not changes to the current patch",
-  1,
-  true
-))
-assert(not directions_chunk_prompt:find(
-  "Chunk reference:",
-  1,
-  true
-))
-local chronological_agent_buf = vim.api.nvim_create_buf(false, true)
-local chronological_agent_group = {
-  overview = commit_overview,
-  overview_buf = chronological_agent_buf,
-  overview_content_width = 48,
-  overview_agent_mode = "explanation",
-  overview_agent_explanation_model = "gpt-5.6-test-agent",
-  overview_agent_explanation = "Explanation generated second.",
-  overview_directions_mode = "directions",
-  overview_directions_model = "gpt-5.6-test-agent",
-  overview_directions_text = "Directions generated first.",
-}
-inspect._overview_ui.mark_section_generated(
-  chronological_agent_group,
-  "overview_directions_section_order"
-)
-inspect._overview_ui.mark_section_generated(
-  chronological_agent_group,
-  "overview_agent_section_order"
-)
-inspect._overview_ui.render(chronological_agent_group)
-local chronological_agent_text = table.concat(
-  vim.api.nvim_buf_get_lines(chronological_agent_buf, 0, -1, false),
-  "\n"
-)
-assert(chronological_agent_text:find(
-  "Agent directions",
-  1,
-  true
-) < chronological_agent_text:find(
-  "Agent explanation",
-  1,
-  true
-))
-vim.api.nvim_buf_delete(chronological_agent_buf, { force = true })
 assert(require("oculus.agent").model_from_stderr(table.concat({
   "OpenAI Codex",
   "model: gpt-test-agent",
@@ -1086,6 +1018,7 @@ local issue_lifecycle_error
 local issue_ok, issue_err = inspect.open(
   "https://github.com/andrewgilley/oculus.nvim/issues/77",
   {
+    browser_command = { "test-browser", "{url}" },
     inspect_repositories = {
       ["andrewgilley/oculus.nvim"] = root,
     },
@@ -1153,17 +1086,17 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  e explanation   d directions",
+    "  e explanation   b browser",
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
 assert(issue_overview:gsub("%s+", " "):find(
-  "Issue #77 · Issue inspect fixture",
+  "Title Issue inspect fixture",
   1,
   true
 ))
 assert(issue_overview:find(
-  "  Title\n  Issue #77 · Issue inspect fixture",
+  "  Title\n  Issue inspect fixture",
   1,
   true
 ))
@@ -1179,6 +1112,24 @@ assert(issue_overview:find("Issue number", 1, true))
 assert(issue_overview:find("#77", 1, true))
 assert(issue_overview:find("Status", 1, true))
 assert(issue_overview:find("Open", 1, true))
+local browser = require("oculus.browser")
+local original_browser_open = browser.open
+local opened_overview_url
+browser.open = function(url, config)
+  opened_overview_url = url
+  assert(vim.deep_equal(
+    config.browser_command,
+    { "test-browser", "{url}" }
+  ))
+  return true
+end
+local overview_browser_mapping = vim.fn.maparg("b", "n", false, true)
+assert(overview_browser_mapping.desc
+  == "Open Oculus inspection item in browser")
+overview_browser_mapping.callback()
+assert(opened_overview_url
+  == "https://github.com/andrewgilley/oculus.nvim/issues/77")
+browser.open = original_browser_open
 local agent = require("oculus.agent")
 local original_agent_models = agent.models
 local original_agent_explain = agent.explain
@@ -1369,113 +1320,6 @@ assert(explanation_config.height == overview_config.height)
 assert(vim.deep_equal(explanation_config.row, overview_config.row))
 assert(vim.deep_equal(explanation_config.col, overview_config.col))
 local explanation_request = agent_request
-local directions_mapping = vim.fn.maparg("d", "n", false, true)
-assert(directions_mapping.desc == "Suggest Oculus patch directions")
-directions_mapping.callback()
-local directions_loading_text = table.concat(
-  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
-  "\n"
-)
-assert(directions_loading_text:find("\n  Agent directions", 1, true))
-local directions_loading_spinner = vim.api.nvim_buf_get_extmarks(
-  overview_buf,
-  inspect._overview_ui.directions_spinner_ns,
-  0,
-  -1,
-  { details = true }
-)
-assert(#directions_loading_spinner == 1)
-finish_agent_models()
-assert(#vim.api.nvim_buf_get_extmarks(
-  overview_buf,
-  inspect._overview_ui.directions_spinner_ns,
-  0,
-  -1,
-  {}
-) == 0)
-local directions_model_text = table.concat(
-  vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
-  "\n"
-)
-assert(directions_model_text:find("GPT 5.6 Test Agent", 1, true))
-assert(directions_model_text:find("gpt-5.6-test-fast", 1, true))
-local directions_selection_mark
-for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
-  overview_buf,
-  -1,
-  0,
-  -1,
-  { details = true }
-)) do
-  if mark[4].hl_group == "OculusInspectAgentModelSelected" then
-    directions_selection_mark = mark
-    break
-  end
-end
-assert(directions_selection_mark)
-assert(vim.api.nvim_win_get_cursor(overview_win)[1]
-  == directions_selection_mark[2] + 1)
-local first_directions_model_line
-for index, line in ipairs(vim.api.nvim_buf_get_lines(
-  overview_buf,
-  0,
-  -1,
-  false
-)) do
-  if line:find("GPT 5.6 Test Agent", 1, true) then
-    first_directions_model_line = index
-    break
-  end
-end
-assert(directions_selection_mark[2] + 1 == first_directions_model_line)
-select_agent_model.callback()
-local directions_request = agent_request
-assert(directions_request.model == "gpt-5.6-test-agent")
-assert(directions_request.prompt:find(
-  "related repository activity items",
-  1,
-  true
-))
-assert(directions_request.prompt:find(
-  "could implement in the",
-  1,
-  true
-))
-assert(directions_request.prompt:find(
-  "future possibilities, not changes to the current patch",
-  1,
-  true
-))
-assert(directions_request.prompt:find(
-  "Do not suggest repository paths and do not include chunk references.",
-  1,
-  true
-))
-assert(not directions_request.prompt:find("Chunk reference:", 1, true))
-local close_generating_directions = vim.fn.maparg("q", "n", false, true)
-close_generating_directions.callback()
-assert(not vim.api.nvim_win_is_valid(overview_win))
-agent_callback(table.concat({
-  "Future related work could add saved issue workspaces, branch setup actions,",
-  "and focused tests for moving from issue context into an editable patch.",
-}, " "), nil, { model = "gpt-5.6-test-agent" })
-local reopen_generating_directions = vim.fn.maparg(
-  "<C-t>",
-  "n",
-  false,
-  true
-)
-reopen_generating_directions.callback()
-overview_win = vim.api.nvim_get_current_win()
-overview_buf = vim.api.nvim_get_current_buf()
-assert(#vim.api.nvim_buf_get_extmarks(
-  overview_buf,
-  inspect._overview_ui.directions_spinner_ns,
-  0,
-  -1,
-  {}
-) == 0)
-explanation_buf = overview_buf
 agent.models = original_agent_models
 agent.explain = original_agent_explain
 assert(vim.fs.normalize(explanation_request.cwd) == vim.fs.normalize(root))
@@ -1523,27 +1367,6 @@ assert(explanation_text:find(
 ))
 assert(explanation_text:gsub("%s+", " "):find(
   "The fileless issue inspection workflow is implemented here.",
-  1,
-  true
-))
-assert(explanation_text:find(
-  "Agent directions (gpt-5.6-test-agent)",
-  1,
-  true
-))
-assert(explanation_text:gsub("%s+", " "):find(
-  "Future related work could add saved issue workspaces, branch setup actions, "
-    .. "and focused tests for moving from issue context into an editable patch.",
-  1,
-  true
-))
-local directions_start = assert(explanation_text:find(
-  "Agent directions (gpt-5.6-test-agent)",
-  1,
-  true
-))
-assert(not explanation_text:sub(directions_start):find(
-  "Possible patch locations",
   1,
   true
 ))
@@ -1639,11 +1462,6 @@ assert(restored_overview_text:find(
 ))
 assert(restored_overview_text:find(
   vim.fs.basename(root) .. "/lua/oculus/inspect.lua",
-  1,
-  true
-))
-assert(restored_overview_text:find(
-  "Agent directions (gpt-5.6-test-agent)",
   1,
   true
 ))
