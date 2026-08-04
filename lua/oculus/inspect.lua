@@ -2,6 +2,7 @@ local M = {}
 
 local github = require("oculus.github")
 local codeberg = require("oculus.codeberg")
+local browser = require("oculus.browser")
 
 local active = false
 local change_ns = vim.api.nvim_create_namespace("oculus_inspect_changes")
@@ -2819,25 +2820,10 @@ local function sidebar_overview_lines(overview, width)
         and value
       or fallback
   end
-  local title = value_or(
+  field("Title", value_or(
     (is_pull_request or is_issue) and overview.title or details.subject,
     "Untitled"
-  )
-  local identifier
-  if is_pull_request and overview.number then
-    identifier = "PR #" .. tostring(overview.number)
-  elseif is_issue and overview.number then
-    identifier = "Issue #" .. tostring(overview.number)
-  elseif not is_pull_request and not is_issue then
-    local sha = details.sha or overview.sha
-    if type(sha) == "string" and sha ~= "" then
-      identifier = "Commit " .. sha:sub(1, 7)
-    end
-  end
-  if identifier and not title:find(identifier, 1, true) then
-    title = identifier .. " · " .. title
-  end
-  field("Title", title)
+  ))
   field("Description", value_or(
     (is_pull_request or is_issue) and overview.body or details.body,
     "No description provided."
@@ -3307,9 +3293,6 @@ M._overview_ui = {
   agent_spinner_ns = vim.api.nvim_create_namespace(
     "oculus_inspect_overview_agent_spinner"
   ),
-  directions_spinner_ns = vim.api.nvim_create_namespace(
-    "oculus_inspect_overview_directions_spinner"
-  ),
   agent_spinner_frames = {
     "⠋",
     "⠙",
@@ -3332,7 +3315,6 @@ M._overview_ui = {
     Status = true,
     Date = true,
     ["Agent explanation"] = true,
-    ["Agent directions"] = true,
   },
 }
 
@@ -3390,7 +3372,7 @@ function M._overview_ui.render_footer(group)
   end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  e explanation   d directions",
+    "  e explanation   b browser",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, footer_lines)
@@ -3465,9 +3447,7 @@ function M._overview_ui.render(group)
     group.overview_content_width or 28
   )
   group.overview_agent_model_lines = nil
-  group.overview_directions_model_lines = nil
   group.overview_agent_heading_line = nil
-  group.overview_directions_heading_line = nil
   local function append_explanation()
     if not group.overview_agent_mode then
       return
@@ -3537,69 +3517,7 @@ function M._overview_ui.render(group)
     end
   end
 
-  local function append_directions()
-    if not group.overview_directions_mode then
-      return
-    end
-    lines[#lines + 1] = ""
-    local heading = "  Agent directions"
-    if (group.overview_directions_mode == "directions"
-        or group.overview_directions_mode == "generating")
-      and group.overview_directions_model
-    then
-      heading = heading
-        .. " ("
-        .. tostring(group.overview_directions_model)
-        .. ")"
-    end
-    lines[#lines + 1] = heading
-    group.overview_directions_heading_line = #lines
-    if group.overview_directions_mode == "models" then
-      local targets = {}
-      for _, model in ipairs(group.overview_directions_models or {}) do
-        lines[#lines + 1] = ("  %s  %s"):format(
-          model.display_name,
-          model.id
-        )
-        targets[#lines] = model
-      end
-      group.overview_directions_model_lines = targets
-    elseif group.overview_directions_mode == "error" then
-      append_sidebar_text(
-        lines,
-        group.overview_directions_error or "Directions request failed.",
-        group.overview_content_width or 28,
-        "  "
-      )
-    elseif group.overview_directions_mode == "directions" then
-      append_sidebar_text(
-        lines,
-        group.overview_directions_text or "No directions returned.",
-        group.overview_content_width or 28,
-        "  "
-      )
-    end
-  end
-
-  local directions_first = group.overview_directions_mode
-    and (
-      not group.overview_agent_mode
-      or (
-        group.overview_directions_section_order ~= nil
-        and (
-          group.overview_agent_section_order == nil
-          or group.overview_directions_section_order
-            < group.overview_agent_section_order
-        )
-      )
-    )
-  if directions_first then
-    append_directions()
-    append_explanation()
-  else
-    append_explanation()
-    append_directions()
-  end
+  append_explanation()
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -3616,17 +3534,10 @@ function M._overview_ui.render(group)
     0,
     -1
   )
-  vim.api.nvim_buf_clear_namespace(
-    buf,
-    M._overview_ui.directions_spinner_ns,
-    0,
-    -1
-  )
   for index, line in ipairs(lines) do
     local label = line:match("^  (.-)%s*$")
     if M._overview_ui.section_labels[label]
       or (label and label:match("^Agent explanation"))
-      or (label and label:match("^Agent directions"))
     then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
         end_col = #line,
@@ -3648,34 +3559,10 @@ function M._overview_ui.render(group)
       priority = 90,
     })
   end
-  local directions_selected = group.overview_directions_selected_line
-  if group.overview_directions_mode == "models"
-    and directions_selected
-    and group.overview_directions_model_lines
-    and group.overview_directions_model_lines[directions_selected]
-  then
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      sidebar_ns,
-      directions_selected - 1,
-      2,
-      {
-        end_col = #(lines[directions_selected] or ""),
-        hl_group = "OculusInspectAgentModelSelected",
-        hl_mode = "combine",
-        priority = 90,
-      }
-    )
-  end
   if group.overview_agent_mode == "generating"
     or group.overview_agent_mode == "loading_models"
   then
     M._overview_ui.draw_agent_spinner(group)
-  end
-  if group.overview_directions_mode == "loading_model"
-    or group.overview_directions_mode == "generating"
-  then
-    M._overview_ui.draw_directions_spinner(group)
   end
   if overview_window_is_open(group)
     and vim.api.nvim_get_current_win() == group.overview_win
@@ -3761,82 +3648,6 @@ function M._overview_ui.start_agent_spinner(group)
   end))
 end
 
-function M._overview_ui.draw_directions_spinner(group)
-  local buf = group.overview_buf
-  local line = group.overview_directions_heading_line
-  if (group.overview_directions_mode ~= "loading_model"
-      and group.overview_directions_mode ~= "generating")
-    or not buf
-    or not line
-    or not vim.api.nvim_buf_is_valid(buf)
-  then
-    return
-  end
-  vim.api.nvim_buf_clear_namespace(
-    buf,
-    M._overview_ui.directions_spinner_ns,
-    0,
-    -1
-  )
-  local frames = M._overview_ui.agent_spinner_frames
-  local frame = frames[group.overview_directions_spinner_frame or 1]
-  vim.api.nvim_buf_set_extmark(
-    buf,
-    M._overview_ui.directions_spinner_ns,
-    line - 1,
-    0,
-    {
-      virt_text = { { " " .. frame, "DiagnosticInfo" } },
-      virt_text_pos = "eol",
-      hl_mode = "combine",
-    }
-  )
-end
-
-function M._overview_ui.stop_directions_spinner(group)
-  local timer = group.overview_directions_spinner_timer
-  group.overview_directions_spinner_timer = nil
-  group.overview_directions_spinner_frame = nil
-  if timer then
-    pcall(timer.stop, timer)
-    if not timer:is_closing() then
-      timer:close()
-    end
-  end
-  local buf = group.overview_buf
-  if buf and vim.api.nvim_buf_is_valid(buf) then
-    vim.api.nvim_buf_clear_namespace(
-      buf,
-      M._overview_ui.directions_spinner_ns,
-      0,
-      -1
-    )
-  end
-end
-
-function M._overview_ui.start_directions_spinner(group)
-  M._overview_ui.stop_directions_spinner(group)
-  group.overview_directions_spinner_frame = 1
-  M._overview_ui.draw_directions_spinner(group)
-  local timer = vim.uv.new_timer()
-  if not timer then
-    return
-  end
-  group.overview_directions_spinner_timer = timer
-  timer:start(80, 80, vim.schedule_wrap(function()
-    if group.overview_directions_spinner_timer ~= timer
-      or (group.overview_directions_mode ~= "loading_model"
-        and group.overview_directions_mode ~= "generating")
-    then
-      return
-    end
-    group.overview_directions_spinner_frame =
-      (group.overview_directions_spinner_frame
-        % #M._overview_ui.agent_spinner_frames) + 1
-    M._overview_ui.draw_directions_spinner(group)
-  end))
-end
-
 function M._overview_ui.scroll_to_bottom(group)
   local win = group.overview_win
   local buf = group.overview_buf
@@ -3860,18 +3671,14 @@ end
 
 function M._overview_ui.close_agent_window(group, return_to_overview)
   M._overview_ui.stop_agent_spinner(group)
-  M._overview_ui.stop_directions_spinner(group)
   group.overview_agent_model_lines = nil
-  group.overview_directions_model_lines = nil
   if return_to_overview and overview_window_is_open(group) then
     vim.api.nvim_set_current_win(group.overview_win)
   end
 end
 
 function M._overview_ui.restore_model_selection(group)
-  if group.overview_agent_mode ~= "models"
-    and group.overview_directions_mode ~= "models"
-  then
+  if group.overview_agent_mode ~= "models" then
     return false
   end
   local function restore(targets, selected_line)
@@ -3895,16 +3702,6 @@ function M._overview_ui.restore_model_selection(group)
     )
     if selected ~= group.overview_agent_selected_line then
       group.overview_agent_selected_line = selected
-      changed = true
-    end
-  end
-  if group.overview_directions_mode == "models" then
-    local selected = restore(
-      group.overview_directions_model_lines,
-      group.overview_directions_selected_line
-    )
-    if selected ~= group.overview_directions_selected_line then
-      group.overview_directions_selected_line = selected
       changed = true
     end
   end
@@ -3947,56 +3744,10 @@ function M._overview_ui.render_models(group, models, err)
 end
 
 function M._overview_ui.select_agent_model(group)
-  if group.overview_directions_mode == "models" then
-    M._overview_ui.select_directions_model(group)
-    return
-  end
   local model = group.overview_agent_model_lines
     and group.overview_agent_model_lines[group.overview_agent_selected_line]
   if model then
     M._overview_ui.open_explanation(group, model)
-  end
-end
-
-function M._overview_ui.select_directions_model(group)
-  local model = group.overview_directions_model_lines
-    and group.overview_directions_model_lines[
-      group.overview_directions_selected_line
-    ]
-  if model then
-    M._overview_ui.generate_directions(group, model)
-  end
-end
-
-function M._overview_ui.move_directions_model_cursor(group, direction)
-  local targets = group.overview_directions_model_lines or {}
-  if group.overview_directions_mode ~= "models" then
-    return
-  end
-  local lines = {}
-  for line in pairs(targets) do
-    lines[#lines + 1] = line
-  end
-  table.sort(lines)
-  if #lines == 0 then
-    return
-  end
-  local current = group.overview_directions_selected_line or lines[1]
-  local current_index = 1
-  for index, line in ipairs(lines) do
-    if line >= current then
-      current_index = index
-      break
-    end
-  end
-  local next_index = ((current_index + direction - 1) % #lines) + 1
-  group.overview_directions_selected_line = lines[next_index]
-  M._overview_ui.render(group)
-  if overview_window_is_open(group) then
-    vim.api.nvim_win_set_cursor(group.overview_win, {
-      group.overview_directions_selected_line,
-      0,
-    })
   end
 end
 
@@ -4046,7 +3797,6 @@ function M._overview_ui.open_model_picker(group)
   group.overview_agent_explanation_model = nil
   group.overview_agent_include_locations = nil
   group.overview_agent_locations = nil
-  group.overview_agent_section_order = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_agent_spinner(group)
@@ -4062,9 +3812,18 @@ function M._overview_ui.open_model_picker(group)
   end
 end
 
-function M._overview_ui.mark_section_generated(group, key)
-  group.overview_section_sequence = (group.overview_section_sequence or 0) + 1
-  group[key] = group.overview_section_sequence
+function M._overview_ui.open_browser(group)
+  local url = group.overview and group.overview.url
+  if type(url) ~= "string" or url == "" then
+    vim.notify("Oculus: this item has no browser URL", vim.log.levels.WARN)
+    return false
+  end
+  local ok, err = browser.open(url, group.browser_config or {})
+  if not ok and err then
+    vim.notify("Oculus: " .. tostring(err), vim.log.levels.ERROR)
+    return false
+  end
+  return true
 end
 
 function M._overview_ui.render_explanation(
@@ -4080,10 +3839,6 @@ function M._overview_ui.render_explanation(
   M._overview_ui.stop_agent_spinner(group)
   group.overview_agent_explanation_model = model
   if text then
-    M._overview_ui.mark_section_generated(
-      group,
-      "overview_agent_section_order"
-    )
     group.overview_agent_mode = "explanation"
     group.overview_agent_explanation = text
     group.overview_agent_locations = {}
@@ -4159,155 +3914,6 @@ function M._overview_ui.open_explanation(group, model)
   end
 end
 
-function M._overview_ui.render_directions_models(group, models, err)
-  if group.overview_directions_mode ~= "loading_model" then
-    return
-  end
-  M._overview_ui.stop_directions_spinner(group)
-  group.overview_directions_model_process = nil
-  if err then
-    M._overview_ui.render_directions_error(group, err)
-    return
-  end
-  group.overview_directions_mode = "models"
-  group.overview_directions_models = models or {}
-  M._overview_ui.render(group)
-  local model_lines = {}
-  for line in pairs(group.overview_directions_model_lines or {}) do
-    model_lines[#model_lines + 1] = line
-  end
-  table.sort(model_lines)
-  group.overview_directions_selected_line = model_lines[1]
-  M._overview_ui.render(group)
-  M._overview_ui.scroll_to_bottom(group)
-  if group.overview_directions_selected_line
-    and overview_window_is_open(group)
-  then
-    vim.api.nvim_win_set_cursor(group.overview_win, {
-      group.overview_directions_selected_line,
-      0,
-    })
-  end
-end
-
-function M._overview_ui.render_directions_error(group, err)
-  M._overview_ui.stop_directions_spinner(group)
-  group.overview_directions_mode = "error"
-  group.overview_directions_error = tostring(err or "Directions request failed")
-  M._overview_ui.render(group)
-  M._overview_ui.scroll_to_bottom(group)
-end
-
-function M._overview_ui.generate_directions(group, model)
-  local agent = require("oculus.agent")
-  local repository = agent.repository(group)
-  if not repository then
-    M._overview_ui.render_directions_error(
-      group,
-      "local repository information is unavailable"
-    )
-    return
-  end
-  M._overview_ui.stop_directions_spinner(group)
-  group.overview_directions_mode = "generating"
-  group.overview_directions_model = model.id
-  group.overview_directions_models = nil
-  group.overview_directions_model_lines = nil
-  group.overview_directions_selected_line = nil
-  M._overview_ui.render(group)
-  M._overview_ui.scroll_to_bottom(group)
-  M._overview_ui.start_directions_spinner(group)
-  local finished = false
-  local function finish(value, err, metadata)
-    if finished then
-      return
-    end
-    finished = true
-    group.overview_directions_process = nil
-    if group.overview_directions_mode ~= "generating" then
-      return
-    end
-    local text = agent.normalize(value)
-    if not text then
-      M._overview_ui.render_directions_error(
-        group,
-        err or "Codex returned no directions"
-      )
-      return
-    end
-    M._overview_ui.stop_directions_spinner(group)
-    group.overview_directions_mode = "directions"
-    group.overview_directions_model = metadata and metadata.model or model.id
-    group.overview_directions_text = text
-    M._overview_ui.mark_section_generated(
-      group,
-      "overview_directions_section_order"
-    )
-    M._overview_ui.render(group)
-    M._overview_ui.scroll_to_bottom(group)
-  end
-  local process, err = agent.explain({
-    cwd = repository,
-    prompt = agent.directions_prompt(group),
-    model = model.id,
-  }, finish)
-  if not process and not finished then
-    finish(nil, err)
-  elseif not finished then
-    group.overview_directions_process = process
-  end
-end
-
-function M._overview_ui.open_directions(group)
-  if not overview_window_is_open(group) then
-    return
-  end
-  for _, key in ipairs({
-    "overview_directions_model_process",
-    "overview_directions_process",
-  }) do
-    local process = group[key]
-    if process
-      and type(process.is_closing) == "function"
-      and not process:is_closing()
-    then
-      pcall(process.kill, process, 15)
-    end
-  end
-  group.overview_directions_model_process = nil
-  group.overview_directions_process = nil
-  group.overview_directions_mode = "loading_model"
-  group.overview_directions_error = nil
-  group.overview_directions_model = nil
-  group.overview_directions_models = nil
-  group.overview_directions_model_lines = nil
-  group.overview_directions_selected_line = nil
-  group.overview_directions_text = nil
-  group.overview_directions_section_order = nil
-  M._overview_ui.render(group)
-  M._overview_ui.scroll_to_bottom(group)
-  M._overview_ui.start_directions_spinner(group)
-  local agent = require("oculus.agent")
-  local responded = false
-  local process, err = agent.models(function(models, load_err)
-    responded = true
-    if group.overview_directions_mode ~= "loading_model" then
-      return
-    end
-    group.overview_directions_model_process = nil
-    if load_err then
-      M._overview_ui.render_directions_error(group, load_err)
-      return
-    end
-    M._overview_ui.render_directions_models(group, models, load_err)
-  end)
-  if not process then
-    M._overview_ui.render_directions_error(group, err)
-  elseif not responded then
-    group.overview_directions_model_process = process
-  end
-end
-
 show_inspection_overview = function(group)
   if overview_window_is_open(group) then
     vim.api.nvim_set_current_win(group.overview_win)
@@ -4355,11 +3961,6 @@ show_inspection_overview = function(group)
   then
     M._overview_ui.start_agent_spinner(group)
   end
-  if group.overview_directions_mode == "loading_model"
-    or group.overview_directions_mode == "generating"
-  then
-    M._overview_ui.start_directions_spinner(group)
-  end
   vim.api.nvim_create_autocmd("WinEnter", {
     group = sync_group,
     buffer = buf,
@@ -4399,13 +4000,13 @@ show_inspection_overview = function(group)
     silent = true,
     desc = "Choose Oculus explanation model",
   })
-  vim.keymap.set("n", "d", function()
-    M._overview_ui.open_directions(group)
+  vim.keymap.set("n", "b", function()
+    M._overview_ui.open_browser(group)
   end, {
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Suggest Oculus patch directions",
+    desc = "Open Oculus inspection item in browser",
   })
   vim.keymap.set("n", "q", function()
     show_sidebar_files(group)
@@ -4441,12 +4042,6 @@ show_inspection_overview = function(group)
     vim.keymap.set("n", lhs, function()
       if group.overview_agent_mode == "models" then
         M._overview_ui.move_model_cursor(group, direction < 0 and -1 or 1)
-        return
-      elseif group.overview_directions_mode == "models" then
-        M._overview_ui.move_directions_model_cursor(
-          group,
-          direction < 0 and -1 or 1
-        )
         return
       end
       local view = vim.fn.winsaveview()
@@ -5553,6 +5148,7 @@ local function open_tabs(
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(info),
+      browser_config = { browser_command = opts.browser_command },
       overview_window_config =
         require("oculus.window").window_config(opts),
     }
@@ -6089,6 +5685,7 @@ local function open_issue_inspection(
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(resolved),
+      browser_config = { browser_command = opts.browser_command },
       overview_window_config =
         require("oculus.window").window_config(opts),
     }
