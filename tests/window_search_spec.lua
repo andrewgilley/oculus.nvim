@@ -124,7 +124,9 @@ do
   assert(first_project_line and last_project_line)
   assert(first_project_line ~= last_project_line)
   vim.api.nvim_win_set_cursor(state.win, { first_project_line, 0 })
-  vim.fn.maparg("<Up>", "n", false, true).callback()
+  local project_up_mapping = vim.fn.maparg("i", "n", false, true)
+  assert(project_up_mapping.desc == "Move up in Oculus")
+  project_up_mapping.callback()
   assert(vim.api.nvim_win_get_cursor(state.win)[1] == last_project_line)
   assert(state.selected_project.repository == "another/fixture")
 end
