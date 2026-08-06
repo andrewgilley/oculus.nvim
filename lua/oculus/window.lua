@@ -3262,7 +3262,7 @@ local function move_cursor(direction)
     return
   end
 
-  if M.state.view == "contributors" and #M.state.contributors > 0 then
+  if M.state.view == "contributors" then
     local selectable = {}
     for line, candidate in pairs(M.state.line_targets) do
       if type(candidate) == "table" then
