@@ -68,6 +68,12 @@ window.open({
       provider = "github",
       description = "A project used by the startup list test.",
     },
+    {
+      name = "Other fixture",
+      repository = "another/fixture",
+      provider = "github",
+      description = "Another project used by the startup list test.",
+    },
   },
 })
 
@@ -106,6 +112,22 @@ assert(not initial_project_text:find("@mitchellh", 1, true))
 assert(initial_project_text:find("t users", 1, true))
 assert(initial_project_text:find("a add", 1, true))
 assert(initial_project_text:find("/ search", 1, true))
+do
+  local first_project_line
+  local last_project_line
+  for line, target in pairs(state.line_targets) do
+    if type(target) == "table" and target.kind == "project" then
+      first_project_line = math.min(first_project_line or line, line)
+      last_project_line = math.max(last_project_line or line, line)
+    end
+  end
+  assert(first_project_line and last_project_line)
+  assert(first_project_line ~= last_project_line)
+  vim.api.nvim_win_set_cursor(state.win, { first_project_line, 0 })
+  vim.fn.maparg("<Up>", "n", false, true).callback()
+  assert(vim.api.nvim_win_get_cursor(state.win)[1] == last_project_line)
+  assert(state.selected_project.repository == "another/fixture")
+end
 do
   local project_search = vim.fn.maparg("/", "n", false, true)
   assert(project_search.desc == "Fuzzy-search Oculus projects or users")
