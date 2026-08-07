@@ -40,6 +40,23 @@ local inspect_loading_ns = vim.api.nvim_create_namespace(
 local activity_page_loading_ns = vim.api.nvim_create_namespace(
   "oculus_activity_page_loading"
 )
+local window_highlight_ns = vim.api.nvim_create_namespace(
+  "oculus_window_highlights"
+)
+local retained_highlight_groups = {
+  "Normal",
+  "NormalFloat",
+  "CursorLine",
+  "Title",
+  "Comment",
+  "Identifier",
+  "Function",
+  "Special",
+  "DiagnosticError",
+  "DiagnosticWarn",
+  "DiagnosticInfo",
+  "WinSeparator",
+}
 local commit_activity_url
 local load_project_activity
 local default_project_activity_types = {
@@ -132,6 +149,54 @@ end
 
 local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
+end
+
+local function retain_window_highlights()
+  local retained_normal = {}
+  for _, group in ipairs(retained_highlight_groups) do
+    local ok, definition = pcall(
+      vim.api.nvim_get_hl,
+      0,
+      { name = group, link = false }
+    )
+    if ok then
+      vim.api.nvim_set_hl(window_highlight_ns, group, definition)
+      if group == "Normal" then
+        retained_normal = vim.deepcopy(definition)
+      end
+    end
+  end
+
+  retained_normal.bg = nil
+  retained_normal.ctermbg = nil
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "OculusNormal",
+    retained_normal
+  )
+  vim.api.nvim_set_hl(window_highlight_ns, "OculusBorder", {
+    fg = "#ffffff",
+    bg = "NONE",
+  })
+  vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityIcon", {
+    fg = "#fbd38d",
+    bg = "NONE",
+  })
+  vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityPreview", {
+    fg = "#9ae6b4",
+    bg = "NONE",
+  })
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "OculusContributorSelected",
+    { fg = "#ffffff" }
+  )
+end
+
+local function use_retained_window_highlights(win)
+  if is_valid_win(win) then
+    vim.api.nvim_win_set_hl_ns(win, window_highlight_ns)
+  end
 end
 
 local activity_loading_frames = {
@@ -340,6 +405,7 @@ local function render_activity_footer()
     "Normal:OculusNormal",
     "NormalFloat:OculusNormal",
   }, ",")
+  use_retained_window_highlights(M.state.footer_win)
   vim.wo[M.state.footer_win].number = false
   vim.wo[M.state.footer_win].relativenumber = false
   vim.wo[M.state.footer_win].signcolumn = "no"
@@ -2842,6 +2908,7 @@ local function open_search()
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
   }, ",")
+  use_retained_window_highlights(win)
 
   local search_map = function(lhs, rhs, desc)
     vim.keymap.set({ "i", "n" }, lhs, rhs, {
@@ -3645,6 +3712,7 @@ function M.open(opts)
   end
 
   local origin_win = vim.api.nvim_get_current_win()
+  retain_window_highlights()
   M.state.origin_tab = vim.api.nvim_get_current_tabpage()
   M.state.origin_win = origin_win
   M.state.origin_view = vim.api.nvim_win_call(origin_win, function()
@@ -3683,6 +3751,7 @@ function M.open(opts)
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
   }, ",")
+  use_retained_window_highlights(win)
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
