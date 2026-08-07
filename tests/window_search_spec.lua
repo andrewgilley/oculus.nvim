@@ -56,6 +56,12 @@ local origin_view = vim.api.nvim_win_call(origin_win, vim.fn.winsaveview)
 vim.wo[origin_win].number = true
 vim.wo[origin_win].relativenumber = true
 local retained_title_color = 0x315b8a
+local retained_normal_fg = 0xd8dee9
+local retained_normal_bg = 0x20242c
+vim.api.nvim_set_hl(0, "Normal", {
+  fg = retained_normal_fg,
+  bg = retained_normal_bg,
+})
 vim.api.nvim_set_hl(0, "Title", {
   fg = retained_title_color,
   bold = true,
@@ -93,7 +99,17 @@ local retained_title = vim.api.nvim_get_hl(window_highlight_ns, {
 })
 assert(retained_title.fg == retained_title_color)
 assert(retained_title.bold)
+local retained_normal = vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "OculusNormal",
+  link = false,
+})
+assert(retained_normal.fg == retained_normal_fg)
+assert(retained_normal.bg == retained_normal_bg)
 vim.api.nvim_set_hl(0, "Title", { fg = 0xc46b8a })
+vim.api.nvim_set_hl(0, "Normal", {
+  fg = 0xf0c674,
+  bg = 0x101010,
+})
 vim.api.nvim_exec_autocmds("ColorScheme", {})
 assert(vim.api.nvim_get_hl(0, {
   name = "Title",
@@ -103,6 +119,12 @@ assert(vim.api.nvim_get_hl(window_highlight_ns, {
   name = "Title",
   link = false,
 }).fg == retained_title_color)
+local unchanged_normal = vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "OculusNormal",
+  link = false,
+})
+assert(unchanged_normal.fg == retained_normal_fg)
+assert(unchanged_normal.bg == retained_normal_bg)
 local main_window_config = vim.api.nvim_win_get_config(state.win)
 assert(
   main_window_config.title == nil or main_window_config.title == ""
@@ -1353,6 +1375,12 @@ do
     name = "Title",
     link = false,
   }).fg == retained_title_color)
+  local reopened_normal = vim.api.nvim_get_hl(window_highlight_ns, {
+    name = "OculusNormal",
+    link = false,
+  })
+  assert(reopened_normal.fg == retained_normal_fg)
+  assert(reopened_normal.bg == retained_normal_bg)
   local startpage_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"

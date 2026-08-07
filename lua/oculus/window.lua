@@ -57,6 +57,8 @@ local retained_highlight_groups = {
   "DiagnosticWarn",
   "DiagnosticInfo",
   "WinSeparator",
+  "OculusInspectOverviewSection",
+  "OculusInspectAgentModelSelected",
 }
 local commit_activity_url
 local load_project_activity
@@ -171,8 +173,6 @@ local function retain_window_highlights()
     end
   end
 
-  retained_normal.bg = nil
-  retained_normal.ctermbg = nil
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusNormal",
@@ -202,6 +202,11 @@ local function use_retained_window_highlights(win)
   if is_valid_win(win) then
     vim.api.nvim_win_set_hl_ns(win, window_highlight_ns)
   end
+end
+
+function M.apply_retained_highlights(win)
+  retain_window_highlights()
+  use_retained_window_highlights(win)
 end
 
 local activity_loading_frames = {

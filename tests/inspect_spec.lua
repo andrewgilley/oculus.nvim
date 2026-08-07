@@ -1117,6 +1117,11 @@ assert(issue_state.issue_number == 77)
 assert(issue_state.issue_title == "Issue inspect fixture")
 local overview_win = vim.api.nvim_get_current_win()
 local overview_buf = vim.api.nvim_get_current_buf()
+local retained_window_highlight_ns = assert(
+  vim.api.nvim_get_namespaces().oculus_window_highlights
+)
+assert(vim.api.nvim_get_hl_ns({ winid = overview_win })
+  == retained_window_highlight_ns)
 assert(vim.b[overview_buf].oculus_inspect_overview == true)
 assert(vim.api.nvim_win_get_config(overview_win).relative == "editor")
 local issue_overview = table.concat(
@@ -1139,6 +1144,8 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   if vim.b[candidate].oculus_inspect_overview_footer then
     overview_footer_buf = candidate
     assert(not vim.api.nvim_win_get_config(win).focusable)
+    assert(vim.api.nvim_get_hl_ns({ winid = win })
+      == retained_window_highlight_ns)
   end
 end
 assert(overview_footer_buf)
