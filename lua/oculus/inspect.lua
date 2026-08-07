@@ -3566,7 +3566,7 @@ function M._overview_ui.render_footer(group)
     "Normal:OculusNormal",
     "NormalFloat:OculusNormal",
   }, ",")
-  require("oculus.window").apply_retained_highlights(footer_win)
+  require("oculus.window").apply_window_highlights(footer_win)
 end
 
 function M._overview_ui.content_height(group)
@@ -4137,7 +4137,7 @@ show_inspection_overview = function(group)
     "FloatTitle:OculusBorder",
     "FloatFooter:OculusBorder",
   }, ",")
-  require("oculus.window").apply_retained_highlights(win)
+  require("oculus.window").apply_window_highlights(win)
   vim.keymap.set("n", "e", function()
     M._overview_ui.open_model_picker(group)
   end, {

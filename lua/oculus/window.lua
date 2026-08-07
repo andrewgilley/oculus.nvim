@@ -43,8 +43,7 @@ local activity_page_loading_ns = vim.api.nvim_create_namespace(
 local window_highlight_ns = vim.api.nvim_create_namespace(
   "oculus_window_highlights"
 )
-local window_highlights_retained = false
-local retained_highlight_groups = {
+local window_highlight_groups = {
   "Normal",
   "NormalFloat",
   "FloatBorder",
@@ -158,13 +157,10 @@ local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
 end
 
-local function retain_window_highlights()
-  if window_highlights_retained then
-    return
-  end
-  local retained_normal = {}
-  local retained_border = {}
-  for _, group in ipairs(retained_highlight_groups) do
+local function sync_window_highlights()
+  local current_normal = {}
+  local current_border = {}
+  for _, group in ipairs(window_highlight_groups) do
     local ok, definition = pcall(
       vim.api.nvim_get_hl,
       0,
@@ -173,9 +169,9 @@ local function retain_window_highlights()
     if ok then
       vim.api.nvim_set_hl(window_highlight_ns, group, definition)
       if group == "Normal" then
-        retained_normal = vim.deepcopy(definition)
+        current_normal = vim.deepcopy(definition)
       elseif group == "FloatBorder" then
-        retained_border = vim.deepcopy(definition)
+        current_border = vim.deepcopy(definition)
       end
     end
   end
@@ -183,18 +179,18 @@ local function retain_window_highlights()
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusNormal",
-    retained_normal
+    current_normal
   )
-  if not retained_border.fg then
-    retained_border.fg = retained_normal.fg or 0xffffff
+  if not current_border.fg then
+    current_border.fg = current_normal.fg or 0xffffff
   end
-  if not retained_border.bg then
-    retained_border.bg = retained_normal.bg
+  if not current_border.bg then
+    current_border.bg = current_normal.bg
   end
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusBorder",
-    retained_border
+    current_border
   )
   vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityIcon", {
     fg = "#fbd38d",
@@ -209,19 +205,27 @@ local function retain_window_highlights()
     "OculusContributorSelected",
     { fg = "#ffffff" }
   )
-  window_highlights_retained = true
 end
 
-local function use_retained_window_highlights(win)
+local function use_window_highlights(win)
   if is_valid_win(win) then
     vim.api.nvim_win_set_hl_ns(win, window_highlight_ns)
   end
 end
 
-function M.apply_retained_highlights(win)
-  retain_window_highlights()
-  use_retained_window_highlights(win)
+function M.apply_window_highlights(win)
+  sync_window_highlights()
+  use_window_highlights(win)
 end
+
+local highlight_autocmd_group = vim.api.nvim_create_augroup(
+  "OculusWindowHighlights",
+  { clear = true }
+)
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = highlight_autocmd_group,
+  callback = sync_window_highlights,
+})
 
 local activity_loading_frames = {
   "⠋",
@@ -429,7 +433,7 @@ local function render_activity_footer()
     "Normal:OculusNormal",
     "NormalFloat:OculusNormal",
   }, ",")
-  use_retained_window_highlights(M.state.footer_win)
+  use_window_highlights(M.state.footer_win)
   vim.wo[M.state.footer_win].number = false
   vim.wo[M.state.footer_win].relativenumber = false
   vim.wo[M.state.footer_win].signcolumn = "no"
@@ -2952,7 +2956,7 @@ local function open_search()
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
   }, ",")
-  use_retained_window_highlights(win)
+  use_window_highlights(win)
 
   local search_map = function(lhs, rhs, desc)
     vim.keymap.set({ "i", "n" }, lhs, rhs, {
@@ -3755,7 +3759,7 @@ function M.open(opts)
   end
 
   local origin_win = vim.api.nvim_get_current_win()
-  retain_window_highlights()
+  sync_window_highlights()
   M.state.origin_tab = vim.api.nvim_get_current_tabpage()
   M.state.origin_win = origin_win
   M.state.origin_view = vim.api.nvim_win_call(origin_win, function()
@@ -3794,7 +3798,7 @@ function M.open(opts)
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
   }, ",")
-  use_retained_window_highlights(win)
+  use_window_highlights(win)
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
