@@ -867,11 +867,11 @@ local normalized_explanation, normalized_locations =
     },
   }), true, root)
 assert(normalized_explanation == "A structured explanation.")
-assert(#normalized_locations == 5)
+assert(#normalized_locations == 3)
 assert(normalized_locations[1].path
   == vim.fs.basename(root) .. "/one.lua")
-assert(normalized_locations[5].path
-  == vim.fs.basename(root) .. "/five.lua")
+assert(normalized_locations[3].path
+  == vim.fs.basename(root) .. "/three.lua")
 do
   local main_config = require("oculus.window").window_config({})
   local commit_config = inspect._overview_window_config(
@@ -1342,7 +1342,7 @@ local model_selection_hl = vim.api.nvim_get_hl(0, {
 assert(model_selection_hl.fg)
 assert(not model_selection_hl.bg)
 local select_agent_model = vim.fn.maparg("<CR>", "n", false, true)
-assert(select_agent_model.desc == "Select Oculus agent model")
+assert(select_agent_model.desc == "Select Oculus overview item")
 select_agent_model.callback()
 local generating_text = table.concat(
   vim.api.nvim_buf_get_lines(overview_buf, 0, -1, false),
@@ -1407,7 +1407,7 @@ assert(explanation_request.prompt:find(
   1,
   true
 ))
-assert(explanation_request.prompt:find("at most five", 1, true))
+assert(explanation_request.prompt:find("at most three", 1, true))
 assert(explanation_request.prompt:find("Return only valid JSON", 1, true))
 assert(explanation_request.prompt:find(
   "`" .. vim.fs.basename(root) .. "/` project%-folder prefix"
@@ -1438,6 +1438,77 @@ assert(explanation_text:find(
   1,
   true
 ))
+local explanation_footer_buf
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
+  local candidate = vim.api.nvim_win_get_buf(win)
+  if vim.b[candidate].oculus_inspect_overview_footer then
+    explanation_footer_buf = candidate
+    break
+  end
+end
+assert(explanation_footer_buf)
+assert(vim.api.nvim_buf_get_lines(
+  explanation_footer_buf,
+  1,
+  2,
+  false
+)[1]:find("<CR> open path", 1, true))
+local location_heading_line
+local first_location_line
+local second_location_line
+for index, line in ipairs(vim.api.nvim_buf_get_lines(
+  explanation_buf,
+  0,
+  -1,
+  false
+)) do
+  if line:find("Possible patch locations", 1, true) then
+    location_heading_line = index
+  elseif line:find("/lua/oculus/inspect.lua", 1, true) then
+    first_location_line = index
+  elseif line:find("/lua/oculus/agent.lua", 1, true) then
+    second_location_line = index
+  end
+end
+assert(location_heading_line and first_location_line and second_location_line)
+local heading_underlined
+local selected_location_line
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  explanation_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  if mark[2] + 1 == location_heading_line
+    and mark[4].hl_group == "OculusInspectOverviewSection"
+  then
+    heading_underlined = true
+  elseif mark[4].hl_group == "OculusInspectAgentModelSelected" then
+    selected_location_line = mark[2] + 1
+  end
+end
+assert(heading_underlined)
+assert(vim.api.nvim_get_hl(0, {
+  name = "OculusInspectOverviewSection",
+  link = false,
+}).underline == true)
+assert(selected_location_line == first_location_line)
+vim.fn.maparg("k", "n", false, true).callback()
+local moved_location_line
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  explanation_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  if mark[4].hl_group == "OculusInspectAgentModelSelected" then
+    moved_location_line = mark[2] + 1
+  end
+end
+assert(moved_location_line == second_location_line)
+vim.fn.maparg("i", "n", false, true).callback()
 assert(explanation_text:gsub("%s+", " "):find(
   "The fileless issue inspection workflow is implemented here.",
   1,
@@ -1559,8 +1630,56 @@ assert(restored_overview_text:find(
   1,
   true
 ))
+local open_patch_location = vim.fn.maparg("<CR>", "n", false, true)
+assert(open_patch_location.desc == "Select Oculus overview item")
+local patch_location_cursor = vim.api.nvim_win_get_cursor(
+  restored_overview_win
+)
+local patch_location_view = vim.api.nvim_win_call(
+  restored_overview_win,
+  vim.fn.winsaveview
+)
+local patch_tabs_before = {}
+for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+  patch_tabs_before[tab] = true
+end
+open_patch_location.callback()
+assert(vim.api.nvim_win_is_valid(restored_overview_win))
+assert(vim.api.nvim_get_current_win() == restored_overview_win)
+assert(vim.api.nvim_get_current_tabpage() == issue_tab)
+assert(vim.deep_equal(
+  vim.api.nvim_win_get_cursor(restored_overview_win),
+  patch_location_cursor
+))
+assert(vim.deep_equal(vim.api.nvim_win_call(
+  restored_overview_win,
+  vim.fn.winsaveview
+), patch_location_view))
+local patch_tab
+for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+  if not patch_tabs_before[tab] then
+    patch_tab = tab
+    break
+  end
+end
+assert(patch_tab and patch_tab ~= issue_tab)
+local patch_wins = vim.api.nvim_tabpage_list_wins(patch_tab)
+assert(#patch_wins == 1)
+local patch_buf = vim.api.nvim_win_get_buf(patch_wins[1])
+assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
+  == vim.fs.normalize(
+  vim.fs.joinpath(root, "lua", "oculus", "inspect.lua")
+))
+assert(vim.bo[patch_buf].modifiable)
+assert(not vim.bo[patch_buf].readonly)
 vim.fn.maparg("q", "n", false, true).callback()
 assert(not vim.api.nvim_win_is_valid(restored_overview_win))
+assert(vim.api.nvim_get_current_win() == issue_main_win)
+assert(vim.api.nvim_get_current_buf() == issue_buf)
+vim.api.nvim_set_current_tabpage(patch_tab)
+vim.cmd("tabclose")
+vim.api.nvim_set_current_tabpage(issue_tab)
+vim.api.nvim_set_current_win(issue_main_win)
 github.issue = function(repo, number, _, callback)
   assert(repo == "andrewgilley/oculus.nvim")
   assert(number == 78)

@@ -75,10 +75,10 @@ function M.prompt(group)
         and "Explain this issue and identify likely implementation locations."
       or "Explain the reason or motivation behind this repository activity.",
     include_locations
-        and "Inspect the local repository in read-only mode to find at most five"
+        and "Inspect the local repository in read-only mode to find at most three"
       or "Return exactly one concise paragraph of natural-language text.",
     include_locations
-        and "existing files or directories where a patch could likely be added."
+        and "existing files where a patch could likely be added."
       or "Focus on intent and purpose rather than mechanically listing files.",
   }
   if include_locations then
@@ -90,7 +90,7 @@ function M.prompt(group)
       '{"explanation":"one concise paragraph","locations":[',
       ('{"path":"%s/relative/path","reason":"short reason"}]}')
         :format(project_folder),
-      "The locations array may contain zero to five entries. Do not use Markdown",
+      "The locations array may contain zero to three entries. Do not use Markdown",
       "fences and do not include fields outside this schema.",
     })
   end
@@ -228,7 +228,7 @@ function M.normalize_result(value, include_locations, repository)
       and decoded.locations
     or {}
   for _, location in ipairs(values) do
-    if #locations == 5 then
+    if #locations == 3 then
       break
     end
     if type(location) == "table" then
