@@ -1347,6 +1347,12 @@ do
     },
   })
   state = window.state
+  assert(vim.api.nvim_get_hl_ns({ winid = state.win })
+    == window_highlight_ns)
+  assert(vim.api.nvim_get_hl(window_highlight_ns, {
+    name = "Title",
+    link = false,
+  }).fg == retained_title_color)
   local startpage_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"

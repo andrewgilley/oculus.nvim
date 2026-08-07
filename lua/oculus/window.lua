@@ -43,6 +43,7 @@ local activity_page_loading_ns = vim.api.nvim_create_namespace(
 local window_highlight_ns = vim.api.nvim_create_namespace(
   "oculus_window_highlights"
 )
+local window_highlights_retained = false
 local retained_highlight_groups = {
   "Normal",
   "NormalFloat",
@@ -152,6 +153,9 @@ local function is_valid_buf(buf)
 end
 
 local function retain_window_highlights()
+  if window_highlights_retained then
+    return
+  end
   local retained_normal = {}
   for _, group in ipairs(retained_highlight_groups) do
     local ok, definition = pcall(
@@ -191,6 +195,7 @@ local function retain_window_highlights()
     "OculusContributorSelected",
     { fg = "#ffffff" }
   )
+  window_highlights_retained = true
 end
 
 local function use_retained_window_highlights(win)
