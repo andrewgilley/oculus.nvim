@@ -3280,6 +3280,89 @@ local function close_overview_window(group)
   end
 end
 
+function M._discard_previous_inspections()
+  if #sidebar_groups == 0 then
+    return
+  end
+
+  local function stop_process(process)
+    if process and type(process.kill) == "function" then
+      pcall(process.kill, process, 15)
+    end
+  end
+
+  local previous_groups = sidebar_groups
+  sidebar_groups = {}
+  M._tab_navigation_source = nil
+  local discarded_sessions = {}
+  local tabs = {}
+  local buffers = {}
+
+  for _, group in ipairs(previous_groups) do
+    group.discarded = true
+    if M._overview_ui and M._overview_ui.stop_agent_spinner then
+      M._overview_ui.stop_agent_spinner(group)
+    end
+    stop_process(group.overview_agent_model_process)
+    stop_process(group.overview_agent_process)
+    group.overview_agent_model_process = nil
+    group.overview_agent_process = nil
+    group.overview_agent_mode = nil
+    close_overview_window(group)
+    if group.sidebar_buf then
+      buffers[group.sidebar_buf] = true
+    end
+    for _, session in ipairs(group) do
+      discarded_sessions[session] = true
+      local endpoints = group.kind == "issue"
+          and { session.issue }
+        or { session.parent, session.change }
+      for _, endpoint in ipairs(endpoints) do
+        if endpoint then
+          if endpoint.tab
+            and vim.api.nvim_tabpage_is_valid(endpoint.tab)
+          then
+            tabs[endpoint.tab] = true
+          end
+          if endpoint.buf
+            and vim.api.nvim_buf_is_valid(endpoint.buf)
+            and type(vim.b[endpoint.buf].oculus_inspect) == "table"
+          then
+            buffers[endpoint.buf] = true
+          end
+        end
+      end
+    end
+  end
+
+  for id, session in pairs(sessions) do
+    if discarded_sessions[session] then
+      sessions[id] = nil
+    end
+  end
+
+  local current_tab = vim.api.nvim_get_current_tabpage()
+  local ordered_tabs = {}
+  for tab in pairs(tabs) do
+    if tab ~= current_tab then
+      ordered_tabs[#ordered_tabs + 1] = tab
+    end
+  end
+  if tabs[current_tab] then
+    ordered_tabs[#ordered_tabs + 1] = current_tab
+  end
+  for _, tab in ipairs(ordered_tabs) do
+    if vim.api.nvim_tabpage_is_valid(tab) then
+      pcall(vim.api.nvim_tabpage_close, tab, true)
+    end
+  end
+  for buf in pairs(buffers) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+end
+
 local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
   if type(config.width) == "number" then
@@ -5220,6 +5303,7 @@ local function open_tabs(
     end
   end
   local ok, err = pcall(function()
+    M._discard_previous_inspections()
     local inspection_sessions = {
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
@@ -5730,7 +5814,9 @@ local function open_issue_inspection(
   local staging_tab = vim.api.nvim_get_current_tabpage()
   local staging_win = vim.api.nvim_get_current_win()
   local page
+  inspection_tabs_loading = true
   local ok, err = pcall(function()
+    M._discard_previous_inspections()
     local resolved = vim.deepcopy(info)
     for _, key in ipairs({
       "number",
@@ -5829,6 +5915,7 @@ local function open_issue_inspection(
     page.overview_win = group.overview_win
     page.overview_buf = group.overview_buf
   end)
+  inspection_tabs_loading = false
   if not ok then
     if vim.api.nvim_tabpage_is_valid(staging_tab) then
       vim.api.nvim_set_current_tabpage(staging_tab)

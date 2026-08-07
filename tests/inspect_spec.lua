@@ -1508,6 +1508,54 @@ assert(restored_overview_text:find(
 ))
 vim.fn.maparg("q", "n", false, true).callback()
 assert(not vim.api.nvim_win_is_valid(restored_overview_win))
+github.issue = function(repo, number, _, callback)
+  assert(repo == "andrewgilley/oculus.nvim")
+  assert(number == 78)
+  callback({
+    number = number,
+    title = "Replacement issue inspect fixture",
+    body = "This inspection should replace the previous workflow.",
+    author = "issue-author",
+    state = "open",
+    html_url = "https://github.com/andrewgilley/oculus.nvim/issues/78",
+    created_at = "2026-08-07T12:00:00-04:00",
+  })
+end
+local replacement_complete = false
+local replacement_error
+local replacement_ok, replacement_open_err = inspect.open(
+  "https://github.com/andrewgilley/oculus.nvim/issues/78",
+  {
+    inspect_repositories = {
+      ["andrewgilley/oculus.nvim"] = root,
+    },
+  },
+  nil,
+  {
+    on_progress = function() end,
+    on_complete = function(message)
+      replacement_error = message
+      replacement_complete = true
+    end,
+  }
+)
+assert(replacement_ok, replacement_open_err)
+assert(vim.wait(10000, function()
+  return replacement_complete
+end), "replacement issue inspection was not opened")
+github.issue = original_issue
+assert(not replacement_error, replacement_error)
+assert(not vim.api.nvim_tabpage_is_valid(issue_tab))
+assert(not vim.api.nvim_buf_is_valid(issue_buf))
+local replacement_tab = vim.api.nvim_get_current_tabpage()
+assert(#vim.api.nvim_list_tabpages() == #issue_tabs_before + 1)
+local replacement_state = vim.api.nvim_tabpage_get_var(
+  replacement_tab,
+  "oculus_inspect"
+)
+assert(replacement_state.issue_number == 78)
+assert(vim.b[vim.api.nvim_get_current_buf()].oculus_inspect_overview == true)
+vim.fn.maparg("q", "n", false, true).callback()
 vim.cmd("tabclose")
 vim.api.nvim_set_current_win(issue_origin_win)
 vim.wo[issue_origin_win].number = issue_origin_number
