@@ -30,6 +30,7 @@ local defaults = {
     "merged_pull_request",
     "assigned_issue",
   },
+  project_issue_filters = {},
   projects = {
     {
       name = "Neovim",
@@ -213,6 +214,9 @@ function M.setup(opts)
         end
         if type(saved.project_activity_types) == "table" then
           M.config.project_activity_types = saved.project_activity_types
+        end
+        if type(saved.project_issue_filters) == "table" then
+          M.config.project_issue_filters = saved.project_issue_filters
         end
       end
       if

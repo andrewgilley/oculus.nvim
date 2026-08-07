@@ -64,6 +64,8 @@ local window_highlight_groups = {
 }
 local commit_activity_url
 local load_project_activity
+local load_project_issues
+local target_on_cursor
 local default_project_activity_types = {
   "push",
   "merged_pull_request",
@@ -125,7 +127,10 @@ M.state = {
   activity_cursor_min_line = 1,
   activity_scroll_limit_line = nil,
   activity_commit_page = false,
+  activity_issue_page = false,
   activity_return = nil,
+  project_issue_return = nil,
+  project_issue_feed = nil,
   activity_loading_timer = nil,
   activity_loading_frame = 1,
   restore_cursor = nil,
@@ -157,7 +162,73 @@ local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
 end
 
-local function sync_window_highlights()
+local function inspect_code_window(win)
+  if not is_valid_win(win) then
+    return false
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  return type(vim.b[buf].oculus_inspect) == "table"
+end
+
+local function highlight_source_window(preferred)
+  if inspect_code_window(preferred) then
+    return preferred
+  end
+  local current = vim.api.nvim_get_current_win()
+  local tab = is_valid_win(preferred)
+      and vim.api.nvim_win_get_tabpage(preferred)
+    or vim.api.nvim_get_current_tabpage()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    if inspect_code_window(win) then
+      return win
+    end
+  end
+  if is_valid_win(preferred) then
+    return preferred
+  end
+  if is_valid_win(M.state.origin_win) then
+    return M.state.origin_win
+  end
+  return current
+end
+
+local function effective_window_highlight(win, name)
+  if not is_valid_win(win) then
+    return nil
+  end
+  local target = name
+  for _, mapping in ipairs(vim.split(
+    vim.wo[win].winhighlight,
+    ",",
+    { trimempty = true }
+  )) do
+    local source, destination = mapping:match("^([^:]+):(.+)$")
+    if source == name then
+      target = destination
+      break
+    end
+  end
+  local ok, namespace = pcall(
+    vim.api.nvim_get_hl_ns,
+    { winid = win }
+  )
+  namespace = ok and namespace or 0
+  if namespace == -1 then
+    namespace = 0
+  end
+  for _, candidate in ipairs(namespace == 0 and { 0 } or { namespace, 0 }) do
+    local found, definition = pcall(
+      vim.api.nvim_get_hl,
+      candidate,
+      { name = target, link = false }
+    )
+    if found and next(definition) then
+      return definition
+    end
+  end
+end
+
+local function sync_window_highlights(source_win)
   local current_normal = {}
   local current_border = {}
   for _, group in ipairs(window_highlight_groups) do
@@ -176,6 +247,15 @@ local function sync_window_highlights()
     end
   end
 
+  local source_normal = effective_window_highlight(
+    highlight_source_window(source_win),
+    "Normal"
+  )
+  if source_normal then
+    current_normal.bg = source_normal.bg
+    current_normal.ctermbg = source_normal.ctermbg
+  end
+
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusNormal",
@@ -184,9 +264,8 @@ local function sync_window_highlights()
   if not current_border.fg then
     current_border.fg = current_normal.fg or 0xffffff
   end
-  if not current_border.bg then
-    current_border.bg = current_normal.bg
-  end
+  current_border.bg = current_normal.bg
+  current_border.ctermbg = current_normal.ctermbg
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusBorder",
@@ -213,8 +292,8 @@ local function use_window_highlights(win)
   end
 end
 
-function M.apply_window_highlights(win)
-  sync_window_highlights()
+function M.apply_window_highlights(win, source_win)
+  sync_window_highlights(source_win)
   use_window_highlights(win)
 end
 
@@ -224,7 +303,9 @@ local highlight_autocmd_group = vim.api.nvim_create_augroup(
 )
 vim.api.nvim_create_autocmd("ColorScheme", {
   group = highlight_autocmd_group,
-  callback = sync_window_highlights,
+  callback = function()
+    sync_window_highlights()
+  end,
 })
 
 local activity_loading_frames = {
@@ -408,8 +489,16 @@ local function render_activity_footer()
   local width = config.width
   local activity_commands = "  h inspect   b browser"
   if not M.state.activity_commit_page then
-    activity_commands = activity_commands
-      .. "   p past   f forward   r refresh"
+    if M.state.activity_issue_page then
+      activity_commands = activity_commands
+        .. "   p past   f filters   r refresh"
+    else
+      if M.state.activity_project then
+        activity_commands = activity_commands .. "   i issues"
+      end
+      activity_commands = activity_commands
+        .. "   p past   f forward   r refresh"
+    end
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -546,7 +635,9 @@ local function clamp_list_cursor()
   if M.state.view == "activity" then
     min_line = M.state.activity_cursor_min_line
     max_line = M.state.activity_scroll_limit_line
-  elseif M.state.view == "filters" then
+  elseif M.state.view == "filters"
+    or M.state.view == "issue_filters"
+  then
     for line, target in pairs(M.state.line_targets) do
       if type(target) == "table" then
         min_line = math.min(min_line or line, line)
@@ -1780,12 +1871,133 @@ local function reset_filter_types_to_default()
   render_contributors()
 end
 
+local issue_filter_options = {
+  {
+    heading = "STATUS",
+    dimension = "state",
+    choices = {
+      { value = "all", label = "All issues" },
+      { value = "open", label = "Open issues" },
+      { value = "closed", label = "Closed issues" },
+    },
+  },
+  {
+    heading = "ASSIGNMENT",
+    dimension = "assignment",
+    choices = {
+      { value = "all", label = "Any assignment" },
+      { value = "assigned", label = "Assigned issues" },
+      { value = "unassigned", label = "Unassigned issues" },
+    },
+  },
+}
+
+local function project_issue_filter_key(project)
+  return table.concat({
+    project.provider == "codeberg" and "codeberg" or "github",
+    project.repository:lower(),
+  }, ":")
+end
+
+local function project_issue_filters_for(project)
+  M.state.opts.project_issue_filters =
+    M.state.opts.project_issue_filters or {}
+  local key = project_issue_filter_key(project)
+  local filters = M.state.opts.project_issue_filters[key]
+  if type(filters) ~= "table" then
+    filters = { state = "open", assignment = "all" }
+    M.state.opts.project_issue_filters[key] = filters
+  end
+  return filters
+end
+
+local function save_project_issue_filter(project, dimension, value)
+  local filters = project_issue_filters_for(project)
+  filters[dimension] = value
+  M.state.project_issue_feed = nil
+  persist_filter_config()
+end
+
+local function render_issue_filters(project, selected_dimension)
+  stop_activity_page_loading()
+  close_activity_footer()
+  M.state.view = "issue_filters"
+  M.state.line_targets = {}
+  local filters = project_issue_filters_for(project)
+  local lines = {
+    "",
+    "  ISSUE FILTERS",
+    "  " .. project_title(project),
+    "",
+  }
+  local headings = { 2 }
+  local selected_line
+  for _, group in ipairs(issue_filter_options) do
+    lines[#lines + 1] = "  " .. group.heading
+    headings[#headings + 1] = #lines
+    for _, choice in ipairs(group.choices) do
+      local line = #lines + 1
+      local active = filters[group.dimension] == choice.value
+      lines[line] = ("  %s  %s"):format(
+        active and "[x]" or "[ ]",
+        choice.label
+      )
+      M.state.line_targets[line] = {
+        issue_filter = true,
+        project = project,
+        dimension = group.dimension,
+        value = choice.value,
+      }
+      if group.dimension == selected_dimension and active then
+        selected_line = line
+      end
+    end
+    lines[#lines + 1] = ""
+  end
+  footer(lines, "<Space> select   q close")
+  set_lines(lines)
+  vim.wo[M.state.win].cursorline = true
+  for _, line in ipairs(headings) do
+    highlight(line, 2, -1, line == 2 and "Title" or "Special")
+  end
+  highlight(3, 2, -1, "Comment")
+  for line, target in pairs(M.state.line_targets) do
+    local active = filters[target.dimension] == target.value
+    highlight(
+      line,
+      2,
+      5,
+      active and "DiagnosticOk" or "Comment"
+    )
+    highlight(line, 7, -1, "Function")
+  end
+  highlight(#lines, 0, -1, "Comment")
+  vim.api.nvim_win_set_cursor(M.state.win, { selected_line or 6, 0 })
+end
+
+local function select_project_issue_filter()
+  if M.state.view ~= "issue_filters" then
+    return
+  end
+  local target = target_on_cursor()
+  if type(target) ~= "table" or not target.issue_filter then
+    return
+  end
+  save_project_issue_filter(
+    target.project,
+    target.dimension,
+    target.value
+  )
+  render_issue_filters(target.project, target.dimension)
+end
+
 -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 11 Show the selected forge while activity loads
 local function render_loading(target)
   stop_activity_page_loading()
   close_activity_footer()
   M.state.view = "activity"
   M.state.activity_commit_page = false
+  M.state.activity_issue_page = target.issues == true
   M.state.activity_return = nil
   M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
@@ -1797,7 +2009,7 @@ local function render_loading(target)
   local lines = project
       and {
         "",
-        "  PROJECT",
+        target.issues and "  ISSUES" or "  PROJECT",
         "  " .. project_title(project),
       }
     or {
@@ -1827,7 +2039,7 @@ local function render_error(message)
   local lines = project
       and {
         "",
-        "  PROJECT",
+        M.state.activity_issue_page and "  ISSUES" or "  PROJECT",
         "  " .. project_title(project),
         "",
         "  Could not load activity",
@@ -1855,6 +2067,9 @@ local function render_activity(events, cached, notice, opts)
   opts = opts or {}
   M.state.view = "activity"
   M.state.activity_commit_page = opts.commit_page == true
+  if opts.issue_page ~= nil then
+    M.state.activity_issue_page = opts.issue_page == true
+  end
   if not M.state.activity_commit_page then
     M.state.activity_return = nil
   end
@@ -1887,7 +2102,7 @@ local function render_activity(events, cached, notice, opts)
   local lines = project
       and {
         "",
-        "  PROJECT",
+        M.state.activity_issue_page and "  ISSUES" or "  PROJECT",
         ("  %s · %s%s"):format(
           project_title(project),
           provider_name(project),
@@ -1916,7 +2131,22 @@ local function render_activity(events, cached, notice, opts)
     local item = actions.describe(event, {
       omit_single_commit_count = true,
     })
-    if project and event.type == "PushEvent" then
+    if project
+      and M.state.activity_issue_page
+      and event.type == "IssuesEvent"
+    then
+      local issue = event.payload and event.payload.issue or {}
+      local actor = event.actor or issue.user or {}
+      local author = actor.login or actor.username or actor.name
+      local state = issue.state == "closed" and "closed" or "open"
+      item.text = ("%s%s issue #%s"):format(
+        author and ("@" .. author .. " · ") or "",
+        state,
+        tostring(issue.number or "?")
+      )
+      item.detail = tostring(issue.title or "Untitled issue")
+      item.summary = nil
+    elseif project and event.type == "PushEvent" then
       local author = project_push_author(event)
       if author then
         item.text = author .. " " .. item.text
@@ -2225,10 +2455,11 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
+    { "i", "Open a project's issue activity" },
     { "r", "Refresh the current activity page" },
     { "p", "Load the next eight older activity items" },
     { "l / <Right>", "Open the next older activity page" },
-    { "f", "Move forward to a newer activity page" },
+    { "f", "Move forward, or filter a project issue page" },
   })
   -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 13
   section("FILTER CHECKLIST", {
@@ -2418,6 +2649,7 @@ load_project_activity = function(project, force, page)
   M.state.view = "activity"
   M.state.activity_scope = "project"
   M.state.activity_project = project
+  M.state.activity_issue_page = false
   M.state.contributor = nil
   if page == nil then
     M.state.activity_loaded_pages = 1
@@ -2609,6 +2841,201 @@ load_project_activity = function(project, force, page)
   ensure_project_page()
 end
 
+local function project_issue_allowed(event, project)
+  local filters = project_issue_filters_for(project)
+  local issue = event.payload and event.payload.issue or {}
+  local state = issue.state
+    or (event.payload and event.payload.action == "closed" and "closed")
+    or "open"
+  if filters.state ~= "all" and filters.state ~= state then
+    return false
+  end
+  local assigned = issue.assignee ~= nil
+    or (type(issue.assignees) == "table" and #issue.assignees > 0)
+  if filters.assignment == "assigned" and not assigned then
+    return false
+  end
+  if filters.assignment == "unassigned" and assigned then
+    return false
+  end
+  return true
+end
+
+local function filter_project_issues(events, project)
+  local filtered = {}
+  for _, event in ipairs(events or {}) do
+    if event.type == "IssuesEvent"
+      and project_issue_allowed(event, project)
+    then
+      filtered[#filtered + 1] = event
+    end
+  end
+  return filtered
+end
+
+M._filter_project_issues = filter_project_issues
+
+local function add_project_issue(feed, event)
+  local issue = event.payload and event.payload.issue or {}
+  local key = issue.number and tostring(issue.number)
+    or event.id and tostring(event.id)
+  if key and feed.seen[key] then
+    return false
+  end
+  feed.events[#feed.events + 1] = event
+  if key then
+    feed.seen[key] = true
+  end
+  return true
+end
+
+load_project_issues = function(project, force, page)
+  local previous_page = M.state.activity_page or 1
+  local preserve_activity_page = page ~= nil
+    and M.state.view == "activity"
+    and M.state.activity_issue_page
+    and M.state.activity_loaded
+    and is_valid_buf(M.state.buf)
+  M.state.view = "activity"
+  M.state.activity_scope = "project"
+  M.state.activity_project = project
+  M.state.activity_issue_page = true
+  M.state.activity_commit_page = false
+  M.state.contributor = nil
+  if page == nil then
+    M.state.activity_loaded_pages = 1
+  end
+  local requested_page = math.max(1, page or 1)
+  M.state.activity_page = requested_page
+  M.state.activity_page_size = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.results_limit) or 8)
+  )
+  M.state.request_id = M.state.request_id + 1
+  local request_id = M.state.request_id
+  if preserve_activity_page then
+    M.state.activity_error = nil
+    start_activity_page_loading()
+  else
+    render_loading({
+      kind = "project",
+      project = project,
+      issues = true,
+    })
+  end
+
+  local provider = project.provider == "codeberg" and codeberg or github
+  if type(provider.repository_issues) ~= "function" then
+    render_error("this provider does not support project issues")
+    return
+  end
+  local filters = project_issue_filters_for(project)
+  local request_opts = vim.tbl_extend(
+    "force",
+    M.state.opts,
+    { force = force or false }
+  )
+  request_opts.per_page = project.provider == "codeberg" and 50 or 100
+  request_opts.issue_state = filters.state
+  local feed_key = table.concat({
+    project_issue_filter_key(project),
+    filters.state,
+    filters.assignment,
+  }, ":")
+  local feed = M.state.project_issue_feed
+  if force or not feed or feed.key ~= feed_key then
+    feed = {
+      key = feed_key,
+      events = {},
+      seen = {},
+      next_page = 1,
+      complete = false,
+      cached = true,
+    }
+    M.state.project_issue_feed = feed
+  end
+  local required_events = requested_page * M.state.activity_page_size
+  local max_source_pages = 10
+
+  local function render_issue_results()
+    local filtered = filter_project_issues(feed.events, project)
+    local first_event =
+      (requested_page - 1) * M.state.activity_page_size + 1
+    if requested_page > 1 and #filtered < first_event then
+      M.state.activity_page = math.max(1, previous_page)
+    else
+      M.state.activity_page = requested_page
+    end
+    M.state.activity_source_events = filtered
+    M.state.activity_loaded_pages = math.max(
+      M.state.activity_loaded_pages or 1,
+      M.state.activity_page
+    )
+    local page_end = M.state.activity_page * M.state.activity_page_size
+    M.state.activity_has_past = #filtered > page_end or not feed.complete
+    render_activity(
+      activity_page(
+        filtered,
+        M.state.activity_page,
+        M.state.activity_page_size
+      ),
+      feed.cached,
+      nil,
+      { issue_page = true }
+    )
+  end
+
+  local function ensure_issue_page()
+    local filtered = filter_project_issues(feed.events, project)
+    if #filtered >= required_events or feed.complete then
+      render_issue_results()
+      return
+    end
+    if feed.next_page > max_source_pages then
+      feed.complete = true
+      render_issue_results()
+      return
+    end
+    local source_page = feed.next_page
+    request_opts.page = source_page
+    provider.repository_issues(project.repository, request_opts, function(
+      events,
+      err,
+      cached,
+      complete
+    )
+      if request_id ~= M.state.request_id
+        or M.state.view ~= "activity"
+        or not M.state.activity_issue_page
+        or M.state.activity_project ~= project
+        or not is_valid_win(M.state.win)
+      then
+        return
+      end
+      if err then
+        render_error(err)
+        return
+      end
+      local source = events or {}
+      for _, event in ipairs(source) do
+        add_project_issue(feed, event)
+      end
+      table.sort(feed.events, function(left, right)
+        return tostring(left.created_at or "")
+          > tostring(right.created_at or "")
+      end)
+      feed.next_page = source_page + 1
+      feed.cached = feed.cached and cached == true
+      if complete == true or (complete == nil and #source == 0) then
+        feed.complete = true
+      end
+      ensure_issue_page()
+    end)
+  end
+
+  ensure_issue_page()
+end
+
 local function load_activity(contributor, force, page)
   local preserve_activity_page = page ~= nil
     and M.state.view == "activity"
@@ -2701,7 +3128,11 @@ local function next_activity_page()
     if M.state.activity_has_past == false then
       return
     end
-    load_project_activity(M.state.activity_project, false, page)
+    if M.state.activity_issue_page then
+      load_project_issues(M.state.activity_project, false, page)
+    else
+      load_project_activity(M.state.activity_project, false, page)
+    end
   else
     load_activity(M.state.contributor, false, page)
   end
@@ -2718,7 +3149,11 @@ local function previous_activity_page()
   end
   local page = (M.state.activity_page or 1) - 1
   if M.state.activity_project then
-    load_project_activity(M.state.activity_project, false, page)
+    if M.state.activity_issue_page then
+      load_project_issues(M.state.activity_project, false, page)
+    else
+      load_project_activity(M.state.activity_project, false, page)
+    end
   else
     load_activity(M.state.contributor, false, page)
   end
@@ -2730,7 +3165,11 @@ local function refresh_activity()
   end
   local page = M.state.activity_page or 1
   if M.state.activity_project then
-    load_project_activity(M.state.activity_project, true, page)
+    if M.state.activity_issue_page then
+      load_project_issues(M.state.activity_project, true, page)
+    else
+      load_project_activity(M.state.activity_project, true, page)
+    end
   elseif M.state.contributor then
     load_activity(M.state.contributor, true, page)
   end
@@ -3020,8 +3459,6 @@ local function open_search()
   vim.cmd("startinsert")
 end
 
-local target_on_cursor
-
 local function add_contributor(contributor)
   local username = vim.trim(tostring(contributor.username or ""))
     :gsub("^@", "")
@@ -3203,6 +3640,7 @@ local function select_current()
     if target.kind == "project" then
       M.state.selected_project = target.project
       M.state.selected_username = nil
+      M.state.project_issue_return = nil
       load_project_activity(target.project, false)
     else
       M.state.selected_project = nil
@@ -3213,7 +3651,32 @@ local function select_current()
     open_activity_expansion()
   elseif M.state.view == "filters" then
     toggle_filter_type()
+  elseif M.state.view == "issue_filters" then
+    select_project_issue_filter()
   end
+end
+
+local function open_project_issue_activity()
+  if M.state.view ~= "activity"
+    or M.state.activity_commit_page
+    or M.state.activity_issue_page
+    or not M.state.activity_project
+  then
+    return
+  end
+  M.state.project_issue_return = {
+    events = M.state.events,
+    cached = M.state.activity_cached,
+    notice = M.state.activity_notice,
+    page = M.state.activity_page,
+    loaded_pages = M.state.activity_loaded_pages,
+    source_events = M.state.activity_source_events,
+    has_past = M.state.activity_has_past,
+    cursor = is_valid_win(M.state.win)
+        and vim.api.nvim_win_get_cursor(M.state.win)
+      or nil,
+  }
+  load_project_issues(M.state.activity_project, false)
 end
 
 local function open_filters(global)
@@ -3371,6 +3834,7 @@ local function move_cursor(direction)
   if
     M.state.view ~= "contributors"
     and M.state.view ~= "filters"
+    and M.state.view ~= "issue_filters"
     and M.state.view ~= "activity"
   then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
@@ -3474,6 +3938,36 @@ local function move_cursor(direction)
 end
 
 local function go_back()
+  if M.state.view == "issue_filters" and M.state.activity_project then
+    M.state.request_id = M.state.request_id + 1
+    load_project_issues(M.state.activity_project, false, 1)
+    return
+  end
+  if M.state.view == "activity" and M.state.activity_issue_page then
+    local return_state = M.state.project_issue_return
+    M.state.project_issue_return = nil
+    if not return_state then
+      M.state.request_id = M.state.request_id + 1
+      render_contributors()
+      return
+    end
+    M.state.activity_page = return_state.page
+    M.state.activity_loaded_pages = return_state.loaded_pages
+    M.state.activity_source_events = return_state.source_events
+    M.state.activity_has_past = return_state.has_past
+    M.state.activity_issue_page = false
+    render_activity(
+      return_state.events,
+      return_state.cached,
+      return_state.notice,
+      { issue_page = false }
+    )
+    if return_state.cursor and is_valid_win(M.state.win) then
+      vim.api.nvim_win_set_cursor(M.state.win, return_state.cursor)
+      update_activity_cursorline()
+    end
+    return
+  end
   if M.state.view == "activity"
     and M.state.activity_commit_page
     and M.state.activity_return
@@ -3506,7 +4000,10 @@ local function go_back()
           M.state.events,
           M.state.activity_cached,
           M.state.activity_notice,
-          { commit_page = M.state.activity_commit_page }
+          {
+            commit_page = M.state.activity_commit_page,
+            issue_page = M.state.activity_issue_page,
+          }
         )
       elseif M.state.activity_project then
         load_project_activity(M.state.activity_project, false)
@@ -3515,6 +4012,13 @@ local function go_back()
       end
     elseif return_state.view == "filters" and M.state.filter_scope then
       render_filters(M.state.filter_scope, return_state.selected_type)
+    elseif return_state.view == "issue_filters"
+      and M.state.activity_project
+    then
+      render_issue_filters(
+        M.state.activity_project,
+        return_state.selected_type
+      )
     else
       render_contributors()
     end
@@ -3528,6 +4032,7 @@ local function go_back()
   elseif
     M.state.view == "activity"
     or M.state.view == "filters"
+    or M.state.view == "issue_filters"
   then
     M.state.request_id = M.state.request_id + 1
     render_contributors()
@@ -3555,7 +4060,11 @@ local function move_right()
     if M.state.activity_project then
       local page = M.state.activity_page or 1
       if page < (M.state.activity_loaded_pages or 1) then
-        load_project_activity(M.state.activity_project, false, page + 1)
+        if M.state.activity_issue_page then
+          load_project_issues(M.state.activity_project, false, page + 1)
+        else
+          load_project_activity(M.state.activity_project, false, page + 1)
+        end
       end
       return
     end
@@ -3575,6 +4084,9 @@ local function toggle_shortcuts()
   if M.state.view == "filters" then
     local target = target_on_cursor()
     selected_type = target and target.event_type or nil
+  elseif M.state.view == "issue_filters" then
+    local target = target_on_cursor()
+    selected_type = target and target.dimension or nil
   end
   M.state.shortcut_return = {
     view = M.state.view,
@@ -3625,7 +4137,13 @@ local function map_keys(buf)
   map("<CR>", select_current, "Select Oculus item")
   map("l", move_right, "Move right in Oculus")
   map("<Right>", move_right, "Move right in Oculus")
-  map("<Space>", toggle_filter_type, "Toggle Oculus item")
+  map("<Space>", function()
+    if M.state.view == "issue_filters" then
+      select_project_issue_filter()
+    else
+      toggle_filter_type()
+    end
+  end, "Toggle Oculus item")
   map("o", open_current, "Open Oculus contributor profile")
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
   map("F", function()
@@ -3644,7 +4162,9 @@ local function map_keys(buf)
   end, "Disable all Oculus activity filters")
   map("p", next_activity_page, "Load past Oculus activity")
   map("f", function()
-    if M.state.view == "activity" then
+    if M.state.view == "activity" and M.state.activity_issue_page then
+      render_issue_filters(M.state.activity_project)
+    elseif M.state.view == "activity" then
       previous_activity_page()
     else
       open_filters(false)
@@ -3657,7 +4177,15 @@ local function map_keys(buf)
     move_cursor(1)
   end, "Move down in Oculus")
   map("i", function()
-    move_cursor(-1)
+    if M.state.view == "activity"
+      and M.state.activity_project
+      and not M.state.activity_issue_page
+      and not M.state.activity_commit_page
+    then
+      open_project_issue_activity()
+    else
+      move_cursor(-1)
+    end
   end, "Move up in Oculus")
   map("j", move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
@@ -3759,7 +4287,7 @@ function M.open(opts)
   end
 
   local origin_win = vim.api.nvim_get_current_win()
-  sync_window_highlights()
+  sync_window_highlights(origin_win)
   M.state.origin_tab = vim.api.nvim_get_current_tabpage()
   M.state.origin_win = origin_win
   M.state.origin_view = vim.api.nvim_win_call(origin_win, function()
@@ -3805,7 +4333,10 @@ function M.open(opts)
   vim.wo[win].winfixbuf = true
 
   map_keys(buf)
-  if
+  if M.state.view == "issue_filters" and M.state.activity_project then
+    render_issue_filters(M.state.activity_project)
+    restore_cursor()
+  elseif
     M.state.view == "activity"
     and (M.state.contributor or M.state.activity_project)
     and M.state.events
@@ -3828,7 +4359,10 @@ function M.open(opts)
       M.state.events,
       M.state.activity_cached,
       M.state.activity_notice,
-      { commit_page = M.state.activity_commit_page }
+      {
+        commit_page = M.state.activity_commit_page,
+        issue_page = M.state.activity_issue_page,
+      }
     )
     restore_cursor()
   else

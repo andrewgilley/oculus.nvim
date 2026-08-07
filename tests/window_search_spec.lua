@@ -72,6 +72,15 @@ vim.api.nvim_set_hl(0, "FloatBorder", {
   fg = retained_border_fg,
   bg = retained_border_bg,
 })
+local source_highlight_ns = vim.api.nvim_create_namespace(
+  "oculus_test_source_window"
+)
+local source_normal_bg = 0x343a46
+vim.api.nvim_set_hl(source_highlight_ns, "Normal", {
+  fg = retained_normal_fg,
+  bg = source_normal_bg,
+})
+vim.api.nvim_win_set_hl_ns(origin_win, source_highlight_ns)
 window.open({
   width = 0.8,
   height = 0.8,
@@ -110,13 +119,13 @@ local retained_normal = vim.api.nvim_get_hl(window_highlight_ns, {
   link = false,
 })
 assert(retained_normal.fg == retained_normal_fg)
-assert(retained_normal.bg == retained_normal_bg)
+assert(retained_normal.bg == source_normal_bg)
 local retained_border = vim.api.nvim_get_hl(window_highlight_ns, {
   name = "OculusBorder",
   link = false,
 })
 assert(retained_border.fg == retained_border_fg)
-assert(retained_border.bg == retained_border_bg)
+assert(retained_border.bg == source_normal_bg)
 vim.api.nvim_set_hl(0, "Title", { fg = 0xc46b8a })
 vim.api.nvim_set_hl(0, "Normal", {
   fg = 0xf0c674,
@@ -140,13 +149,13 @@ local changed_normal = vim.api.nvim_get_hl(window_highlight_ns, {
   link = false,
 })
 assert(changed_normal.fg == 0xf0c674)
-assert(changed_normal.bg == 0x101010)
+assert(changed_normal.bg == source_normal_bg)
 local changed_border = vim.api.nvim_get_hl(window_highlight_ns, {
   name = "OculusBorder",
   link = false,
 })
 assert(changed_border.fg == 0xff0000)
-assert(changed_border.bg == 0x000000)
+assert(changed_border.bg == source_normal_bg)
 local main_window_config = vim.api.nvim_win_get_config(state.win)
 assert(
   main_window_config.title == nil or main_window_config.title == ""
@@ -1237,12 +1246,14 @@ end
 do
   local original_repository_events = github.repository_events
   local original_repository_updates = github.repository_updates
+  local original_repository_issues = github.repository_issues
   local repository_forces = {}
   local repository_per_page
   local repository_pages = {}
   local repository_update_pages = {}
   local project_pushes_enriched = false
   local deferred_project_request
+  local repository_issue_requests = {}
   github.repository_events = function(repository, opts, callback)
     assert(repository == "neovim/neovim")
     repository_forces[#repository_forces + 1] = opts.force
@@ -1365,6 +1376,45 @@ do
     repository_update_pages[#repository_update_pages + 1] = opts.page
     callback({}, nil, false)
   end
+  github.repository_issues = function(repository, opts, callback)
+    assert(repository == "neovim/neovim")
+    repository_issue_requests[#repository_issue_requests + 1] = {
+      state = opts.issue_state,
+      page = opts.page,
+      force = opts.force,
+    }
+    local state_name = opts.issue_state == "closed" and "closed" or "open"
+    local events = {}
+    for index = 1, 10 do
+      events[#events + 1] = {
+        id = "project-issue-" .. state_name .. "-" .. index,
+        type = "IssuesEvent",
+        actor = { login = "issue-author-" .. index },
+        repo = { name = repository },
+        created_at = ("2026-08-%02dT12:00:00Z"):format(11 - index),
+        url = ("https://github.com/%s/issues/%d"):format(
+          repository,
+          index
+        ),
+        payload = {
+          action = state_name == "closed" and "closed" or "opened",
+          issue = {
+            number = index,
+            title = "Project issue " .. index,
+            body = "Issue body " .. index,
+            state = state_name,
+            assignees = { { login = "issue-owner" } },
+            html_url = ("https://github.com/%s/issues/%d"):format(
+              repository,
+              index
+            ),
+            created_at = "2026-08-01T12:00:00Z",
+          },
+        },
+      }
+    end
+    callback(events, nil, false, true)
+  end
   github.enrich_pull_requests = function(events, _, callback)
     callback(events)
   end
@@ -1402,7 +1452,7 @@ do
     link = false,
   })
   assert(reopened_normal.fg == 0xf0c674)
-  assert(reopened_normal.bg == 0x101010)
+  assert(reopened_normal.bg == source_normal_bg)
   local startpage_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"
@@ -1464,6 +1514,88 @@ do
   assert(not project_activity_text:find("• Merged by", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
+  local project_footer_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+    "\n"
+  )
+  assert(project_footer_text:find("i issues", 1, true))
+  local project_cursor = vim.api.nvim_win_get_cursor(state.win)
+  vim.fn.maparg("i", "n", false, true).callback()
+  assert(state.view == "activity")
+  assert(state.activity_issue_page == true)
+  assert(state.activity_project.repository == "neovim/neovim")
+  assert(#state.events == 8)
+  assert(repository_issue_requests[1].state == "open")
+  assert(repository_issue_requests[1].page == 1)
+  local issue_activity_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+    "\n"
+  )
+  assert(issue_activity_text:find("  ISSUES", 1, true))
+  assert(
+    issue_activity_text:find("Project issue 1", 1, true),
+    issue_activity_text
+  )
+  local issue_footer_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+    "\n"
+  )
+  assert(issue_footer_text:find("f filters", 1, true))
+  assert(not issue_footer_text:find("f forward", 1, true))
+  vim.fn.maparg("f", "n", false, true).callback()
+  assert(state.view == "issue_filters")
+  local issue_filter_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+    "\n"
+  )
+  assert(issue_filter_text:find("ISSUE FILTERS", 1, true))
+  assert(issue_filter_text:find("Open issues", 1, true))
+  assert(issue_filter_text:find("Closed issues", 1, true))
+  assert(issue_filter_text:find("Assigned issues", 1, true))
+  assert(issue_filter_text:find("Unassigned issues", 1, true))
+  local closed_filter_line
+  local assigned_filter_line
+  for line, target in pairs(state.line_targets) do
+    if target.issue_filter
+      and target.dimension == "state"
+      and target.value == "closed"
+    then
+      closed_filter_line = line
+    elseif target.issue_filter
+      and target.dimension == "assignment"
+      and target.value == "assigned"
+    then
+      assigned_filter_line = line
+    end
+  end
+  assert(closed_filter_line and assigned_filter_line)
+  vim.api.nvim_win_set_cursor(state.win, { closed_filter_line, 0 })
+  vim.fn.maparg("<CR>", "n", false, true).callback()
+  vim.api.nvim_win_set_cursor(state.win, { assigned_filter_line, 0 })
+  vim.fn.maparg("<Space>", "n", false, true).callback()
+  local issue_filter_key = "github:neovim/neovim"
+  assert(state.opts.project_issue_filters[issue_filter_key].state == "closed")
+  assert(state.opts.project_issue_filters[issue_filter_key].assignment
+    == "assigned")
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.view == "activity")
+  assert(state.activity_issue_page == true)
+  assert(#state.events == 8)
+  assert(repository_issue_requests[#repository_issue_requests].state
+    == "closed")
+  vim.fn.maparg("p", "n", false, true).callback()
+  assert(state.activity_page == 2)
+  assert(#state.events == 2)
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.activity_page == 1)
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.view == "activity")
+  assert(state.activity_issue_page == false)
+  assert(#state.events == 8)
+  assert(vim.deep_equal(
+    vim.api.nvim_win_get_cursor(state.win),
+    project_cursor
+  ))
   local project_past_mapping = vim.fn.maparg("p", "n", false, true)
   local project_older_mapping = vim.fn.maparg("l", "n", false, true)
   local project_older_arrow_mapping =
@@ -1692,6 +1824,7 @@ do
   window.close()
   github.repository_events = original_repository_events
   github.repository_updates = original_repository_updates
+  github.repository_issues = original_repository_issues
 end
 github.events = original_events
 github.enrich_pull_requests = original_enrich_pull_requests
