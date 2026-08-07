@@ -3514,9 +3514,15 @@ function M._overview_ui.render_footer(group)
     vim.bo[buf].filetype = "oculus-inspect-overview-footer"
     vim.b[buf].oculus_inspect_overview_footer = true
   end
+  local commands = "  e explanation   b browser"
+  if group.overview_agent_mode == "explanation"
+    and #(group.overview_agent_locations or {}) > 0
+  then
+    commands = "  <CR> open path   e explanation   b browser"
+  end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    "  e explanation   b browser",
+    commands,
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, footer_lines)
@@ -3598,6 +3604,8 @@ function M._overview_ui.render(group)
   )
   group.overview_agent_model_lines = nil
   group.overview_agent_heading_line = nil
+  group.overview_agent_location_lines = nil
+  group.overview_agent_location_heading_line = nil
   local function append_explanation()
     if not group.overview_agent_mode then
       return
@@ -3642,17 +3650,31 @@ function M._overview_ui.render(group)
       if group.overview_agent_include_locations then
         lines[#lines + 1] = ""
         lines[#lines + 1] = "    Possible patch locations"
+        group.overview_agent_location_heading_line = #lines
         local locations = group.overview_agent_locations or {}
         if #locations == 0 then
           lines[#lines + 1] = "    No likely locations identified."
         else
+          group.overview_agent_location_lines = {}
+          group.overview_agent_selected_location_index = math.min(
+            math.max(
+              group.overview_agent_selected_location_index or 1,
+              1
+            ),
+            #locations
+          )
           for index, location in ipairs(locations) do
+            local location_line = #lines + 1
             append_sidebar_text(
               lines,
               ("%d. %s"):format(index, location.path),
               group.overview_content_width or 28,
               "    "
             )
+            group.overview_agent_location_lines[location_line] = {
+              index = index,
+              location = location,
+            }
             if location.reason then
               append_sidebar_text(
                 lines,
@@ -3696,6 +3718,20 @@ function M._overview_ui.render(group)
       })
     end
   end
+  local location_heading = group.overview_agent_location_heading_line
+  if location_heading then
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      sidebar_ns,
+      location_heading - 1,
+      4,
+      {
+        end_col = #(lines[location_heading] or ""),
+        hl_group = "OculusInspectOverviewSection",
+        priority = 100,
+      }
+    )
+  end
   local selected = group.overview_agent_selected_line
   if group.overview_agent_mode == "models"
     and selected
@@ -3709,6 +3745,23 @@ function M._overview_ui.render(group)
       priority = 90,
     })
   end
+  if group.overview_agent_mode == "explanation"
+    and group.overview_agent_selected_location_index
+  then
+    for line, target in pairs(
+      group.overview_agent_location_lines or {}
+    ) do
+      if target.index == group.overview_agent_selected_location_index then
+        vim.api.nvim_buf_set_extmark(buf, sidebar_ns, line - 1, 4, {
+          end_col = #(lines[line] or ""),
+          hl_group = "OculusInspectAgentModelSelected",
+          hl_mode = "combine",
+          priority = 90,
+        })
+        break
+      end
+    end
+  end
   if group.overview_agent_mode == "generating"
     or group.overview_agent_mode == "loading_models"
   then
@@ -3718,6 +3771,9 @@ function M._overview_ui.render(group)
     and vim.api.nvim_get_current_win() == group.overview_win
   then
     hide_overview_cursor(group)
+  end
+  if overview_window_is_open(group) then
+    M._overview_ui.render_footer(group)
   end
   return lines
 end
@@ -3933,6 +3989,116 @@ function M._overview_ui.move_model_cursor(group, direction)
   end
 end
 
+function M._overview_ui.selected_patch_location(group)
+  local selected = group.overview_agent_selected_location_index
+  for line, target in pairs(
+    group.overview_agent_location_lines or {}
+  ) do
+    if target.index == selected then
+      return target.location, line
+    end
+  end
+end
+
+function M._overview_ui.move_location_cursor(group, direction)
+  local locations = group.overview_agent_locations or {}
+  if group.overview_agent_mode ~= "explanation" or #locations == 0 then
+    return false
+  end
+  local current = group.overview_agent_selected_location_index or 1
+  group.overview_agent_selected_location_index =
+    ((current + direction - 1) % #locations) + 1
+  M._overview_ui.render(group)
+  local _, line = M._overview_ui.selected_patch_location(group)
+  if line and overview_window_is_open(group) then
+    vim.api.nvim_win_set_cursor(group.overview_win, { line, 0 })
+  end
+  return true
+end
+
+function M._overview_ui.patch_location_path(group, location)
+  local repository = require("oculus.agent").repository(group)
+  if type(repository) ~= "string" or repository == "" then
+    return nil, nil, "local repository information is unavailable"
+  end
+  local path = type(location) == "table" and location.path or nil
+  if type(path) ~= "string" or vim.trim(path) == "" then
+    return nil, nil, "this patch location has no path"
+  end
+  repository = vim.fs.normalize(repository)
+  path = vim.trim(path):gsub("\\", "/"):gsub("^/+", "")
+  local folder = vim.fs.basename(repository)
+  if path:lower() == folder:lower() then
+    path = ""
+  elseif path:sub(1, #folder + 1):lower()
+      == (folder .. "/"):lower()
+  then
+    path = path:sub(#folder + 2)
+  end
+  local absolute = vim.fs.normalize(vim.fs.joinpath(repository, path))
+  local relative = relative_path(repository, absolute)
+  if not relative or relative == "" then
+    return nil, nil, "the selected path is outside the repository"
+  end
+  return absolute, relative
+end
+
+function M._overview_ui.open_patch_location(group)
+  if group.overview_agent_mode ~= "explanation" then
+    return false
+  end
+  local location = M._overview_ui.selected_patch_location(group)
+  if not location then
+    return false
+  end
+  local absolute, relative, path_err =
+    M._overview_ui.patch_location_path(group, location)
+  if not absolute then
+    vim.notify("Oculus: " .. tostring(path_err), vim.log.levels.WARN)
+    return false
+  end
+  local stat = vim.uv.fs_stat(absolute)
+  if stat and stat.type == "directory" then
+    vim.notify(
+      "Oculus: the selected patch location is a directory",
+      vim.log.levels.WARN
+    )
+    return false
+  end
+  local overview_tab = vim.api.nvim_get_current_tabpage()
+  local overview_win = group.overview_win
+  local ok, open_err = pcall(
+    vim.cmd,
+    "tabedit " .. vim.fn.fnameescape(absolute)
+  )
+  if not ok then
+    vim.notify(
+      "Oculus: could not open patch location: " .. tostring(open_err),
+      vim.log.levels.ERROR
+    )
+    return false
+  end
+  local repository = require("oculus.agent").repository(group)
+  vim.cmd("tcd " .. vim.fn.fnameescape(repository))
+  vim.bo.modifiable = true
+  vim.bo.readonly = false
+  group.overview_patch_tabs = group.overview_patch_tabs or {}
+  group.overview_patch_tabs[#group.overview_patch_tabs + 1] = {
+    tab = vim.api.nvim_get_current_tabpage(),
+    win = vim.api.nvim_get_current_win(),
+    buf = vim.api.nvim_get_current_buf(),
+    path = relative:gsub("\\", "/"),
+  }
+  if vim.api.nvim_tabpage_is_valid(overview_tab) then
+    vim.api.nvim_set_current_tabpage(overview_tab)
+  end
+  if overview_win and vim.api.nvim_win_is_valid(overview_win) then
+    vim.api.nvim_set_current_win(overview_win)
+    hide_overview_cursor(group)
+  end
+  return true
+end
+
 function M._overview_ui.open_model_picker(group)
   if not overview_window_is_open(group) then
     return
@@ -3947,6 +4113,7 @@ function M._overview_ui.open_model_picker(group)
   group.overview_agent_explanation_model = nil
   group.overview_agent_include_locations = nil
   group.overview_agent_locations = nil
+  group.overview_agent_selected_location_index = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_agent_spinner(group)
@@ -3992,9 +4159,11 @@ function M._overview_ui.render_explanation(
     group.overview_agent_mode = "explanation"
     group.overview_agent_explanation = text
     group.overview_agent_locations = {}
-    for index = 1, math.min(5, #(locations or {})) do
+    for index = 1, math.min(3, #(locations or {})) do
       group.overview_agent_locations[index] = locations[index]
     end
+    group.overview_agent_selected_location_index =
+      #group.overview_agent_locations > 0 and 1 or nil
   else
     group.overview_agent_mode = "error"
     group.overview_agent_error = "Generation failed: " .. tostring(err)
@@ -4198,6 +4367,12 @@ show_inspection_overview = function(group)
         M._overview_ui.move_model_cursor(group, direction < 0 and -1 or 1)
         return
       end
+      if M._overview_ui.move_location_cursor(
+        group,
+        direction < 0 and -1 or 1
+      ) then
+        return
+      end
       local view = vim.fn.winsaveview()
       local height = M._overview_ui.content_height(group)
       local line_count = vim.api.nvim_buf_line_count(buf)
@@ -4230,12 +4405,16 @@ show_inspection_overview = function(group)
   map_scroll("<C-i>", -10, "Scroll Oculus Inspect overview up 10 lines")
   map_scroll("<C-k>", 10, "Scroll Oculus Inspect overview down 10 lines")
   vim.keymap.set("n", "<CR>", function()
-    M._overview_ui.select_agent_model(group)
+    if group.overview_agent_mode == "explanation" then
+      M._overview_ui.open_patch_location(group)
+    else
+      M._overview_ui.select_agent_model(group)
+    end
   end, {
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Select Oculus agent model",
+    desc = "Select Oculus overview item",
   })
   if group.overview_view then
     vim.api.nvim_win_call(win, function()
