@@ -134,19 +134,19 @@ assert(vim.api.nvim_get_hl(0, {
 assert(vim.api.nvim_get_hl(window_highlight_ns, {
   name = "Title",
   link = false,
-}).fg == retained_title_color)
-local unchanged_normal = vim.api.nvim_get_hl(window_highlight_ns, {
+}).fg == 0xc46b8a)
+local changed_normal = vim.api.nvim_get_hl(window_highlight_ns, {
   name = "OculusNormal",
   link = false,
 })
-assert(unchanged_normal.fg == retained_normal_fg)
-assert(unchanged_normal.bg == retained_normal_bg)
-local unchanged_border = vim.api.nvim_get_hl(window_highlight_ns, {
+assert(changed_normal.fg == 0xf0c674)
+assert(changed_normal.bg == 0x101010)
+local changed_border = vim.api.nvim_get_hl(window_highlight_ns, {
   name = "OculusBorder",
   link = false,
 })
-assert(unchanged_border.fg == retained_border_fg)
-assert(unchanged_border.bg == retained_border_bg)
+assert(changed_border.fg == 0xff0000)
+assert(changed_border.bg == 0x000000)
 local main_window_config = vim.api.nvim_win_get_config(state.win)
 assert(
   main_window_config.title == nil or main_window_config.title == ""
@@ -1396,13 +1396,13 @@ do
   assert(vim.api.nvim_get_hl(window_highlight_ns, {
     name = "Title",
     link = false,
-  }).fg == retained_title_color)
+  }).fg == 0xc46b8a)
   local reopened_normal = vim.api.nvim_get_hl(window_highlight_ns, {
     name = "OculusNormal",
     link = false,
   })
-  assert(reopened_normal.fg == retained_normal_fg)
-  assert(reopened_normal.bg == retained_normal_bg)
+  assert(reopened_normal.fg == 0xf0c674)
+  assert(reopened_normal.bg == 0x101010)
   local startpage_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"
