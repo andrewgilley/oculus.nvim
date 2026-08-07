@@ -2604,18 +2604,20 @@ local function sidebar_file(file)
   return normalized:match("([^/]+)$") or normalized
 end
 
-local function sidebar_row(file, width)
+local function sidebar_row(file, width, version)
   local prefix = "• "
   local suffix = "P C"
+  local version_text = version and (" v.%d"):format(version) or ""
   local path_width = math.max(
     1,
     width
       - vim.fn.strdisplaywidth(prefix)
       - vim.fn.strdisplaywidth(suffix)
+      - vim.fn.strdisplaywidth(version_text)
       - 2
   )
   local path = truncate_path(file, path_width)
-  local body = prefix .. path
+  local body = prefix .. path .. version_text
   local padding = math.max(
     1,
     width
@@ -2628,7 +2630,41 @@ local function sidebar_row(file, width)
     line = line,
     parent_column = #line - 4,
     change_column = #line - 2,
+    version_column = version
+        and (#prefix + #path + 1)
+      or nil,
+    version_end_column = version
+        and (#prefix + #path + #version_text)
+      or nil,
   }
+end
+
+function M._assign_sidebar_versions(group)
+  local counts = {}
+  for index, session in ipairs(group or {}) do
+    session.file = session.file or ("file " .. index)
+    session.sidebar_version = nil
+    session.sidebar_version_count = nil
+    local key = session.file
+      :gsub("\\", "/")
+      :gsub("^%./", "")
+      :gsub("/+$", "")
+    counts[key] = (counts[key] or 0) + 1
+  end
+
+  local versions = {}
+  for _, session in ipairs(group or {}) do
+    local key = session.file
+      :gsub("\\", "/")
+      :gsub("^%./", "")
+      :gsub("/+$", "")
+    if counts[key] > 1 then
+      versions[key] = (versions[key] or 0) + 1
+      session.sidebar_version = versions[key]
+      session.sidebar_version_count = counts[key]
+    end
+  end
+  return group
 end
 
 local function inspect_sidebar_width(proportion, columns)
@@ -3037,6 +3073,19 @@ refresh_sidebar = function(group, tab)
           priority = 100,
         }
       )
+      if row.version_column then
+        vim.api.nvim_buf_set_extmark(
+          buf,
+          sidebar_ns,
+          row.line_number - 1,
+          row.version_column,
+          {
+            end_col = row.version_end_column,
+            hl_group = "Comment",
+            priority = 90,
+          }
+        )
+      end
     end
   end
   vim.b[buf].oculus_inspect_sidebar_active = {
@@ -4364,6 +4413,7 @@ local function prepare_inspection_sidebar(group)
   group.sidebar_lines = {}
   group.sidebar_rendered_mode = nil
   group.overview = group.overview or {}
+  M._assign_sidebar_versions(group)
   local lines = {}
   for index, session in ipairs(group) do
     session.file = session.file or ("file " .. index)
@@ -4378,7 +4428,8 @@ local function prepare_inspection_sidebar(group)
         )
       or sidebar_row(
         sidebar_file(session.file),
-        group.sidebar_width
+        group.sidebar_width,
+        session.sidebar_version
       )
     local file_line = #lines + 1
     row.line_number = file_line

@@ -483,6 +483,28 @@ assert(shortened_sidebar_row.line:match(" P C $"))
 assert(shortened_sidebar_row.parent_column
   < shortened_sidebar_row.change_column)
 assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
+local versioned_sidebar_row = inspect._sidebar_row(
+  "inspect.lua",
+  24,
+  2
+)
+assert(versioned_sidebar_row.line:match("^• inspect%.lua v%.2"))
+assert(versioned_sidebar_row.line:match(" P C $"))
+assert(versioned_sidebar_row.version_column)
+assert(versioned_sidebar_row.version_end_column
+  == versioned_sidebar_row.version_column + 3)
+assert(vim.fn.strdisplaywidth(versioned_sidebar_row.line) == 24)
+local versioned_sessions = inspect._assign_sidebar_versions({
+  { file = "lua/oculus/inspect.lua", commit_index = 1 },
+  { file = "lua/oculus/inspect.lua", commit_index = 2 },
+  { file = "tests/inspect.lua", commit_index = 2 },
+  { file = "lua/oculus/inspect.lua", commit_index = 3 },
+})
+assert(versioned_sessions[1].sidebar_version == 1)
+assert(versioned_sessions[2].sidebar_version == 2)
+assert(versioned_sessions[3].sidebar_version == nil)
+assert(versioned_sessions[4].sidebar_version == 3)
+assert(versioned_sessions[1].sidebar_version_count == 3)
 assert(inspect._sidebar_chunk_row(
   { old_count = 1, new_start = 25, new_count = 4 },
   false
