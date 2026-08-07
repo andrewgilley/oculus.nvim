@@ -355,8 +355,10 @@ vim.b[filetype_buf].oculus_inspect = {
 local original_reliquary = package.loaded.reliquary
 local reliquary_buf
 local reliquary_filetype
+local reliquary_apply_count = 0
 package.loaded.reliquary = {
   apply = function(buf)
+    reliquary_apply_count = reliquary_apply_count + 1
     reliquary_buf = buf
     reliquary_filetype = vim.bo[buf].filetype
     return "st"
@@ -368,6 +370,7 @@ assert(vim.bo[filetype_buf].filetype == "python")
 assert(reliquary_buf == filetype_buf)
 assert(reliquary_filetype == "python")
 assert(vim.api.nvim_get_current_buf() == filetype_current_buf)
+assert(reliquary_apply_count == 1)
 package.loaded.reliquary = original_reliquary
 vim.api.nvim_buf_delete(filetype_buf, { force = true })
 

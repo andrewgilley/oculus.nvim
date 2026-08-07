@@ -58,6 +58,8 @@ vim.wo[origin_win].relativenumber = true
 local retained_title_color = 0x315b8a
 local retained_normal_fg = 0xd8dee9
 local retained_normal_bg = 0x20242c
+local retained_border_fg = 0x81a1c1
+local retained_border_bg = 0x2e3440
 vim.api.nvim_set_hl(0, "Normal", {
   fg = retained_normal_fg,
   bg = retained_normal_bg,
@@ -65,6 +67,10 @@ vim.api.nvim_set_hl(0, "Normal", {
 vim.api.nvim_set_hl(0, "Title", {
   fg = retained_title_color,
   bold = true,
+})
+vim.api.nvim_set_hl(0, "FloatBorder", {
+  fg = retained_border_fg,
+  bg = retained_border_bg,
 })
 window.open({
   width = 0.8,
@@ -105,10 +111,20 @@ local retained_normal = vim.api.nvim_get_hl(window_highlight_ns, {
 })
 assert(retained_normal.fg == retained_normal_fg)
 assert(retained_normal.bg == retained_normal_bg)
+local retained_border = vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "OculusBorder",
+  link = false,
+})
+assert(retained_border.fg == retained_border_fg)
+assert(retained_border.bg == retained_border_bg)
 vim.api.nvim_set_hl(0, "Title", { fg = 0xc46b8a })
 vim.api.nvim_set_hl(0, "Normal", {
   fg = 0xf0c674,
   bg = 0x101010,
+})
+vim.api.nvim_set_hl(0, "FloatBorder", {
+  fg = 0xff0000,
+  bg = 0x000000,
 })
 vim.api.nvim_exec_autocmds("ColorScheme", {})
 assert(vim.api.nvim_get_hl(0, {
@@ -125,6 +141,12 @@ local unchanged_normal = vim.api.nvim_get_hl(window_highlight_ns, {
 })
 assert(unchanged_normal.fg == retained_normal_fg)
 assert(unchanged_normal.bg == retained_normal_bg)
+local unchanged_border = vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "OculusBorder",
+  link = false,
+})
+assert(unchanged_border.fg == retained_border_fg)
+assert(unchanged_border.bg == retained_border_bg)
 local main_window_config = vim.api.nvim_win_get_config(state.win)
 assert(
   main_window_config.title == nil or main_window_config.title == ""
@@ -1520,6 +1542,45 @@ do
   assert(refresh_mapping.desc == "Refresh Oculus activity")
   refresh_mapping.callback()
   assert(repository_forces[#repository_forces] == true)
+  local preserved_project_line
+  for line, title_line in pairs(state.activity_title_lines) do
+    if line == title_line then
+      preserved_project_line = math.max(
+        preserved_project_line or line,
+        line
+      )
+    end
+  end
+  assert(preserved_project_line)
+  vim.api.nvim_win_set_cursor(
+    state.win,
+    { preserved_project_line, 0 }
+  )
+  vim.api.nvim_win_call(state.win, function()
+    vim.fn.winrestview({
+      lnum = preserved_project_line,
+      col = 0,
+      topline = math.max(1, preserved_project_line - 3),
+    })
+  end)
+  local preserved_project_view = vim.api.nvim_win_call(
+    state.win,
+    vim.fn.winsaveview
+  )
+  local preserved_project_opts = state.opts
+  window.close()
+  window.open(preserved_project_opts)
+  state = window.state
+  assert(state.view == "activity")
+  assert(state.activity_project.repository == "neovim/neovim")
+  assert(state.activity_page == 2)
+  local reopened_project_view = vim.api.nvim_win_call(
+    state.win,
+    vim.fn.winsaveview
+  )
+  assert(reopened_project_view.lnum == preserved_project_view.lnum)
+  assert(reopened_project_view.col == preserved_project_view.col)
+  assert(reopened_project_view.topline == preserved_project_view.topline)
   local project_filter_mapping = vim.fn.maparg("f", "n", false, true)
   project_filter_mapping.callback()
   assert(state.view == "activity")
