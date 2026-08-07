@@ -47,6 +47,9 @@ local window_highlights_retained = false
 local retained_highlight_groups = {
   "Normal",
   "NormalFloat",
+  "FloatBorder",
+  "FloatTitle",
+  "FloatFooter",
   "CursorLine",
   "Title",
   "Comment",
@@ -127,6 +130,7 @@ M.state = {
   activity_loading_timer = nil,
   activity_loading_frame = 1,
   restore_cursor = nil,
+  restore_view = nil,
   shortcut_return = nil,
   search_buf = nil,
   search_win = nil,
@@ -159,6 +163,7 @@ local function retain_window_highlights()
     return
   end
   local retained_normal = {}
+  local retained_border = {}
   for _, group in ipairs(retained_highlight_groups) do
     local ok, definition = pcall(
       vim.api.nvim_get_hl,
@@ -169,6 +174,8 @@ local function retain_window_highlights()
       vim.api.nvim_set_hl(window_highlight_ns, group, definition)
       if group == "Normal" then
         retained_normal = vim.deepcopy(definition)
+      elseif group == "FloatBorder" then
+        retained_border = vim.deepcopy(definition)
       end
     end
   end
@@ -178,10 +185,17 @@ local function retain_window_highlights()
     "OculusNormal",
     retained_normal
   )
-  vim.api.nvim_set_hl(window_highlight_ns, "OculusBorder", {
-    fg = "#ffffff",
-    bg = "NONE",
-  })
+  if not retained_border.fg then
+    retained_border.fg = retained_normal.fg or 0xffffff
+  end
+  if not retained_border.bg then
+    retained_border.bg = retained_normal.bg
+  end
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "OculusBorder",
+    retained_border
+  )
   vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityIcon", {
     fg = "#fbd38d",
     bg = "NONE",
@@ -2238,15 +2252,35 @@ end
 
 local function restore_cursor()
   local cursor = M.state.restore_cursor
-  if not cursor or not is_valid_win(M.state.win) then
+  local view = M.state.restore_view
+  if (not cursor and not view) or not is_valid_win(M.state.win) then
     return
   end
 
   local line_count = vim.api.nvim_buf_line_count(M.state.buf)
-  local line = math.min(math.max(cursor[1] or 1, 1), line_count)
-  local column = math.max(cursor[2] or 0, 0)
-  vim.api.nvim_win_set_cursor(M.state.win, { line, column })
+  local line = math.min(math.max(
+    cursor and cursor[1] or view and view.lnum or 1,
+    1
+  ), line_count)
+  local column = math.max(
+    cursor and cursor[2] or view and view.col or 0,
+    0
+  )
+  if view then
+    view.lnum = line
+    view.col = column
+    view.topline = math.min(
+      math.max(view.topline or 1, 1),
+      line_count
+    )
+    vim.api.nvim_win_call(M.state.win, function()
+      vim.fn.winrestview(view)
+    end)
+  else
+    vim.api.nvim_win_set_cursor(M.state.win, { line, column })
+  end
   M.state.restore_cursor = nil
+  M.state.restore_view = nil
 end
 
 local function contributor_by_username(username)
@@ -3657,6 +3691,9 @@ function M.close()
   clear_search_state()
   if is_valid_win(M.state.win) then
     M.state.restore_cursor = vim.api.nvim_win_get_cursor(M.state.win)
+    M.state.restore_view = vim.api.nvim_win_call(M.state.win, function()
+      return vim.fn.winsaveview()
+    end)
     if vim.api.nvim_get_current_win() ~= M.state.win then
       vim.api.nvim_set_current_win(M.state.win)
     end
@@ -3672,10 +3709,6 @@ function M.close()
   M.state.preview_items = nil
   M.state.preview_contributor = nil
   M.state.preview_project = nil
-  M.state.activity_scope = nil
-  M.state.activity_project = nil
-  M.state.activity_has_past = nil
-  M.state.project_activity_feed = nil
   M.state.selected_project = nil
   M.state.contributors = {}
   M.state.filter_scope = nil

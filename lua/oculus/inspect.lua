@@ -4941,11 +4941,7 @@ vim.api.nvim_create_autocmd("TabEnter", {
       ensure_inspection_sidebar_on_tab(group, tab)
       local endpoint = endpoint_for_tab(group, tab)
       if endpoint then
-        apply_inspection_filetype(endpoint.buf, true)
-        local paired = paired_endpoint(endpoint.win)
-        if paired then
-          apply_inspection_filetype(paired.buf, true)
-        end
+        apply_inspection_filetype(endpoint.buf, false)
       end
       refresh_sidebar(group, tab)
     end
