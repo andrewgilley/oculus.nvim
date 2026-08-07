@@ -1886,7 +1886,7 @@ local function render_activity(events, cached, notice, opts)
   local activity_line_kinds = {}
   for event_index, event in ipairs(events) do
     local item = actions.describe(event, {
-      omit_single_commit_count = M.state.activity_commit_page,
+      omit_single_commit_count = true,
     })
     if project and event.type == "PushEvent" then
       local author = project_push_author(event)

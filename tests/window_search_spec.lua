@@ -1587,7 +1587,12 @@ do
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"
   )
-  assert(lazy_activity_text:find("@folke pushed", 1, true))
+  assert(lazy_activity_text:find(
+    "@folke pushed commit",
+    1,
+    true
+  ))
+  assert(not lazy_activity_text:find("pushed 1 commit", 1, true))
   assert(lazy_activity_text:find("Lazy update 1", 1, true))
   window.close()
   github.repository_events = original_repository_events
