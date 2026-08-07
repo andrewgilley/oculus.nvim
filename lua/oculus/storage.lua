@@ -30,6 +30,7 @@ function M.save(path, config)
     activity_types = config.activity_types,
     user_activity_types = config.user_activity_types or {},
     project_activity_types = config.project_activity_types,
+    project_issue_filters = config.project_issue_filters or {},
     contributors = config.contributors or {},
     projects = config.projects or {},
   }

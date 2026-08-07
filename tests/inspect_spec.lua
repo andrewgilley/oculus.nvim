@@ -1509,10 +1509,31 @@ assert(issue_sidebar_text:find("Issue #77", 1, true))
 issue_sidebar_toggle.callback()
 assert(not vim.api.nvim_win_is_valid(issue_sidebar_win))
 assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 1)
+local issue_source_highlight_ns = vim.api.nvim_create_namespace(
+  "oculus_test_issue_source_window"
+)
+local issue_source_bg = 0x252a33
+vim.api.nvim_set_hl(issue_source_highlight_ns, "Normal", {
+  fg = 0xd8dee9,
+  bg = issue_source_bg,
+})
+vim.api.nvim_win_set_hl_ns(issue_main_win, issue_source_highlight_ns)
 local reopen_issue_overview = vim.fn.maparg("<C-t>", "n", false, true)
 assert(reopen_issue_overview.desc == "Toggle Oculus Inspect overview")
 reopen_issue_overview.callback()
 local restored_overview_win = vim.api.nvim_get_current_win()
+assert(vim.api.nvim_get_hl_ns({ winid = restored_overview_win })
+  == retained_window_highlight_ns)
+local restored_overview_normal = vim.api.nvim_get_hl(
+  retained_window_highlight_ns,
+  { name = "OculusNormal", link = false }
+)
+local restored_overview_border = vim.api.nvim_get_hl(
+  retained_window_highlight_ns,
+  { name = "OculusBorder", link = false }
+)
+assert(restored_overview_normal.bg == issue_source_bg)
+assert(restored_overview_border.bg == issue_source_bg)
 local restored_overview_text = table.concat(
   vim.api.nvim_buf_get_lines(0, 0, -1, false),
   "\n"

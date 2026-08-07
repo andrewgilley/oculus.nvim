@@ -3,6 +3,7 @@ local M = {}
 
 local cache = {}
 local repository_cache = {}
+local repository_issue_cache = {}
 local activity_pull_request_cache = {}
 local pull_request_commits_cache = {}
 local push_cache = {}
@@ -422,6 +423,96 @@ function M.repository_events(repository_name, opts, callback)
       complete = #activities < limit,
     }
     callback(events, nil, false)
+  end)
+end
+
+local function project_issue_event(repository_name, issue)
+  if type(issue) ~= "table" or issue.pull_request or not issue.number then
+    return nil
+  end
+  local state = issue.state == "closed" and "closed" or "open"
+  return {
+    id = ("project-issue:%s:%s"):format(repository_name, issue.number),
+    type = "IssuesEvent",
+    actor = issue.user,
+    repo = { name = repository_name },
+    created_at = issue.updated_at or issue.created_at,
+    url = issue.html_url,
+    payload = {
+      action = state == "closed" and "closed" or "opened",
+      issue = {
+        number = issue.number,
+        title = issue.title,
+        body = issue.body,
+        user = issue.user,
+        assignee = issue.assignee,
+        assignees = issue.assignees or {},
+        labels = issue.labels or {},
+        state = state,
+        html_url = issue.html_url,
+        created_at = issue.created_at,
+        updated_at = issue.updated_at,
+      },
+    },
+  }
+end
+
+function M.repository_issues(repository_name, opts, callback)
+  opts = opts or {}
+  local ttl = opts.cache_ttl or 300
+  local page = math.max(1, math.floor(opts.page or 1))
+  local per_page = math.min(
+    50,
+    math.max(1, math.floor(opts.per_page or 50))
+  )
+  local state = opts.issue_state == "closed" and "closed"
+    or opts.issue_state == "all" and "all"
+    or "open"
+  local cache_key = table.concat({
+    repository_name:lower(),
+    state,
+    tostring(page),
+    tostring(per_page),
+  }, ":")
+  local cached = repository_issue_cache[cache_key]
+  if cached
+    and not opts.force
+    and os.time() - cached.fetched_at < ttl
+  then
+    vim.schedule(function()
+      callback(
+        vim.deepcopy(cached.events),
+        nil,
+        true,
+        cached.complete
+      )
+    end)
+    return
+  end
+
+  local url = (
+    "%s/api/v1/repos/%s/issues"
+      .. "?state=%s&type=issues&limit=%d&page=%d"
+  ):format(base_url, repository_name, state, per_page, page)
+  request_json(url, opts, function(issues, err)
+    if not issues then
+      callback(nil, err)
+      return
+    end
+    local events = {}
+    for _, issue in ipairs(issues) do
+      local normalized = project_issue_event(repository_name, issue)
+      if normalized then
+        events[#events + 1] = normalized
+      end
+    end
+    local complete = #issues < per_page
+    repository_issue_cache[cache_key] = {
+      events = vim.deepcopy(events),
+      fetched_at = os.time(),
+      complete = complete,
+    }
+    callback(events, nil, false, complete)
   end)
 end
 
