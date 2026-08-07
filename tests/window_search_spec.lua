@@ -55,6 +55,11 @@ end)
 local origin_view = vim.api.nvim_win_call(origin_win, vim.fn.winsaveview)
 vim.wo[origin_win].number = true
 vim.wo[origin_win].relativenumber = true
+local retained_title_color = 0x315b8a
+vim.api.nvim_set_hl(0, "Title", {
+  fg = retained_title_color,
+  bold = true,
+})
 window.open({
   width = 0.8,
   height = 0.8,
@@ -78,6 +83,26 @@ window.open({
 })
 
 local state = window.state
+local window_highlight_ns = assert(
+  vim.api.nvim_get_namespaces().oculus_window_highlights
+)
+assert(vim.api.nvim_get_hl_ns({ winid = state.win }) == window_highlight_ns)
+local retained_title = vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "Title",
+  link = false,
+})
+assert(retained_title.fg == retained_title_color)
+assert(retained_title.bold)
+vim.api.nvim_set_hl(0, "Title", { fg = 0xc46b8a })
+vim.api.nvim_exec_autocmds("ColorScheme", {})
+assert(vim.api.nvim_get_hl(0, {
+  name = "Title",
+  link = false,
+}).fg == 0xc46b8a)
+assert(vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "Title",
+  link = false,
+}).fg == retained_title_color)
 local main_window_config = vim.api.nvim_win_get_config(state.win)
 assert(
   main_window_config.title == nil or main_window_config.title == ""
@@ -787,6 +812,8 @@ local commit_footer_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
   "\n"
 )
+assert(vim.api.nvim_get_hl_ns({ winid = state.footer_win })
+  == window_highlight_ns)
 assert(not commit_footer_lines:find("p past", 1, true))
 assert(not commit_footer_lines:find("l/→ past", 1, true))
 assert(not commit_footer_lines:find("j/←", 1, true))
