@@ -4099,6 +4099,7 @@ function M._overview_ui.open_patch_location(group)
     )
     return false
   end
+  local code_options = group.overview_code_window_options or {}
   local ok, open_err = pcall(
     vim.cmd,
     "tabedit " .. vim.fn.fnameescape(absolute)
@@ -4116,6 +4117,25 @@ function M._overview_ui.open_patch_location(group)
   vim.bo.readonly = false
   local patch_win = vim.api.nvim_get_current_win()
   local patch_buf = vim.api.nvim_get_current_buf()
+  for option, value in pairs(code_options) do
+    if option ~= "highlight_namespace" then
+      pcall(function()
+        vim.wo[patch_win][option] = value
+      end)
+    end
+  end
+  vim.wo[patch_win].statusline = ""
+  vim.wo[patch_win].winfixbuf = false
+  local oculus_namespace = vim.api.nvim_get_namespaces()
+    .oculus_window_highlights
+  if oculus_namespace
+    and vim.api.nvim_get_hl_ns({ winid = patch_win }) == oculus_namespace
+  then
+    vim.api.nvim_win_set_hl_ns(
+      patch_win,
+      code_options.highlight_namespace or 0
+    )
+  end
   local line_count = vim.api.nvim_buf_line_count(patch_buf)
   local target_line = math.max(
     1,
@@ -4147,6 +4167,31 @@ function M._overview_ui.open_patch_location(group)
     path = relative:gsub("\\", "/"),
     line = target_line,
   }
+  local function toggle_patch_overview()
+    if overview_window_is_open(group) then
+      show_sidebar_files(group)
+    else
+      show_inspection_overview(group)
+    end
+  end
+  vim.keymap.set("n", "<C-t>", toggle_patch_overview, {
+    buffer = patch_buf,
+    nowait = true,
+    silent = true,
+    desc = "Toggle Oculus Inspect overview",
+  })
+  local overview_lhs = group.overview_toggle
+  if overview_lhs == nil then
+    overview_lhs = default_overview_toggle
+  end
+  if type(overview_lhs) == "string" and overview_lhs ~= "" then
+    vim.keymap.set("n", overview_lhs, toggle_patch_overview, {
+      buffer = patch_buf,
+      nowait = true,
+      silent = true,
+      desc = "Toggle Oculus Inspect overview",
+    })
+  end
   group.overview_return = nil
   close_overview_window(group)
   if vim.api.nvim_tabpage_is_valid(patch_tab)
@@ -4369,6 +4414,18 @@ show_inspection_overview = function(group)
   local tab = vim.api.nvim_get_current_tabpage()
   local endpoint = endpoint_for_tab(group, tab)
   if not endpoint then
+    for _, patch in ipairs(group.overview_patch_tabs or {}) do
+      if patch.tab == tab
+        and vim.api.nvim_tabpage_is_valid(patch.tab)
+        and vim.api.nvim_win_is_valid(patch.win)
+        and vim.api.nvim_buf_is_valid(patch.buf)
+      then
+        endpoint = patch
+        break
+      end
+    end
+  end
+  if not endpoint then
     return
   end
   local source_win = vim.api.nvim_get_current_win()
@@ -4381,6 +4438,22 @@ show_inspection_overview = function(group)
     sidebar = capture_window_state(sidebar_win),
     endpoint = endpoint and capture_window_state(endpoint.win),
     anchor_line = group.sidebar_anchor_line,
+  }
+  group.overview_code_window_options = {
+    number = vim.wo[endpoint.win].number,
+    relativenumber = vim.wo[endpoint.win].relativenumber,
+    cursorline = vim.wo[endpoint.win].cursorline,
+    cursorlineopt = vim.wo[endpoint.win].cursorlineopt,
+    cursorcolumn = vim.wo[endpoint.win].cursorcolumn,
+    signcolumn = vim.wo[endpoint.win].signcolumn,
+    wrap = vim.wo[endpoint.win].wrap,
+    linebreak = vim.wo[endpoint.win].linebreak,
+    list = vim.wo[endpoint.win].list,
+    foldcolumn = vim.wo[endpoint.win].foldcolumn,
+    colorcolumn = vim.wo[endpoint.win].colorcolumn,
+    spell = vim.wo[endpoint.win].spell,
+    winhighlight = vim.wo[endpoint.win].winhighlight,
+    highlight_namespace = vim.api.nvim_get_hl_ns({ winid = endpoint.win }),
   }
   group.overview_highlight_source_win = valid_endpoint(endpoint)
       and endpoint.win

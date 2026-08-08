@@ -1725,8 +1725,22 @@ assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
   == vim.fs.normalize(
   vim.fs.joinpath(root, "lua", "oculus", "inspect.lua")
 ))
+assert(vim.bo[patch_buf].buftype == "")
 assert(vim.bo[patch_buf].modifiable)
 assert(not vim.bo[patch_buf].readonly)
+assert(vim.b[patch_buf].oculus_inspect == nil)
+assert(vim.wo[patch_wins[1]].number == vim.wo[issue_main_win].number)
+assert(vim.wo[patch_wins[1]].relativenumber
+  == vim.wo[issue_main_win].relativenumber)
+assert(vim.wo[patch_wins[1]].cursorline
+  == vim.wo[issue_main_win].cursorline)
+assert(vim.wo[patch_wins[1]].signcolumn
+  == vim.wo[issue_main_win].signcolumn)
+assert(vim.wo[patch_wins[1]].winhighlight
+  == vim.wo[issue_main_win].winhighlight)
+assert(vim.wo[patch_wins[1]].statusline == vim.o.statusline)
+assert(vim.api.nvim_get_hl_ns({ winid = patch_wins[1] })
+  ~= retained_window_highlight_ns)
 local selected_patch_cursor = vim.api.nvim_win_get_cursor(patch_wins[1])
 assert(selected_patch_cursor[1] == 25)
 local selected_patch_line = vim.api.nvim_buf_get_lines(
@@ -1742,6 +1756,34 @@ assert(vim.api.nvim_win_call(
   patch_wins[1],
   vim.fn.winsaveview
 ).topline == 15)
+local selected_patch_view = vim.api.nvim_win_call(
+  patch_wins[1],
+  vim.fn.winsaveview
+)
+local patch_overview_mapping = vim.fn.maparg(
+  "<C-t>",
+  "n",
+  false,
+  true
+)
+assert(patch_overview_mapping.desc == "Toggle Oculus Inspect overview")
+patch_overview_mapping.callback()
+local patch_overview_win = vim.api.nvim_get_current_win()
+local patch_overview_buf = vim.api.nvim_get_current_buf()
+assert(vim.b[patch_overview_buf].oculus_inspect_overview == true)
+assert(vim.api.nvim_win_get_config(patch_overview_win).relative == "editor")
+vim.fn.maparg("<C-t>", "n", false, true).callback()
+assert(not vim.api.nvim_win_is_valid(patch_overview_win))
+assert(vim.api.nvim_get_current_tabpage() == patch_tab)
+assert(vim.api.nvim_get_current_win() == patch_wins[1])
+assert(vim.deep_equal(
+  vim.api.nvim_win_get_cursor(patch_wins[1]),
+  selected_patch_cursor
+))
+assert(vim.deep_equal(vim.api.nvim_win_call(
+  patch_wins[1],
+  vim.fn.winsaveview
+), selected_patch_view))
 vim.cmd("tabclose")
 vim.api.nvim_set_current_tabpage(issue_tab)
 vim.api.nvim_set_current_win(issue_main_win)
