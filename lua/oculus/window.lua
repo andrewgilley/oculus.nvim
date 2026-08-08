@@ -221,6 +221,7 @@ local function sync_window_highlights(source_win)
     "OculusNormal",
     current_normal
   )
+  vim.api.nvim_set_hl(0, "OculusNormal", current_normal)
   if not current_border.fg then
     current_border.fg = current_normal.fg or 0xffffff
   end
@@ -231,6 +232,7 @@ local function sync_window_highlights(source_win)
     "OculusBorder",
     current_border
   )
+  vim.api.nvim_set_hl(0, "OculusBorder", current_border)
   vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityIcon", {
     fg = "#fbd38d",
     bg = "NONE",
@@ -4282,8 +4284,6 @@ function M.open(opts)
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
-  vim.api.nvim_set_hl(0, "OculusNormal", { bg = "NONE" })
-  vim.api.nvim_set_hl(0, "OculusBorder", { fg = "#ffffff", bg = "NONE" })
   vim.api.nvim_set_hl(0, "OculusActivityIcon", {
     fg = "#fbd38d",
     bg = "NONE",

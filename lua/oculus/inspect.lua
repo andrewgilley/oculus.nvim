@@ -3724,8 +3724,17 @@ function M._overview_ui.render_footer(group)
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
   then
-    commands = "  <Space> toggle   <CR> open paths   "
-      .. commands:sub(3)
+    local path_commands = "<Space> toggle   <CR> open paths"
+    local padding = math.max(
+      1,
+      width
+        - 2
+        - vim.fn.strdisplaywidth(commands)
+        - vim.fn.strdisplaywidth(path_commands)
+    )
+    commands = commands
+      .. string.rep(" ", padding)
+      .. path_commands
   end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
