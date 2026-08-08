@@ -4099,8 +4099,6 @@ function M._overview_ui.open_patch_location(group)
     )
     return false
   end
-  local overview_tab = vim.api.nvim_get_current_tabpage()
-  local overview_win = group.overview_win
   local ok, open_err = pcall(
     vim.cmd,
     "tabedit " .. vim.fn.fnameescape(absolute)
@@ -4131,20 +4129,31 @@ function M._overview_ui.open_patch_location(group)
   )[1] or ""
   local target_column = #(target_text:match("^%s*") or "")
   vim.api.nvim_win_set_cursor(patch_win, { target_line, target_column })
+  vim.api.nvim_win_call(patch_win, function()
+    local keys = vim.api.nvim_replace_termcodes(
+      "zt10<C-y>",
+      true,
+      false,
+      true
+    )
+    vim.cmd("normal! " .. keys)
+  end)
+  local patch_tab = vim.api.nvim_get_current_tabpage()
   group.overview_patch_tabs = group.overview_patch_tabs or {}
   group.overview_patch_tabs[#group.overview_patch_tabs + 1] = {
-    tab = vim.api.nvim_get_current_tabpage(),
+    tab = patch_tab,
     win = patch_win,
     buf = patch_buf,
     path = relative:gsub("\\", "/"),
     line = target_line,
   }
-  if vim.api.nvim_tabpage_is_valid(overview_tab) then
-    vim.api.nvim_set_current_tabpage(overview_tab)
-  end
-  if overview_win and vim.api.nvim_win_is_valid(overview_win) then
-    vim.api.nvim_set_current_win(overview_win)
-    hide_overview_cursor(group)
+  group.overview_return = nil
+  close_overview_window(group)
+  if vim.api.nvim_tabpage_is_valid(patch_tab)
+    and vim.api.nvim_win_is_valid(patch_win)
+  then
+    vim.api.nvim_set_current_tabpage(patch_tab)
+    vim.api.nvim_set_current_win(patch_win)
   end
   return true
 end
