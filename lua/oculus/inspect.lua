@@ -1100,6 +1100,24 @@ local function preserve_cursorline_text_highlighting(win)
   return true
 end
 
+function M._use_native_cursorline_highlighting(win)
+  if not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+  local mappings = {}
+  for _, mapping in ipairs(vim.split(
+    vim.wo[win].winhighlight,
+    ",",
+    { trimempty = true }
+  )) do
+    if not mapping:match("^CursorLine:") then
+      mappings[#mappings + 1] = mapping
+    end
+  end
+  vim.wo[win].winhighlight = table.concat(mappings, ",")
+  return true
+end
+
 local function update_session_buffer(win, buf)
   local name = vim.api.nvim_buf_get_name(buf)
   if vim.bo[buf].filetype == "oil"
@@ -3025,6 +3043,27 @@ refresh_sidebar = function(group, tab)
   local sidebar_win = group.sidebar_windows
       and group.sidebar_windows[tab]
     or nil
+  if group.patch_suggestions then
+    local endpoint = sidebar_endpoint(
+      group,
+      group[active_index],
+      active_role
+    )
+    if valid_endpoint(endpoint) then
+      vim.wo[endpoint.win].cursorline = true
+      vim.wo[endpoint.win].cursorlineopt = "line"
+      M._use_native_cursorline_highlighting(endpoint.win)
+      if sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+        vim.wo[sidebar_win].cursorline = true
+        vim.wo[sidebar_win].cursorlineopt = "line"
+        vim.api.nvim_win_set_hl_ns(
+          sidebar_win,
+          vim.api.nvim_get_hl_ns({ winid = endpoint.win })
+        )
+        M._use_native_cursorline_highlighting(sidebar_win)
+      end
+    end
+  end
   local sidebar_is_focused = sidebar_win
     and vim.api.nvim_win_is_valid(sidebar_win)
     and vim.api.nvim_get_current_win() == sidebar_win
@@ -3133,9 +3172,17 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
   vim.wo[win].statusline = inspection_sidebar_statusline_option
-  set_change_highlights()
   prevent_window_dimming(win)
-  preserve_cursorline_text_highlighting(win)
+  if group.patch_suggestions then
+    vim.api.nvim_win_set_hl_ns(
+      win,
+      vim.api.nvim_get_hl_ns({ winid = endpoint.win })
+    )
+    M._use_native_cursorline_highlighting(win)
+  else
+    set_change_highlights()
+    preserve_cursorline_text_highlighting(win)
+  end
   group.sidebar_windows[endpoint.tab] = win
   if saved_state then
     vim.api.nvim_win_set_cursor(win, saved_state.cursor)
@@ -4292,8 +4339,6 @@ function M._overview_ui.open_patch_location(group)
         end
         vim.wo[patch_win].cursorline = true
         vim.wo[patch_win].cursorlineopt = "line"
-        set_change_highlights()
-        preserve_cursorline_text_highlighting(patch_win)
         vim.wo[patch_win].statusline = ""
         vim.wo[patch_win].winfixbuf = false
         local oculus_namespace = vim.api.nvim_get_namespaces()
@@ -4307,6 +4352,7 @@ function M._overview_ui.open_patch_location(group)
             code_options.highlight_namespace or 0
           )
         end
+        M._use_native_cursorline_highlighting(patch_win)
         local line_count = vim.api.nvim_buf_line_count(patch_buf)
         local target_line = math.max(
           1,
@@ -5071,6 +5117,7 @@ function M._overview_ui.prepare_patch_sidebar(source_group, opened)
   group.overview_return = nil
   group.overview_patch_tabs = opened
   group.overview_patch_group = nil
+  group.patch_suggestions = true
   group.focused_win = nil
   local repository = require("oculus.agent").repository(source_group)
   for index, patch in ipairs(opened) do
