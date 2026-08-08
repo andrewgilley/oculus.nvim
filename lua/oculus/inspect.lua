@@ -2242,13 +2242,19 @@ local function select_endpoint(endpoint, session, role, group)
   end
 end
 
-local function move_cursor_to_line_start(win)
+local function move_cursor_to_line_start(win, line)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
+  end
+  if line then
+    set_change_cursor(win, line)
   end
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! ^")
   end)
+  if line then
+    sync_window(win)
+  end
 end
 
 local function inspection_chunks(group, session)
@@ -2377,7 +2383,7 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
   end
   select_endpoint(endpoint, session, role, group)
   if start then
-    set_change_cursor(endpoint.win, start)
+    move_cursor_to_line_start(endpoint.win, start)
   end
   show_inspection_path(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
@@ -3578,7 +3584,10 @@ function M._overview_ui.render_footer(group)
     "Normal:OculusNormal",
     "NormalFloat:OculusNormal",
   }, ",")
-  require("oculus.window").apply_window_highlights(footer_win)
+  require("oculus.window").apply_window_highlights(
+    footer_win,
+    group.overview_highlight_source_win
+  )
 end
 
 function M._overview_ui.content_height(group)
@@ -4364,6 +4373,9 @@ show_inspection_overview = function(group)
     endpoint = endpoint and capture_window_state(endpoint.win),
     anchor_line = group.sidebar_anchor_line,
   }
+  group.overview_highlight_source_win = valid_endpoint(endpoint)
+      and endpoint.win
+    or source_win
   local config = overview_window_config(
     group.overview_window_config,
     group.overview
@@ -4421,7 +4433,10 @@ show_inspection_overview = function(group)
     "FloatTitle:OculusBorder",
     "FloatFooter:OculusBorder",
   }, ",")
-  require("oculus.window").apply_window_highlights(win)
+  require("oculus.window").apply_window_highlights(
+    win,
+    group.overview_highlight_source_win
+  )
   vim.keymap.set("n", "e", function()
     M._overview_ui.open_model_picker(group, "explanation")
   end, {
@@ -4980,7 +4995,7 @@ local function open_sidebar_selection(group, preferred_role)
       )
     end
     if start then
-      set_change_cursor(endpoint.win, start)
+      move_cursor_to_line_start(endpoint.win, start)
     end
   else
     if group.kind ~= "issue" then
@@ -5103,9 +5118,9 @@ focus_sidebar_selection = function(group)
   vim.api.nvim_set_current_win(endpoint.win)
   if hunk then
     local start = render_chunk_for_role(session, role, chunk_index)
-    set_change_cursor(endpoint.win, start)
+    move_cursor_to_line_start(endpoint.win, start)
   elseif section then
-    set_change_cursor(endpoint.win, section.line)
+    move_cursor_to_line_start(endpoint.win, section.line)
   else
     if group.kind ~= "issue" then
       render_full_file(session)

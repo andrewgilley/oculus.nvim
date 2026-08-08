@@ -1673,8 +1673,8 @@ local restored_overview_border = vim.api.nvim_get_hl(
   retained_window_highlight_ns,
   { name = "OculusBorder", link = false }
 )
-assert(restored_overview_normal.bg == 0x101820)
-assert(restored_overview_border.bg == 0x101820)
+assert(restored_overview_normal.bg == issue_source_bg)
+assert(restored_overview_border.bg == issue_source_bg)
 local restored_overview_text = table.concat(
   vim.api.nvim_buf_get_lines(0, 0, -1, false),
   "\n"
@@ -2786,6 +2786,17 @@ if integration_root and (integration_sha or integration_url) then
     vim.fn.maparg("<C-t>", "n", false, true).callback()
     assert(vim.api.nvim_get_current_win() == change_win)
   end
+  local function assert_cursor_at_first_nonblank(win)
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local text = vim.api.nvim_buf_get_lines(
+      vim.api.nvim_win_get_buf(win),
+      cursor[1] - 1,
+      cursor[1],
+      false
+    )[1] or ""
+    local first_nonblank = text:find("%S")
+    assert(cursor[2] == (first_nonblank and first_nonblank - 1 or 0))
+  end
   vim.g.oculus_test_main_tab_pair =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
   vim.g.oculus_test_main_tab_chunk =
@@ -2795,6 +2806,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(not vim.bo[change_buf].readonly)
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win() == parent_win)
+  assert_cursor_at_first_nonblank(parent_win)
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
     assert(active.pair_index == vim.g.oculus_test_main_tab_pair)
@@ -2809,6 +2821,9 @@ if integration_root and (integration_sha or integration_url) then
   previous_mapped = vim.fn.maparg("<S-Tab>", "n", false, true)
   assert(previous_mapped.desc == "Previous Oculus changed chunk")
   previous_mapped.callback()
+  assert_cursor_at_first_nonblank(
+    vim.api.nvim_get_current_win()
+  )
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
     assert(active.pair_index == vim.g.oculus_test_main_tab_pair)
