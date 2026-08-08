@@ -1336,7 +1336,7 @@ local function finish_patch_locations()
       },
       {
         path = "lua/oculus/agent.lua",
-        line = 15,
+        line = 10,
         reason = "Agent context and output handling live here.",
       },
     },
@@ -1590,7 +1590,7 @@ assert(explanation_text:find(
   true
 ))
 assert(explanation_text:find(
-  "2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua:15",
+  "2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua:10",
   1,
   true
 ))
@@ -1886,7 +1886,7 @@ assert(selected_paths_text:find(
   true
 ))
 assert(selected_paths_text:find(
-  "[x] 2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua:15",
+  "[x] 2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua:10",
   1,
   true
 ))
@@ -1905,6 +1905,7 @@ end
 assert(#patch_tabs == 2)
 local patch_code = {}
 local patch_sidebars = {}
+local shallow_patch_win
 for _, tab in ipairs(patch_tabs) do
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
     local buf = vim.api.nvim_win_get_buf(win)
@@ -1912,15 +1913,55 @@ for _, tab in ipairs(patch_tabs) do
       patch_sidebars[tab] = win
     else
       patch_code[tab] = win
+      if vim.fs.basename(vim.api.nvim_buf_get_name(buf)) == "agent.lua" then
+        shallow_patch_win = win
+      end
     end
   end
   assert(patch_code[tab])
   assert(patch_sidebars[tab])
 end
+assert(shallow_patch_win)
+assert(vim.api.nvim_win_get_cursor(shallow_patch_win)[1] == 10)
+assert(vim.api.nvim_win_call(
+  shallow_patch_win,
+  vim.fn.winsaveview
+).topline == 1)
 local patch_tab = vim.api.nvim_get_current_tabpage()
 local patch_win = patch_code[patch_tab]
 assert(patch_win)
 assert(vim.api.nvim_get_current_win() == patch_win)
+local motivation_mapping = vim.fn.maparg("<C-s>", "n", false, true)
+assert(motivation_mapping.desc == "Show Oculus patch motivation")
+motivation_mapping.callback()
+assert(vim.api.nvim_get_current_win() == patch_win)
+local motivation_win
+local motivation_buf
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(patch_tab)) do
+  local buf = vim.api.nvim_win_get_buf(win)
+  if vim.b[buf].oculus_patch_motivation then
+    motivation_win = win
+    motivation_buf = buf
+    break
+  end
+end
+assert(motivation_win and motivation_buf)
+local motivation_config = vim.api.nvim_win_get_config(motivation_win)
+assert(motivation_config.relative == "win")
+assert(motivation_config.win == patch_win)
+assert(motivation_config.anchor == "SW")
+assert(motivation_config.bufpos[1] == 24)
+assert(motivation_config.focusable == false)
+assert(motivation_config.col + motivation_config.width
+  == vim.api.nvim_win_get_width(patch_win) - 2)
+assert(table.concat(vim.api.nvim_buf_get_lines(
+  motivation_buf,
+  0,
+  -1,
+  false
+), "\n") == "The fileless issue inspection workflow is implemented here.")
+motivation_mapping.callback()
+assert(not vim.api.nvim_win_is_valid(motivation_win))
 local patch_buf = vim.api.nvim_win_get_buf(patch_win)
 assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
   == vim.fs.normalize(
@@ -1977,7 +2018,7 @@ local patch_sidebar_text = table.concat(patch_sidebar_lines, "\n")
 assert(patch_sidebar_text:find("inspect.lua", 1, true))
 assert(patch_sidebar_text:find("25%-25"))
 assert(patch_sidebar_text:find("agent.lua", 1, true))
-assert(patch_sidebar_text:find("15%-15"))
+assert(patch_sidebar_text:find("10%-10"))
 assert(vim.wo[patch_sidebars[patch_tab]].cursorline)
 assert(vim.wo[patch_sidebars[patch_tab]].cursorlineopt == "line")
 assert(not vim.wo[patch_sidebars[patch_tab]].winhighlight:find(
@@ -2131,7 +2172,7 @@ next_patch.callback()
 assert(vim.api.nvim_get_current_tabpage() ~= patch_tab)
 local second_patch_tab = vim.api.nvim_get_current_tabpage()
 assert(vim.api.nvim_get_current_win() == patch_code[second_patch_tab])
-assert(vim.api.nvim_win_get_cursor(patch_code[second_patch_tab])[1] == 15)
+assert(vim.api.nvim_win_get_cursor(patch_code[second_patch_tab])[1] == 10)
 local previous_patch = vim.fn.maparg("<S-Tab>", "n", false, true)
 assert(previous_patch.desc == "Previous Oculus changed chunk")
 previous_patch.callback()
