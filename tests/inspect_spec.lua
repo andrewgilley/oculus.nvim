@@ -1636,6 +1636,49 @@ assert(vim.api.nvim_get_hl(0, {
 }).underline == true)
 assert(selected_location_line == first_location_line)
 assert(selected_location_col == 2)
+local unfocus_patch_locations = vim.fn.maparg(
+  "<C-c>",
+  "n",
+  false,
+  true
+)
+assert(unfocus_patch_locations.desc
+  == "Unfocus Oculus patch locations")
+unfocus_patch_locations.callback()
+assert(vim.api.nvim_get_current_win() == explanation_win)
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  explanation_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  assert(mark[4].hl_group ~= "OculusInspectAgentModelSelected")
+end
+local unfocused_footer = vim.api.nvim_buf_get_lines(
+  explanation_footer_buf,
+  1,
+  2,
+  false
+)[1]
+assert(unfocused_footer:find("p paths", 1, true))
+assert(not unfocused_footer:find("<Space> toggle", 1, true))
+assert(not unfocused_footer:find("<CR> open paths", 1, true))
+patch_mapping.callback()
+assert(vim.api.nvim_get_current_win() == explanation_win)
+local refocused_location_line
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  explanation_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  if mark[4].hl_group == "OculusInspectAgentModelSelected" then
+    refocused_location_line = mark[2] + 1
+  end
+end
+assert(refocused_location_line == first_location_line)
 vim.fn.maparg("k", "n", false, true).callback()
 local moved_location_line
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
@@ -1948,6 +1991,34 @@ local patch_overview_win = vim.api.nvim_get_current_win()
 local patch_overview_buf = vim.api.nvim_get_current_buf()
 assert(vim.b[patch_overview_buf].oculus_inspect_overview == true)
 assert(vim.api.nvim_win_get_config(patch_overview_win).relative == "editor")
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  patch_overview_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  assert(mark[4].hl_group ~= "OculusInspectAgentModelSelected")
+end
+local patch_overview_footer
+for _, candidate_win in ipairs(vim.api.nvim_tabpage_list_wins(
+  vim.api.nvim_get_current_tabpage()
+)) do
+  local candidate_buf = vim.api.nvim_win_get_buf(candidate_win)
+  if vim.b[candidate_buf].oculus_inspect_overview_footer then
+    patch_overview_footer = vim.api.nvim_buf_get_lines(
+      candidate_buf,
+      1,
+      2,
+      false
+    )[1]
+    break
+  end
+end
+assert(patch_overview_footer)
+assert(patch_overview_footer:find("p paths", 1, true))
+assert(not patch_overview_footer:find("<Space> toggle", 1, true))
+assert(not patch_overview_footer:find("<CR> open paths", 1, true))
 vim.fn.maparg("<C-t>", "n", false, true).callback()
 assert(not vim.api.nvim_win_is_valid(patch_overview_win))
 assert(vim.api.nvim_get_current_tabpage() == patch_tab)

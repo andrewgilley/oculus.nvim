@@ -3713,7 +3713,9 @@ function M._overview_ui.render_footer(group)
   local commands = issue_patches
       and "  p paths   e explanation   b browser"
     or "  e explanation   b browser"
-  if #(group.overview_agent_locations or {}) > 0 then
+  if #(group.overview_agent_locations or {}) > 0
+    and group.overview_agent_mode == "patch_locations"
+  then
     commands = "  <Space> toggle   <CR> open paths   "
       .. commands:sub(3)
   end
@@ -3967,7 +3969,7 @@ function M._overview_ui.render(group)
     })
   end
   if group.overview_agent_selected_location_index
-    and group.overview_agent_mode ~= "models"
+    and group.overview_agent_mode == "patch_locations"
   then
     for line, target in pairs(
       group.overview_agent_location_lines or {}
@@ -4225,9 +4227,48 @@ function M._overview_ui.selected_patch_location(group)
   end
 end
 
+function M._overview_ui.focus_patch_locations(group)
+  if group.overview_agent_mode == "patch_locations"
+    or #(group.overview_agent_locations or {}) == 0
+  then
+    return false
+  end
+  group.overview_agent_request_kind = "patch_locations"
+  group.overview_agent_mode = "patch_locations"
+  group.overview_agent_selected_location_index = math.min(
+    math.max(group.overview_agent_selected_location_index or 1, 1),
+    #group.overview_agent_locations
+  )
+  M._overview_ui.render(group)
+  local _, line = M._overview_ui.selected_patch_location(group)
+  if line and overview_window_is_open(group) then
+    vim.api.nvim_set_current_win(group.overview_win)
+    vim.api.nvim_win_set_cursor(group.overview_win, { line, 0 })
+  end
+  return true
+end
+
+function M._overview_ui.unfocus_patch_locations(group)
+  if group.overview_agent_mode ~= "patch_locations"
+    or group.overview_agent_request_kind ~= "patch_locations"
+  then
+    return false
+  end
+  group.overview_agent_mode = nil
+  M._overview_ui.render(group)
+  if overview_window_is_open(group) then
+    vim.api.nvim_set_current_win(group.overview_win)
+    hide_overview_cursor(group)
+  end
+  return true
+end
+
 function M._overview_ui.move_location_cursor(group, direction)
   local locations = group.overview_agent_locations or {}
-  if group.overview_agent_mode == "models" or #locations == 0 then
+  if group.overview_agent_mode ~= "patch_locations"
+    or group.overview_agent_request_kind ~= "patch_locations"
+    or #locations == 0
+  then
     return false
   end
   local current = group.overview_agent_selected_location_index or 1
@@ -4243,6 +4284,11 @@ end
 
 function M._overview_ui.toggle_patch_location(group)
   local locations = group.overview_agent_locations or {}
+  if group.overview_agent_mode ~= "patch_locations"
+    or group.overview_agent_request_kind ~= "patch_locations"
+  then
+    return false
+  end
   local index = group.overview_agent_selected_location_index
   if not index or not locations[index] then
     return false
@@ -4290,6 +4336,11 @@ function M._overview_ui.patch_location_path(group, location)
 end
 
 function M._overview_ui.open_patch_location(group)
+  if group.overview_agent_mode ~= "patch_locations"
+    or group.overview_agent_request_kind ~= "patch_locations"
+  then
+    return false
+  end
   local locations = group.overview_agent_locations or {}
   local selected = group.overview_agent_selected_locations or {}
   local targets = {}
@@ -4403,6 +4454,7 @@ function M._overview_ui.open_patch_location(group)
   for _, patch in ipairs(opened) do
     group.overview_patch_tabs[#group.overview_patch_tabs + 1] = patch
   end
+  group.overview_agent_mode = nil
   group.overview_return = nil
   close_overview_window(group)
   local patch_group = M._overview_ui.prepare_patch_sidebar(group, opened)
@@ -4747,6 +4799,9 @@ show_inspection_overview = function(group)
   })
   if require("oculus.agent").needs_patch_locations(group) then
     vim.keymap.set("n", "p", function()
+      if M._overview_ui.focus_patch_locations(group) then
+        return
+      end
       M._overview_ui.open_model_picker(group, "patch_locations")
     end, {
       buffer = buf,
@@ -4755,6 +4810,14 @@ show_inspection_overview = function(group)
       desc = "Choose Oculus patch-location model",
     })
   end
+  vim.keymap.set("n", "<C-c>", function()
+    M._overview_ui.unfocus_patch_locations(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Unfocus Oculus patch locations",
+  })
   vim.keymap.set("n", "b", function()
     M._overview_ui.open_browser(group)
   end, {
