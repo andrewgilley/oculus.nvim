@@ -1518,9 +1518,11 @@ do
     vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
     "\n"
   )
-  assert(project_footer_text:find("i issues", 1, true))
+  assert(project_footer_text:find("u issues", 1, true))
   local project_cursor = vim.api.nvim_win_get_cursor(state.win)
-  vim.fn.maparg("i", "n", false, true).callback()
+  local project_issues_mapping = vim.fn.maparg("u", "n", false, true)
+  assert(project_issues_mapping.desc == "Open Oculus project issues")
+  project_issues_mapping.callback()
   assert(state.view == "activity")
   assert(state.activity_issue_page == true)
   assert(state.activity_project.repository == "neovim/neovim")

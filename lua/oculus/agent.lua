@@ -53,7 +53,7 @@ local function patch_chunks(patch)
   return values
 end
 
-function M.prompt(group)
+local function prompt(group, purpose)
   local overview = group.overview or {}
   local details = overview.commit_details or {}
   local repository = M.repository(group) or "Unknown"
@@ -69,10 +69,10 @@ function M.prompt(group)
   local status = overview.merged and "merged"
     or overview.draft and "draft"
     or overview.state
-  local include_locations = M.needs_patch_locations(group)
+  local include_locations = purpose == "patch_locations"
   local lines = {
     include_locations
-        and "Explain this issue and identify likely implementation locations."
+        and "Identify likely implementation locations for this issue."
       or "Explain the reason or motivation behind this repository activity.",
     include_locations
         and "Inspect the local repository in read-only mode to find at most three"
@@ -87,10 +87,11 @@ function M.prompt(group)
       "Write every location from the project folder, beginning each path with",
       ("the `%s/` project-folder prefix. Return only valid JSON with this shape:")
         :format(project_folder),
-      '{"explanation":"one concise paragraph","locations":[',
-      ('{"path":"%s/relative/path","reason":"short reason"}]}')
+      '{"locations":[',
+      ('{"path":"%s/relative/path","line":123,"reason":"short reason"}]}')
         :format(project_folder),
-      "The locations array may contain zero to three entries. Do not use Markdown",
+      "Set line to the one-based line number where work should begin. The",
+      "locations array may contain zero to three entries. Do not use Markdown",
       "fences and do not include fields outside this schema.",
     })
   end
@@ -166,6 +167,14 @@ function M.prompt(group)
   return table.concat(lines, "\n")
 end
 
+function M.prompt(group)
+  return prompt(group, "explanation")
+end
+
+function M.patch_locations_prompt(group)
+  return prompt(group, "patch_locations")
+end
+
 function M.normalize(value)
   if type(value) ~= "string" then
     return nil
@@ -234,8 +243,16 @@ function M.normalize_result(value, include_locations, repository)
     if type(location) == "table" then
       local path = M.normalize(location.path)
       if path then
+        local line = tonumber(location.line)
+        if line then
+          line = math.floor(line)
+          if line < 1 then
+            line = nil
+          end
+        end
         locations[#locations + 1] = {
           path = project_location(path, repository),
+          line = line,
           reason = M.normalize(location.reason),
         }
       end
