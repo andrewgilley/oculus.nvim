@@ -1861,6 +1861,11 @@ assert(restored_overview_text:find(
 ))
 local open_patch_location = vim.fn.maparg("<CR>", "n", false, true)
 assert(open_patch_location.desc == "Select Oculus overview item")
+local tabs_before_unselected_open = #vim.api.nvim_list_tabpages()
+open_patch_location.callback()
+assert(vim.api.nvim_win_is_valid(restored_overview_win))
+assert(vim.api.nvim_get_current_win() == restored_overview_win)
+assert(#vim.api.nvim_list_tabpages() == tabs_before_unselected_open)
 local toggle_patch_location = vim.fn.maparg(
   "<Space>",
   "n",
