@@ -2023,6 +2023,15 @@ assert(vim.api.nvim_get_hl_ns({
 }) == patch_highlight_ns)
 assert(vim.wo[patch_sidebars[patch_tab]].statusline
   == inspect._inspection_sidebar_statusline_option)
+local patch_source_highlight_ns = vim.api.nvim_create_namespace(
+  "oculus_test_patch_source_window"
+)
+local patch_source_bg = 0x432d3d
+vim.api.nvim_set_hl(patch_source_highlight_ns, "Normal", {
+  fg = 0xead7d7,
+  bg = patch_source_bg,
+})
+vim.api.nvim_win_set_hl_ns(patch_win, patch_source_highlight_ns)
 local patch_overview_mapping = vim.fn.maparg(
   "<C-t>",
   "n",
@@ -2035,6 +2044,11 @@ local patch_overview_win = vim.api.nvim_get_current_win()
 local patch_overview_buf = vim.api.nvim_get_current_buf()
 assert(vim.b[patch_overview_buf].oculus_inspect_overview == true)
 assert(vim.api.nvim_win_get_config(patch_overview_win).relative == "editor")
+assert(patch_source_bg ~= issue_source_bg)
+assert(vim.api.nvim_get_hl(retained_window_highlight_ns, {
+  name = "OculusNormal",
+  link = false,
+}).bg == patch_source_bg)
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
   patch_overview_buf,
   -1,
