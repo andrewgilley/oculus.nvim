@@ -4415,12 +4415,6 @@ function M._overview_ui.open_patch_location(group)
     end
   end
   if #targets == 0 then
-    local location = locations[group.overview_agent_selected_location_index]
-    if location then
-      targets[1] = location
-    end
-  end
-  if #targets == 0 then
     return false
   end
   local code_options = group.overview_code_window_options or {}
