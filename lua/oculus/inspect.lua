@@ -2519,6 +2519,9 @@ local function map_file_navigation(endpoint, session, role, group)
     local target = role == "parent" and session.change or session.parent
     local target_role = role == "parent" and "change" or "parent"
     select_endpoint(target, session, target_role, group)
+    if valid_endpoint(target) then
+      refresh_sidebar(group, target.tab)
+    end
   end
   if group.patch_suggestions then
     vim.keymap.set("n", "<C-s>", function()
