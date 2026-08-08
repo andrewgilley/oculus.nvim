@@ -1247,7 +1247,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  p paths   e explanation   b browser",
+    "  p paths   e explain   b browser",
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
@@ -1610,6 +1610,20 @@ for index, line in ipairs(vim.api.nvim_buf_get_lines(
   end
 end
 assert(location_heading_line and first_location_line and second_location_line)
+local location_option_lines = vim.api.nvim_buf_get_lines(
+  explanation_buf,
+  first_location_line - 1,
+  second_location_line,
+  false
+)
+local blank_location_separator
+for _, line in ipairs(location_option_lines) do
+  if line == "" then
+    blank_location_separator = true
+    break
+  end
+end
+assert(blank_location_separator)
 local heading_underlined
 local selected_location_line
 local selected_location_col
@@ -1679,6 +1693,36 @@ for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
   end
 end
 assert(refocused_location_line == first_location_line)
+patch_mapping.callback()
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  explanation_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  assert(mark[4].hl_group ~= "OculusInspectAgentModelSelected")
+end
+assert(not vim.api.nvim_buf_get_lines(
+  explanation_footer_buf,
+  1,
+  2,
+  false
+)[1]:find("<Space> toggle", 1, true))
+patch_mapping.callback()
+local toggled_location_line
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+  explanation_buf,
+  -1,
+  0,
+  -1,
+  { details = true }
+)) do
+  if mark[4].hl_group == "OculusInspectAgentModelSelected" then
+    toggled_location_line = mark[2] + 1
+  end
+end
+assert(toggled_location_line == first_location_line)
 vim.fn.maparg("k", "n", false, true).callback()
 local moved_location_line
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
@@ -3020,6 +3064,13 @@ if integration_root and (integration_sha or integration_url) then
     ))
     overview_topline = vim.fn.winsaveview().topline
     overview_down.callback()
+    assert(vim.fn.winsaveview().topline == overview_topline)
+    local overscrolled_view = vim.fn.winsaveview()
+    overscrolled_view.topline = vim.api.nvim_buf_line_count(overview_buf)
+    vim.fn.winrestview(overscrolled_view)
+    vim.api.nvim_exec_autocmds("WinScrolled", {
+      pattern = tostring(overview_win),
+    })
     assert(vim.fn.winsaveview().topline == overview_topline)
     vim.api.nvim_win_set_height(
       overview_win,
