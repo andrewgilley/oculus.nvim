@@ -356,11 +356,20 @@ local original_reliquary = package.loaded.reliquary
 local reliquary_buf
 local reliquary_filetype
 local reliquary_apply_count = 0
+local normal_before_filetype = vim.api.nvim_get_hl(0, {
+  name = "Normal",
+  link = false,
+})
+local filetype_colorscheme_bg = 0x2a3340
 package.loaded.reliquary = {
   apply = function(buf)
     reliquary_apply_count = reliquary_apply_count + 1
     reliquary_buf = buf
     reliquary_filetype = vim.bo[buf].filetype
+    vim.api.nvim_set_hl(0, "Normal", {
+      fg = normal_before_filetype.fg,
+      bg = filetype_colorscheme_bg,
+    })
     return "st"
   end,
 }
@@ -371,6 +380,19 @@ assert(reliquary_buf == filetype_buf)
 assert(reliquary_filetype == "python")
 assert(vim.api.nvim_get_current_buf() == filetype_current_buf)
 assert(reliquary_apply_count == 1)
+local filetype_window_highlight_ns = assert(
+  vim.api.nvim_get_namespaces().oculus_window_highlights
+)
+assert(vim.api.nvim_get_hl(filetype_window_highlight_ns, {
+  name = "OculusNormal",
+  link = false,
+}).bg == filetype_colorscheme_bg)
+assert(vim.api.nvim_get_hl(filetype_window_highlight_ns, {
+  name = "OculusBorder",
+  link = false,
+}).bg == filetype_colorscheme_bg)
+vim.api.nvim_set_hl(0, "Normal", normal_before_filetype)
+require("oculus.window").refresh_window_highlights()
 package.loaded.reliquary = original_reliquary
 vim.api.nvim_buf_delete(filetype_buf, { force = true })
 
@@ -1603,8 +1625,8 @@ local restored_overview_border = vim.api.nvim_get_hl(
   retained_window_highlight_ns,
   { name = "OculusBorder", link = false }
 )
-assert(restored_overview_normal.bg == issue_source_bg)
-assert(restored_overview_border.bg == issue_source_bg)
+assert(restored_overview_normal.bg == 0x101820)
+assert(restored_overview_border.bg == 0x101820)
 local restored_overview_text = table.concat(
   vim.api.nvim_buf_get_lines(0, 0, -1, false),
   "\n"
