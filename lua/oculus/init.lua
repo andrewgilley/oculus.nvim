@@ -63,6 +63,12 @@ local defaults = {
       description = "Repository for design and specification of the Component Model.",
     },
     {
+      name = "Wasmtime",
+      repository = "bytecodealliance/wasmtime",
+      provider = "github",
+      description = "A fast and secure runtime for WebAssembly.",
+    },
+    {
       name = "lazy.nvim",
       repository = "folke/lazy.nvim",
       provider = "github",

@@ -2415,23 +2415,133 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
   return endpoint
 end
 
+function M._close_patch_motivation(endpoint)
+  local win = endpoint and endpoint.patch_motivation_win
+  local buf = endpoint and endpoint.patch_motivation_buf
+  if endpoint then
+    endpoint.patch_motivation_win = nil
+    endpoint.patch_motivation_buf = nil
+  end
+  if win and vim.api.nvim_win_is_valid(win) then
+    pcall(vim.api.nvim_win_close, win, true)
+  end
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end
+end
+
+function M._toggle_patch_motivation(endpoint, location)
+  if not valid_endpoint(endpoint) then
+    return
+  end
+  if endpoint.patch_motivation_win
+    and vim.api.nvim_win_is_valid(endpoint.patch_motivation_win)
+  then
+    M._close_patch_motivation(endpoint)
+    return
+  end
+  M._close_patch_motivation(endpoint)
+
+  local reason = type(location) == "table" and location.reason or nil
+  if type(reason) ~= "string" or vim.trim(reason) == "" then
+    vim.notify(
+      "Oculus: this patch location has no motivation text",
+      vim.log.levels.INFO
+    )
+    return
+  end
+  local main_width = vim.api.nvim_win_get_width(endpoint.win)
+  local main_height = vim.api.nvim_win_get_height(endpoint.win)
+  local width = math.max(1, math.min(50, main_width - 4))
+  local lines = vim.split(reason, "\n", { plain = true })
+  if #lines == 0 then
+    lines = { "" }
+  end
+  local display_rows = 0
+  for index, line in ipairs(lines) do
+    lines[index] = line:gsub("\r$", "")
+    display_rows = display_rows
+      + math.max(
+        1,
+        math.ceil(vim.fn.strdisplaywidth(lines[index]) / width)
+      )
+  end
+  local height = math.max(
+    1,
+    math.min(8, display_rows, main_height - 2)
+  )
+  local line_count = vim.api.nvim_buf_line_count(endpoint.buf)
+  local target_line = math.max(
+    1,
+    math.min(tonumber(location.line) or 1, line_count)
+  )
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "markdown"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.b[buf].oculus_patch_motivation = true
+
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = "win",
+    win = endpoint.win,
+    anchor = "SW",
+    bufpos = { target_line - 1, 0 },
+    row = 0,
+    col = math.max(0, main_width - width - 2),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " Motivation ",
+    title_pos = "left",
+    focusable = false,
+    noautocmd = true,
+    zindex = 80,
+  })
+  vim.api.nvim_win_set_hl_ns(
+    win,
+    vim.api.nvim_get_hl_ns({ winid = endpoint.win })
+  )
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  endpoint.patch_motivation_buf = buf
+  endpoint.patch_motivation_win = win
+end
+
 local function map_file_navigation(endpoint, session, role, group)
   local function toggle_version()
     local target = role == "parent" and session.change or session.parent
     local target_role = role == "parent" and "change" or "parent"
     select_endpoint(target, session, target_role, group)
   end
-  local version_lhs = group.version_switch
-  if version_lhs == nil then
-    version_lhs = default_version_switch
-  end
-  if type(version_lhs) == "string" and version_lhs ~= "" then
-    vim.keymap.set("n", version_lhs, toggle_version, {
+  if group.patch_suggestions then
+    vim.keymap.set("n", "<C-s>", function()
+      M._toggle_patch_motivation(endpoint, endpoint.location)
+    end, {
       buffer = endpoint.buf,
       nowait = true,
       silent = true,
-      desc = "Switch Oculus file version",
+      desc = "Show Oculus patch motivation",
     })
+  else
+    local version_lhs = group.version_switch
+    if version_lhs == nil then
+      version_lhs = default_version_switch
+    end
+    if type(version_lhs) == "string" and version_lhs ~= "" then
+      vim.keymap.set("n", version_lhs, toggle_version, {
+        buffer = endpoint.buf,
+        nowait = true,
+        silent = true,
+        desc = "Switch Oculus file version",
+      })
+    end
   end
   local next_chunk_lhs = group.next_chunk
   if next_chunk_lhs == nil then
@@ -4495,15 +4605,17 @@ function M._overview_ui.open_patch_location(group)
           patch_win,
           { target_line, target_column }
         )
-        vim.api.nvim_win_call(patch_win, function()
-          local keys = vim.api.nvim_replace_termcodes(
-            "zt10<C-y>",
-            true,
-            false,
-            true
-          )
-          vim.cmd("normal! " .. keys)
-        end)
+        if target_line > 10 then
+          vim.api.nvim_win_call(patch_win, function()
+            local keys = vim.api.nvim_replace_termcodes(
+              "zt10<C-y>",
+              true,
+              false,
+              true
+            )
+            vim.cmd("normal! " .. keys)
+          end)
+        end
         opened[#opened + 1] = {
           tab = vim.api.nvim_get_current_tabpage(),
           win = patch_win,
