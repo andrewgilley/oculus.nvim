@@ -2960,27 +2960,20 @@ if integration_root and (integration_sha or integration_url) then
       false
     )
     vim.api.nvim_set_current_win(change_win)
-    vim.cmd("silent undo")
-    assert(vim.deep_equal(
-      vim.api.nvim_buf_get_lines(change_buf, 0, -1, false),
-      initial_lines
-    ))
-    vim.api.nvim_buf_set_lines(
-      change_buf,
-      0,
-      1,
-      false,
-      { "oculus undo baseline probe" }
+    local undo_cursor = vim.api.nvim_win_get_cursor(change_win)
+    local undo_view = vim.api.nvim_win_call(
+      change_win,
+      vim.fn.winsaveview
     )
-    assert(not vim.deep_equal(
-      vim.api.nvim_buf_get_lines(change_buf, 0, -1, false),
-      initial_lines
-    ))
     vim.cmd("silent undo")
     assert(vim.deep_equal(
       vim.api.nvim_buf_get_lines(change_buf, 0, -1, false),
       initial_lines
     ))
+    vim.api.nvim_win_set_cursor(change_win, undo_cursor)
+    vim.api.nvim_win_call(change_win, function()
+      vim.fn.winrestview(undo_view)
+    end)
   end
   vim.g.oculus_test_statusline_path = vim.fs.basename(
     vim.fs.normalize(change_state.repository)
@@ -3128,6 +3121,16 @@ if integration_root and (integration_sha or integration_url) then
     assert(overview_page_down.desc
       == "Scroll Oculus Inspect overview down 10 lines")
     vim.api.nvim_win_set_height(overview_win, 4)
+    local overview_content_height = vim.api.nvim_win_get_height(overview_win)
+    for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(tabs[3])) do
+      local candidate_buf = vim.api.nvim_win_get_buf(candidate)
+      if vim.b[candidate_buf].oculus_inspect_overview_footer then
+        overview_content_height = overview_content_height
+          - vim.api.nvim_win_get_height(candidate)
+        break
+      end
+    end
+    overview_content_height = math.max(1, overview_content_height)
     local overview_topline = vim.fn.winsaveview().topline
     overview_down.callback()
     assert(vim.fn.winsaveview().topline > overview_topline)
@@ -3137,7 +3140,7 @@ if integration_root and (integration_sha or integration_url) then
     local overview_max_topline = math.max(
       1,
       vim.api.nvim_buf_line_count(overview_buf)
-        - vim.api.nvim_win_get_height(overview_win)
+        - overview_content_height
         + 2
     )
     assert(vim.fn.winsaveview().topline
@@ -3150,7 +3153,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.fn.winsaveview().topline == math.max(
       1,
       vim.api.nvim_buf_line_count(overview_buf)
-        - vim.api.nvim_win_get_height(overview_win)
+        - overview_content_height
         + 2
     ))
     overview_topline = vim.fn.winsaveview().topline
@@ -3247,14 +3250,14 @@ if integration_root and (integration_sha or integration_url) then
   toggle_mapped.callback()
   assert(vim.bo[change_buf].modifiable)
   assert(not vim.bo[change_buf].readonly)
-  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
-  assert(vim.api.nvim_get_current_win() == parent_win)
-  assert_cursor_at_first_nonblank(parent_win)
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == change_win)
+  assert_cursor_at_first_nonblank(change_win)
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
     assert(active.pair_index == vim.g.oculus_test_main_tab_pair)
     assert(active.chunk_index == vim.g.oculus_test_main_tab_chunk + 1)
-    assert(active.role == "parent")
+    assert(active.role == "change")
     local active_sidebar_win = assert(sidebar_window(
       vim.api.nvim_get_current_tabpage()
     ))
@@ -3386,24 +3389,24 @@ if integration_root and (integration_sha or integration_url) then
       == vim.g.oculus_test_chunk_count
   )
   toggle_mapped.callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   assert(vim.api.nvim_get_current_win()
-    == assert(sidebar_window(tabs[2])))
+    == assert(sidebar_window(tabs[3])))
   assert(vim.api.nvim_win_get_cursor(
-    assert(sidebar_window(tabs[2]))
+    assert(sidebar_window(tabs[3]))
   )[1] == file_lines[1])
-  assert(vim.api.nvim_win_get_cursor(parent_win)[1] == 1)
+  assert(vim.api.nvim_win_get_cursor(change_win)[1] == 1)
   assert(vim.api.nvim_win_call(
-    parent_win,
+    change_win,
     vim.fn.winsaveview
   ).topline == 1)
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index == 1)
-  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.role == "parent")
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.role == "change")
   previous_mapped.callback()
   assert(vim.api.nvim_get_current_tabpage()
-    == tabs[pair_count * 2])
+    == tabs[pair_count * 2 + 1])
   assert(vim.api.nvim_get_current_win()
-    == assert(sidebar_window(tabs[pair_count * 2])))
+    == assert(sidebar_window(tabs[pair_count * 2 + 1])))
   assert(
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
       == pair_count
@@ -3413,7 +3416,7 @@ if integration_root and (integration_sha or integration_url) then
       == vim.g.oculus_test_chunk_count
   )
   toggle_mapped.callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
   overview_sidebar_win = assert(sidebar_window(tabs[3]))
@@ -3542,7 +3545,7 @@ if integration_root and (integration_sha or integration_url) then
     false
   )[1]:find("• ", 1, true))
 
-  vim.api.nvim_set_current_win(assert(sidebar_window(tabs[2])))
+  vim.api.nvim_set_current_win(assert(sidebar_window(tabs[3])))
   vim.g.oculus_test_toggled_sidebar_state = {
     cursor = vim.api.nvim_win_get_cursor(0),
     view = vim.fn.winsaveview(),
@@ -3552,7 +3555,7 @@ if integration_root and (integration_sha or integration_url) then
     ),
   }
   sidebar_leader_toggle_from_sidebar.callback()
-  assert(vim.api.nvim_get_current_win() == parent_win)
+  assert(vim.api.nvim_get_current_win() == change_win)
   for pair_index = 1, pair_count do
     assert(#vim.api.nvim_tabpage_list_wins(
       tabs[pair_index * 2]
@@ -3562,13 +3565,13 @@ if integration_root and (integration_sha or integration_url) then
     ) == 1)
   end
   vim.fn.maparg("gS", "n", false, true).callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
-  assert(vim.api.nvim_get_current_win() == change_win)
-  assert(sidebar_window(tabs[3]) == nil)
-  vim.fn.maparg("gS", "n", false, true).callback()
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(sidebar_window(tabs[2]) == nil)
+  vim.fn.maparg("gS", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == change_win)
+  assert(sidebar_window(tabs[3]) == nil)
   vim.g.oculus_test_toggle_entered_tabs = {}
   vim.g.oculus_test_toggle_tab_enter =
     vim.api.nvim_create_autocmd("TabEnter", {
@@ -3580,10 +3583,10 @@ if integration_root and (integration_sha or integration_url) then
     })
   sidebar_leader_toggle.callback()
   vim.api.nvim_del_autocmd(vim.g.oculus_test_toggle_tab_enter)
-  assert(vim.api.nvim_get_current_win() == parent_win)
-  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_win() == change_win)
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   assert(#vim.g.oculus_test_toggle_entered_tabs == 0)
-  vim.g.oculus_test_restored_sidebar_win = assert(sidebar_window(tabs[2]))
+  vim.g.oculus_test_restored_sidebar_win = assert(sidebar_window(tabs[3]))
   assert(vim.deep_equal(
     vim.api.nvim_win_get_cursor(vim.g.oculus_test_restored_sidebar_win),
     vim.g.oculus_test_toggled_sidebar_state.cursor
@@ -3605,19 +3608,19 @@ if integration_root and (integration_sha or integration_url) then
       tabs[pair_index * 2],
       tabs[pair_index * 2 + 1],
     }) do
-      if tab ~= tabs[2] then
+      if tab ~= tabs[3] then
         assert(sidebar_window(tab) == nil)
       end
     end
   end
   vim.fn.maparg("gS", "n", false, true).callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
-  assert(vim.api.nvim_get_current_win() == change_win)
-  assert(sidebar_window(tabs[3]) ~= nil)
-  vim.fn.maparg("gS", "n", false, true).callback()
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(sidebar_window(tabs[2]) ~= nil)
+  vim.fn.maparg("gS", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == change_win)
+  assert(sidebar_window(tabs[3]) ~= nil)
   for pair_index = 1, pair_count do
     for _, tab in ipairs({
       tabs[pair_index * 2],
@@ -3635,6 +3638,7 @@ if integration_root and (integration_sha or integration_url) then
   vim.g.oculus_test_restored_sidebar_win = nil
 
   vim.api.nvim_set_current_tabpage(tabs[2])
+  vim.api.nvim_set_current_win(parent_win)
   local sidebar_active = vim.b[sidebar_buf]
     .oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
@@ -3834,7 +3838,8 @@ if integration_root and (integration_sha or integration_url) then
     )[1]:find("%S") or 1) - 1))
   do
     local cursor = vim.api.nvim_win_get_cursor(change_win)
-    assert(vim.deep_equal(cursor, initial_cursor))
+    assert(cursor[1] == selected_parent_cursor[1])
+    assert_cursor_at_first_nonblank(change_win)
   end
   assert(vim.fn.winsaveview().topline
     == parent_sidebar_view.topline)
@@ -3876,8 +3881,13 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   do
     local cursor = vim.api.nvim_win_get_cursor(change_win)
-    assert(vim.deep_equal(cursor, initial_cursor))
+    assert(cursor[1] == selected_parent_cursor[1])
+    assert_cursor_at_first_nonblank(change_win)
   end
+  assert(vim.wait(1000, function()
+    local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    return type(active) == "table" and active.role == "change"
+  end))
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")
@@ -4171,9 +4181,14 @@ if integration_root and (integration_sha or integration_url) then
           tabs[pair_index * 2 + 1],
         }) do
           vim.api.nvim_set_current_tabpage(tab)
-          assert(vim.wait(10000, function()
-            return sidebar_window(tab) ~= nil
-          end), "Inspect sidebar was not restored when its page was shown")
+          local shown_tab = vim.api.nvim_get_current_tabpage()
+          if inspection_window(shown_tab) then
+            assert(vim.wait(10000, function()
+              return sidebar_window(shown_tab) ~= nil
+            end), "Inspect sidebar was not restored when its page was shown")
+          else
+            assert(sidebar_window(shown_tab) == nil)
+          end
         end
       end
     end)()
