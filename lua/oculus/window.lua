@@ -162,73 +162,7 @@ local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
 end
 
-local function inspect_code_window(win)
-  if not is_valid_win(win) then
-    return false
-  end
-  local buf = vim.api.nvim_win_get_buf(win)
-  return type(vim.b[buf].oculus_inspect) == "table"
-end
-
-local function highlight_source_window(preferred)
-  if inspect_code_window(preferred) then
-    return preferred
-  end
-  local current = vim.api.nvim_get_current_win()
-  local tab = is_valid_win(preferred)
-      and vim.api.nvim_win_get_tabpage(preferred)
-    or vim.api.nvim_get_current_tabpage()
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-    if inspect_code_window(win) then
-      return win
-    end
-  end
-  if is_valid_win(preferred) then
-    return preferred
-  end
-  if is_valid_win(M.state.origin_win) then
-    return M.state.origin_win
-  end
-  return current
-end
-
-local function effective_window_highlight(win, name)
-  if not is_valid_win(win) then
-    return nil
-  end
-  local target = name
-  for _, mapping in ipairs(vim.split(
-    vim.wo[win].winhighlight,
-    ",",
-    { trimempty = true }
-  )) do
-    local source, destination = mapping:match("^([^:]+):(.+)$")
-    if source == name then
-      target = destination
-      break
-    end
-  end
-  local ok, namespace = pcall(
-    vim.api.nvim_get_hl_ns,
-    { winid = win }
-  )
-  namespace = ok and namespace or 0
-  if namespace == -1 then
-    namespace = 0
-  end
-  for _, candidate in ipairs(namespace == 0 and { 0 } or { namespace, 0 }) do
-    local found, definition = pcall(
-      vim.api.nvim_get_hl,
-      candidate,
-      { name = target, link = false }
-    )
-    if found and next(definition) then
-      return definition
-    end
-  end
-end
-
-local function sync_window_highlights(source_win)
+local function sync_window_highlights()
   local current_normal = {}
   local current_border = {}
   for _, group in ipairs(window_highlight_groups) do
@@ -245,15 +179,6 @@ local function sync_window_highlights(source_win)
         current_border = vim.deepcopy(definition)
       end
     end
-  end
-
-  local source_normal = effective_window_highlight(
-    highlight_source_window(source_win),
-    "Normal"
-  )
-  if source_normal then
-    current_normal.bg = source_normal.bg
-    current_normal.ctermbg = source_normal.ctermbg
   end
 
   vim.api.nvim_set_hl(
@@ -292,9 +217,14 @@ local function use_window_highlights(win)
   end
 end
 
-function M.apply_window_highlights(win, source_win)
-  sync_window_highlights(source_win)
+function M.apply_window_highlights(win)
+  sync_window_highlights()
   use_window_highlights(win)
+end
+
+function M.refresh_window_highlights()
+  sync_window_highlights()
+  vim.schedule(sync_window_highlights)
 end
 
 local highlight_autocmd_group = vim.api.nvim_create_augroup(
@@ -304,7 +234,7 @@ local highlight_autocmd_group = vim.api.nvim_create_augroup(
 vim.api.nvim_create_autocmd("ColorScheme", {
   group = highlight_autocmd_group,
   callback = function()
-    sync_window_highlights()
+    M.refresh_window_highlights()
   end,
 })
 
@@ -3395,7 +3325,7 @@ local function open_search()
     "FloatBorder:OculusBorder",
     "FloatTitle:OculusBorder",
   }, ",")
-  use_window_highlights(win)
+  M.apply_window_highlights(win)
 
   local search_map = function(lhs, rhs, desc)
     vim.keymap.set({ "i", "n" }, lhs, rhs, {
@@ -4287,7 +4217,7 @@ function M.open(opts)
   end
 
   local origin_win = vim.api.nvim_get_current_win()
-  sync_window_highlights(origin_win)
+  sync_window_highlights()
   M.state.origin_tab = vim.api.nvim_get_current_tabpage()
   M.state.origin_win = origin_win
   M.state.origin_view = vim.api.nvim_win_call(origin_win, function()

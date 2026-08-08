@@ -2084,6 +2084,10 @@ local function apply_inspection_filetype(buf, force_refresh)
   then
     pcall(reliquary.apply, buf)
   end
+  local window_ok, window = pcall(require, "oculus.window")
+  if window_ok and type(window.refresh_window_highlights) == "function" then
+    window.refresh_window_highlights()
+  end
   refresh_buffer_highlighting(buf, force_refresh)
   return filetype
 end
@@ -3572,12 +3576,7 @@ function M._overview_ui.render_footer(group)
     "Normal:OculusNormal",
     "NormalFloat:OculusNormal",
   }, ",")
-  local source = group.overview_return
-    and group.overview_return.endpoint
-  require("oculus.window").apply_window_highlights(
-    footer_win,
-    source and source.win or nil
-  )
+  require("oculus.window").apply_window_highlights(footer_win)
 end
 
 function M._overview_ui.content_height(group)
@@ -4311,10 +4310,7 @@ show_inspection_overview = function(group)
     "FloatTitle:OculusBorder",
     "FloatFooter:OculusBorder",
   }, ",")
-  require("oculus.window").apply_window_highlights(
-    win,
-    endpoint.win
-  )
+  require("oculus.window").apply_window_highlights(win)
   vim.keymap.set("n", "e", function()
     M._overview_ui.open_model_picker(group)
   end, {
