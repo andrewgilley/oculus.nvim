@@ -3530,7 +3530,8 @@ function M._overview_ui.render_footer(group)
       and "  p paths   e explanation   b browser"
     or "  e explanation   b browser"
   if #(group.overview_agent_locations or {}) > 0 then
-    commands = "  <CR> open path   " .. commands:sub(3)
+    commands = "  <Space> toggle   <CR> open paths   "
+      .. commands:sub(3)
   end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -3713,9 +3714,12 @@ function M._overview_ui.render(group)
       if location.line then
         display_path = display_path .. ":" .. tostring(location.line)
       end
+      local selected_locations =
+        group.overview_agent_selected_locations or {}
+      local marker = selected_locations[index] and "[x]" or "[ ]"
       append_sidebar_text(
         lines,
-        ("%d. %s"):format(index, display_path),
+        ("%s %d. %s"):format(marker, index, display_path),
         group.overview_content_width or 28,
         "  "
       )
@@ -4053,6 +4057,26 @@ function M._overview_ui.move_location_cursor(group, direction)
   return true
 end
 
+function M._overview_ui.toggle_patch_location(group)
+  local locations = group.overview_agent_locations or {}
+  local index = group.overview_agent_selected_location_index
+  if not index or not locations[index] then
+    return false
+  end
+  group.overview_agent_selected_locations =
+    group.overview_agent_selected_locations or {}
+  group.overview_agent_selected_locations[index] =
+    not group.overview_agent_selected_locations[index]
+      and true
+    or nil
+  M._overview_ui.render(group)
+  local _, line = M._overview_ui.selected_patch_location(group)
+  if line and overview_window_is_open(group) then
+    vim.api.nvim_win_set_cursor(group.overview_win, { line, 0 })
+  end
+  return true
+end
+
 function M._overview_ui.patch_location_path(group, location)
   local repository = require("oculus.agent").repository(group)
   if type(repository) ~= "string" or repository == "" then
@@ -4081,124 +4105,126 @@ function M._overview_ui.patch_location_path(group, location)
 end
 
 function M._overview_ui.open_patch_location(group)
-  local location = M._overview_ui.selected_patch_location(group)
-  if not location then
-    return false
+  local locations = group.overview_agent_locations or {}
+  local selected = group.overview_agent_selected_locations or {}
+  local targets = {}
+  for index, location in ipairs(locations) do
+    if selected[index] then
+      targets[#targets + 1] = location
+    end
   end
-  local absolute, relative, path_err =
-    M._overview_ui.patch_location_path(group, location)
-  if not absolute then
-    vim.notify("Oculus: " .. tostring(path_err), vim.log.levels.WARN)
-    return false
+  if #targets == 0 then
+    local location = locations[group.overview_agent_selected_location_index]
+    if location then
+      targets[1] = location
+    end
   end
-  local stat = vim.uv.fs_stat(absolute)
-  if stat and stat.type == "directory" then
-    vim.notify(
-      "Oculus: the selected patch location is a directory",
-      vim.log.levels.WARN
-    )
+  if #targets == 0 then
     return false
   end
   local code_options = group.overview_code_window_options or {}
-  local ok, open_err = pcall(
-    vim.cmd,
-    "tabedit " .. vim.fn.fnameescape(absolute)
-  )
-  if not ok then
-    vim.notify(
-      "Oculus: could not open patch location: " .. tostring(open_err),
-      vim.log.levels.ERROR
-    )
+  local repository = require("oculus.agent").repository(group)
+  local opened = {}
+  for _, location in ipairs(targets) do
+    local absolute, relative, path_err =
+      M._overview_ui.patch_location_path(group, location)
+    local stat = absolute and vim.uv.fs_stat(absolute) or nil
+    if not absolute then
+      vim.notify("Oculus: " .. tostring(path_err), vim.log.levels.WARN)
+    elseif stat and stat.type == "directory" then
+      vim.notify(
+        "Oculus: the selected patch location is a directory",
+        vim.log.levels.WARN
+      )
+    else
+      local ok, open_err = pcall(
+        vim.cmd,
+        "tabedit " .. vim.fn.fnameescape(absolute)
+      )
+      if not ok then
+        vim.notify(
+          "Oculus: could not open patch location: " .. tostring(open_err),
+          vim.log.levels.ERROR
+        )
+      else
+        vim.cmd("tcd " .. vim.fn.fnameescape(repository))
+        vim.bo.modifiable = true
+        vim.bo.readonly = false
+        local patch_win = vim.api.nvim_get_current_win()
+        local patch_buf = vim.api.nvim_get_current_buf()
+        for option, value in pairs(code_options) do
+          if option ~= "highlight_namespace" then
+            pcall(function()
+              vim.wo[patch_win][option] = value
+            end)
+          end
+        end
+        vim.wo[patch_win].statusline = ""
+        vim.wo[patch_win].winfixbuf = false
+        local oculus_namespace = vim.api.nvim_get_namespaces()
+          .oculus_window_highlights
+        if oculus_namespace
+          and vim.api.nvim_get_hl_ns({ winid = patch_win })
+            == oculus_namespace
+        then
+          vim.api.nvim_win_set_hl_ns(
+            patch_win,
+            code_options.highlight_namespace or 0
+          )
+        end
+        local line_count = vim.api.nvim_buf_line_count(patch_buf)
+        local target_line = math.max(
+          1,
+          math.min(tonumber(location.line) or 1, line_count)
+        )
+        local target_text = vim.api.nvim_buf_get_lines(
+          patch_buf,
+          target_line - 1,
+          target_line,
+          false
+        )[1] or ""
+        local target_column = #(target_text:match("^%s*") or "")
+        vim.api.nvim_win_set_cursor(
+          patch_win,
+          { target_line, target_column }
+        )
+        vim.api.nvim_win_call(patch_win, function()
+          local keys = vim.api.nvim_replace_termcodes(
+            "zt10<C-y>",
+            true,
+            false,
+            true
+          )
+          vim.cmd("normal! " .. keys)
+        end)
+        opened[#opened + 1] = {
+          tab = vim.api.nvim_get_current_tabpage(),
+          win = patch_win,
+          buf = patch_buf,
+          path = relative:gsub("\\", "/"),
+          line = target_line,
+          location = location,
+        }
+      end
+    end
+  end
+  if #opened == 0 then
     return false
   end
-  local repository = require("oculus.agent").repository(group)
-  vim.cmd("tcd " .. vim.fn.fnameescape(repository))
-  vim.bo.modifiable = true
-  vim.bo.readonly = false
-  local patch_win = vim.api.nvim_get_current_win()
-  local patch_buf = vim.api.nvim_get_current_buf()
-  for option, value in pairs(code_options) do
-    if option ~= "highlight_namespace" then
-      pcall(function()
-        vim.wo[patch_win][option] = value
-      end)
-    end
-  end
-  vim.wo[patch_win].statusline = ""
-  vim.wo[patch_win].winfixbuf = false
-  local oculus_namespace = vim.api.nvim_get_namespaces()
-    .oculus_window_highlights
-  if oculus_namespace
-    and vim.api.nvim_get_hl_ns({ winid = patch_win }) == oculus_namespace
-  then
-    vim.api.nvim_win_set_hl_ns(
-      patch_win,
-      code_options.highlight_namespace or 0
-    )
-  end
-  local line_count = vim.api.nvim_buf_line_count(patch_buf)
-  local target_line = math.max(
-    1,
-    math.min(tonumber(location.line) or 1, line_count)
-  )
-  local target_text = vim.api.nvim_buf_get_lines(
-    patch_buf,
-    target_line - 1,
-    target_line,
-    false
-  )[1] or ""
-  local target_column = #(target_text:match("^%s*") or "")
-  vim.api.nvim_win_set_cursor(patch_win, { target_line, target_column })
-  vim.api.nvim_win_call(patch_win, function()
-    local keys = vim.api.nvim_replace_termcodes(
-      "zt10<C-y>",
-      true,
-      false,
-      true
-    )
-    vim.cmd("normal! " .. keys)
-  end)
-  local patch_tab = vim.api.nvim_get_current_tabpage()
   group.overview_patch_tabs = group.overview_patch_tabs or {}
-  group.overview_patch_tabs[#group.overview_patch_tabs + 1] = {
-    tab = patch_tab,
-    win = patch_win,
-    buf = patch_buf,
-    path = relative:gsub("\\", "/"),
-    line = target_line,
-  }
-  local function toggle_patch_overview()
-    if overview_window_is_open(group) then
-      show_sidebar_files(group)
-    else
-      show_inspection_overview(group)
-    end
-  end
-  vim.keymap.set("n", "<C-t>", toggle_patch_overview, {
-    buffer = patch_buf,
-    nowait = true,
-    silent = true,
-    desc = "Toggle Oculus Inspect overview",
-  })
-  local overview_lhs = group.overview_toggle
-  if overview_lhs == nil then
-    overview_lhs = default_overview_toggle
-  end
-  if type(overview_lhs) == "string" and overview_lhs ~= "" then
-    vim.keymap.set("n", overview_lhs, toggle_patch_overview, {
-      buffer = patch_buf,
-      nowait = true,
-      silent = true,
-      desc = "Toggle Oculus Inspect overview",
-    })
+  for _, patch in ipairs(opened) do
+    group.overview_patch_tabs[#group.overview_patch_tabs + 1] = patch
   end
   group.overview_return = nil
   close_overview_window(group)
-  if vim.api.nvim_tabpage_is_valid(patch_tab)
-    and vim.api.nvim_win_is_valid(patch_win)
+  local patch_group = M._overview_ui.prepare_patch_sidebar(group, opened)
+  group.overview_patch_group = patch_group
+  local first = opened[1]
+  if vim.api.nvim_tabpage_is_valid(first.tab)
+    and vim.api.nvim_win_is_valid(first.win)
   then
-    vim.api.nvim_set_current_tabpage(patch_tab)
-    vim.api.nvim_set_current_win(patch_win)
+    vim.api.nvim_set_current_tabpage(first.tab)
+    vim.api.nvim_set_current_win(first.win)
   end
   return true
 end
@@ -4216,6 +4242,7 @@ function M._overview_ui.open_model_picker(group, request_kind)
   group.overview_agent_selected_line = nil
   if group.overview_agent_request_kind == "patch_locations" then
     group.overview_agent_patch_model = nil
+    group.overview_agent_selected_locations = nil
   else
     group.overview_agent_explanation_model = nil
   end
@@ -4346,6 +4373,7 @@ function M._overview_ui.render_patch_locations(
     end
     group.overview_agent_selected_location_index =
       #group.overview_agent_locations > 0 and 1 or nil
+    group.overview_agent_selected_locations = {}
   else
     group.overview_agent_mode = "error"
     group.overview_agent_error = "Generation failed: " .. tostring(err)
@@ -4630,6 +4658,14 @@ show_inspection_overview = function(group)
     silent = true,
     desc = "Select Oculus overview item",
   })
+  vim.keymap.set("n", "<Space>", function()
+    M._overview_ui.toggle_patch_location(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Toggle Oculus patch location",
+  })
   if group.overview_view then
     vim.api.nvim_win_call(win, function()
       vim.fn.winrestview(group.overview_view)
@@ -4877,6 +4913,50 @@ local function activate_inspection_sidebar(group, open_immediately)
   if open_immediately ~= false then
     open_inspection_sidebar(group)
   end
+end
+
+function M._overview_ui.prepare_patch_sidebar(source_group, opened)
+  if type(opened) ~= "table" or #opened == 0 then
+    return
+  end
+  local group = {}
+  for key, value in pairs(source_group) do
+    if type(key) ~= "number" then
+      group[key] = value
+    end
+  end
+  group.kind = "issue"
+  group.discarded = nil
+  group.overview_win = nil
+  group.overview_buf = nil
+  group.overview_footer_win = nil
+  group.overview_footer_buf = nil
+  group.overview_return = nil
+  group.overview_patch_tabs = opened
+  group.overview_patch_group = nil
+  group.focused_win = nil
+  local repository = require("oculus.agent").repository(source_group)
+  for index, patch in ipairs(opened) do
+    group[index] = {
+      file = patch.path,
+      repository = repository,
+      sections = {
+        {
+          line = patch.line,
+          last_line = patch.line,
+        },
+      },
+      issue = patch,
+      active_chunk = 1,
+      last_role = "issue",
+    }
+  end
+  prepare_inspection_sidebar(group)
+  for index, patch in ipairs(opened) do
+    map_file_navigation(patch, group[index], "issue", group)
+  end
+  activate_inspection_sidebar(group)
+  return group
 end
 
 local function sidebar_group_for_buffer(buf)
