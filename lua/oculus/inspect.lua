@@ -3373,6 +3373,10 @@ end
 local function close_overview_window(group)
   local win = group.overview_win
   local buf = group.overview_buf
+  if group.overview_scroll_autocmd then
+    pcall(vim.api.nvim_del_autocmd, group.overview_scroll_autocmd)
+    group.overview_scroll_autocmd = nil
+  end
   if win and vim.api.nvim_win_is_valid(win) then
     group.overview_view = vim.api.nvim_win_call(win, function()
       return vim.fn.winsaveview()
@@ -3711,8 +3715,8 @@ function M._overview_ui.render_footer(group)
   end
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
   local commands = issue_patches
-      and "  p paths   e explanation   b browser"
-    or "  e explanation   b browser"
+      and "  p paths   e explain   b browser"
+    or "  e explain   b browser"
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
   then
@@ -3788,6 +3792,34 @@ function M._overview_ui.content_height(group)
     height = height - vim.api.nvim_win_get_height(footer)
   end
   return math.max(1, height)
+end
+
+function M._overview_ui.clamp_scroll(group)
+  local win = group.overview_win
+  local buf = group.overview_buf
+  if not win
+    or not buf
+    or not vim.api.nvim_win_is_valid(win)
+    or not vim.api.nvim_buf_is_valid(buf)
+  then
+    return false
+  end
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  local height = M._overview_ui.content_height(group)
+  local max_topline = math.max(1, line_count - height + 2)
+  local changed = false
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    local topline = math.max(1, math.min(max_topline, view.topline))
+    if topline == view.topline then
+      return
+    end
+    view.topline = topline
+    view.topfill = 0
+    vim.fn.winrestview(view)
+    changed = true
+  end)
+  return changed
 end
 
 function M._overview_ui.render(group)
@@ -3920,6 +3952,9 @@ function M._overview_ui.render(group)
           group.overview_content_width or 28,
           "     "
         )
+      end
+      if index < #locations then
+        lines[#lines + 1] = ""
       end
     end
   end
@@ -4259,6 +4294,20 @@ function M._overview_ui.unfocus_patch_locations(group)
   if overview_window_is_open(group) then
     vim.api.nvim_set_current_win(group.overview_win)
     hide_overview_cursor(group)
+  end
+  return true
+end
+
+function M._overview_ui.toggle_patch_locations_focus(group)
+  if #(group.overview_agent_locations or {}) == 0 then
+    return false
+  end
+  if group.overview_agent_mode == "patch_locations"
+    and group.overview_agent_request_kind == "patch_locations"
+  then
+    M._overview_ui.unfocus_patch_locations(group)
+  else
+    M._overview_ui.focus_patch_locations(group)
   end
   return true
 end
@@ -4748,6 +4797,16 @@ show_inspection_overview = function(group)
   end
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_win = win
+  group.overview_scroll_autocmd = vim.api.nvim_create_autocmd(
+    "WinScrolled",
+    {
+      group = sync_group,
+      pattern = tostring(win),
+      callback = function()
+        M._overview_ui.clamp_scroll(group)
+      end,
+    }
+  )
   M._overview_ui.render_footer(group)
   if group.overview_agent_mode == "loading_models"
     or group.overview_agent_mode == "generating"
@@ -4799,7 +4858,7 @@ show_inspection_overview = function(group)
   })
   if require("oculus.agent").needs_patch_locations(group) then
     vim.keymap.set("n", "p", function()
-      if M._overview_ui.focus_patch_locations(group) then
+      if M._overview_ui.toggle_patch_locations_focus(group) then
         return
       end
       M._overview_ui.open_model_picker(group, "patch_locations")
