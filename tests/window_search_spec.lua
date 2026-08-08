@@ -1855,6 +1855,19 @@ do
   ))
   assert(not lazy_activity_text:find("pushed 1 commit", 1, true))
   assert(lazy_activity_text:find("Lazy update 1", 1, true))
+  local stale_min_line = vim.api.nvim_buf_line_count(state.buf) + 3
+  state.activity_cursor_min_line = stale_min_line
+  state.activity_scroll_limit_line = stale_min_line + 4
+  vim.bo[state.buf].modifiable = true
+  vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, { "short page" })
+  vim.bo[state.buf].modifiable = false
+  local cursor_moved_ok, cursor_moved_error = pcall(
+    vim.api.nvim_exec_autocmds,
+    "CursorMoved",
+    { buffer = state.buf }
+  )
+  assert(cursor_moved_ok, cursor_moved_error)
+  assert(vim.api.nvim_win_get_cursor(state.win)[1] == 1)
   window.close()
   github.repository_events = original_repository_events
   github.repository_updates = original_repository_updates

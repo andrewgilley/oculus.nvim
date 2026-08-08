@@ -521,11 +521,25 @@ local function render_activity_footer()
   vim.wo[M.state.footer_win].signcolumn = "no"
 end
 
+local function list_buffer_line_count()
+  if not is_valid_win(M.state.win) or not is_valid_buf(M.state.buf) then
+    return nil
+  end
+  if vim.api.nvim_win_get_buf(M.state.win) ~= M.state.buf then
+    return nil
+  end
+  return vim.api.nvim_buf_line_count(M.state.buf)
+end
+
 local function update_activity_cursorline()
   if M.state.view ~= "activity" or not is_valid_win(M.state.win) then
     return
   end
   if vim.api.nvim_get_current_win() ~= M.state.win then
+    return
+  end
+  local line_count = list_buffer_line_count()
+  if not line_count then
     return
   end
   local footer_height = is_valid_win(M.state.footer_win) and 2 or 0
@@ -534,13 +548,17 @@ local function update_activity_cursorline()
     vim.api.nvim_win_get_height(M.state.win) - footer_height
   )
   local cursor = vim.api.nvim_win_get_cursor(M.state.win)
-  local min_line = M.state.activity_cursor_min_line or 1
+  local min_line = math.max(
+    1,
+    math.min(M.state.activity_cursor_min_line or 1, line_count)
+  )
   if cursor[1] < min_line then
     cursor = { min_line, 0 }
     vim.api.nvim_win_set_cursor(M.state.win, cursor)
   end
   local limit_line = M.state.activity_scroll_limit_line
   if limit_line then
+    limit_line = math.max(min_line, math.min(limit_line, line_count))
     if cursor[1] > limit_line then
       cursor = { limit_line, 0 }
       vim.api.nvim_win_set_cursor(M.state.win, cursor)
@@ -563,7 +581,8 @@ local function update_activity_cursorline()
 end
 
 local function clamp_list_cursor()
-  if not is_valid_win(M.state.win) then
+  local line_count = list_buffer_line_count()
+  if not line_count then
     return
   end
 
@@ -571,7 +590,12 @@ local function clamp_list_cursor()
     local selectable = {}
     local selected_line
     for line, target in pairs(M.state.line_targets) do
-      if type(target) == "table" then
+      if
+        type(target) == "table"
+        and type(line) == "number"
+        and line >= 1
+        and line <= line_count
+      then
         selectable[#selectable + 1] = line
         if target.kind == "project" then
           if target.project.repository
@@ -632,7 +656,12 @@ local function clamp_list_cursor()
     or M.state.view == "issue_filters"
   then
     for line, target in pairs(M.state.line_targets) do
-      if type(target) == "table" then
+      if
+        type(target) == "table"
+        and type(line) == "number"
+        and line >= 1
+        and line <= line_count
+      then
         min_line = math.min(min_line or line, line)
         max_line = math.max(max_line or line, line)
       end
@@ -642,6 +671,8 @@ local function clamp_list_cursor()
   if not min_line or not max_line then
     return
   end
+  min_line = math.max(1, math.min(min_line, line_count))
+  max_line = math.max(min_line, math.min(max_line, line_count))
   local cursor = vim.api.nvim_win_get_cursor(M.state.win)
   local line = math.min(math.max(cursor[1], min_line), max_line)
   if line ~= cursor[1] then
