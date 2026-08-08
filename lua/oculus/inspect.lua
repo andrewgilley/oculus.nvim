@@ -3527,7 +3527,7 @@ function M._overview_ui.render_footer(group)
   end
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
   local commands = issue_patches
-      and "  p patches   e explanation   b browser"
+      and "  p paths   e explanation   b browser"
     or "  e explanation   b browser"
   if #(group.overview_agent_locations or {}) > 0 then
     commands = "  <CR> open path   " .. commands:sub(3)
