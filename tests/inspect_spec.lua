@@ -1612,6 +1612,7 @@ end
 assert(location_heading_line and first_location_line and second_location_line)
 local heading_underlined
 local selected_location_line
+local selected_location_col
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
   explanation_buf,
   -1,
@@ -1625,6 +1626,7 @@ for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
     heading_underlined = true
   elseif mark[4].hl_group == "OculusInspectAgentModelSelected" then
     selected_location_line = mark[2] + 1
+    selected_location_col = mark[3]
   end
 end
 assert(heading_underlined)
@@ -1633,6 +1635,7 @@ assert(vim.api.nvim_get_hl(0, {
   link = false,
 }).underline == true)
 assert(selected_location_line == first_location_line)
+assert(selected_location_col == 2)
 vim.fn.maparg("k", "n", false, true).callback()
 local moved_location_line
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
