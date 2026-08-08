@@ -3473,6 +3473,134 @@ M._overview_ui = {
   },
 }
 
+function M._overview_ui.persistence_key(group)
+  local overview = group and group.overview or {}
+  local details = overview.commit_details or {}
+  local repository = overview.owner and overview.repo
+      and (overview.owner .. "/" .. overview.repo)
+    or overview.url
+    or require("oculus.agent").repository(group)
+  local identifier = overview.number
+    or details.sha
+    or overview.sha
+    or overview.url
+  if type(repository) ~= "string"
+    or repository == ""
+    or identifier == nil
+  then
+    return
+  end
+  return table.concat({
+    tostring(overview.forge or "github"):lower(),
+    repository:lower(),
+    tostring(overview.kind or "activity"):lower(),
+    tostring(identifier):lower(),
+  }, ":")
+end
+
+function M._overview_ui.restore_persisted(group)
+  local key = M._overview_ui.persistence_key(group)
+  local cache = group and group.inspect_overviews or nil
+  local saved = key and type(cache) == "table" and cache[key] or nil
+  if type(saved) ~= "table" then
+    return false
+  end
+  if type(saved.explanation) == "string" and saved.explanation ~= "" then
+    group.overview_agent_explanation = saved.explanation
+    group.overview_agent_explanation_model = saved.explanation_model
+  end
+  if type(saved.locations) == "table" then
+    group.overview_agent_locations = {}
+    for _, location in ipairs(saved.locations) do
+      if #group.overview_agent_locations == 3 then
+        break
+      end
+      if type(location) == "table"
+        and type(location.path) == "string"
+        and location.path ~= ""
+      then
+        group.overview_agent_locations[#group.overview_agent_locations + 1] = {
+          path = location.path,
+          line = tonumber(location.line),
+          reason = location.reason,
+        }
+      end
+    end
+    group.overview_agent_patch_model = saved.patch_model
+    group.overview_agent_selected_location_index =
+      #group.overview_agent_locations > 0
+        and math.min(
+          math.max(tonumber(saved.selected_location) or 1, 1),
+          #group.overview_agent_locations
+        )
+      or nil
+    group.overview_agent_selected_locations = {}
+    for _, index in ipairs(saved.selected_locations or {}) do
+      index = tonumber(index)
+      if index and group.overview_agent_locations[index] then
+        group.overview_agent_selected_locations[index] = true
+      end
+    end
+  end
+  if group.overview_agent_locations ~= nil then
+    group.overview_agent_request_kind = "patch_locations"
+    group.overview_agent_mode = "patch_locations"
+  elseif group.overview_agent_explanation then
+    group.overview_agent_request_kind = "explanation"
+    group.overview_agent_mode = "explanation"
+  end
+  return group.overview_agent_mode ~= nil
+end
+
+function M._overview_ui.persist(group)
+  if not group or group.persist_inspect_overviews == false then
+    return false
+  end
+  local key = M._overview_ui.persistence_key(group)
+  if not key or type(group.state_file) ~= "string"
+    or group.state_file == ""
+  then
+    return false
+  end
+  local cache = group.inspect_overviews
+  if type(cache) ~= "table" then
+    cache = {}
+    group.inspect_overviews = cache
+  end
+  local selected = {}
+  for index, enabled in pairs(
+    group.overview_agent_selected_locations or {}
+  ) do
+    if enabled then
+      selected[#selected + 1] = index
+    end
+  end
+  table.sort(selected)
+  cache[key] = {
+    explanation = group.overview_agent_explanation,
+    explanation_model = group.overview_agent_explanation_model,
+    locations = vim.deepcopy(group.overview_agent_locations),
+    patch_model = group.overview_agent_patch_model,
+    selected_location = group.overview_agent_selected_location_index,
+    selected_locations = selected,
+    updated_at = os.time(),
+  }
+  local config = group.persistence_config or {}
+  config.inspect_overviews = cache
+  local ok, err = require("oculus.storage").save(
+    group.state_file,
+    config
+  )
+  if not ok then
+    vim.notify(
+      "Oculus could not save inspect overview data: " .. tostring(err),
+      vim.log.levels.ERROR
+    )
+    return false
+  end
+  return true
+end
+
 function M._overview_ui.float_lines(overview, width)
   local lines = sidebar_overview_lines(overview, width)
   if lines[1] == "OVERVIEW" then
@@ -4069,6 +4197,7 @@ function M._overview_ui.toggle_patch_location(group)
     not group.overview_agent_selected_locations[index]
       and true
     or nil
+  M._overview_ui.persist(group)
   M._overview_ui.render(group)
   local _, line = M._overview_ui.selected_patch_location(group)
   if line and overview_window_is_open(group) then
@@ -4291,6 +4420,7 @@ function M._overview_ui.render_explanation(
   if text then
     group.overview_agent_mode = "explanation"
     group.overview_agent_explanation = text
+    M._overview_ui.persist(group)
   else
     group.overview_agent_mode = "error"
     group.overview_agent_error = "Generation failed: " .. tostring(err)
@@ -4374,6 +4504,7 @@ function M._overview_ui.render_patch_locations(
     group.overview_agent_selected_location_index =
       #group.overview_agent_locations > 0 and 1 or nil
     group.overview_agent_selected_locations = {}
+    M._overview_ui.persist(group)
   else
     group.overview_agent_mode = "error"
     group.overview_agent_error = "Generation failed: " .. tostring(err)
@@ -5843,6 +5974,10 @@ local function open_tabs(
       previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(info),
       browser_config = { browser_command = opts.browser_command },
+      persist_inspect_overviews = opts.persist_inspect_overviews ~= false,
+      inspect_overviews = opts.inspect_overviews or {},
+      state_file = opts.state_file,
+      persistence_config = opts,
       overview_window_config =
         require("oculus.window").window_config(opts),
     }
@@ -5867,6 +6002,8 @@ local function open_tabs(
         last_role = "parent",
       }
     end
+
+    M._overview_ui.restore_persisted(inspection_sessions)
 
     -- Build the complete changed-file list before the first Inspect tab is
     -- created, so the first visible tab already has a ready sidebar.
@@ -6382,6 +6519,10 @@ local function open_issue_inspection(
       previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(resolved),
       browser_config = { browser_command = opts.browser_command },
+      persist_inspect_overviews = opts.persist_inspect_overviews ~= false,
+      inspect_overviews = opts.inspect_overviews or {},
+      state_file = opts.state_file,
+      persistence_config = opts,
       overview_window_config =
         require("oculus.window").window_config(opts),
     }
@@ -6392,6 +6533,7 @@ local function open_issue_inspection(
       last_role = "issue",
     }
     group[1] = session
+    M._overview_ui.restore_persisted(group)
     prepare_inspection_sidebar(group)
 
     local endpoint = make_inspection_tab()
