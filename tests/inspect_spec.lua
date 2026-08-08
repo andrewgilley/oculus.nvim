@@ -94,6 +94,7 @@ assert(oculus.config.inspect_version_switch == "<C-s>")
 assert(oculus.config.inspect_next_chunk == "<Tab>")
 assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
 assert(oculus.config.inspect_next_file == nil)
+assert(oculus.config.persist_inspect_overviews == true)
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "change")
   == "change")
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "parent")
@@ -897,6 +898,68 @@ assert(normalized_locations[1].line == 17)
 assert(normalized_locations[2].line == 24)
 assert(normalized_locations[3].path
   == vim.fs.basename(root) .. "/three.lua")
+local persisted_overview_file = vim.fn.tempname()
+local persisted_overviews = {}
+local persisted_overview_config = {
+  state_file = persisted_overview_file,
+  inspect_overviews = persisted_overviews,
+}
+local persisted_overview_group = {
+  overview = {
+    kind = "issue",
+    forge = "github",
+    owner = "example",
+    repo = "repository",
+    number = 42,
+    url = "https://github.com/example/repository/issues/42",
+  },
+  state_file = persisted_overview_file,
+  inspect_overviews = persisted_overviews,
+  persist_inspect_overviews = true,
+  persistence_config = persisted_overview_config,
+  overview_agent_explanation = "A persisted explanation.",
+  overview_agent_explanation_model = "gpt-5.6-sol",
+  overview_agent_locations = {
+    {
+      path = "repository/lua/one.lua",
+      line = 17,
+      reason = "First persisted location.",
+    },
+    {
+      path = "repository/lua/two.lua",
+      line = 24,
+      reason = "Second persisted location.",
+    },
+  },
+  overview_agent_patch_model = "gpt-5.6-terra",
+  overview_agent_selected_location_index = 2,
+  overview_agent_selected_locations = { [2] = true },
+  { repository = root },
+}
+assert(inspect._overview_ui.persist(persisted_overview_group))
+local restarted_overview_state = assert(
+  require("oculus.storage").load(persisted_overview_file)
+)
+local restarted_overview_group = {
+  overview = vim.deepcopy(persisted_overview_group.overview),
+  inspect_overviews = restarted_overview_state.inspect_overviews,
+  { repository = root },
+}
+assert(inspect._overview_ui.restore_persisted(restarted_overview_group))
+assert(restarted_overview_group.overview_agent_explanation
+  == "A persisted explanation.")
+assert(restarted_overview_group.overview_agent_explanation_model
+  == "gpt-5.6-sol")
+assert(#restarted_overview_group.overview_agent_locations == 2)
+assert(restarted_overview_group.overview_agent_locations[2].path
+  == "repository/lua/two.lua")
+assert(restarted_overview_group.overview_agent_locations[2].line == 24)
+assert(restarted_overview_group.overview_agent_patch_model
+  == "gpt-5.6-terra")
+assert(restarted_overview_group.overview_agent_selected_location_index == 2)
+assert(restarted_overview_group.overview_agent_selected_locations[2])
+assert(restarted_overview_group.overview_agent_mode == "patch_locations")
+vim.fn.delete(persisted_overview_file)
 do
   local main_config = require("oculus.window").window_config({})
   local commit_config = inspect._overview_window_config(

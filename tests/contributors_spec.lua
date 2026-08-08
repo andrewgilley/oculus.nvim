@@ -36,6 +36,7 @@ assert(oculus.config.projects[9].repository == "odin-lang/Odin")
 assert(oculus.config.projects[9].provider == "github")
 assert(oculus.config.suggested_contributors == nil)
 assert(oculus.config.persist_projects == false)
+assert(oculus.config.persist_inspect_overviews == true)
 
 local state_file = vim.fn.tempname()
 assert(storage.save(state_file, {
@@ -46,11 +47,18 @@ assert(storage.save(state_file, {
     },
   },
   user_activity_types = {},
+  inspect_overviews = {
+    ["github:example/repository:issue:42"] = {
+      explanation = "Persisted inspect explanation.",
+    },
+  },
 }))
 local saved = storage.load(state_file)
 assert(#saved.contributors == 1)
 assert(saved.contributors[1].username == "saved-user")
 assert(vim.deep_equal(saved.projects, {}))
+assert(saved.inspect_overviews["github:example/repository:issue:42"]
+  .explanation == "Persisted inspect explanation.")
 oculus.setup({
   state_file = state_file,
   persist_filters = false,
@@ -63,6 +71,9 @@ assert(oculus.config.contributors[3].username == "folke")
 assert(oculus.config.contributors[4].username == "andrewgilley")
 assert(oculus.config.contributors[5].username == "gingerBill")
 assert(oculus.config.contributors[6].username == "saved-user")
+assert(oculus.config.inspect_overviews[
+  "github:example/repository:issue:42"
+].explanation == "Persisted inspect explanation.")
 oculus.setup({
   state_file = state_file,
   persist_filters = false,

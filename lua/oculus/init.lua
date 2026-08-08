@@ -90,6 +90,8 @@ local defaults = {
   persist_filters = true,
   persist_contributors = true,
   persist_projects = true,
+  persist_inspect_overviews = true,
+  inspect_overviews = {},
   state_file = vim.fn.stdpath("state") .. "/oculus.json",
   browser_command = nil,
   inspect_cache_ttl = 60,
@@ -213,6 +215,7 @@ function M.setup(opts)
   if M.config.persist_filters
     or M.config.persist_contributors
     or M.config.persist_projects
+    or M.config.persist_inspect_overviews
   then
     local saved = require("oculus.storage").load(M.config.state_file)
     if saved then
@@ -244,6 +247,11 @@ function M.setup(opts)
           M.config.projects,
           saved.projects
         )
+      end
+      if M.config.persist_inspect_overviews
+        and type(saved.inspect_overviews) == "table"
+      then
+        M.config.inspect_overviews = vim.deepcopy(saved.inspect_overviews)
       end
     end
   end
