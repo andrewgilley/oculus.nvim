@@ -3377,6 +3377,10 @@ local function close_overview_window(group)
     pcall(vim.api.nvim_del_autocmd, group.overview_scroll_autocmd)
     group.overview_scroll_autocmd = nil
   end
+  if group.overview_highlight_autocmd then
+    pcall(vim.api.nvim_del_autocmd, group.overview_highlight_autocmd)
+    group.overview_highlight_autocmd = nil
+  end
   if win and vim.api.nvim_win_is_valid(win) then
     group.overview_view = vim.api.nvim_win_call(win, function()
       return vim.fn.winsaveview()
@@ -3820,6 +3824,18 @@ function M._overview_ui.clamp_scroll(group)
     changed = true
   end)
   return changed
+end
+
+function M._overview_ui.schedule_highlight_refresh(group)
+  vim.schedule(function()
+    if not overview_window_is_open(group) then
+      return
+    end
+    require("oculus.window").apply_window_highlights(
+      group.overview_win,
+      group.overview_highlight_source_win
+    )
+  end)
 end
 
 function M._overview_ui.render(group)
@@ -4821,6 +4837,7 @@ show_inspection_overview = function(group)
         and vim.api.nvim_get_current_win() == group.overview_win
       then
         hide_overview_cursor(group)
+        M._overview_ui.schedule_highlight_refresh(group)
       end
     end,
   })
@@ -4847,6 +4864,16 @@ show_inspection_overview = function(group)
   require("oculus.window").apply_window_highlights(
     win,
     group.overview_highlight_source_win
+  )
+  M._overview_ui.schedule_highlight_refresh(group)
+  group.overview_highlight_autocmd = vim.api.nvim_create_autocmd(
+    "ColorScheme",
+    {
+      group = sync_group,
+      callback = function()
+        M._overview_ui.schedule_highlight_refresh(group)
+      end,
+    }
   )
   vim.keymap.set("n", "e", function()
     M._overview_ui.open_model_picker(group, "explanation")

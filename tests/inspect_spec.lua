@@ -2049,6 +2049,29 @@ assert(vim.api.nvim_get_hl(retained_window_highlight_ns, {
   name = "OculusNormal",
   link = false,
 }).bg == patch_source_bg)
+vim.wait(20, function()
+  return false
+end)
+local overview_override_ns = vim.api.nvim_create_namespace(
+  "oculus_test_overview_filetype_override"
+)
+vim.api.nvim_set_hl(overview_override_ns, "Normal", {
+  bg = 0x151515,
+})
+vim.api.nvim_win_set_hl_ns(patch_overview_win, overview_override_ns)
+assert(vim.api.nvim_get_hl_ns({ winid = patch_overview_win })
+  == overview_override_ns)
+vim.api.nvim_exec_autocmds("WinEnter", {
+  buffer = patch_overview_buf,
+})
+assert(vim.wait(1000, function()
+  return vim.api.nvim_get_hl_ns({ winid = patch_overview_win })
+    == retained_window_highlight_ns
+end), "overview highlight namespace was not restored")
+assert(vim.api.nvim_get_hl(retained_window_highlight_ns, {
+  name = "OculusNormal",
+  link = false,
+}).bg == patch_source_bg)
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
   patch_overview_buf,
   -1,
