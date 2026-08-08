@@ -78,9 +78,14 @@ local source_highlight_ns = vim.api.nvim_create_namespace(
 local source_normal_bg = 0x343a46
 vim.api.nvim_set_hl(source_highlight_ns, "Normal", {
   fg = retained_normal_fg,
+  bg = 0x111318,
+})
+vim.api.nvim_set_hl(source_highlight_ns, "OculusTestSourceNormal", {
+  fg = retained_normal_fg,
   bg = source_normal_bg,
 })
 vim.api.nvim_win_set_hl_ns(origin_win, source_highlight_ns)
+vim.wo[origin_win].winhighlight = "Normal:OculusTestSourceNormal"
 window.open({
   width = 0.8,
   height = 0.8,
@@ -126,6 +131,25 @@ local retained_border = vim.api.nvim_get_hl(window_highlight_ns, {
 })
 assert(retained_border.fg == retained_border_fg)
 assert(retained_border.bg == source_normal_bg)
+local newer_normal_bg = 0x454d5c
+window.refresh_window_highlights(origin_win)
+vim.api.nvim_set_hl(window_highlight_ns, "OculusNormal", {
+  fg = retained_normal_fg,
+  bg = newer_normal_bg,
+})
+window.apply_window_highlights(state.win, state.win)
+vim.wait(20, function()
+  return false
+end)
+assert(vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "OculusNormal",
+  link = false,
+}).bg == newer_normal_bg)
+window.apply_window_highlights(state.win, origin_win)
+assert(vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "OculusNormal",
+  link = false,
+}).bg == source_normal_bg)
 vim.api.nvim_set_hl(0, "Title", { fg = 0xc46b8a })
 vim.api.nvim_set_hl(0, "Normal", {
   fg = 0xf0c674,

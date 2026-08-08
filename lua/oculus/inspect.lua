@@ -2104,7 +2104,14 @@ local function apply_inspection_filetype(buf, force_refresh)
   end
   local window_ok, window = pcall(require, "oculus.window")
   if window_ok and type(window.refresh_window_highlights) == "function" then
-    window.refresh_window_highlights()
+    local highlight_source_win
+    for _, candidate in ipairs(vim.fn.win_findbuf(buf)) do
+      if vim.api.nvim_win_is_valid(candidate) then
+        highlight_source_win = candidate
+        break
+      end
+    end
+    window.refresh_window_highlights(highlight_source_win)
   end
   refresh_buffer_highlighting(buf, force_refresh)
   return filetype
