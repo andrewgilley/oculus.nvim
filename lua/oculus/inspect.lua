@@ -3133,7 +3133,9 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
   vim.wo[win].statusline = inspection_sidebar_statusline_option
+  set_change_highlights()
   prevent_window_dimming(win)
+  preserve_cursorline_text_highlighting(win)
   group.sidebar_windows[endpoint.tab] = win
   if saved_state then
     vim.api.nvim_win_set_cursor(win, saved_state.cursor)
@@ -4288,6 +4290,10 @@ function M._overview_ui.open_patch_location(group)
             end)
           end
         end
+        vim.wo[patch_win].cursorline = true
+        vim.wo[patch_win].cursorlineopt = "line"
+        set_change_highlights()
+        preserve_cursorline_text_highlighting(patch_win)
         vim.wo[patch_win].statusline = ""
         vim.wo[patch_win].winfixbuf = false
         local oculus_namespace = vim.api.nvim_get_namespaces()
