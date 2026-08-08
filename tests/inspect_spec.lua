@@ -1951,9 +1951,13 @@ assert(motivation_config.relative == "win")
 assert(motivation_config.win == patch_win)
 assert(motivation_config.anchor == "SW")
 assert(motivation_config.bufpos[1] == 24)
+assert(motivation_config.row == -1)
 assert(motivation_config.focusable == false)
-assert(motivation_config.col + motivation_config.width
-  == vim.api.nvim_win_get_width(patch_win) - 2)
+assert(motivation_config.title == nil or motivation_config.title == "")
+assert(motivation_config.col
+  == math.floor(
+    (vim.api.nvim_win_get_width(patch_win) - motivation_config.width) / 2
+  ))
 assert(table.concat(vim.api.nvim_buf_get_lines(
   motivation_buf,
   0,
