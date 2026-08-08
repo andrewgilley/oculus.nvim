@@ -1184,7 +1184,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  p patches   e explanation   b browser",
+    "  p paths   e explanation   b browser",
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
@@ -1466,7 +1466,7 @@ assert(vim.api.nvim_buf_get_lines(
   1,
   2,
   false
-)[1]:find("p patches", 1, true))
+)[1]:find("p paths", 1, true))
 local patch_mapping = vim.fn.maparg("p", "n", false, true)
 assert(patch_mapping.desc == "Choose Oculus patch-location model")
 patch_mapping.callback()
@@ -1702,29 +1702,12 @@ assert(restored_overview_text:find(
 ))
 local open_patch_location = vim.fn.maparg("<CR>", "n", false, true)
 assert(open_patch_location.desc == "Select Oculus overview item")
-local patch_location_cursor = vim.api.nvim_win_get_cursor(
-  restored_overview_win
-)
-local patch_location_view = vim.api.nvim_win_call(
-  restored_overview_win,
-  vim.fn.winsaveview
-)
 local patch_tabs_before = {}
 for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
   patch_tabs_before[tab] = true
 end
 open_patch_location.callback()
-assert(vim.api.nvim_win_is_valid(restored_overview_win))
-assert(vim.api.nvim_get_current_win() == restored_overview_win)
-assert(vim.api.nvim_get_current_tabpage() == issue_tab)
-assert(vim.deep_equal(
-  vim.api.nvim_win_get_cursor(restored_overview_win),
-  patch_location_cursor
-))
-assert(vim.deep_equal(vim.api.nvim_win_call(
-  restored_overview_win,
-  vim.fn.winsaveview
-), patch_location_view))
+assert(not vim.api.nvim_win_is_valid(restored_overview_win))
 local patch_tab
 for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
   if not patch_tabs_before[tab] then
@@ -1733,8 +1716,10 @@ for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
   end
 end
 assert(patch_tab and patch_tab ~= issue_tab)
+assert(vim.api.nvim_get_current_tabpage() == patch_tab)
 local patch_wins = vim.api.nvim_tabpage_list_wins(patch_tab)
 assert(#patch_wins == 1)
+assert(vim.api.nvim_get_current_win() == patch_wins[1])
 local patch_buf = vim.api.nvim_win_get_buf(patch_wins[1])
 assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
   == vim.fs.normalize(
@@ -1742,12 +1727,21 @@ assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
 ))
 assert(vim.bo[patch_buf].modifiable)
 assert(not vim.bo[patch_buf].readonly)
-assert(vim.api.nvim_win_get_cursor(patch_wins[1])[1] == 25)
-vim.fn.maparg("q", "n", false, true).callback()
-assert(not vim.api.nvim_win_is_valid(restored_overview_win))
-assert(vim.api.nvim_get_current_win() == issue_main_win)
-assert(vim.api.nvim_get_current_buf() == issue_buf)
-vim.api.nvim_set_current_tabpage(patch_tab)
+local selected_patch_cursor = vim.api.nvim_win_get_cursor(patch_wins[1])
+assert(selected_patch_cursor[1] == 25)
+local selected_patch_line = vim.api.nvim_buf_get_lines(
+  patch_buf,
+  24,
+  25,
+  false
+)[1] or ""
+local selected_patch_nonblank = selected_patch_line:find("%S")
+assert(selected_patch_cursor[2]
+  == (selected_patch_nonblank and selected_patch_nonblank - 1 or 0))
+assert(vim.api.nvim_win_call(
+  patch_wins[1],
+  vim.fn.winsaveview
+).topline == 15)
 vim.cmd("tabclose")
 vim.api.nvim_set_current_tabpage(issue_tab)
 vim.api.nvim_set_current_win(issue_main_win)
