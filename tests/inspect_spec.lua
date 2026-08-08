@@ -1845,16 +1845,14 @@ assert(vim.wo[patch_win].cursorline)
 assert(vim.wo[patch_win].cursorlineopt == "line")
 assert(vim.wo[patch_win].signcolumn
   == vim.wo[issue_main_win].signcolumn)
-assert(vim.wo[patch_win].winhighlight
-  == vim.wo[issue_main_win].winhighlight)
-assert(vim.wo[patch_win].winhighlight:find(
-  "CursorLine:OculusInspectCursorLine",
+assert(not vim.wo[patch_win].winhighlight:find(
+  "CursorLine:",
   1,
   true
 ))
 assert(vim.wo[patch_win].statusline == vim.o.statusline)
-assert(vim.api.nvim_get_hl_ns({ winid = patch_win })
-  ~= retained_window_highlight_ns)
+local patch_highlight_ns = vim.api.nvim_get_hl_ns({ winid = patch_win })
+assert(patch_highlight_ns ~= retained_window_highlight_ns)
 local selected_patch_cursor = vim.api.nvim_win_get_cursor(patch_win)
 assert(selected_patch_cursor[1] == 25)
 local selected_patch_line = vim.api.nvim_buf_get_lines(
@@ -1890,11 +1888,14 @@ assert(patch_sidebar_text:find("agent.lua", 1, true))
 assert(patch_sidebar_text:find("15%-15"))
 assert(vim.wo[patch_sidebars[patch_tab]].cursorline)
 assert(vim.wo[patch_sidebars[patch_tab]].cursorlineopt == "line")
-assert(vim.wo[patch_sidebars[patch_tab]].winhighlight:find(
-  "CursorLine:OculusInspectCursorLine",
+assert(not vim.wo[patch_sidebars[patch_tab]].winhighlight:find(
+  "CursorLine:",
   1,
   true
 ))
+assert(vim.api.nvim_get_hl_ns({
+  winid = patch_sidebars[patch_tab],
+}) == patch_highlight_ns)
 local active_patch_sidebar_line
 for line, text in ipairs(patch_sidebar_lines) do
   if text:find("25%-25") then
@@ -1905,6 +1906,34 @@ end
 assert(active_patch_sidebar_line)
 assert(vim.api.nvim_win_get_cursor(patch_sidebars[patch_tab])[1]
   == active_patch_sidebar_line)
+vim.wo[patch_win].cursorline = false
+vim.wo[patch_sidebars[patch_tab]].cursorline = false
+vim.wo[patch_win].winhighlight =
+  vim.wo[patch_win].winhighlight
+    .. ",CursorLine:OculusInspectCursorLine"
+vim.wo[patch_sidebars[patch_tab]].winhighlight =
+  vim.wo[patch_sidebars[patch_tab]].winhighlight
+    .. ",CursorLine:OculusInspectCursorLine"
+vim.api.nvim_win_set_hl_ns(
+  patch_sidebars[patch_tab],
+  retained_window_highlight_ns
+)
+vim.api.nvim_exec_autocmds("CursorMoved", { buffer = patch_buf })
+assert(vim.wo[patch_win].cursorline)
+assert(vim.wo[patch_sidebars[patch_tab]].cursorline)
+assert(not vim.wo[patch_win].winhighlight:find(
+  "CursorLine:",
+  1,
+  true
+))
+assert(not vim.wo[patch_sidebars[patch_tab]].winhighlight:find(
+  "CursorLine:",
+  1,
+  true
+))
+assert(vim.api.nvim_get_hl_ns({
+  winid = patch_sidebars[patch_tab],
+}) == patch_highlight_ns)
 assert(vim.wo[patch_sidebars[patch_tab]].statusline
   == inspect._inspection_sidebar_statusline_option)
 local patch_overview_mapping = vim.fn.maparg(
