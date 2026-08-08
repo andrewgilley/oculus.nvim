@@ -3801,7 +3801,7 @@ local function inspect_current()
   end
 end
 
-local function move_cursor(direction)
+local function move_cursor(direction, jump_items)
   if
     M.state.view ~= "contributors"
     and M.state.view ~= "filters"
@@ -3849,6 +3849,38 @@ local function move_cursor(direction)
   end
 
   if M.state.view == "activity" then
+    if jump_items then
+      local selectable = {}
+      local seen = {}
+      for _, title_line in pairs(M.state.activity_title_lines or {}) do
+        if not seen[title_line] then
+          seen[title_line] = true
+          selectable[#selectable + 1] = title_line
+        end
+      end
+      table.sort(selectable)
+      if #selectable == 0 then
+        return
+      end
+      local cursor_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+      local current_title = M.state.activity_title_lines[cursor_line]
+      local selected = direction > 0 and selectable[1] or selectable[#selectable]
+      for index, line in ipairs(selectable) do
+        if line == current_title then
+          selected = selectable[((index - 1 + direction)
+            % #selectable) + 1]
+          break
+        elseif direction > 0 and line > cursor_line then
+          selected = line
+          break
+        elseif direction < 0 and line < cursor_line then
+          selected = line
+        end
+      end
+      vim.api.nvim_win_set_cursor(M.state.win, { selected, 0 })
+      update_activity_cursorline()
+      return
+    end
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
     local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
     local min_line = M.state.activity_cursor_min_line or 2
@@ -4145,6 +4177,9 @@ local function map_keys(buf)
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
   map("u", open_project_issue_activity, "Open Oculus project issues")
+  map("<Tab>", function()
+    move_cursor(1, true)
+  end, "Select next Oculus item")
   map("k", function()
     move_cursor(1)
   end, "Move down in Oculus")
