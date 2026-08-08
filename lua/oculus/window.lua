@@ -151,6 +151,7 @@ M.state = {
   origin_win = nil,
   origin_view = nil,
   origin_window_options = nil,
+  highlight_source_win = nil,
   opts = {},
 }
 
@@ -162,22 +163,59 @@ local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
 end
 
-local function sync_window_highlights()
+local function window_highlight_name(win, group)
+  if not is_valid_win(win) then
+    return group
+  end
+  for mapping in vim.wo[win].winhighlight:gmatch("[^,]+") do
+    local source, target = mapping:match("^%s*([^:]+):([^:]+)%s*$")
+    if source == group and target and target ~= "" then
+      return target
+    end
+  end
+  return group
+end
+
+local function source_highlight(win, group)
+  if is_valid_win(win) then
+    local namespace = vim.api.nvim_get_hl_ns({ winid = win })
+    if namespace and namespace > 0 then
+      local ok, definition = pcall(
+        vim.api.nvim_get_hl,
+        namespace,
+        { name = group, link = false }
+      )
+      if ok and next(definition) then
+        return definition
+      end
+      return vim.api.nvim_get_hl(0, {
+        name = group,
+        link = false,
+      })
+    end
+  end
+  local name = window_highlight_name(win, group)
+  local ok, definition = pcall(
+    vim.api.nvim_get_hl,
+    0,
+    { name = name, link = false }
+  )
+  if ok and next(definition) then
+    return definition
+  end
+  return vim.api.nvim_get_hl(0, { name = group, link = false })
+end
+
+local function sync_window_highlights(source_win)
   local current_normal = {}
   local current_border = {}
   for _, group in ipairs(window_highlight_groups) do
-    local ok, definition = pcall(
-      vim.api.nvim_get_hl,
-      0,
-      { name = group, link = false }
-    )
-    if ok then
-      vim.api.nvim_set_hl(window_highlight_ns, group, definition)
-      if group == "Normal" then
-        current_normal = vim.deepcopy(definition)
-      elseif group == "FloatBorder" then
-        current_border = vim.deepcopy(definition)
-      end
+    local definition = source_highlight(source_win, group)
+    vim.api.nvim_set_hl(window_highlight_ns, group, definition)
+    if group == "Normal" then
+      current_normal = vim.deepcopy(definition)
+    elseif group == "FloatBorder" then
+      current_border = vim.deepcopy(definition)
     end
   end
 
@@ -217,14 +255,17 @@ local function use_window_highlights(win)
   end
 end
 
-function M.apply_window_highlights(win)
-  sync_window_highlights()
+function M.apply_window_highlights(win, source_win)
+  sync_window_highlights(source_win or M.state.highlight_source_win)
   use_window_highlights(win)
 end
 
-function M.refresh_window_highlights()
-  sync_window_highlights()
-  vim.schedule(sync_window_highlights)
+function M.refresh_window_highlights(source_win)
+  source_win = source_win or M.state.highlight_source_win
+  sync_window_highlights(source_win)
+  vim.schedule(function()
+    sync_window_highlights(source_win)
+  end)
 end
 
 local highlight_autocmd_group = vim.api.nvim_create_augroup(
@@ -4210,9 +4251,10 @@ function M.open(opts)
   end
 
   local origin_win = vim.api.nvim_get_current_win()
-  sync_window_highlights()
+  sync_window_highlights(origin_win)
   M.state.origin_tab = vim.api.nvim_get_current_tabpage()
   M.state.origin_win = origin_win
+  M.state.highlight_source_win = origin_win
   M.state.origin_view = vim.api.nvim_win_call(origin_win, function()
     return vim.fn.winsaveview()
   end)
