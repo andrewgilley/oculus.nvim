@@ -152,6 +152,7 @@ M.state = {
   origin_view = nil,
   origin_window_options = nil,
   highlight_source_win = nil,
+  highlight_generation = 0,
   opts = {},
 }
 
@@ -177,24 +178,20 @@ local function window_highlight_name(win, group)
 end
 
 local function source_highlight(win, group)
+  local name = window_highlight_name(win, group)
   if is_valid_win(win) then
     local namespace = vim.api.nvim_get_hl_ns({ winid = win })
     if namespace and namespace > 0 then
       local ok, definition = pcall(
         vim.api.nvim_get_hl,
         namespace,
-        { name = group, link = false }
+        { name = name, link = false }
       )
       if ok and next(definition) then
         return definition
       end
-      return vim.api.nvim_get_hl(0, {
-        name = group,
-        link = false,
-      })
     end
   end
-  local name = window_highlight_name(win, group)
   local ok, definition = pcall(
     vim.api.nvim_get_hl,
     0,
@@ -256,15 +253,28 @@ local function use_window_highlights(win)
 end
 
 function M.apply_window_highlights(win, source_win)
+  if is_valid_win(source_win) then
+    M.state.highlight_source_win = source_win
+  end
+  M.state.highlight_generation =
+    (M.state.highlight_generation or 0) + 1
   sync_window_highlights(source_win or M.state.highlight_source_win)
   use_window_highlights(win)
 end
 
 function M.refresh_window_highlights(source_win)
+  if is_valid_win(source_win) then
+    M.state.highlight_source_win = source_win
+  end
   source_win = source_win or M.state.highlight_source_win
+  M.state.highlight_generation =
+    (M.state.highlight_generation or 0) + 1
+  local generation = M.state.highlight_generation
   sync_window_highlights(source_win)
   vim.schedule(function()
-    sync_window_highlights(source_win)
+    if generation == M.state.highlight_generation then
+      sync_window_highlights(source_win)
+    end
   end)
 end
 
@@ -4251,10 +4261,10 @@ function M.open(opts)
   end
 
   local origin_win = vim.api.nvim_get_current_win()
-  sync_window_highlights(origin_win)
   M.state.origin_tab = vim.api.nvim_get_current_tabpage()
   M.state.origin_win = origin_win
   M.state.highlight_source_win = origin_win
+  M.refresh_window_highlights(origin_win)
   M.state.origin_view = vim.api.nvim_win_call(origin_win, function()
     return vim.fn.winsaveview()
   end)
