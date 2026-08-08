@@ -3917,7 +3917,7 @@ function M._overview_ui.render(group)
       group.overview_agent_location_lines or {}
     ) do
       if target.index == group.overview_agent_selected_location_index then
-        vim.api.nvim_buf_set_extmark(buf, sidebar_ns, line - 1, 4, {
+        vim.api.nvim_buf_set_extmark(buf, sidebar_ns, line - 1, 2, {
           end_col = #(lines[line] or ""),
           hl_group = "OculusInspectAgentModelSelected",
           hl_mode = "combine",
