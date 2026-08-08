@@ -3533,7 +3533,7 @@ M._overview_ui = {
     Status = true,
     Date = true,
     ["Agent explanation"] = true,
-    ["Agent path suggestions"] = true,
+    ["Agent suggestion"] = true,
   },
 }
 
@@ -3719,7 +3719,7 @@ function M._overview_ui.render_footer(group)
   end
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
   local commands = issue_patches
-      and "  p paths   e explain   b browser"
+      and "  p path   e explain   b browser"
     or "  e explain   b browser"
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
@@ -3926,7 +3926,7 @@ function M._overview_ui.render(group)
       return
     end
     lines[#lines + 1] = ""
-    local heading = "  Agent path suggestions"
+    local heading = "  Agent suggestion"
     if group.overview_agent_patch_model then
       heading = heading
         .. " ("
@@ -4006,7 +4006,7 @@ function M._overview_ui.render(group)
     local label = line:match("^  (.-)%s*$")
     if M._overview_ui.section_labels[label]
       or (label and label:match("^Agent explanation"))
-      or (label and label:match("^Agent path suggestions"))
+      or (label and label:match("^Agent suggestion"))
     then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
         end_col = #line,

@@ -1247,7 +1247,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  p paths   e explain   b browser",
+    "  p path   e explain   b browser",
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
@@ -1514,7 +1514,7 @@ assert(explanation_text:gsub("%s+", " "):find(
   1,
   true
 ))
-assert(not explanation_text:find("Agent path suggestions", 1, true))
+assert(not explanation_text:find("Agent suggestion", 1, true))
 local explanation_footer_buf
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   local candidate = vim.api.nvim_win_get_buf(win)
@@ -1529,7 +1529,7 @@ assert(vim.api.nvim_buf_get_lines(
   1,
   2,
   false
-)[1]:find("p paths", 1, true))
+)[1]:find("p path", 1, true))
 local patch_mapping = vim.fn.maparg("p", "n", false, true)
 assert(patch_mapping.desc == "Choose Oculus patch-location model")
 patch_mapping.callback()
@@ -1537,14 +1537,14 @@ local patch_loading_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
 )
-assert(patch_loading_text:find("Agent path suggestions", 1, true))
+assert(patch_loading_text:find("Agent suggestion", 1, true))
 finish_agent_models()
 local patch_model_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
 )
 assert(patch_model_text:find("Agent explanation", 1, true))
-assert(patch_model_text:find("Agent path suggestions", 1, true))
+assert(patch_model_text:find("Agent suggestion", 1, true))
 vim.fn.maparg("<CR>", "n", false, true).callback()
 local patch_request = agent_request
 assert(patch_request.prompt:find("at most three", 1, true))
@@ -1579,7 +1579,11 @@ assert(focused_path_footer:find("<Space> toggle", 1, true))
 assert(focused_path_footer:find("<CR> open paths", 1, true))
 assert(focused_path_footer:sub(-#("<Space> toggle   <CR> open paths"))
   == "<Space> toggle   <CR> open paths")
-assert(explanation_text:find("Agent path suggestions", 1, true))
+assert(explanation_text:find(
+  "Agent suggestion (gpt-5.6-test-agent)",
+  1,
+  true
+))
 assert(explanation_text:find(
   "1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua:25",
   1,
@@ -1599,7 +1603,7 @@ for index, line in ipairs(vim.api.nvim_buf_get_lines(
   -1,
   false
 )) do
-  if line:find("Agent path suggestions", 1, true) then
+  if line:find("Agent suggestion", 1, true) then
     location_heading_line = index
   elseif line:find("/lua/oculus/inspect.lua", 1, true) then
     first_location_line = index
@@ -1608,20 +1612,18 @@ for index, line in ipairs(vim.api.nvim_buf_get_lines(
   end
 end
 assert(location_heading_line and first_location_line and second_location_line)
-local location_option_lines = vim.api.nvim_buf_get_lines(
+assert(vim.api.nvim_buf_get_lines(
   explanation_buf,
-  first_location_line - 1,
-  second_location_line,
+  first_location_line,
+  first_location_line + 1,
   false
-)
-local blank_location_separator
-for _, line in ipairs(location_option_lines) do
-  if line == "" then
-    blank_location_separator = true
-    break
-  end
-end
-assert(blank_location_separator)
+)[1] ~= "")
+assert(vim.api.nvim_buf_get_lines(
+  explanation_buf,
+  second_location_line - 2,
+  second_location_line - 1,
+  false
+)[1] == "")
 local heading_underlined
 local selected_location_line
 local selected_location_col
@@ -1673,7 +1675,7 @@ local unfocused_footer = vim.api.nvim_buf_get_lines(
   2,
   false
 )[1]
-assert(unfocused_footer:find("p paths", 1, true))
+assert(unfocused_footer:find("p path", 1, true))
 assert(not unfocused_footer:find("<Space> toggle", 1, true))
 assert(not unfocused_footer:find("<CR> open paths", 1, true))
 patch_mapping.callback()
@@ -1848,7 +1850,7 @@ assert(restored_overview_text:gsub("%s+", " "):find(
   true
 ))
 assert(restored_overview_text:find(
-  "Agent path suggestions",
+  "Agent suggestion",
   1,
   true
 ))
@@ -2108,7 +2110,7 @@ for _, candidate_win in ipairs(vim.api.nvim_tabpage_list_wins(
   end
 end
 assert(patch_overview_footer)
-assert(patch_overview_footer:find("p paths", 1, true))
+assert(patch_overview_footer:find("p path", 1, true))
 assert(not patch_overview_footer:find("<Space> toggle", 1, true))
 assert(not patch_overview_footer:find("<CR> open paths", 1, true))
 vim.fn.maparg("<C-t>", "n", false, true).callback()
