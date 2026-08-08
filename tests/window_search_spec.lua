@@ -125,12 +125,20 @@ local retained_normal = vim.api.nvim_get_hl(window_highlight_ns, {
 })
 assert(retained_normal.fg == retained_normal_fg)
 assert(retained_normal.bg == source_normal_bg)
+assert(vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "NormalFloat",
+  link = false,
+}).bg == source_normal_bg)
 local retained_border = vim.api.nvim_get_hl(window_highlight_ns, {
   name = "OculusBorder",
   link = false,
 })
 assert(retained_border.fg == retained_border_fg)
 assert(retained_border.bg == source_normal_bg)
+assert(vim.api.nvim_get_hl(window_highlight_ns, {
+  name = "FloatBorder",
+  link = false,
+}).bg == source_normal_bg)
 local newer_normal_bg = 0x454d5c
 window.refresh_window_highlights(origin_win)
 vim.api.nvim_set_hl(window_highlight_ns, "OculusNormal", {
