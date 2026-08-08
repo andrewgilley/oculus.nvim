@@ -1514,7 +1514,7 @@ assert(explanation_text:gsub("%s+", " "):find(
   1,
   true
 ))
-assert(not explanation_text:find("Possible patch locations", 1, true))
+assert(not explanation_text:find("Agent path suggestions", 1, true))
 local explanation_footer_buf
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   local candidate = vim.api.nvim_win_get_buf(win)
