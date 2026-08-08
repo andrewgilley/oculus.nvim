@@ -221,6 +221,11 @@ local function sync_window_highlights(source_win)
     "OculusNormal",
     current_normal
   )
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "NormalFloat",
+    current_normal
+  )
   vim.api.nvim_set_hl(0, "OculusNormal", current_normal)
   if not current_border.fg then
     current_border.fg = current_normal.fg or 0xffffff
@@ -230,6 +235,11 @@ local function sync_window_highlights(source_win)
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusBorder",
+    current_border
+  )
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "FloatBorder",
     current_border
   )
   vim.api.nvim_set_hl(0, "OculusBorder", current_border)
