@@ -1569,18 +1569,16 @@ explanation_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
 )
-assert(vim.api.nvim_buf_get_lines(
+local focused_path_footer = vim.api.nvim_buf_get_lines(
   explanation_footer_buf,
   1,
   2,
   false
-)[1]:find("<Space> toggle", 1, true))
-assert(vim.api.nvim_buf_get_lines(
-  explanation_footer_buf,
-  1,
-  2,
-  false
-)[1]:find("<CR> open paths", 1, true))
+)[1]
+assert(focused_path_footer:find("<Space> toggle", 1, true))
+assert(focused_path_footer:find("<CR> open paths", 1, true))
+assert(focused_path_footer:sub(-#("<Space> toggle   <CR> open paths"))
+  == "<Space> toggle   <CR> open paths")
 assert(explanation_text:find("Agent path suggestions", 1, true))
 assert(explanation_text:find(
   "1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua:25",
@@ -2066,6 +2064,14 @@ vim.api.nvim_set_hl(overview_override_ns, "Normal", {
 vim.api.nvim_win_set_hl_ns(patch_overview_win, overview_override_ns)
 assert(vim.api.nvim_get_hl_ns({ winid = patch_overview_win })
   == overview_override_ns)
+assert(vim.api.nvim_get_hl(0, {
+  name = "OculusNormal",
+  link = false,
+}).bg == patch_source_bg)
+assert(vim.api.nvim_get_hl(0, {
+  name = "OculusBorder",
+  link = false,
+}).bg == patch_source_bg)
 vim.api.nvim_exec_autocmds("WinEnter", {
   buffer = patch_overview_buf,
 })
