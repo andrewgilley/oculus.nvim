@@ -1511,7 +1511,13 @@ assert(vim.api.nvim_buf_get_lines(
   1,
   2,
   false
-)[1]:find("<CR> open path", 1, true))
+)[1]:find("<Space> toggle", 1, true))
+assert(vim.api.nvim_buf_get_lines(
+  explanation_footer_buf,
+  1,
+  2,
+  false
+)[1]:find("<CR> open paths", 1, true))
 assert(explanation_text:find("Possible patch locations", 1, true))
 assert(explanation_text:find(
   "1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua:25",
@@ -1702,25 +1708,62 @@ assert(restored_overview_text:find(
 ))
 local open_patch_location = vim.fn.maparg("<CR>", "n", false, true)
 assert(open_patch_location.desc == "Select Oculus overview item")
+local toggle_patch_location = vim.fn.maparg(
+  "<Space>",
+  "n",
+  false,
+  true
+)
+assert(toggle_patch_location.desc == "Toggle Oculus patch location")
+toggle_patch_location.callback()
+vim.fn.maparg("k", "n", false, true).callback()
+toggle_patch_location.callback()
+local selected_paths_text = table.concat(
+  vim.api.nvim_buf_get_lines(0, 0, -1, false),
+  "\n"
+)
+assert(selected_paths_text:find(
+  "[x] 1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua:25",
+  1,
+  true
+))
+assert(selected_paths_text:find(
+  "[x] 2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua:15",
+  1,
+  true
+))
 local patch_tabs_before = {}
 for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
   patch_tabs_before[tab] = true
 end
 open_patch_location.callback()
 assert(not vim.api.nvim_win_is_valid(restored_overview_win))
-local patch_tab
+local patch_tabs = {}
 for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
   if not patch_tabs_before[tab] then
-    patch_tab = tab
-    break
+    patch_tabs[#patch_tabs + 1] = tab
   end
 end
-assert(patch_tab and patch_tab ~= issue_tab)
-assert(vim.api.nvim_get_current_tabpage() == patch_tab)
-local patch_wins = vim.api.nvim_tabpage_list_wins(patch_tab)
-assert(#patch_wins == 1)
-assert(vim.api.nvim_get_current_win() == patch_wins[1])
-local patch_buf = vim.api.nvim_win_get_buf(patch_wins[1])
+assert(#patch_tabs == 2)
+local patch_code = {}
+local patch_sidebars = {}
+for _, tab in ipairs(patch_tabs) do
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.b[buf].oculus_inspect_sidebar_mode == "files" then
+      patch_sidebars[tab] = win
+    else
+      patch_code[tab] = win
+    end
+  end
+  assert(patch_code[tab])
+  assert(patch_sidebars[tab])
+end
+local patch_tab = vim.api.nvim_get_current_tabpage()
+local patch_win = patch_code[patch_tab]
+assert(patch_win)
+assert(vim.api.nvim_get_current_win() == patch_win)
+local patch_buf = vim.api.nvim_win_get_buf(patch_win)
 assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
   == vim.fs.normalize(
   vim.fs.joinpath(root, "lua", "oculus", "inspect.lua")
@@ -1729,19 +1772,19 @@ assert(vim.bo[patch_buf].buftype == "")
 assert(vim.bo[patch_buf].modifiable)
 assert(not vim.bo[patch_buf].readonly)
 assert(vim.b[patch_buf].oculus_inspect == nil)
-assert(vim.wo[patch_wins[1]].number == vim.wo[issue_main_win].number)
-assert(vim.wo[patch_wins[1]].relativenumber
+assert(vim.wo[patch_win].number == vim.wo[issue_main_win].number)
+assert(vim.wo[patch_win].relativenumber
   == vim.wo[issue_main_win].relativenumber)
-assert(vim.wo[patch_wins[1]].cursorline
+assert(vim.wo[patch_win].cursorline
   == vim.wo[issue_main_win].cursorline)
-assert(vim.wo[patch_wins[1]].signcolumn
+assert(vim.wo[patch_win].signcolumn
   == vim.wo[issue_main_win].signcolumn)
-assert(vim.wo[patch_wins[1]].winhighlight
+assert(vim.wo[patch_win].winhighlight
   == vim.wo[issue_main_win].winhighlight)
-assert(vim.wo[patch_wins[1]].statusline == vim.o.statusline)
-assert(vim.api.nvim_get_hl_ns({ winid = patch_wins[1] })
+assert(vim.wo[patch_win].statusline == vim.o.statusline)
+assert(vim.api.nvim_get_hl_ns({ winid = patch_win })
   ~= retained_window_highlight_ns)
-local selected_patch_cursor = vim.api.nvim_win_get_cursor(patch_wins[1])
+local selected_patch_cursor = vim.api.nvim_win_get_cursor(patch_win)
 assert(selected_patch_cursor[1] == 25)
 local selected_patch_line = vim.api.nvim_buf_get_lines(
   patch_buf,
@@ -1753,13 +1796,25 @@ local selected_patch_nonblank = selected_patch_line:find("%S")
 assert(selected_patch_cursor[2]
   == (selected_patch_nonblank and selected_patch_nonblank - 1 or 0))
 assert(vim.api.nvim_win_call(
-  patch_wins[1],
+  patch_win,
   vim.fn.winsaveview
 ).topline == 15)
 local selected_patch_view = vim.api.nvim_win_call(
-  patch_wins[1],
+  patch_win,
   vim.fn.winsaveview
 )
+local patch_sidebar_text = table.concat(vim.api.nvim_buf_get_lines(
+  vim.api.nvim_win_get_buf(patch_sidebars[patch_tab]),
+  0,
+  -1,
+  false
+), "\n")
+assert(patch_sidebar_text:find("inspect.lua", 1, true))
+assert(patch_sidebar_text:find("25%-25"))
+assert(patch_sidebar_text:find("agent.lua", 1, true))
+assert(patch_sidebar_text:find("15%-15"))
+assert(vim.wo[patch_sidebars[patch_tab]].statusline
+  == inspect._inspection_sidebar_statusline_option)
 local patch_overview_mapping = vim.fn.maparg(
   "<C-t>",
   "n",
@@ -1775,16 +1830,34 @@ assert(vim.api.nvim_win_get_config(patch_overview_win).relative == "editor")
 vim.fn.maparg("<C-t>", "n", false, true).callback()
 assert(not vim.api.nvim_win_is_valid(patch_overview_win))
 assert(vim.api.nvim_get_current_tabpage() == patch_tab)
-assert(vim.api.nvim_get_current_win() == patch_wins[1])
+assert(vim.api.nvim_get_current_win() == patch_win)
 assert(vim.deep_equal(
-  vim.api.nvim_win_get_cursor(patch_wins[1]),
+  vim.api.nvim_win_get_cursor(patch_win),
   selected_patch_cursor
 ))
 assert(vim.deep_equal(vim.api.nvim_win_call(
-  patch_wins[1],
+  patch_win,
   vim.fn.winsaveview
 ), selected_patch_view))
-vim.cmd("tabclose")
+local next_patch = vim.fn.maparg("<Tab>", "n", false, true)
+assert(next_patch.desc == "Next Oculus changed chunk")
+next_patch.callback()
+assert(vim.api.nvim_get_current_tabpage() ~= patch_tab)
+local second_patch_tab = vim.api.nvim_get_current_tabpage()
+assert(vim.api.nvim_get_current_win() == patch_code[second_patch_tab])
+assert(vim.api.nvim_win_get_cursor(patch_code[second_patch_tab])[1] == 15)
+local previous_patch = vim.fn.maparg("<S-Tab>", "n", false, true)
+assert(previous_patch.desc == "Previous Oculus changed chunk")
+previous_patch.callback()
+assert(vim.api.nvim_get_current_tabpage() == patch_tab)
+assert(vim.api.nvim_get_current_win() == patch_win)
+for index = #patch_tabs, 1, -1 do
+  local tab = patch_tabs[index]
+  if vim.api.nvim_tabpage_is_valid(tab) then
+    vim.api.nvim_set_current_tabpage(tab)
+    vim.cmd("tabclose")
+  end
+end
 vim.api.nvim_set_current_tabpage(issue_tab)
 vim.api.nvim_set_current_win(issue_main_win)
 github.issue = function(repo, number, _, callback)
