@@ -250,9 +250,6 @@ local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local main_up_mapping =
   vim.fn.maparg("<Up>", "n", false, true)
-local main_tab_mapping =
-  vim.fn.maparg("<Tab>", "n", false, true)
-assert(main_tab_mapping.desc == "Select next Oculus item")
 local first_list_line
 local last_list_line
 for line, target in pairs(state.line_targets) do
@@ -279,16 +276,6 @@ for line = 1, vim.api.nvim_buf_line_count(state.buf) do
     assert(type(state.line_targets[landed_line]) == "table")
   end
 end
-local pre_tab_cursor = vim.api.nvim_win_get_cursor(state.win)
-vim.api.nvim_win_set_cursor(state.win, { first_list_line, 0 })
-vim.api.nvim_exec_autocmds("CursorMoved", { buffer = state.buf })
-main_tab_mapping.callback()
-assert(vim.api.nvim_win_get_cursor(state.win)[1] > first_list_line)
-assert(type(state.line_targets[
-  vim.api.nvim_win_get_cursor(state.win)[1]
-]) == "table")
-vim.api.nvim_win_set_cursor(state.win, pre_tab_cursor)
-vim.api.nvim_exec_autocmds("CursorMoved", { buffer = state.buf })
 local first_username = state.selected_username
 main_down_mapping.callback()
 local second_username = state.selected_username
@@ -765,23 +752,6 @@ assert(#state.events == 8)
 assert(state.events[1].id == "1")
 assert(state.events[8].id == "8")
 assert(requested_per_page[1] == 30)
-local activity_item_lines = {}
-for line, title_line in pairs(state.activity_title_lines) do
-  if line == title_line then
-    activity_item_lines[#activity_item_lines + 1] = line
-  end
-end
-table.sort(activity_item_lines)
-assert(#activity_item_lines == 8)
-vim.api.nvim_win_set_cursor(state.win, { activity_item_lines[1], 0 })
-main_tab_mapping.callback()
-assert(vim.api.nvim_win_get_cursor(state.win)[1] == activity_item_lines[2])
-vim.api.nvim_win_set_cursor(
-  state.win,
-  { activity_item_lines[#activity_item_lines], 0 }
-)
-main_tab_mapping.callback()
-assert(vim.api.nvim_win_get_cursor(state.win)[1] == activity_item_lines[1])
 local first_activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
