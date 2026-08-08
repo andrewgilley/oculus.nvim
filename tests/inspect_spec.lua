@@ -1841,12 +1841,17 @@ assert(vim.b[patch_buf].oculus_inspect == nil)
 assert(vim.wo[patch_win].number == vim.wo[issue_main_win].number)
 assert(vim.wo[patch_win].relativenumber
   == vim.wo[issue_main_win].relativenumber)
-assert(vim.wo[patch_win].cursorline
-  == vim.wo[issue_main_win].cursorline)
+assert(vim.wo[patch_win].cursorline)
+assert(vim.wo[patch_win].cursorlineopt == "line")
 assert(vim.wo[patch_win].signcolumn
   == vim.wo[issue_main_win].signcolumn)
 assert(vim.wo[patch_win].winhighlight
   == vim.wo[issue_main_win].winhighlight)
+assert(vim.wo[patch_win].winhighlight:find(
+  "CursorLine:OculusInspectCursorLine",
+  1,
+  true
+))
 assert(vim.wo[patch_win].statusline == vim.o.statusline)
 assert(vim.api.nvim_get_hl_ns({ winid = patch_win })
   ~= retained_window_highlight_ns)
@@ -1869,16 +1874,37 @@ local selected_patch_view = vim.api.nvim_win_call(
   patch_win,
   vim.fn.winsaveview
 )
-local patch_sidebar_text = table.concat(vim.api.nvim_buf_get_lines(
-  vim.api.nvim_win_get_buf(patch_sidebars[patch_tab]),
+local patch_sidebar_buf = vim.api.nvim_win_get_buf(
+  patch_sidebars[patch_tab]
+)
+local patch_sidebar_lines = vim.api.nvim_buf_get_lines(
+  patch_sidebar_buf,
   0,
   -1,
   false
-), "\n")
+)
+local patch_sidebar_text = table.concat(patch_sidebar_lines, "\n")
 assert(patch_sidebar_text:find("inspect.lua", 1, true))
 assert(patch_sidebar_text:find("25%-25"))
 assert(patch_sidebar_text:find("agent.lua", 1, true))
 assert(patch_sidebar_text:find("15%-15"))
+assert(vim.wo[patch_sidebars[patch_tab]].cursorline)
+assert(vim.wo[patch_sidebars[patch_tab]].cursorlineopt == "line")
+assert(vim.wo[patch_sidebars[patch_tab]].winhighlight:find(
+  "CursorLine:OculusInspectCursorLine",
+  1,
+  true
+))
+local active_patch_sidebar_line
+for line, text in ipairs(patch_sidebar_lines) do
+  if text:find("25%-25") then
+    active_patch_sidebar_line = line
+    break
+  end
+end
+assert(active_patch_sidebar_line)
+assert(vim.api.nvim_win_get_cursor(patch_sidebars[patch_tab])[1]
+  == active_patch_sidebar_line)
 assert(vim.wo[patch_sidebars[patch_tab]].statusline
   == inspect._inspection_sidebar_statusline_option)
 local patch_overview_mapping = vim.fn.maparg(
