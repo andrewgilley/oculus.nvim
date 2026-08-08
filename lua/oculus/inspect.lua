@@ -3469,7 +3469,7 @@ M._overview_ui = {
     Status = true,
     Date = true,
     ["Agent explanation"] = true,
-    ["Possible patch locations"] = true,
+    ["Agent path suggestions"] = true,
   },
 }
 
@@ -3811,7 +3811,7 @@ function M._overview_ui.render(group)
       return
     end
     lines[#lines + 1] = ""
-    local heading = "  Possible patch locations"
+    local heading = "  Agent path suggestions"
     if group.overview_agent_patch_model then
       heading = heading
         .. " ("
@@ -3888,7 +3888,7 @@ function M._overview_ui.render(group)
     local label = line:match("^  (.-)%s*$")
     if M._overview_ui.section_labels[label]
       or (label and label:match("^Agent explanation"))
-      or (label and label:match("^Possible patch locations"))
+      or (label and label:match("^Agent path suggestions"))
     then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
         end_col = #line,

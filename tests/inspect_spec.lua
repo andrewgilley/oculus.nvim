@@ -1537,14 +1537,14 @@ local patch_loading_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
 )
-assert(patch_loading_text:find("Possible patch locations", 1, true))
+assert(patch_loading_text:find("Agent path suggestions", 1, true))
 finish_agent_models()
 local patch_model_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
 )
 assert(patch_model_text:find("Agent explanation", 1, true))
-assert(patch_model_text:find("Possible patch locations", 1, true))
+assert(patch_model_text:find("Agent path suggestions", 1, true))
 vim.fn.maparg("<CR>", "n", false, true).callback()
 local patch_request = agent_request
 assert(patch_request.prompt:find("at most three", 1, true))
@@ -1581,7 +1581,7 @@ assert(vim.api.nvim_buf_get_lines(
   2,
   false
 )[1]:find("<CR> open paths", 1, true))
-assert(explanation_text:find("Possible patch locations", 1, true))
+assert(explanation_text:find("Agent path suggestions", 1, true))
 assert(explanation_text:find(
   "1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua:25",
   1,
@@ -1601,7 +1601,7 @@ for index, line in ipairs(vim.api.nvim_buf_get_lines(
   -1,
   false
 )) do
-  if line:find("Possible patch locations", 1, true) then
+  if line:find("Agent path suggestions", 1, true) then
     location_heading_line = index
   elseif line:find("/lua/oculus/inspect.lua", 1, true) then
     first_location_line = index
@@ -1760,7 +1760,7 @@ assert(restored_overview_text:gsub("%s+", " "):find(
   true
 ))
 assert(restored_overview_text:find(
-  "Possible patch locations",
+  "Agent path suggestions",
   1,
   true
 ))
