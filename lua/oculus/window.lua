@@ -424,7 +424,7 @@ local function render_activity_footer()
         .. "   p past   f filters   r refresh"
     else
       if M.state.activity_project then
-        activity_commands = activity_commands .. "   i issues"
+        activity_commands = activity_commands .. "   u issues"
       end
       activity_commands = activity_commands
         .. "   p past   f forward   r refresh"
@@ -2385,7 +2385,7 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
     { "b", "Open the selected activity in a browser" },
-    { "i", "Open a project's issue activity" },
+    { "u", "Open a project's issue activity" },
     { "r", "Refresh the current activity page" },
     { "p", "Load the next eight older activity items" },
     { "l / <Right>", "Open the next older activity page" },
@@ -4103,19 +4103,12 @@ local function map_keys(buf)
   map("r", refresh_activity, "Refresh Oculus activity")
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
+  map("u", open_project_issue_activity, "Open Oculus project issues")
   map("k", function()
     move_cursor(1)
   end, "Move down in Oculus")
   map("i", function()
-    if M.state.view == "activity"
-      and M.state.activity_project
-      and not M.state.activity_issue_page
-      and not M.state.activity_commit_page
-    then
-      open_project_issue_activity()
-    else
-      move_cursor(-1)
-    end
+    move_cursor(-1)
   end, "Move up in Oculus")
   map("j", move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")

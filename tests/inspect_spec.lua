@@ -879,9 +879,10 @@ local normalized_explanation, normalized_locations =
     locations = {
       {
         path = vim.fs.basename(root) .. "/one.lua",
+        line = 17,
         reason = "First",
       },
-      { path = "two.lua", reason = "Second" },
+      { path = "two.lua", line = "24", reason = "Second" },
       { path = "three.lua", reason = "Third" },
       { path = "four.lua", reason = "Fourth" },
       { path = "five.lua", reason = "Fifth" },
@@ -892,6 +893,8 @@ assert(normalized_explanation == "A structured explanation.")
 assert(#normalized_locations == 3)
 assert(normalized_locations[1].path
   == vim.fs.basename(root) .. "/one.lua")
+assert(normalized_locations[1].line == 17)
+assert(normalized_locations[2].line == 24)
 assert(normalized_locations[3].path
   == vim.fs.basename(root) .. "/three.lua")
 do
@@ -1181,7 +1184,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  e explanation   b browser",
+    "  p patches   e explanation   b browser",
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
@@ -1255,18 +1258,22 @@ agent.explain = function(request, callback)
   return {}
 end
 local function finish_agent_explanation()
+  agent_callback(table.concat({
+    "The issue appears intended to make inspections useful even when",
+    "an activity item does not identify particular files.",
+  }, "\n"), nil, { model = "gpt-5.6-test-agent" })
+end
+local function finish_patch_locations()
   agent_callback(vim.json.encode({
-    explanation = table.concat({
-      "The issue appears intended to make inspections useful even when",
-      "an activity item does not identify particular files.",
-    }, "\n"),
     locations = {
       {
         path = "lua/oculus/inspect.lua",
+        line = 25,
         reason = "The fileless issue inspection workflow is implemented here.",
       },
       {
         path = "lua/oculus/agent.lua",
+        line = 15,
         reason = "Agent context and output handling live here.",
       },
     },
@@ -1415,8 +1422,6 @@ assert(explanation_config.height == overview_config.height)
 assert(vim.deep_equal(explanation_config.row, overview_config.row))
 assert(vim.deep_equal(explanation_config.col, overview_config.col))
 local explanation_request = agent_request
-agent.models = original_agent_models
-agent.explain = original_agent_explain
 assert(vim.fs.normalize(explanation_request.cwd) == vim.fs.normalize(root))
 assert(explanation_request.model == "gpt-5.6-test-agent")
 assert(explanation_request.prompt:find(
@@ -1429,11 +1434,8 @@ assert(explanation_request.prompt:find(
   1,
   true
 ))
-assert(explanation_request.prompt:find("at most three", 1, true))
-assert(explanation_request.prompt:find("Return only valid JSON", 1, true))
-assert(explanation_request.prompt:find(
-  "`" .. vim.fs.basename(root) .. "/` project%-folder prefix"
-))
+assert(not explanation_request.prompt:find("at most three", 1, true))
+assert(not explanation_request.prompt:find("Return only valid JSON", 1, true))
 local explanation_text = table.concat(
   vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
   "\n"
@@ -1449,17 +1451,7 @@ assert(explanation_text:gsub("%s+", " "):find(
   1,
   true
 ))
-assert(explanation_text:find("Possible patch locations", 1, true))
-assert(explanation_text:find(
-  "1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua",
-  1,
-  true
-))
-assert(explanation_text:find(
-  "2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua",
-  1,
-  true
-))
+assert(not explanation_text:find("Possible patch locations", 1, true))
 local explanation_footer_buf
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   local candidate = vim.api.nvim_win_get_buf(win)
@@ -1474,7 +1466,63 @@ assert(vim.api.nvim_buf_get_lines(
   1,
   2,
   false
+)[1]:find("p patches", 1, true))
+local patch_mapping = vim.fn.maparg("p", "n", false, true)
+assert(patch_mapping.desc == "Choose Oculus patch-location model")
+patch_mapping.callback()
+local patch_loading_text = table.concat(
+  vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
+  "\n"
+)
+assert(patch_loading_text:find("Possible patch locations", 1, true))
+finish_agent_models()
+local patch_model_text = table.concat(
+  vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
+  "\n"
+)
+assert(patch_model_text:find("Agent explanation", 1, true))
+assert(patch_model_text:find("Possible patch locations", 1, true))
+vim.fn.maparg("<CR>", "n", false, true).callback()
+local patch_request = agent_request
+assert(patch_request.prompt:find("at most three", 1, true))
+assert(patch_request.prompt:find("Return only valid JSON", 1, true))
+assert(patch_request.prompt:find(
+  '"line":123',
+  1,
+  true
+))
+assert(patch_request.prompt:find(
+  "`" .. vim.fs.basename(root) .. "/` project%-folder prefix"
+))
+assert(not patch_request.prompt:find(
+  "Explain the reason or motivation behind this repository activity.",
+  1,
+  true
+))
+finish_patch_locations()
+agent.models = original_agent_models
+agent.explain = original_agent_explain
+explanation_text = table.concat(
+  vim.api.nvim_buf_get_lines(explanation_buf, 0, -1, false),
+  "\n"
+)
+assert(vim.api.nvim_buf_get_lines(
+  explanation_footer_buf,
+  1,
+  2,
+  false
 )[1]:find("<CR> open path", 1, true))
+assert(explanation_text:find("Possible patch locations", 1, true))
+assert(explanation_text:find(
+  "1. " .. vim.fs.basename(root) .. "/lua/oculus/inspect.lua:25",
+  1,
+  true
+))
+assert(explanation_text:find(
+  "2. " .. vim.fs.basename(root) .. "/lua/oculus/agent.lua:15",
+  1,
+  true
+))
 local location_heading_line
 local first_location_line
 local second_location_line
@@ -1694,6 +1742,7 @@ assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
 ))
 assert(vim.bo[patch_buf].modifiable)
 assert(not vim.bo[patch_buf].readonly)
+assert(vim.api.nvim_win_get_cursor(patch_wins[1])[1] == 25)
 vim.fn.maparg("q", "n", false, true).callback()
 assert(not vim.api.nvim_win_is_valid(restored_overview_win))
 assert(vim.api.nvim_get_current_win() == issue_main_win)

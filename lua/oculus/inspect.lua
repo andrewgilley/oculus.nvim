@@ -3463,6 +3463,7 @@ M._overview_ui = {
     Status = true,
     Date = true,
     ["Agent explanation"] = true,
+    ["Possible patch locations"] = true,
   },
 }
 
@@ -3518,11 +3519,12 @@ function M._overview_ui.render_footer(group)
     vim.bo[buf].filetype = "oculus-inspect-overview-footer"
     vim.b[buf].oculus_inspect_overview_footer = true
   end
-  local commands = "  e explanation   b browser"
-  if group.overview_agent_mode == "explanation"
-    and #(group.overview_agent_locations or {}) > 0
-  then
-    commands = "  <CR> open path   e explanation   b browser"
+  local issue_patches = require("oculus.agent").needs_patch_locations(group)
+  local commands = issue_patches
+      and "  p patches   e explanation   b browser"
+    or "  e explanation   b browser"
+  if #(group.overview_agent_locations or {}) > 0 then
+    commands = "  <CR> open path   " .. commands:sub(3)
   end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -3605,23 +3607,10 @@ function M._overview_ui.render(group)
   group.overview_agent_heading_line = nil
   group.overview_agent_location_lines = nil
   group.overview_agent_location_heading_line = nil
-  local function append_explanation()
-    if not group.overview_agent_mode then
-      return
+  local function append_active_state(kind)
+    if group.overview_agent_request_kind ~= kind then
+      return false
     end
-    lines[#lines + 1] = ""
-    local heading = "  Agent explanation"
-    if (group.overview_agent_mode == "explanation"
-        or group.overview_agent_mode == "generating")
-      and group.overview_agent_explanation_model
-    then
-      heading = heading
-        .. " ("
-        .. tostring(group.overview_agent_explanation_model)
-        .. ")"
-    end
-    lines[#lines + 1] = heading
-    group.overview_agent_heading_line = #lines
     if group.overview_agent_mode == "models" then
       local targets = {}
       for _, model in ipairs(group.overview_agent_models or {}) do
@@ -3639,56 +3628,105 @@ function M._overview_ui.render(group)
         group.overview_content_width or 28,
         "  "
       )
-    elseif group.overview_agent_mode == "explanation" then
+    end
+    return group.overview_agent_mode == "models"
+      or group.overview_agent_mode == "error"
+      or group.overview_agent_mode == "generating"
+      or group.overview_agent_mode == "loading_models"
+  end
+
+  local function append_explanation()
+    local active = group.overview_agent_request_kind == "explanation"
+      and group.overview_agent_mode ~= nil
+    if not active and not group.overview_agent_explanation then
+      return
+    end
+    lines[#lines + 1] = ""
+    local heading = "  Agent explanation"
+    if group.overview_agent_explanation_model
+    then
+      heading = heading
+        .. " ("
+        .. tostring(group.overview_agent_explanation_model)
+        .. ")"
+    end
+    lines[#lines + 1] = heading
+    if active then
+      group.overview_agent_heading_line = #lines
+    end
+    if not append_active_state("explanation")
+      and group.overview_agent_explanation
+    then
       append_sidebar_text(
         lines,
-        group.overview_agent_explanation or "No explanation returned.",
+        group.overview_agent_explanation,
         group.overview_content_width or 28,
         "  "
       )
-      if group.overview_agent_include_locations then
-        lines[#lines + 1] = ""
-        lines[#lines + 1] = "    Possible patch locations"
-        group.overview_agent_location_heading_line = #lines
-        local locations = group.overview_agent_locations or {}
-        if #locations == 0 then
-          lines[#lines + 1] = "    No likely locations identified."
-        else
-          group.overview_agent_location_lines = {}
-          group.overview_agent_selected_location_index = math.min(
-            math.max(
-              group.overview_agent_selected_location_index or 1,
-              1
-            ),
-            #locations
-          )
-          for index, location in ipairs(locations) do
-            local location_line = #lines + 1
-            append_sidebar_text(
-              lines,
-              ("%d. %s"):format(index, location.path),
-              group.overview_content_width or 28,
-              "    "
-            )
-            group.overview_agent_location_lines[location_line] = {
-              index = index,
-              location = location,
-            }
-            if location.reason then
-              append_sidebar_text(
-                lines,
-                location.reason,
-                group.overview_content_width or 28,
-                "       "
-              )
-            end
-          end
-        end
+    end
+  end
+
+  local function append_patch_locations()
+    local active = group.overview_agent_request_kind == "patch_locations"
+      and group.overview_agent_mode ~= nil
+    if not active and group.overview_agent_locations == nil then
+      return
+    end
+    lines[#lines + 1] = ""
+    local heading = "  Possible patch locations"
+    if group.overview_agent_patch_model then
+      heading = heading
+        .. " ("
+        .. tostring(group.overview_agent_patch_model)
+        .. ")"
+    end
+    lines[#lines + 1] = heading
+    group.overview_agent_location_heading_line = #lines
+    if active then
+      group.overview_agent_heading_line = #lines
+    end
+    if append_active_state("patch_locations") then
+      return
+    end
+    local locations = group.overview_agent_locations or {}
+    if #locations == 0 then
+      lines[#lines + 1] = "  No likely locations identified."
+      return
+    end
+    group.overview_agent_location_lines = {}
+    group.overview_agent_selected_location_index = math.min(
+      math.max(group.overview_agent_selected_location_index or 1, 1),
+      #locations
+    )
+    for index, location in ipairs(locations) do
+      local location_line = #lines + 1
+      local display_path = location.path
+      if location.line then
+        display_path = display_path .. ":" .. tostring(location.line)
+      end
+      append_sidebar_text(
+        lines,
+        ("%d. %s"):format(index, display_path),
+        group.overview_content_width or 28,
+        "  "
+      )
+      group.overview_agent_location_lines[location_line] = {
+        index = index,
+        location = location,
+      }
+      if location.reason then
+        append_sidebar_text(
+          lines,
+          location.reason,
+          group.overview_content_width or 28,
+          "     "
+        )
       end
     end
   end
 
   append_explanation()
+  append_patch_locations()
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -3709,6 +3747,7 @@ function M._overview_ui.render(group)
     local label = line:match("^  (.-)%s*$")
     if M._overview_ui.section_labels[label]
       or (label and label:match("^Agent explanation"))
+      or (label and label:match("^Possible patch locations"))
     then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
         end_col = #line,
@@ -3716,20 +3755,6 @@ function M._overview_ui.render(group)
         priority = 100,
       })
     end
-  end
-  local location_heading = group.overview_agent_location_heading_line
-  if location_heading then
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      sidebar_ns,
-      location_heading - 1,
-      4,
-      {
-        end_col = #(lines[location_heading] or ""),
-        hl_group = "OculusInspectOverviewSection",
-        priority = 100,
-      }
-    )
   end
   local selected = group.overview_agent_selected_line
   if group.overview_agent_mode == "models"
@@ -3744,8 +3769,8 @@ function M._overview_ui.render(group)
       priority = 90,
     })
   end
-  if group.overview_agent_mode == "explanation"
-    and group.overview_agent_selected_location_index
+  if group.overview_agent_selected_location_index
+    and group.overview_agent_mode ~= "models"
   then
     for line, target in pairs(
       group.overview_agent_location_lines or {}
@@ -3952,7 +3977,11 @@ function M._overview_ui.select_agent_model(group)
   local model = group.overview_agent_model_lines
     and group.overview_agent_model_lines[group.overview_agent_selected_line]
   if model then
-    M._overview_ui.open_explanation(group, model)
+    if group.overview_agent_request_kind == "patch_locations" then
+      M._overview_ui.open_patch_locations(group, model)
+    else
+      M._overview_ui.open_explanation(group, model)
+    end
   end
 end
 
@@ -4001,7 +4030,7 @@ end
 
 function M._overview_ui.move_location_cursor(group, direction)
   local locations = group.overview_agent_locations or {}
-  if group.overview_agent_mode ~= "explanation" or #locations == 0 then
+  if group.overview_agent_mode == "models" or #locations == 0 then
     return false
   end
   local current = group.overview_agent_selected_location_index or 1
@@ -4043,9 +4072,6 @@ function M._overview_ui.patch_location_path(group, location)
 end
 
 function M._overview_ui.open_patch_location(group)
-  if group.overview_agent_mode ~= "explanation" then
-    return false
-  end
   local location = M._overview_ui.selected_patch_location(group)
   if not location then
     return false
@@ -4081,12 +4107,28 @@ function M._overview_ui.open_patch_location(group)
   vim.cmd("tcd " .. vim.fn.fnameescape(repository))
   vim.bo.modifiable = true
   vim.bo.readonly = false
+  local patch_win = vim.api.nvim_get_current_win()
+  local patch_buf = vim.api.nvim_get_current_buf()
+  local line_count = vim.api.nvim_buf_line_count(patch_buf)
+  local target_line = math.max(
+    1,
+    math.min(tonumber(location.line) or 1, line_count)
+  )
+  local target_text = vim.api.nvim_buf_get_lines(
+    patch_buf,
+    target_line - 1,
+    target_line,
+    false
+  )[1] or ""
+  local target_column = #(target_text:match("^%s*") or "")
+  vim.api.nvim_win_set_cursor(patch_win, { target_line, target_column })
   group.overview_patch_tabs = group.overview_patch_tabs or {}
   group.overview_patch_tabs[#group.overview_patch_tabs + 1] = {
     tab = vim.api.nvim_get_current_tabpage(),
-    win = vim.api.nvim_get_current_win(),
-    buf = vim.api.nvim_get_current_buf(),
+    win = patch_win,
+    buf = patch_buf,
     path = relative:gsub("\\", "/"),
+    line = target_line,
   }
   if vim.api.nvim_tabpage_is_valid(overview_tab) then
     vim.api.nvim_set_current_tabpage(overview_tab)
@@ -4098,21 +4140,22 @@ function M._overview_ui.open_patch_location(group)
   return true
 end
 
-function M._overview_ui.open_model_picker(group)
+function M._overview_ui.open_model_picker(group, request_kind)
   if not overview_window_is_open(group) then
     return
   end
   M._overview_ui.stop_agent_spinner(group)
+  group.overview_agent_request_kind = request_kind or "explanation"
   group.overview_agent_mode = "loading_models"
   group.overview_agent_error = nil
   group.overview_agent_models = nil
   group.overview_agent_model_lines = nil
   group.overview_agent_selected_line = nil
-  group.overview_agent_explanation = nil
-  group.overview_agent_explanation_model = nil
-  group.overview_agent_include_locations = nil
-  group.overview_agent_locations = nil
-  group.overview_agent_selected_location_index = nil
+  if group.overview_agent_request_kind == "patch_locations" then
+    group.overview_agent_patch_model = nil
+  else
+    group.overview_agent_explanation_model = nil
+  end
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_agent_spinner(group)
@@ -4146,10 +4189,11 @@ function M._overview_ui.render_explanation(
   group,
   model,
   text,
-  locations,
   err
 )
-  if group.overview_agent_mode ~= "generating" then
+  if group.overview_agent_mode ~= "generating"
+    or group.overview_agent_request_kind ~= "explanation"
+  then
     return
   end
   M._overview_ui.stop_agent_spinner(group)
@@ -4157,12 +4201,6 @@ function M._overview_ui.render_explanation(
   if text then
     group.overview_agent_mode = "explanation"
     group.overview_agent_explanation = text
-    group.overview_agent_locations = {}
-    for index = 1, math.min(3, #(locations or {})) do
-      group.overview_agent_locations[index] = locations[index]
-    end
-    group.overview_agent_selected_location_index =
-      #group.overview_agent_locations > 0 and 1 or nil
   else
     group.overview_agent_mode = "error"
     group.overview_agent_error = "Generation failed: " .. tostring(err)
@@ -4174,14 +4212,12 @@ end
 function M._overview_ui.open_explanation(group, model)
   local agent = require("oculus.agent")
   local repository = agent.repository(group)
+  group.overview_agent_request_kind = "explanation"
   group.overview_agent_mode = "generating"
   group.overview_agent_models = nil
   group.overview_agent_model_lines = nil
   group.overview_agent_selected_line = nil
   group.overview_agent_explanation_model = model.id
-  local include_locations = agent.needs_patch_locations(group)
-  group.overview_agent_include_locations = include_locations
-  group.overview_agent_locations = nil
   M._overview_ui.render(group)
   M._overview_ui.scroll_to_bottom(group)
   M._overview_ui.start_agent_spinner(group)
@@ -4189,7 +4225,6 @@ function M._overview_ui.open_explanation(group, model)
     M._overview_ui.render_explanation(
       group,
       model.id,
-      nil,
       nil,
       "local repository information is unavailable"
     )
@@ -4204,11 +4239,7 @@ function M._overview_ui.open_explanation(group, model)
     finished = true
     group.overview_agent_pending = nil
     group.overview_agent_process = nil
-    local normalized, locations = agent.normalize_result(
-      explanation,
-      include_locations,
-      repository
-    )
+    local normalized = agent.normalize_result(explanation, false, repository)
     local actual_model = metadata and metadata.model or model.id
     group.overview_agent_explanation = normalized
     group.overview_agent_explanation_model = actual_model
@@ -4216,13 +4247,93 @@ function M._overview_ui.open_explanation(group, model)
       group,
       actual_model,
       normalized,
-      locations,
       err or "Codex returned no explanation"
     )
   end
   local process, err = agent.explain({
     cwd = repository,
     prompt = agent.prompt(group),
+    model = model.id,
+  }, finish)
+  if not process and not finished then
+    finish(nil, err)
+  elseif not finished then
+    group.overview_agent_process = process
+  end
+end
+
+function M._overview_ui.render_patch_locations(
+  group,
+  model,
+  locations,
+  err
+)
+  if group.overview_agent_mode ~= "generating"
+    or group.overview_agent_request_kind ~= "patch_locations"
+  then
+    return
+  end
+  M._overview_ui.stop_agent_spinner(group)
+  group.overview_agent_patch_model = model
+  if locations then
+    group.overview_agent_mode = "patch_locations"
+    group.overview_agent_locations = {}
+    for index = 1, math.min(3, #locations) do
+      group.overview_agent_locations[index] = locations[index]
+    end
+    group.overview_agent_selected_location_index =
+      #group.overview_agent_locations > 0 and 1 or nil
+  else
+    group.overview_agent_mode = "error"
+    group.overview_agent_error = "Generation failed: " .. tostring(err)
+  end
+  M._overview_ui.render(group)
+  M._overview_ui.scroll_to_bottom(group)
+end
+
+function M._overview_ui.open_patch_locations(group, model)
+  local agent = require("oculus.agent")
+  local repository = agent.repository(group)
+  group.overview_agent_request_kind = "patch_locations"
+  group.overview_agent_mode = "generating"
+  group.overview_agent_models = nil
+  group.overview_agent_model_lines = nil
+  group.overview_agent_selected_line = nil
+  group.overview_agent_patch_model = model.id
+  M._overview_ui.render(group)
+  M._overview_ui.scroll_to_bottom(group)
+  M._overview_ui.start_agent_spinner(group)
+  if not repository then
+    M._overview_ui.render_patch_locations(
+      group,
+      model.id,
+      nil,
+      "local repository information is unavailable"
+    )
+    return
+  end
+  group.overview_agent_pending = true
+  local finished = false
+  local function finish(response, err, metadata)
+    if finished then
+      return
+    end
+    finished = true
+    group.overview_agent_pending = nil
+    group.overview_agent_process = nil
+    local _, locations = agent.normalize_result(response, true, repository)
+    local actual_model = metadata and metadata.model or model.id
+    group.overview_agent_patch_model = actual_model
+    M._overview_ui.render_patch_locations(
+      group,
+      actual_model,
+      response and locations or nil,
+      err or "Codex returned no patch locations"
+    )
+  end
+  local process, err = agent.explain({
+    cwd = repository,
+    prompt = agent.patch_locations_prompt(group),
     model = model.id,
   }, finish)
   if not process and not finished then
@@ -4312,13 +4423,23 @@ show_inspection_overview = function(group)
   }, ",")
   require("oculus.window").apply_window_highlights(win)
   vim.keymap.set("n", "e", function()
-    M._overview_ui.open_model_picker(group)
+    M._overview_ui.open_model_picker(group, "explanation")
   end, {
     buffer = buf,
     nowait = true,
     silent = true,
     desc = "Choose Oculus explanation model",
   })
+  if require("oculus.agent").needs_patch_locations(group) then
+    vim.keymap.set("n", "p", function()
+      M._overview_ui.open_model_picker(group, "patch_locations")
+    end, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = "Choose Oculus patch-location model",
+    })
+  end
   vim.keymap.set("n", "b", function()
     M._overview_ui.open_browser(group)
   end, {
@@ -4401,10 +4522,10 @@ show_inspection_overview = function(group)
   map_scroll("<C-i>", -10, "Scroll Oculus Inspect overview up 10 lines")
   map_scroll("<C-k>", 10, "Scroll Oculus Inspect overview down 10 lines")
   vim.keymap.set("n", "<CR>", function()
-    if group.overview_agent_mode == "explanation" then
-      M._overview_ui.open_patch_location(group)
-    else
+    if group.overview_agent_mode == "models" then
       M._overview_ui.select_agent_model(group)
+    else
+      M._overview_ui.open_patch_location(group)
     end
   end, {
     buffer = buf,

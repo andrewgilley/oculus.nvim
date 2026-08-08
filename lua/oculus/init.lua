@@ -80,6 +80,12 @@ local defaults = {
       provider = "github",
       description = "WebAssembly runtime.",
     },
+    {
+      name = "Odin",
+      repository = "odin-lang/Odin",
+      provider = "github",
+      description = "The data-oriented language for sane software development.",
+    },
   },
   persist_filters = true,
   persist_contributors = true,
@@ -124,6 +130,11 @@ local defaults = {
     {
       name = "Andrew Gilley",
       username = "andrewgilley",
+      provider = "github",
+    },
+    {
+      name = "Bill Hall",
+      username = "gingerBill",
       provider = "github",
     },
   },
