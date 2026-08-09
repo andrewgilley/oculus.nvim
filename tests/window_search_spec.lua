@@ -219,25 +219,20 @@ assert(not initial_project_text:find("COMMUNITY ACTIVITY", 1, true))
 assert(initial_project_text:find("example/project", 1, true))
 assert(not initial_project_text:find("  USERS", 1, true))
 assert(not initial_project_text:find("@mitchellh", 1, true))
-assert(not initial_project_text:find("t users", 1, true))
-assert(not initial_project_text:find("a add", 1, true))
-assert(not initial_project_text:find("/ search", 1, true))
+assert(initial_project_text:find("t users", 1, true))
+assert(initial_project_text:find("a add", 1, true))
+assert(initial_project_text:find("/ search", 1, true))
+assert(initial_project_text:find("? hide", 1, true))
 local footer_toggle = vim.fn.maparg("?", "n", false, true)
 assert(footer_toggle.desc == "Toggle Oculus command footer")
 footer_toggle.callback()
-local visible_project_text = table.concat(
+local hidden_project_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
   "\n"
 )
-assert(visible_project_text:find("t users", 1, true))
-assert(visible_project_text:find("a add", 1, true))
-assert(visible_project_text:find("/ search", 1, true))
-assert(visible_project_text:find("? hide", 1, true))
-footer_toggle.callback()
-assert(not table.concat(
-  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
-  "\n"
-):find("t users", 1, true))
+assert(not hidden_project_text:find("t users", 1, true))
+assert(not hidden_project_text:find("a add", 1, true))
+assert(not hidden_project_text:find("/ search", 1, true))
 footer_toggle.callback()
 do
   local first_project_line
@@ -812,6 +807,19 @@ assert(first_activity_text:find(
   true
 ))
 assert(not first_activity_text:find(state.contributor.name, 1, true))
+assert(state.footer_win and state.footer_buf)
+assert(vim.api.nvim_buf_get_lines(
+  state.footer_buf,
+  1,
+  2,
+  false
+)[1] == "")
+local activity_footer_toggle = vim.fn.maparg("?", "n", false, true)
+activity_footer_toggle.callback()
+assert(table.concat(
+  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
+  "\n"
+):find("b browser", 1, true))
 local expansion_line
 local expansion_count = 0
 for line, event in pairs(state.activity_expansion_targets) do
