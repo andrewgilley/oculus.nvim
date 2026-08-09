@@ -94,6 +94,9 @@ M.state = {
   win = nil,
   footer_buf = nil,
   footer_win = nil,
+  footer_visible = false,
+  inline_footer_line = nil,
+  inline_footer_text = nil,
   view = "contributors",
   contributor = nil,
   activity_scope = nil,
@@ -468,6 +471,12 @@ local function footer_win_config()
 end
 
 local function render_activity_footer()
+  M.state.inline_footer_line = nil
+  M.state.inline_footer_text = nil
+  if not M.state.footer_visible then
+    close_activity_footer()
+    return
+  end
   local config = footer_win_config()
   if not config then
     return
@@ -495,7 +504,7 @@ local function render_activity_footer()
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    activity_commands .. "   q close",
+    activity_commands .. "   ? hide   q close",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1019,8 +1028,11 @@ end
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 8
 
 local function footer(lines, text)
-  -- lines[#lines + 1] = ""
-  lines[#lines + 1] = "  " .. text
+  M.state.inline_footer_line = #lines + 1
+  M.state.inline_footer_text = "  " .. text
+  lines[M.state.inline_footer_line] = M.state.footer_visible
+      and M.state.inline_footer_text
+    or ""
 end
 
 local function preview_left_width(window_width)
@@ -1568,11 +1580,11 @@ local function render_contributors()
   end
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
-  lines[#lines + 1] = searching
-      and "  esc cancel"
+  footer(lines, searching
+      and "esc cancel   ? hide"
     or showing_users
-        and "  t projects  a add  / search  ?: help  q quit"
-      or "  t users  a add  / search  ?: help  q quit"
+        and "t projects  a add  / search   ? hide   q quit"
+      or "t users  a add  / search   ? hide   q quit")
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
@@ -1821,7 +1833,7 @@ local function render_filters(scope, selected_type)
   end
   local width = vim.api.nvim_win_get_width(M.state.win)
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-  footer(lines, "? shortcuts   j/← back   q close")
+  footer(lines, "? hide   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
 
@@ -1978,7 +1990,7 @@ local function render_issue_filters(project, selected_dimension)
     end
     lines[#lines + 1] = ""
   end
-  footer(lines, "<Space> select   q close")
+  footer(lines, "<Space> select   ? hide   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   for _, line in ipairs(headings) do
@@ -2041,7 +2053,7 @@ local function render_loading(target)
       "  USER",
       "  @" .. target.username,
     }
-  footer(lines, "? shortcuts   j/← back   q close")
+  footer(lines, "? hide   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Function")
@@ -2077,7 +2089,7 @@ local function render_error(message)
       "  Could not load activity",
       "  " .. message,
     }
-  footer(lines, "? shortcuts   j/← back   q close")
+  footer(lines, "? hide   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -4125,6 +4137,31 @@ local function toggle_shortcuts()
   render_shortcuts()
 end
 
+local function toggle_command_footer()
+  M.state.footer_visible = not M.state.footer_visible
+  local line = M.state.inline_footer_line
+  if line and is_valid_buf(M.state.buf)
+    and line <= vim.api.nvim_buf_line_count(M.state.buf)
+  then
+    vim.bo[M.state.buf].modifiable = true
+    vim.api.nvim_buf_set_lines(
+      M.state.buf,
+      line - 1,
+      line,
+      false,
+      {
+        M.state.footer_visible
+            and (M.state.inline_footer_text or "")
+          or "",
+      }
+    )
+    vim.bo[M.state.buf].modifiable = false
+  elseif M.state.view == "activity" then
+    render_activity_footer()
+    update_activity_cursorline()
+  end
+end
+
 local function toggle_community_view()
   if M.state.view ~= "contributors"
     or M.state.search_query ~= nil
@@ -4154,7 +4191,7 @@ local function map_keys(buf)
   map("<C-c>", M.close, "Close Oculus")
   map("q", M.close, "Close Oculus")
   map("<Esc>", M.close, "Close Oculus")
-  map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
+  map("?", toggle_command_footer, "Toggle Oculus command footer")
   map("t", toggle_community_view, "Switch Oculus project and user lists")
   map("s", open_search, "Fuzzy-search Oculus projects or users")
   map("/", open_search, "Fuzzy-search Oculus projects or users")

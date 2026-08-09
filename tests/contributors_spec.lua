@@ -110,7 +110,14 @@ local project_start_lines = table.concat(
 )
 assert(project_start_lines:find("PROJECTS", 1, true))
 assert(not project_start_lines:find("No users added.", 1, true))
-assert(project_start_lines:find("t users", 1, true))
+assert(not project_start_lines:find("t users", 1, true))
+local footer_toggle = vim.fn.maparg("?", "n", false, true)
+assert(footer_toggle.desc == "Toggle Oculus command footer")
+footer_toggle.callback()
+assert(table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+):find("t users", 1, true))
 local original_select = vim.ui.select
 local original_input = vim.ui.input
 vim.ui.select = function(items, _, callback)
