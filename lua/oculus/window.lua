@@ -94,7 +94,9 @@ M.state = {
   win = nil,
   footer_buf = nil,
   footer_win = nil,
-  footer_visible = false,
+  footer_visibility = {
+    contributors = true,
+  },
   inline_footer_line = nil,
   inline_footer_text = nil,
   view = "contributors",
@@ -449,6 +451,11 @@ local function make_footer_buf()
   return buf
 end
 
+local function command_footer_visible()
+  local visibility = M.state.footer_visibility or {}
+  return visibility[M.state.view] == true
+end
+
 local function footer_win_config()
   if not is_valid_win(M.state.win) then
     return nil
@@ -473,10 +480,6 @@ end
 local function render_activity_footer()
   M.state.inline_footer_line = nil
   M.state.inline_footer_text = nil
-  if not M.state.footer_visible then
-    close_activity_footer()
-    return
-  end
   local config = footer_win_config()
   if not config then
     return
@@ -504,7 +507,9 @@ local function render_activity_footer()
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    activity_commands .. "   ? hide   q close",
+    command_footer_visible()
+        and (activity_commands .. "   ? hide   q close")
+      or "",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1030,7 +1035,7 @@ end
 local function footer(lines, text)
   M.state.inline_footer_line = #lines + 1
   M.state.inline_footer_text = "  " .. text
-  lines[M.state.inline_footer_line] = M.state.footer_visible
+  lines[M.state.inline_footer_line] = command_footer_visible()
       and M.state.inline_footer_text
     or ""
 end
@@ -4138,7 +4143,9 @@ local function toggle_shortcuts()
 end
 
 local function toggle_command_footer()
-  M.state.footer_visible = not M.state.footer_visible
+  M.state.footer_visibility = M.state.footer_visibility or {}
+  local visible = not command_footer_visible()
+  M.state.footer_visibility[M.state.view] = visible
   local line = M.state.inline_footer_line
   if line and is_valid_buf(M.state.buf)
     and line <= vim.api.nvim_buf_line_count(M.state.buf)
@@ -4150,7 +4157,7 @@ local function toggle_command_footer()
       line,
       false,
       {
-        M.state.footer_visible
+        visible
             and (M.state.inline_footer_text or "")
           or "",
       }

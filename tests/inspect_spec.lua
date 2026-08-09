@@ -1200,7 +1200,7 @@ local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 1)
 local issue_tab = issue_tabs_after[#issue_tabs_after]
 assert(vim.api.nvim_get_current_tabpage() == issue_tab)
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
 local issue_state = vim.api.nvim_tabpage_get_var(issue_tab, "oculus_inspect")
 assert(issue_state.kind == "issue")
 assert(issue_state.role == "issue")
@@ -1232,8 +1232,6 @@ assert(issue_overview_lines[#issue_overview_lines]
 local overview_footer_toggle = vim.fn.maparg("?", "n", false, true)
 assert(overview_footer_toggle.desc
   == "Toggle Oculus Inspect overview command footer")
-overview_footer_toggle.callback()
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
 local overview_footer_buf
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   local candidate = vim.api.nvim_win_get_buf(win)
@@ -1245,6 +1243,13 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   end
 end
 assert(overview_footer_buf)
+assert(vim.api.nvim_buf_get_lines(
+  overview_footer_buf,
+  1,
+  2,
+  false
+)[1] == "")
+overview_footer_toggle.callback()
 assert(vim.deep_equal(
   vim.api.nvim_buf_get_lines(overview_footer_buf, 0, -1, false),
   {
@@ -1256,18 +1261,21 @@ assert(vim.deep_equal(
   }
 ))
 overview_footer_toggle.callback()
-assert(not vim.api.nvim_buf_is_valid(overview_footer_buf))
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
+assert(vim.api.nvim_buf_is_valid(overview_footer_buf))
+assert(vim.api.nvim_buf_get_lines(
+  overview_footer_buf,
+  1,
+  2,
+  false
+)[1] == "")
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
 overview_footer_toggle.callback()
-overview_footer_buf = nil
-for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
-  local candidate = vim.api.nvim_win_get_buf(win)
-  if vim.b[candidate].oculus_inspect_overview_footer then
-    overview_footer_buf = candidate
-    break
-  end
-end
-assert(overview_footer_buf)
+assert(vim.api.nvim_buf_get_lines(
+  overview_footer_buf,
+  1,
+  2,
+  false
+)[1]:find("p path", 1, true))
 assert(issue_overview:find("  Title\n", 1, true))
 assert(issue_overview:gsub("%s+", " "):find(
   "Title Issue inspect fixture",

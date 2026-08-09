@@ -3805,10 +3805,6 @@ function M._overview_ui.render_footer(group)
   if not overview_win or not vim.api.nvim_win_is_valid(overview_win) then
     return
   end
-  if group.overview_footer_visible ~= true then
-    M._overview_ui.close_footer(group)
-    return
-  end
   local overview_config = vim.api.nvim_win_get_config(overview_win)
   local width = vim.api.nvim_win_get_width(overview_win)
   local height = vim.api.nvim_win_get_height(overview_win)
@@ -3853,7 +3849,7 @@ function M._overview_ui.render_footer(group)
   end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    commands,
+    group.overview_footer_visible == true and commands or "",
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, footer_lines)
@@ -3875,17 +3871,19 @@ function M._overview_ui.render_footer(group)
       priority = 100,
     }
   )
-  vim.api.nvim_buf_set_extmark(
-    buf,
-    M._overview_ui.footer_ns,
-    1,
-    2,
-    {
-      end_col = #footer_lines[2],
-      hl_group = "Comment",
-      priority = 100,
-    }
-  )
+  if footer_lines[2] ~= "" then
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      M._overview_ui.footer_ns,
+      1,
+      2,
+      {
+        end_col = #footer_lines[2],
+        hl_group = "Comment",
+        priority = 100,
+      }
+    )
+  end
 
   local footer_win = group.overview_footer_win
   if footer_win and vim.api.nvim_win_is_valid(footer_win) then
