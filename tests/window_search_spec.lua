@@ -222,18 +222,6 @@ assert(not initial_project_text:find("@mitchellh", 1, true))
 assert(initial_project_text:find("t users", 1, true))
 assert(initial_project_text:find("a add", 1, true))
 assert(initial_project_text:find("/ search", 1, true))
-assert(initial_project_text:find("? hide", 1, true))
-local footer_toggle = vim.fn.maparg("?", "n", false, true)
-assert(footer_toggle.desc == "Toggle Oculus command footer")
-footer_toggle.callback()
-local hidden_project_text = table.concat(
-  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
-  "\n"
-)
-assert(not hidden_project_text:find("t users", 1, true))
-assert(not hidden_project_text:find("a add", 1, true))
-assert(not hidden_project_text:find("/ search", 1, true))
-footer_toggle.callback()
 do
   local first_project_line
   local last_project_line
@@ -289,7 +277,7 @@ assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
 assert(initial_user_lines[initial_window_height]
-  == "  t projects  a add  / search   ? hide   q quit")
+  == "  t projects  a add  / search  ?: help  q quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local main_up_mapping =
@@ -807,19 +795,6 @@ assert(first_activity_text:find(
   true
 ))
 assert(not first_activity_text:find(state.contributor.name, 1, true))
-assert(state.footer_win and state.footer_buf)
-assert(vim.api.nvim_buf_get_lines(
-  state.footer_buf,
-  1,
-  2,
-  false
-)[1] == "")
-local activity_footer_toggle = vim.fn.maparg("?", "n", false, true)
-activity_footer_toggle.callback()
-assert(table.concat(
-  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
-  "\n"
-):find("b browser", 1, true))
 local expansion_line
 local expansion_count = 0
 for line, event in pairs(state.activity_expansion_targets) do
@@ -1267,7 +1242,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  t projects  a add  / search   ? hide   q quit")
+  == "  t projects  a add  / search  ?: help  q quit")
 
 do
   vim.cmd("tabnew")
