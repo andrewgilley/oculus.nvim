@@ -10,7 +10,7 @@ oculus.setup({
   persist_contributors = false,
   persist_projects = false,
 })
-assert(#oculus.config.contributors == 5)
+assert(#oculus.config.contributors == 6)
 assert(oculus.config.contributors[1].username == "lukewagner")
 assert(oculus.config.contributors[1].provider == "github")
 assert(oculus.config.contributors[2].username == "alexcrichton")
@@ -22,7 +22,9 @@ assert(oculus.config.contributors[4].username == "andrewgilley")
 assert(oculus.config.contributors[4].provider == "github")
 assert(oculus.config.contributors[5].username == "gingerBill")
 assert(oculus.config.contributors[5].provider == "github")
-assert(#oculus.config.projects == 10)
+assert(oculus.config.contributors[6].username == "vondele")
+assert(oculus.config.contributors[6].provider == "github")
+assert(#oculus.config.projects == 11)
 assert(oculus.config.projects[5].repository
   == "WebAssembly/component-model")
 assert(oculus.config.projects[5].provider == "github")
@@ -38,6 +40,9 @@ assert(oculus.config.projects[9].repository == "andrewgilley/zug")
 assert(oculus.config.projects[9].provider == "github")
 assert(oculus.config.projects[10].repository == "odin-lang/Odin")
 assert(oculus.config.projects[10].provider == "github")
+assert(oculus.config.projects[11].repository
+  == "official-stockfish/Stockfish")
+assert(oculus.config.projects[11].provider == "github")
 assert(oculus.config.suggested_contributors == nil)
 assert(oculus.config.persist_projects == false)
 assert(oculus.config.persist_inspect_overviews == true)
@@ -68,13 +73,14 @@ oculus.setup({
   persist_filters = false,
   persist_contributors = true,
 })
-assert(#oculus.config.contributors == 6)
+assert(#oculus.config.contributors == 7)
 assert(oculus.config.contributors[1].username == "lukewagner")
 assert(oculus.config.contributors[2].username == "alexcrichton")
 assert(oculus.config.contributors[3].username == "folke")
 assert(oculus.config.contributors[4].username == "andrewgilley")
 assert(oculus.config.contributors[5].username == "gingerBill")
-assert(oculus.config.contributors[6].username == "saved-user")
+assert(oculus.config.contributors[6].username == "vondele")
+assert(oculus.config.contributors[7].username == "saved-user")
 assert(oculus.config.inspect_overviews[
   "github:example/repository:issue:42"
 ].explanation == "Persisted inspect explanation.")

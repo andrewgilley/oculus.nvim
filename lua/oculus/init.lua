@@ -92,6 +92,12 @@ local defaults = {
       provider = "github",
       description = "The data-oriented language for sane software development.",
     },
+    {
+      name = "Stockfish",
+      repository = "official-stockfish/Stockfish",
+      provider = "github",
+      description = "A free and strong UCI chess engine.",
+    },
   },
   persist_filters = true,
   persist_contributors = true,
@@ -143,6 +149,11 @@ local defaults = {
     {
       name = "Bill Hall",
       username = "gingerBill",
+      provider = "github",
+    },
+    {
+      name = "vondele",
+      username = "vondele",
       provider = "github",
     },
   },
