@@ -20,8 +20,8 @@ local oil_window_contexts = {}
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "<leader>op"
 local default_version_switch = "<C-s>"
-local default_next_chunk = "<Tab>"
-local default_previous_chunk = "<S-Tab>"
+local default_next_chunk = "]c"
+local default_previous_chunk = "[c"
 local changed_file_read_concurrency = 8
 local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
 local inspection_statusline_option =
@@ -2512,35 +2512,6 @@ function M._toggle_patch_motivation(endpoint, location)
   endpoint.patch_motivation_win = win
 end
 
-function M._configured_ctrl_i_mapping(buf)
-  local mapping = vim.api.nvim_buf_call(buf, function()
-    return vim.fn.maparg("<C-i>", "n", false, true)
-  end)
-  return type(mapping) == "table"
-      and mapping.lhs ~= ""
-      and mapping
-    or nil
-end
-
-function M._preserve_ctrl_i_mapping(buf, mapping)
-  vim.keymap.set(
-    "n",
-    "<C-i>",
-    mapping and (mapping.callback or mapping.rhs) or "<C-i>",
-    {
-      buffer = buf,
-      nowait = mapping and mapping.nowait == 1 or false,
-      silent = mapping and mapping.silent == 1 or false,
-      expr = mapping and mapping.expr == 1 or false,
-      remap = mapping and mapping.noremap == 0 or false,
-      replace_keycodes = mapping
-          and mapping.replace_keycodes == 1
-        or nil,
-      desc = mapping and mapping.desc or nil,
-    }
-  )
-end
-
 local function map_file_navigation(endpoint, session, role, group)
   local function toggle_version()
     local target = role == "parent" and session.change or session.parent
@@ -2576,12 +2547,6 @@ local function map_file_navigation(endpoint, session, role, group)
   local next_chunk_lhs = group.next_chunk
   if next_chunk_lhs == nil then
     next_chunk_lhs = default_next_chunk
-  end
-  local ctrl_i_mapping
-  if type(next_chunk_lhs) == "string"
-    and next_chunk_lhs:lower() == "<tab>"
-  then
-    ctrl_i_mapping = M._configured_ctrl_i_mapping(endpoint.buf)
   end
   if
     type(next_chunk_lhs) == "string"
@@ -2624,7 +2589,6 @@ local function map_file_navigation(endpoint, session, role, group)
       silent = true,
       desc = "Next Oculus changed chunk",
     })
-    M._preserve_ctrl_i_mapping(endpoint.buf, ctrl_i_mapping)
   end
   local previous_chunk_lhs = group.previous_chunk
   if previous_chunk_lhs == nil then
@@ -5274,12 +5238,6 @@ local function map_inspection_sidebar_toggle(group)
     end
   end
   map_buffer(group.sidebar_buf)
-  local sidebar_ctrl_i_mapping
-  if type(next_chunk_lhs) == "string"
-    and next_chunk_lhs:lower() == "<tab>"
-  then
-    sidebar_ctrl_i_mapping = M._configured_ctrl_i_mapping(group.sidebar_buf)
-  end
   vim.keymap.set("n", "<CR>", function()
     focus_sidebar_selection(group)
   end, {
@@ -5297,12 +5255,6 @@ local function map_inspection_sidebar_toggle(group)
       silent = true,
       desc = "Next Oculus changed chunk",
     })
-    if next_chunk_lhs:lower() == "<tab>" then
-      M._preserve_ctrl_i_mapping(
-        group.sidebar_buf,
-        sidebar_ctrl_i_mapping
-      )
-    end
   end
   local previous_chunk_lhs = group.previous_chunk
   if previous_chunk_lhs == nil then
