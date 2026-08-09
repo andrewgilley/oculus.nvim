@@ -3830,8 +3830,8 @@ function M._overview_ui.render_footer(group)
   end
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
   local commands = issue_patches
-      and "  p path   e explain   b browser   ? hide"
-    or "  e explain   b browser   ? hide"
+      and "  p path   e explain   b browser"
+    or "  e explain   b browser"
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
   then
@@ -3849,7 +3849,7 @@ function M._overview_ui.render_footer(group)
   end
   local footer_lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    group.overview_footer_visible == true and commands or "",
+    commands,
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, footer_lines)
@@ -3871,19 +3871,17 @@ function M._overview_ui.render_footer(group)
       priority = 100,
     }
   )
-  if footer_lines[2] ~= "" then
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      M._overview_ui.footer_ns,
-      1,
-      2,
-      {
-        end_col = #footer_lines[2],
-        hl_group = "Comment",
-        priority = 100,
-      }
-    )
-  end
+  vim.api.nvim_buf_set_extmark(
+    buf,
+    M._overview_ui.footer_ns,
+    1,
+    2,
+    {
+      end_col = #footer_lines[2],
+      hl_group = "Comment",
+      priority = 100,
+    }
+  )
 
   local footer_win = group.overview_footer_win
   if footer_win and vim.api.nvim_win_is_valid(footer_win) then
@@ -5029,16 +5027,6 @@ show_inspection_overview = function(group)
     nowait = true,
     silent = true,
     desc = "Open Oculus inspection item in browser",
-  })
-  vim.keymap.set("n", "?", function()
-    group.overview_footer_visible = not group.overview_footer_visible
-    M._overview_ui.render_footer(group)
-    M._overview_ui.clamp_scroll(group)
-  end, {
-    buffer = buf,
-    nowait = true,
-    silent = true,
-    desc = "Toggle Oculus Inspect overview command footer",
   })
   vim.keymap.set("n", "q", function()
     show_sidebar_files(group)

@@ -1229,9 +1229,6 @@ assert(issue_overview_lines[#issue_overview_lines - 1]
   == "  Date")
 assert(issue_overview_lines[#issue_overview_lines]
   :match("^  %a+ %d%d?, %d%d%d%d$"))
-local overview_footer_toggle = vim.fn.maparg("?", "n", false, true)
-assert(overview_footer_toggle.desc
-  == "Toggle Oculus Inspect overview command footer")
 local overview_footer_buf
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   local candidate = vim.api.nvim_win_get_buf(win)
@@ -1243,13 +1240,6 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   end
 end
 assert(overview_footer_buf)
-assert(vim.api.nvim_buf_get_lines(
-  overview_footer_buf,
-  1,
-  2,
-  false
-)[1] == "")
-overview_footer_toggle.callback()
 assert(vim.deep_equal(
   vim.api.nvim_buf_get_lines(overview_footer_buf, 0, -1, false),
   {
@@ -1257,25 +1247,9 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  p path   e explain   b browser   ? hide",
+    "  p path   e explain   b browser",
   }
 ))
-overview_footer_toggle.callback()
-assert(vim.api.nvim_buf_is_valid(overview_footer_buf))
-assert(vim.api.nvim_buf_get_lines(
-  overview_footer_buf,
-  1,
-  2,
-  false
-)[1] == "")
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
-overview_footer_toggle.callback()
-assert(vim.api.nvim_buf_get_lines(
-  overview_footer_buf,
-  1,
-  2,
-  false
-)[1]:find("p path", 1, true))
 assert(issue_overview:find("  Title\n", 1, true))
 assert(issue_overview:gsub("%s+", " "):find(
   "Title Issue inspect fixture",
