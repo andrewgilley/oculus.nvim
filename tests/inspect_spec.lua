@@ -2528,6 +2528,10 @@ local expected_commit_count = tonumber(
   vim.env.OCULUS_INSPECT_TEST_COMMIT_COUNT
 )
 if integration_root and (integration_sha or integration_url) then
+  vim.keymap.set("n", "<C-i>", "10k", {
+    silent = true,
+    desc = "Configured Ctrl-I",
+  })
   local integration_repository =
     vim.env.OCULUS_INSPECT_TEST_REPOSITORY or "oculus/test"
   local integration_source = vim.env.OCULUS_INSPECT_TEST_SOURCE
@@ -3060,6 +3064,7 @@ if integration_root and (integration_sha or integration_url) then
   local next_file_mapping
   local sidebar_tab_mapped = false
   local sidebar_leader_toggle
+  local ctrl_i_mapping
   for _, mapping in ipairs(jump_maps) do
     if mapping.desc == "Previous Oculus change" then
       previous_mapped = mapping.lhs == "<C-Left>"
@@ -3071,6 +3076,8 @@ if integration_root and (integration_sha or integration_url) then
       toggle_mapped = mapping.lhs == "<Tab>"
     elseif mapping.desc == "Next Oculus changed chunk" then
       toggle_mapped = mapping
+    elseif mapping.desc == "Configured Ctrl-I" then
+      ctrl_i_mapping = mapping
     elseif mapping.desc == "Switch Oculus file version" then
       switch_mapped = mapping.lhs == "gS"
     elseif mapping.desc == "Next Oculus changed file" then
@@ -3092,6 +3099,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
   assert(not next_mapped)
   assert(toggle_mapped and toggle_mapped.lhs == "<Tab>")
+  assert(ctrl_i_mapping and ctrl_i_mapping.lhs == "<C-I>")
+  assert(ctrl_i_mapping.rhs == "10k")
   assert(switch_mapped)
   assert(not next_file_mapping)
   assert(not sidebar_tab_mapped)
@@ -3116,12 +3125,12 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
     local overview_down = vim.fn.maparg("k", "n", false, true)
     local overview_up = vim.fn.maparg("i", "n", false, true)
-    local overview_page_up = vim.fn.maparg("<C-i>", "n", false, true)
+    local overview_ctrl_i = vim.fn.maparg("<C-i>", "n", false, true)
     local overview_page_down = vim.fn.maparg("<C-k>", "n", false, true)
     assert(overview_down.desc == "Scroll Oculus Inspect overview down")
     assert(overview_up.desc == "Scroll Oculus Inspect overview up")
-    assert(overview_page_up.desc
-      == "Scroll Oculus Inspect overview up 10 lines")
+    assert(overview_ctrl_i.desc == "Configured Ctrl-I")
+    assert(overview_ctrl_i.rhs == "10k")
     assert(overview_page_down.desc
       == "Scroll Oculus Inspect overview down 10 lines")
     vim.api.nvim_win_set_height(overview_win, 4)
@@ -3149,7 +3158,9 @@ if integration_root and (integration_sha or integration_url) then
     )
     assert(vim.fn.winsaveview().topline
       == math.min(overview_max_topline, overview_topline + 10))
-    overview_page_up.callback()
+    for _ = 1, 10 do
+      overview_up.callback()
+    end
     assert(vim.fn.winsaveview().topline == overview_topline)
     for _ = 1, vim.api.nvim_buf_line_count(overview_buf) + 4 do
       overview_down.callback()
@@ -3327,6 +3338,7 @@ if integration_root and (integration_sha or integration_url) then
   local sidebar_open_mapping
   local sidebar_switch_mapping
   local sidebar_overview_mapping
+  local sidebar_ctrl_i_mapping
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
     sidebar_buf,
     "n"
@@ -3351,6 +3363,8 @@ if integration_root and (integration_sha or integration_url) then
       next_file_mapping = mapping
     elseif mapping.desc == "Next Oculus changed chunk" then
       toggle_mapped = mapping
+    elseif mapping.desc == "Configured Ctrl-I" then
+      sidebar_ctrl_i_mapping = mapping
     elseif mapping.desc == "Previous Oculus changed chunk" then
       previous_mapped = mapping
     end
@@ -3363,6 +3377,9 @@ if integration_root and (integration_sha or integration_url) then
     and sidebar_open_mapping.lhs == "<CR>")
   assert(sidebar_switch_mapping
     and sidebar_switch_mapping.lhs == "gS")
+  assert(sidebar_ctrl_i_mapping
+    and sidebar_ctrl_i_mapping.lhs == "<C-I>")
+  assert(sidebar_ctrl_i_mapping.rhs == "10k")
   assert(sidebar_overview_mapping
     and sidebar_overview_mapping.lhs
       == (vim.g.mapleader or "\\") .. "op")
