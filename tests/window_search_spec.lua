@@ -777,10 +777,35 @@ github.pull_request_commits = function(repo, number, _, callback)
 end
 
 local select_mapping = vim.fn.maparg("<CR>", "n", false, true)
+deferred_activity_request = true
 select_mapping.callback()
 assert(state.view == "activity")
 assert(vim.wo[state.win].cursorline == true)
 assert(state.activity_page == 1)
+local initial_loading_lines = vim.api.nvim_buf_get_lines(
+  state.buf,
+  0,
+  -1,
+  false
+)
+assert(vim.deep_equal(initial_loading_lines, {
+  "",
+  "  USER",
+  "  @" .. state.contributor.username,
+}), vim.inspect(initial_loading_lines))
+assert(not table.concat(initial_loading_lines, "\n"):find(
+  "? shortcuts",
+  1,
+  true
+))
+assert(not state.footer_buf or not vim.api.nvim_buf_is_valid(state.footer_buf))
+local initial_activity_request = deferred_activity_request
+deferred_activity_request = nil
+initial_activity_request.callback(
+  initial_activity_request.events,
+  nil,
+  false
+)
 assert(#state.events == 8)
 assert(state.events[1].id == "1")
 assert(state.events[8].id == "8")
