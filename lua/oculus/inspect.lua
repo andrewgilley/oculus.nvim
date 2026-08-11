@@ -2415,103 +2415,6 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
   return endpoint
 end
 
-function M._close_patch_motivation(endpoint)
-  local win = endpoint and endpoint.patch_motivation_win
-  local buf = endpoint and endpoint.patch_motivation_buf
-  if endpoint then
-    endpoint.patch_motivation_win = nil
-    endpoint.patch_motivation_buf = nil
-  end
-  if win and vim.api.nvim_win_is_valid(win) then
-    pcall(vim.api.nvim_win_close, win, true)
-  end
-  if buf and vim.api.nvim_buf_is_valid(buf) then
-    pcall(vim.api.nvim_buf_delete, buf, { force = true })
-  end
-end
-
-function M._toggle_patch_motivation(endpoint, location)
-  if not valid_endpoint(endpoint) then
-    return
-  end
-  if endpoint.patch_motivation_win
-    and vim.api.nvim_win_is_valid(endpoint.patch_motivation_win)
-  then
-    M._close_patch_motivation(endpoint)
-    return
-  end
-  M._close_patch_motivation(endpoint)
-
-  local reason = type(location) == "table" and location.reason or nil
-  if type(reason) ~= "string" or vim.trim(reason) == "" then
-    vim.notify(
-      "Oculus: this patch location has no motivation text",
-      vim.log.levels.INFO
-    )
-    return
-  end
-  local main_width = vim.api.nvim_win_get_width(endpoint.win)
-  local main_height = vim.api.nvim_win_get_height(endpoint.win)
-  local width = math.max(1, math.min(50, main_width - 4))
-  local lines = vim.split(reason, "\n", { plain = true })
-  if #lines == 0 then
-    lines = { "" }
-  end
-  local display_rows = 0
-  for index, line in ipairs(lines) do
-    lines[index] = line:gsub("\r$", "")
-    display_rows = display_rows
-      + math.max(
-        1,
-        math.ceil(vim.fn.strdisplaywidth(lines[index]) / width)
-      )
-  end
-  local height = math.max(
-    1,
-    math.min(8, display_rows, main_height - 2)
-  )
-  local line_count = vim.api.nvim_buf_line_count(endpoint.buf)
-  local target_line = math.max(
-    1,
-    math.min(tonumber(location.line) or 1, line_count)
-  )
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "markdown"
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-  vim.b[buf].oculus_patch_motivation = true
-
-  local win = vim.api.nvim_open_win(buf, false, {
-    relative = "win",
-    win = endpoint.win,
-    anchor = "SW",
-    bufpos = { target_line - 1, 0 },
-    row = -1,
-    col = math.max(0, math.floor((main_width - width) / 2)),
-    width = width,
-    height = height,
-    style = "minimal",
-    border = "rounded",
-    focusable = false,
-    noautocmd = true,
-    zindex = 80,
-  })
-  vim.api.nvim_win_set_hl_ns(
-    win,
-    vim.api.nvim_get_hl_ns({ winid = endpoint.win })
-  )
-  vim.wo[win].wrap = true
-  vim.wo[win].linebreak = true
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].signcolumn = "no"
-  endpoint.patch_motivation_buf = buf
-  endpoint.patch_motivation_win = win
-end
-
 local function map_file_navigation(endpoint, session, role, group)
   local function toggle_version()
     local target = role == "parent" and session.change or session.parent
@@ -2521,16 +2424,7 @@ local function map_file_navigation(endpoint, session, role, group)
       refresh_sidebar(group, target.tab)
     end
   end
-  if group.patch_suggestions then
-    vim.keymap.set("n", "<C-s>", function()
-      M._toggle_patch_motivation(endpoint, endpoint.location)
-    end, {
-      buffer = endpoint.buf,
-      nowait = true,
-      silent = true,
-      desc = "Show Oculus patch motivation",
-    })
-  else
+  if not group.patch_suggestions then
     local version_lhs = group.version_switch
     if version_lhs == nil then
       version_lhs = default_version_switch
@@ -3683,6 +3577,9 @@ function M._overview_ui.restore_persisted(group)
   if type(saved.explanation) == "string" and saved.explanation ~= "" then
     group.overview_agent_explanation = saved.explanation
     group.overview_agent_explanation_model = saved.explanation_model
+    group.overview_agent_explanation_telemetry = vim.deepcopy(
+      saved.explanation_telemetry
+    )
   end
   if type(saved.locations) == "table" then
     group.overview_agent_locations = {}
@@ -3702,6 +3599,9 @@ function M._overview_ui.restore_persisted(group)
       end
     end
     group.overview_agent_patch_model = saved.patch_model
+    group.overview_agent_patch_telemetry = vim.deepcopy(
+      saved.patch_telemetry
+    )
     group.overview_agent_selected_location_index =
       #group.overview_agent_locations > 0
         and math.min(
@@ -3754,8 +3654,12 @@ function M._overview_ui.persist(group)
   cache[key] = {
     explanation = group.overview_agent_explanation,
     explanation_model = group.overview_agent_explanation_model,
+    explanation_telemetry = vim.deepcopy(
+      group.overview_agent_explanation_telemetry
+    ),
     locations = vim.deepcopy(group.overview_agent_locations),
     patch_model = group.overview_agent_patch_model,
+    patch_telemetry = vim.deepcopy(group.overview_agent_patch_telemetry),
     selected_location = group.overview_agent_selected_location_index,
     selected_locations = selected,
     updated_at = os.time(),
@@ -4484,6 +4388,16 @@ function M._overview_ui.toggle_patch_location(group)
     not group.overview_agent_selected_locations[index]
       and true
     or nil
+  require("oculus.telemetry").record(
+    "oculus.inspect.patch_location.toggle",
+    {
+      ["gen_ai.workflow.name"] = "oculus.inspect.patch_locations",
+      ["oculus.patch_location.index"] = index,
+      ["oculus.patch_location.selected"] =
+        group.overview_agent_selected_locations[index] == true,
+    },
+    group.overview_agent_patch_telemetry
+  )
   M._overview_ui.persist(group)
   M._overview_ui.render(group)
   local _, line = M._overview_ui.selected_patch_location(group)
@@ -4629,8 +4543,28 @@ function M._overview_ui.open_patch_location(group)
     end
   end
   if #opened == 0 then
+    require("oculus.telemetry").record(
+      "oculus.inspect.patch_locations.open",
+      {
+        ["gen_ai.workflow.name"] = "oculus.inspect.patch_locations",
+        ["oculus.patch_locations.requested"] = #targets,
+        ["oculus.patch_locations.opened"] = 0,
+      },
+      group.overview_agent_patch_telemetry,
+      "no_location_opened"
+    )
     return false
   end
+  require("oculus.telemetry").record(
+    "oculus.inspect.patch_locations.open",
+    {
+      ["gen_ai.workflow.name"] = "oculus.inspect.patch_locations",
+      ["oculus.patch_locations.requested"] = #targets,
+      ["oculus.patch_locations.opened"] = #opened,
+    },
+    group.overview_agent_patch_telemetry,
+    #opened < #targets and "partial_open" or nil
+  )
   group.overview_patch_tabs = group.overview_patch_tabs or {}
   for _, patch in ipairs(opened) do
     group.overview_patch_tabs[#group.overview_patch_tabs + 1] = patch
@@ -4721,6 +4655,34 @@ function M._overview_ui.render_explanation(
   M._overview_ui.scroll_to_bottom(group)
 end
 
+function M._overview_ui.agent_telemetry_attributes(group)
+  local overview = group and group.overview or {}
+  local changed_files = {}
+  local patch_count = 0
+  local patch_bytes = 0
+  for _, session in ipairs(group or {}) do
+    local file = session.change_file or session.parent_file
+    if type(file) == "string" and file ~= "" then
+      changed_files[file] = true
+    end
+    if type(session.patch) == "string" and session.patch ~= "" then
+      patch_count = patch_count + 1
+      patch_bytes = patch_bytes + #session.patch
+    end
+  end
+  local changed_file_count = vim.tbl_count(changed_files)
+  return {
+    ["oculus.activity.kind"] = overview.kind
+      or (group and group.kind)
+      or "unknown",
+    ["oculus.activity.forge"] = overview.forge or "unknown",
+    ["oculus.activity.changed_file_count"] = changed_file_count,
+    ["oculus.activity.patch_count"] = patch_count,
+    ["oculus.activity.patch_bytes"] = patch_bytes,
+    ["oculus.activity.has_file_changes"] = changed_file_count > 0,
+  }
+end
+
 function M._overview_ui.open_explanation(group, model)
   local agent = require("oculus.agent")
   local repository = agent.repository(group)
@@ -4753,8 +4715,19 @@ function M._overview_ui.open_explanation(group, model)
     group.overview_agent_process = nil
     local normalized = agent.normalize_result(explanation, false, repository)
     local actual_model = metadata and metadata.model or model.id
+    local telemetry_context = metadata and metadata.telemetry or nil
     group.overview_agent_explanation = normalized
     group.overview_agent_explanation_model = actual_model
+    group.overview_agent_explanation_telemetry = telemetry_context
+    require("oculus.telemetry").record(
+      "oculus.inspect.agent_result.process",
+      {
+        ["gen_ai.workflow.name"] = "oculus.inspect.explanation",
+        ["oculus.agent.result.valid"] = normalized ~= nil,
+      },
+      telemetry_context,
+      normalized and nil or "invalid_output"
+    )
     M._overview_ui.render_explanation(
       group,
       actual_model,
@@ -4766,6 +4739,9 @@ function M._overview_ui.open_explanation(group, model)
     cwd = repository,
     prompt = agent.prompt(group),
     model = model.id,
+    workflow = "oculus.inspect.explanation",
+    output_type = "text",
+    telemetry_attributes = M._overview_ui.agent_telemetry_attributes(group),
   }, finish)
   if not process and not finished then
     finish(nil, err)
@@ -4837,7 +4813,19 @@ function M._overview_ui.open_patch_locations(group, model)
     group.overview_agent_process = nil
     local _, locations = agent.normalize_result(response, true, repository)
     local actual_model = metadata and metadata.model or model.id
+    local telemetry_context = metadata and metadata.telemetry or nil
     group.overview_agent_patch_model = actual_model
+    group.overview_agent_patch_telemetry = telemetry_context
+    require("oculus.telemetry").record(
+      "oculus.inspect.agent_result.process",
+      {
+        ["gen_ai.workflow.name"] = "oculus.inspect.patch_locations",
+        ["oculus.agent.result.valid"] = response ~= nil,
+        ["oculus.agent.result.location_count"] = #locations,
+      },
+      telemetry_context,
+      response and nil or "invalid_output"
+    )
     M._overview_ui.render_patch_locations(
       group,
       actual_model,
@@ -4849,6 +4837,9 @@ function M._overview_ui.open_patch_locations(group, model)
     cwd = repository,
     prompt = agent.patch_locations_prompt(group),
     model = model.id,
+    workflow = "oculus.inspect.patch_locations",
+    output_type = "json",
+    telemetry_attributes = M._overview_ui.agent_telemetry_attributes(group),
   }, finish)
   if not process and not finished then
     finish(nil, err)

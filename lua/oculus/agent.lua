@@ -514,8 +514,25 @@ function M.explain(request, callback)
   end
 
   local configured_model = request.model or M.configured_model(request.cwd)
+  local telemetry_attributes = vim.tbl_extend(
+    "force",
+    {
+      ["gen_ai.operation.name"] = "invoke_agent",
+      ["gen_ai.workflow.name"] = request.workflow
+        or "oculus.agent.explanation",
+      ["gen_ai.request.model"] = configured_model,
+      ["oculus.agent.input.bytes"] = #request.prompt,
+    },
+    request.telemetry_attributes or {}
+  )
+  local telemetry = require("oculus.telemetry")
+  local telemetry_span = telemetry.start(
+    "invoke_agent " .. telemetry_attributes["gen_ai.workflow.name"],
+    telemetry_attributes
+  )
   local command, command_err = codex_command(configured_model)
   if not command then
+    telemetry.finish(telemetry_span, nil, "dependency_unavailable")
     return nil, command_err
   end
   local ok, process = pcall(vim.system, command, {
@@ -525,20 +542,39 @@ function M.explain(request, callback)
   }, function(result)
     vim.schedule(function()
       if result.code ~= 0 then
-        callback(nil, command_error(result))
+        local context = telemetry.finish(telemetry_span, {
+          ["process.exit.code"] = result.code,
+        }, "codex_exit_error")
+        callback(nil, command_error(result), { telemetry = context })
         return
       end
       local explanation = vim.trim(result.stdout or "")
       if explanation == "" then
-        callback(nil, "Codex returned an empty explanation")
+        local context = telemetry.finish(telemetry_span, {
+          ["process.exit.code"] = result.code,
+          ["oculus.agent.output.bytes"] = 0,
+        }, "empty_output")
+        callback(nil, "Codex returned an empty explanation", {
+          telemetry = context,
+        })
         return
       end
+      local actual_model = M.model_from_stderr(result.stderr)
+        or configured_model
+      local context = telemetry.finish(telemetry_span, {
+        ["gen_ai.response.model"] = actual_model,
+        ["gen_ai.output.type"] = request.output_type or "text",
+        ["oculus.agent.output.bytes"] = #explanation,
+        ["process.exit.code"] = result.code,
+      })
       callback(explanation, nil, {
-        model = M.model_from_stderr(result.stderr) or configured_model,
+        model = actual_model,
+        telemetry = context,
       })
     end)
   end)
   if not ok then
+    telemetry.finish(telemetry_span, nil, "process_start_error")
     return nil, tostring(process)
   end
   return process

@@ -1487,6 +1487,13 @@ assert(vim.deep_equal(explanation_config.col, overview_config.col))
 local explanation_request = agent_request
 assert(vim.fs.normalize(explanation_request.cwd) == vim.fs.normalize(root))
 assert(explanation_request.model == "gpt-5.6-test-agent")
+assert(explanation_request.workflow == "oculus.inspect.explanation")
+assert(explanation_request.output_type == "text")
+assert(explanation_request.telemetry_attributes["oculus.activity.kind"]
+  == "issue")
+assert(explanation_request.telemetry_attributes[
+  "oculus.activity.changed_file_count"
+] == 0)
 assert(explanation_request.prompt:find(
   "Repository: andrewgilley/oculus.nvim",
   1,
@@ -1547,6 +1554,11 @@ assert(patch_model_text:find("Agent explanation", 1, true))
 assert(patch_model_text:find("Agent suggestion", 1, true))
 vim.fn.maparg("<CR>", "n", false, true).callback()
 local patch_request = agent_request
+assert(patch_request.workflow == "oculus.inspect.patch_locations")
+assert(patch_request.output_type == "json")
+assert(patch_request.telemetry_attributes[
+  "oculus.activity.has_file_changes"
+] == false)
 assert(patch_request.prompt:find("at most three", 1, true))
 assert(patch_request.prompt:find("Return only valid JSON", 1, true))
 assert(patch_request.prompt:find(
@@ -1931,42 +1943,9 @@ local patch_tab = vim.api.nvim_get_current_tabpage()
 local patch_win = patch_code[patch_tab]
 assert(patch_win)
 assert(vim.api.nvim_get_current_win() == patch_win)
-local motivation_mapping = vim.fn.maparg("<C-s>", "n", false, true)
-assert(motivation_mapping.desc == "Show Oculus patch motivation")
-motivation_mapping.callback()
-assert(vim.api.nvim_get_current_win() == patch_win)
-local motivation_win
-local motivation_buf
-for _, win in ipairs(vim.api.nvim_tabpage_list_wins(patch_tab)) do
-  local buf = vim.api.nvim_win_get_buf(win)
-  if vim.b[buf].oculus_patch_motivation then
-    motivation_win = win
-    motivation_buf = buf
-    break
-  end
-end
-assert(motivation_win and motivation_buf)
-local motivation_config = vim.api.nvim_win_get_config(motivation_win)
-assert(motivation_config.relative == "win")
-assert(motivation_config.win == patch_win)
-assert(motivation_config.anchor == "SW")
-assert(motivation_config.bufpos[1] == 24)
-assert(motivation_config.row == -1)
-assert(motivation_config.focusable == false)
-assert(motivation_config.title == nil or motivation_config.title == "")
-assert(motivation_config.col
-  == math.floor(
-    (vim.api.nvim_win_get_width(patch_win) - motivation_config.width) / 2
-  ))
-assert(table.concat(vim.api.nvim_buf_get_lines(
-  motivation_buf,
-  0,
-  -1,
-  false
-), "\n") == "The fileless issue inspection workflow is implemented here.")
-motivation_mapping.callback()
-assert(not vim.api.nvim_win_is_valid(motivation_win))
 local patch_buf = vim.api.nvim_win_get_buf(patch_win)
+local motivation_mapping = vim.fn.maparg("<C-s>", "n", false, true)
+assert(vim.tbl_isempty(motivation_mapping))
 assert(vim.fs.normalize(vim.api.nvim_buf_get_name(patch_buf))
   == vim.fs.normalize(
   vim.fs.joinpath(root, "lua", "oculus", "inspect.lua")
