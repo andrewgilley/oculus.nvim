@@ -90,7 +90,8 @@ do
   vim.api.nvim_buf_delete(aerial_buf, { force = true })
 end
 assert(oculus.config.inspect_overview_toggle == "<leader>op")
-assert(oculus.config.inspect_version_switch == "<C-s>")
+assert(oculus.config.inspect_old_version == "<C-s>")
+assert(oculus.config.inspect_new_version == "<C-d>")
 assert(oculus.config.inspect_next_chunk == "]c")
 assert(oculus.config.inspect_previous_chunk == "[c")
 assert(oculus.config.inspect_next_file == nil)
@@ -2576,7 +2577,8 @@ if integration_root and (integration_sha or integration_url) then
           and { integration_search_root }
         or {},
       inspect_sidebar_width = 0.30,
-      inspect_version_switch = "gS",
+      inspect_old_version = "gS",
+      inspect_new_version = "gD",
     },
     nil,
     {
@@ -3039,7 +3041,6 @@ if integration_root and (integration_sha or integration_url) then
   local previous_mapped = false
   local next_mapped = false
   local toggle_mapped = false
-  local switch_mapped = false
   local next_file_mapping
   local sidebar_tab_mapped = false
   local sidebar_leader_toggle
@@ -3052,8 +3053,10 @@ if integration_root and (integration_sha or integration_url) then
       next_mapped = mapping.lhs == "<C-Right>"
     elseif mapping.desc == "Next Oculus changed chunk" then
       toggle_mapped = mapping
-    elseif mapping.desc == "Switch Oculus file version" then
-      switch_mapped = mapping.lhs == "gS"
+    elseif mapping.desc == "Open Oculus old file version" then
+      jump_maps.old_version = mapping
+    elseif mapping.desc == "Open Oculus new file version" then
+      jump_maps.new_version = mapping
     elseif mapping.desc == "Next Oculus changed file" then
       next_file_mapping = mapping
     elseif mapping.desc == "Toggle Oculus Inspect sidebar" then
@@ -3078,7 +3081,8 @@ if integration_root and (integration_sha or integration_url) then
   end)
   assert(configured_ctrl_i.buffer == 0)
   assert(configured_ctrl_i.rhs == "10k")
-  assert(switch_mapped)
+  assert(jump_maps.old_version and jump_maps.old_version.lhs == "gS")
+  assert(jump_maps.new_version and jump_maps.new_version.lhs == "gD")
   assert(not next_file_mapping)
   assert(not sidebar_tab_mapped)
   assert(sidebar_leader_toggle
@@ -3313,7 +3317,6 @@ if integration_root and (integration_sha or integration_url) then
   local sidebar_tab_from_sidebar = false
   local sidebar_leader_toggle_from_sidebar
   local sidebar_open_mapping
-  local sidebar_switch_mapping
   local sidebar_overview_mapping
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(
     sidebar_buf,
@@ -3327,8 +3330,10 @@ if integration_root and (integration_sha or integration_url) then
       end
     elseif mapping.desc == "Open Oculus Inspect sidebar item" then
       sidebar_open_mapping = mapping
-    elseif mapping.desc == "Switch Oculus file version" then
-      sidebar_switch_mapping = mapping
+    elseif mapping.desc == "Open Oculus old file version" then
+      jump_maps.sidebar_old_version = mapping
+    elseif mapping.desc == "Open Oculus new file version" then
+      jump_maps.sidebar_new_version = mapping
     elseif mapping.desc == "Toggle Oculus Inspect overview" then
       if mapping.lhs == "<C-T>" then
         jump_maps.sidebar_ctrl_t_overview = mapping
@@ -3349,8 +3354,10 @@ if integration_root and (integration_sha or integration_url) then
       == (vim.g.mapleader or "\\") .. "oi")
   assert(sidebar_open_mapping
     and sidebar_open_mapping.lhs == "<CR>")
-  assert(sidebar_switch_mapping
-    and sidebar_switch_mapping.lhs == "gS")
+  assert(jump_maps.sidebar_old_version
+    and jump_maps.sidebar_old_version.lhs == "gS")
+  assert(jump_maps.sidebar_new_version
+    and jump_maps.sidebar_new_version.lhs == "gD")
   local sidebar_configured_ctrl_i = vim.api.nvim_buf_call(
     sidebar_buf,
     function()
@@ -3568,7 +3575,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(sidebar_window(tabs[2]) == nil)
-  vim.fn.maparg("gS", "n", false, true).callback()
+  vim.fn.maparg("gD", "n", false, true).callback()
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   assert(vim.api.nvim_get_current_win() == change_win)
   assert(sidebar_window(tabs[3]) == nil)
@@ -3617,7 +3624,7 @@ if integration_root and (integration_sha or integration_url) then
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win() == parent_win)
   assert(sidebar_window(tabs[2]) ~= nil)
-  vim.fn.maparg("gS", "n", false, true).callback()
+  vim.fn.maparg("gD", "n", false, true).callback()
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   assert(vim.api.nvim_get_current_win() == change_win)
   assert(sidebar_window(tabs[3]) ~= nil)
@@ -3823,7 +3830,7 @@ if integration_root and (integration_sha or integration_url) then
   })
   assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
   local parent_sidebar_view = vim.fn.winsaveview()
-  sidebar_switch_mapping.callback()
+  jump_maps.sidebar_new_version.callback()
   local sidebar_change_win = assert(sidebar_window(tabs[3]))
   assert(vim.api.nvim_get_current_tabpage() == tabs[3])
   assert(vim.api.nvim_get_current_win() == sidebar_change_win)
@@ -3846,7 +3853,7 @@ if integration_root and (integration_sha or integration_url) then
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.pair_index == 1)
   assert(sidebar_active.role == "change")
-  sidebar_switch_mapping.callback()
+  jump_maps.sidebar_old_version.callback()
   assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   assert(vim.api.nvim_get_current_win() == sidebar_parent_win)
   assert(vim.api.nvim_win_get_cursor(sidebar_parent_win)[1]
@@ -3874,7 +3881,7 @@ if integration_root and (integration_sha or integration_url) then
   end
   assert(vim.wo[sidebar_parent_win].cursorline)
   vim.api.nvim_feedkeys(
-    "gS",
+    "gD",
     "x",
     false
   )
@@ -3908,7 +3915,7 @@ if integration_root and (integration_sha or integration_url) then
   sidebar_active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
   assert(sidebar_active.role == "parent")
   vim.api.nvim_feedkeys(
-    "gS",
+    "gD",
     "x",
     false
   )

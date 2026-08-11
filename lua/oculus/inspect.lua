@@ -19,7 +19,10 @@ local oil_contexts = {}
 local oil_window_contexts = {}
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "<leader>op"
-local default_version_switch = "<C-s>"
+local default_version_keys = {
+  old = "<C-s>",
+  new = "<C-d>",
+}
 local default_next_chunk = "]c"
 local default_previous_chunk = "[c"
 local changed_file_read_concurrency = 8
@@ -2416,27 +2419,39 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
 end
 
 local function map_file_navigation(endpoint, session, role, group)
-  local function toggle_version()
-    local target = role == "parent" and session.change or session.parent
-    local target_role = role == "parent" and "change" or "parent"
+  local function select_version(target_role)
+    if role == target_role then
+      return
+    end
+    local target = session[target_role]
     select_endpoint(target, session, target_role, group)
     if valid_endpoint(target) then
       refresh_sidebar(group, target.tab)
     end
   end
-  if not group.patch_suggestions then
-    local version_lhs = group.version_switch
-    if version_lhs == nil then
-      version_lhs = default_version_switch
-    end
-    if type(version_lhs) == "string" and version_lhs ~= "" then
-      vim.keymap.set("n", version_lhs, toggle_version, {
+  local function map_version(lhs, target_role, description)
+    if type(lhs) == "string" and lhs ~= "" then
+      vim.keymap.set("n", lhs, function()
+        select_version(target_role)
+      end, {
         buffer = endpoint.buf,
         nowait = true,
         silent = true,
-        desc = "Switch Oculus file version",
+        desc = description,
       })
     end
+  end
+  if not group.patch_suggestions then
+    local old_lhs = group.old_version
+    if old_lhs == nil then
+      old_lhs = default_version_keys.old
+    end
+    local new_lhs = group.new_version
+    if new_lhs == nil then
+      new_lhs = default_version_keys.new
+    end
+    map_version(old_lhs, "parent", "Open Oculus old file version")
+    map_version(new_lhs, "change", "Open Oculus new file version")
   end
   local next_chunk_lhs = group.next_chunk
   if next_chunk_lhs == nil then
@@ -5265,20 +5280,29 @@ local function map_inspection_sidebar_toggle(group)
     })
   end
   if group.kind ~= "issue" then
-    local version_lhs = group.version_switch
-    if version_lhs == nil then
-      version_lhs = default_version_switch
+    local old_lhs = group.old_version
+    if old_lhs == nil then
+      old_lhs = default_version_keys.old
     end
-    if type(version_lhs) == "string" and version_lhs ~= "" then
-      vim.keymap.set("n", version_lhs, function()
-        switch_sidebar_version(group)
+    local new_lhs = group.new_version
+    if new_lhs == nil then
+      new_lhs = default_version_keys.new
+    end
+    local function map_version(lhs, target_role, description)
+      if type(lhs) ~= "string" or lhs == "" then
+        return
+      end
+      vim.keymap.set("n", lhs, function()
+        switch_sidebar_version(group, target_role)
       end, {
         buffer = group.sidebar_buf,
         nowait = true,
         silent = true,
-        desc = "Switch Oculus file version",
+        desc = description,
       })
     end
+    map_version(old_lhs, "parent", "Open Oculus old file version")
+    map_version(new_lhs, "change", "Open Oculus new file version")
   end
 end
 
@@ -5740,7 +5764,7 @@ focus_sidebar_selection = function(group)
   sidebar_navigating = false
 end
 
-switch_sidebar_version = function(group)
+switch_sidebar_version = function(group, target_role)
   if
     sidebar_navigating
     or overview_window_is_open(group)
@@ -5750,10 +5774,15 @@ switch_sidebar_version = function(group)
   end
   local tab = vim.api.nvim_get_current_tabpage()
   local _, role = sidebar_active_item(group, tab)
+  if target_role ~= "parent" and target_role ~= "change" then
+    return
+  end
+  if role == target_role then
+    return
+  end
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local entry = group.sidebar_entries[line]
   local session = entry and group[entry.pair_index] or nil
-  local target_role = role == "parent" and "change" or "parent"
   local endpoint = session and session[target_role] or nil
   if not valid_endpoint(endpoint) then
     return
@@ -6284,7 +6313,8 @@ local function open_tabs(
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
-      version_switch = opts.inspect_version_switch,
+      old_version = opts.inspect_old_version,
+      new_version = opts.inspect_new_version,
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(info),
@@ -6829,7 +6859,8 @@ local function open_issue_inspection(
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
-      version_switch = opts.inspect_version_switch,
+      old_version = opts.inspect_old_version,
+      new_version = opts.inspect_new_version,
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
       overview = inspection_overview(resolved),
