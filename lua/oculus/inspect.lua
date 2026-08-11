@@ -2026,6 +2026,35 @@ local function apply_change_signs(parent_buf, change_buf, hunks, status)
   end
 end
 
+function M._sync_buffer_syntax(buf)
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    vim.api.nvim_win_call(win, function()
+      vim.cmd("syntax sync fromstart")
+    end)
+  end
+end
+
+function M._enable_inspection_syntax(buf)
+  local filetype = vim.bo[buf].filetype
+  if filetype == "" then
+    return false
+  end
+  if vim.bo[buf].syntax == "" then
+    vim.bo[buf].syntax = filetype
+  end
+  if vim.b[buf].current_syntax == nil then
+    vim.api.nvim_buf_call(buf, function()
+      vim.cmd(
+        "silent! runtime! syntax/"
+          .. vim.fn.fnameescape(filetype)
+          .. ".vim"
+      )
+    end)
+  end
+  M._sync_buffer_syntax(buf)
+  return vim.bo[buf].syntax ~= ""
+end
+
 local function refresh_buffer_highlighting(buf, force)
   if not vim.api.nvim_buf_is_valid(buf)
     or type(vim.b[buf].oculus_inspect) ~= "table"
@@ -2033,8 +2062,21 @@ local function refresh_buffer_highlighting(buf, force)
     return false
   end
   local changedtick = vim.api.nvim_buf_get_changedtick(buf)
+  if vim.b[buf].oculus_inspect_highlight_engine == "syntax" then
+    if vim.b[buf].oculus_inspect_syntax_changedtick == changedtick
+      and not force
+    then
+      return true
+    end
+    local syntax_enabled = M._enable_inspection_syntax(buf)
+    if syntax_enabled then
+      vim.b[buf].oculus_inspect_syntax_changedtick = changedtick
+    end
+    return syntax_enabled
+  end
   if (vim.b[buf].oculus_inspect_highlighting_changedtick == changedtick
-      or vim.b[buf].oculus_inspect_highlighting_pending_tick == changedtick)
+      or vim.b[buf].oculus_inspect_highlighting_pending_tick == changedtick
+      or vim.b[buf].oculus_inspect_syntax_changedtick == changedtick)
     and not force
   then
     return true
@@ -2042,19 +2084,16 @@ local function refresh_buffer_highlighting(buf, force)
 
   local syntax = vim.bo[buf].syntax
   if syntax ~= "" then
-    for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-      vim.api.nvim_win_call(win, function()
-        vim.cmd("syntax sync fromstart")
-      end)
-    end
+    M._sync_buffer_syntax(buf)
   end
 
   local highlighters = vim.treesitter
       and vim.treesitter.highlighter
       and vim.treesitter.highlighter.active
     or nil
+  local treesitter_start_ok = false
   if highlighters and not highlighters[buf] and vim.treesitter.start then
-    pcall(vim.treesitter.start, buf)
+    treesitter_start_ok = pcall(vim.treesitter.start, buf)
   end
   if highlighters and highlighters[buf] then
     local parser_ok, parser = pcall(vim.treesitter.get_parser, buf)
@@ -2091,13 +2130,64 @@ local function refresh_buffer_highlighting(buf, force)
       return false
     end
   else
-    return false
+    local syntax_enabled = M._enable_inspection_syntax(buf)
+    if syntax_enabled and not treesitter_start_ok then
+      vim.b[buf].oculus_inspect_syntax_changedtick = changedtick
+    end
+    return syntax_enabled and not treesitter_start_ok
   end
 
   if not inspection_tabs_loading then
     vim.cmd("redraw")
   end
   return true
+end
+
+function M._synchronize_inspection_highlighting(parent_buf, change_buf)
+  if not vim.api.nvim_buf_is_valid(parent_buf)
+    or not vim.api.nvim_buf_is_valid(change_buf)
+  then
+    return nil
+  end
+  local buffers = { parent_buf, change_buf }
+  if vim.bo[parent_buf].filetype ~= vim.bo[change_buf].filetype then
+    for _, buf in ipairs(buffers) do
+      refresh_buffer_highlighting(buf, true)
+    end
+    return "mixed"
+  end
+
+  for _, buf in ipairs(buffers) do
+    vim.b[buf].oculus_inspect_highlight_engine = nil
+    refresh_buffer_highlighting(buf, true)
+  end
+  local highlighters = vim.treesitter
+      and vim.treesitter.highlighter
+      and vim.treesitter.highlighter.active
+    or nil
+  if highlighters
+    and highlighters[parent_buf]
+    and highlighters[change_buf]
+  then
+    for _, buf in ipairs(buffers) do
+      vim.b[buf].oculus_inspect_highlight_engine = "treesitter"
+    end
+    return "treesitter"
+  end
+
+  for _, buf in ipairs(buffers) do
+    if highlighters and highlighters[buf] and vim.treesitter.stop then
+      pcall(vim.treesitter.stop, buf)
+    end
+    vim.b[buf].oculus_inspect_highlight_engine = "syntax"
+    vim.b[buf].oculus_inspect_highlighting_changedtick = nil
+    vim.b[buf].oculus_inspect_highlighting_pending_tick = nil
+    if M._enable_inspection_syntax(buf) then
+      vim.b[buf].oculus_inspect_syntax_changedtick =
+        vim.api.nvim_buf_get_changedtick(buf)
+    end
+  end
+  return "syntax"
 end
 
 local function apply_inspection_filetype(buf, force_refresh)
@@ -2125,6 +2215,7 @@ local function apply_inspection_filetype(buf, force_refresh)
   if vim.bo[buf].filetype ~= filetype then
     vim.b[buf].oculus_inspect_highlighting_changedtick = nil
     vim.b[buf].oculus_inspect_highlighting_pending_tick = nil
+    vim.b[buf].oculus_inspect_syntax_changedtick = nil
     vim.bo[buf].filetype = filetype
   end
   local reliquary_ok, reliquary = pcall(require, "reliquary")
@@ -6248,15 +6339,15 @@ local function load_tab(
       and inspection.change_lines
     or inspection.parent_lines
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines or { "" })
-  local filetype = file and vim.filetype.match({ filename = file }) or nil
-  if filetype then
-    vim.bo[buf].filetype = filetype
-  end
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = true
   vim.bo[buf].readonly = false
+  local filetype = file and vim.filetype.match({ filename = file }) or nil
+  if filetype then
+    vim.bo[buf].filetype = filetype
+  end
   vim.b[buf].oculus_inspect_repository = path
   vim.b[buf].oculus_inspect_directory = working_directory
   vim.b[buf].oculus_inspect_source_path =
@@ -6285,6 +6376,7 @@ local function load_tab(
   vim.t.oculus_inspect = state
   vim.b[buf].oculus_inspect = vim.deepcopy(state)
   show_inspection_path(buf)
+  refresh_buffer_highlighting(buf, false)
   local loaded = {
     tab = vim.api.nvim_get_current_tabpage(),
     win = vim.api.nvim_get_current_win(),
@@ -6435,6 +6527,7 @@ local function open_tabs(
       local focused_start = session.active_chunk
           and render_focused_chunk(session, session.active_chunk)
         or nil
+      M._synchronize_inspection_highlighting(parent.buf, change.buf)
       if not focused_start then
         apply_change_signs(parent.buf, change.buf, {}, session.status)
       end
