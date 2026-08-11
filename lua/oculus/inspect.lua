@@ -23,8 +23,8 @@ local default_version_keys = {
   old = "<C-s>",
   new = "<C-d>",
 }
-local default_next_chunk = "]c"
-local default_previous_chunk = "[c"
+local default_next_chunk = "<C-Tab>"
+local default_previous_chunk = "<S-Tab>"
 local changed_file_read_concurrency = 8
 local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
 local inspection_statusline_option =
@@ -2495,36 +2495,7 @@ local function map_file_navigation(endpoint, session, role, group)
     and next_chunk_lhs ~= ""
   then
     vim.keymap.set("n", next_chunk_lhs, function()
-      local chunks = inspection_chunks(group, session)
-      if #chunks == 0 then
-        return
-      end
-      local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
-      local current_chunk = group.kind == "issue"
-          and (session.active_chunk or 0)
-        or (
-          session.focused_chunks
-              and session.active_chunk
-            or hunk_index_at_line(session, role, line)
-          or session.active_chunk
-          or 0
-        )
-      local next_session, _, next_chunk =
-        next_inspection_chunk(group, session, current_chunk)
-      if next_session then
-        focus_inspection_chunk(
-          group,
-          next_session,
-          chunk_navigation_role(
-            group,
-            session,
-            role,
-            next_session,
-            true
-          ),
-          next_chunk
-        )
-      end
+      select_next_sidebar_chunk(group, role)
     end, {
       buffer = endpoint.buf,
       nowait = true,
@@ -2541,36 +2512,7 @@ local function map_file_navigation(endpoint, session, role, group)
     and previous_chunk_lhs ~= ""
   then
     vim.keymap.set("n", previous_chunk_lhs, function()
-      local chunks = inspection_chunks(group, session)
-      if #chunks == 0 then
-        return
-      end
-      local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
-      local current_chunk = group.kind == "issue"
-          and (session.active_chunk or 1)
-        or (
-          session.focused_chunks
-              and session.active_chunk
-            or hunk_index_at_line(session, role, line)
-          or session.active_chunk
-          or 1
-        )
-      local previous_session, _, previous_chunk =
-        previous_inspection_chunk(group, session, current_chunk)
-      if previous_session then
-        focus_inspection_chunk(
-          group,
-          previous_session,
-          chunk_navigation_role(
-            group,
-            session,
-            role,
-            previous_session,
-            false
-          ),
-          previous_chunk
-        )
-      end
+      select_previous_sidebar_chunk(group, role)
     end, {
       buffer = endpoint.buf,
       nowait = true,
@@ -3135,6 +3077,9 @@ refresh_sidebar = function(group, tab)
     or nil
   local sidebar_cursor_line = active_chunk_line
     or (active_row and active_row.line_number)
+  if sidebar_cursor_line and not sidebar_is_focused then
+    group.sidebar_navigation_line = sidebar_cursor_line
+  end
   if sidebar_cursor_line
     and sidebar_win
     and vim.api.nvim_win_is_valid(sidebar_win)
@@ -5685,19 +5630,35 @@ local function open_sidebar_selection(group, preferred_role)
 end
 
 local function select_sidebar_entry(group, direction, preferred_role)
-  if
-    overview_window_is_open(group)
-    or vim.api.nvim_get_current_buf() ~= group.sidebar_buf
-  then
+  if overview_window_is_open(group) then
     return
   end
-  local active_index, active_role =
-    sidebar_active_item(group, vim.api.nvim_get_current_tabpage())
+  local source_is_sidebar = vim.api.nvim_get_current_buf()
+    == group.sidebar_buf
+  local source_tab = vim.api.nvim_get_current_tabpage()
+  local active_index, active_role = sidebar_active_item(group, source_tab)
   if not active_index or #group.sidebar_lines == 0 then
     return
   end
 
-  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local line
+  if source_is_sidebar then
+    line = vim.api.nvim_win_get_cursor(0)[1]
+  else
+    line = group.sidebar_navigation_line
+    local anchored = line and group.sidebar_entries[line] or nil
+    if not anchored or anchored.pair_index ~= active_index then
+      local active_chunk = sidebar_chunk(
+        group,
+        group[active_index],
+        active_role
+      )
+      line = active_chunk
+          and group.sidebar_chunk_lines[active_index]
+          and group.sidebar_chunk_lines[active_index][active_chunk]
+        or group.sidebar_rows[active_index].line_number
+    end
+  end
   local target_line = line
   local entry
   for _ = 1, #group.sidebar_lines do
@@ -5723,6 +5684,59 @@ local function select_sidebar_entry(group, direction, preferred_role)
   if not valid_endpoint(endpoint) then
     return
   end
+  if not source_is_sidebar then
+    if group.sidebar_visible and ensure_inspection_sidebar_on_tab then
+      ensure_inspection_sidebar_on_tab(group, endpoint.tab)
+    end
+    remember_session_role(session, role)
+    sidebar_navigating = true
+    vim.api.nvim_set_current_tabpage(endpoint.tab)
+    vim.api.nvim_set_current_win(endpoint.win)
+    if entry.chunk_index then
+      local start
+      if group.kind == "issue" then
+        local section = session.sections[entry.chunk_index]
+        start = section and section.line
+      else
+        start = render_chunk_for_role(
+          session,
+          role,
+          entry.chunk_index
+        )
+      end
+      if start then
+        move_cursor_to_line_start(endpoint.win, start)
+      end
+    else
+      if group.kind ~= "issue" then
+        render_full_file(session)
+      end
+      show_file_top(endpoint.win)
+    end
+    show_inspection_path(endpoint.buf)
+    refresh_sidebar(group, endpoint.tab)
+    group.sidebar_navigation_line = target_line
+    local target_sidebar_win = group.sidebar_windows
+        and group.sidebar_windows[endpoint.tab]
+      or nil
+    if target_sidebar_win
+      and vim.api.nvim_win_is_valid(target_sidebar_win)
+    then
+      vim.api.nvim_win_set_cursor(
+        target_sidebar_win,
+        { target_line, 0 }
+      )
+    end
+    vim.b[group.sidebar_buf].oculus_inspect_sidebar_active = {
+      pair_index = entry.pair_index,
+      role = role,
+      chunk_index = entry.chunk_index,
+      chunk_count = #inspection_chunks(group, session),
+    }
+    group.focused_win = nil
+    sidebar_navigating = false
+    return
+  end
   local sidebar_win = group.sidebar_windows[endpoint.tab]
   if not sidebar_win or not vim.api.nvim_win_is_valid(sidebar_win) then
     return
@@ -5736,12 +5750,12 @@ local function select_sidebar_entry(group, direction, preferred_role)
   open_sidebar_selection(group, role)
 end
 
-select_next_sidebar_chunk = function(group)
-  select_sidebar_entry(group, 1)
+select_next_sidebar_chunk = function(group, preferred_role)
+  select_sidebar_entry(group, 1, preferred_role)
 end
 
-select_previous_sidebar_chunk = function(group)
-  select_sidebar_entry(group, -1)
+select_previous_sidebar_chunk = function(group, preferred_role)
+  select_sidebar_entry(group, -1, preferred_role)
 end
 
 focus_sidebar_selection = function(group)

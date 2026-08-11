@@ -92,8 +92,8 @@ end
 assert(oculus.config.inspect_overview_toggle == "<leader>op")
 assert(oculus.config.inspect_old_version == "<C-s>")
 assert(oculus.config.inspect_new_version == "<C-d>")
-assert(oculus.config.inspect_next_chunk == "]c")
-assert(oculus.config.inspect_previous_chunk == "[c")
+assert(oculus.config.inspect_next_chunk == "<C-Tab>")
+assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
 assert(oculus.config.inspect_next_file == nil)
 assert(oculus.config.persist_inspect_overviews == true)
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "change")
@@ -2226,18 +2226,25 @@ assert(vim.deep_equal(vim.api.nvim_win_call(
   patch_win,
   vim.fn.winsaveview
 ), selected_patch_view))
-local next_patch = vim.fn.maparg("]c", "n", false, true)
+local next_patch = vim.fn.maparg("<C-Tab>", "n", false, true)
 assert(next_patch.desc == "Next Oculus changed chunk")
 next_patch.callback()
 assert(vim.api.nvim_get_current_tabpage() ~= patch_tab)
 local second_patch_tab = vim.api.nvim_get_current_tabpage()
 assert(vim.api.nvim_get_current_win() == patch_code[second_patch_tab])
+assert(vim.api.nvim_win_get_cursor(patch_code[second_patch_tab])[1] == 1)
+vim.fn.maparg("<C-Tab>", "n", false, true).callback()
+assert(vim.api.nvim_get_current_tabpage() == second_patch_tab)
 assert(vim.api.nvim_win_get_cursor(patch_code[second_patch_tab])[1] == 10)
-local previous_patch = vim.fn.maparg("[c", "n", false, true)
+local previous_patch = vim.fn.maparg("<S-Tab>", "n", false, true)
 assert(previous_patch.desc == "Previous Oculus changed chunk")
 previous_patch.callback()
+assert(vim.api.nvim_get_current_tabpage() == second_patch_tab)
+assert(vim.api.nvim_win_get_cursor(patch_code[second_patch_tab])[1] == 1)
+vim.fn.maparg("<S-Tab>", "n", false, true).callback()
 assert(vim.api.nvim_get_current_tabpage() == patch_tab)
 assert(vim.api.nvim_get_current_win() == patch_win)
+assert(vim.api.nvim_win_get_cursor(patch_win)[1] == 25)
 for index = #patch_tabs, 1, -1 do
   local tab = patch_tabs[index]
   if vim.api.nvim_tabpage_is_valid(tab) then
@@ -3149,9 +3156,9 @@ if integration_root and (integration_sha or integration_url) then
       end
     end
   end
-  assert(previous_mapped and previous_mapped.lhs == "[c")
+  assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
   assert(not next_mapped)
-  assert(toggle_mapped and toggle_mapped.lhs == "]c")
+  assert(toggle_mapped and toggle_mapped.lhs == "<C-Tab>")
   local configured_ctrl_i = vim.api.nvim_buf_call(change_buf, function()
     return vim.fn.maparg("<C-i>", "n", false, true)
   end)
@@ -3336,7 +3343,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
       == file_lines[active.pair_index] + active.chunk_index)
   end
-  previous_mapped = vim.fn.maparg("[c", "n", false, true)
+  previous_mapped = vim.fn.maparg("<S-Tab>", "n", false, true)
   assert(previous_mapped.desc == "Previous Oculus changed chunk")
   previous_mapped.callback()
   assert_cursor_at_first_nonblank(
@@ -3362,9 +3369,21 @@ if integration_root and (integration_sha or integration_url) then
   while vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
     < vim.g.oculus_test_main_file_chunks
   do
-    vim.fn.maparg("]c", "n", false, true).callback()
+    vim.fn.maparg("<C-Tab>", "n", false, true).callback()
   end
-  vim.fn.maparg("]c", "n", false, true).callback()
+  vim.fn.maparg("<C-Tab>", "n", false, true).callback()
+  do
+    local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    assert(active.pair_index
+      == (vim.g.oculus_test_main_file_pair % pair_count) + 1)
+    assert(active.chunk_index == nil)
+    local active_sidebar_win = assert(sidebar_window(
+      vim.api.nvim_get_current_tabpage()
+    ))
+    assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
+      == file_lines[active.pair_index])
+  end
+  vim.fn.maparg("<C-Tab>", "n", false, true).callback()
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
     assert(active.pair_index
@@ -3376,7 +3395,19 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
       == file_lines[active.pair_index] + 1)
   end
-  vim.fn.maparg("[c", "n", false, true).callback()
+  vim.fn.maparg("<S-Tab>", "n", false, true).callback()
+  do
+    local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
+    assert(active.pair_index
+      == (vim.g.oculus_test_main_file_pair % pair_count) + 1)
+    assert(active.chunk_index == nil)
+    local active_sidebar_win = assert(sidebar_window(
+      vim.api.nvim_get_current_tabpage()
+    ))
+    assert(vim.api.nvim_win_get_cursor(active_sidebar_win)[1]
+      == file_lines[active.pair_index])
+  end
+  vim.fn.maparg("<S-Tab>", "n", false, true).callback()
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
     assert(active.pair_index == vim.g.oculus_test_main_file_pair)
@@ -3448,8 +3479,8 @@ if integration_root and (integration_sha or integration_url) then
   assert(jump_maps.sidebar_ctrl_t_overview
     and jump_maps.sidebar_ctrl_t_overview.lhs == "<C-T>")
   assert(not next_file_mapping)
-  assert(toggle_mapped and toggle_mapped.lhs == "]c")
-  assert(previous_mapped and previous_mapped.lhs == "[c")
+  assert(toggle_mapped and toggle_mapped.lhs == "<C-Tab>")
+  assert(previous_mapped and previous_mapped.lhs == "<S-Tab>")
 
   vim.api.nvim_set_current_tabpage(tabs[pair_count * 2 + 1])
   local overview_sidebar_win =
