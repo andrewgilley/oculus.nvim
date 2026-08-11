@@ -2032,7 +2032,11 @@ local function refresh_buffer_highlighting(buf, force)
   then
     return false
   end
-  if vim.b[buf].oculus_inspect_highlighting_refreshed and not force then
+  local changedtick = vim.api.nvim_buf_get_changedtick(buf)
+  if (vim.b[buf].oculus_inspect_highlighting_changedtick == changedtick
+      or vim.b[buf].oculus_inspect_highlighting_pending_tick == changedtick)
+    and not force
+  then
     return true
   end
 
@@ -2049,26 +2053,50 @@ local function refresh_buffer_highlighting(buf, force)
       and vim.treesitter.highlighter
       and vim.treesitter.highlighter.active
     or nil
+  if highlighters and not highlighters[buf] and vim.treesitter.start then
+    pcall(vim.treesitter.start, buf)
+  end
   if highlighters and highlighters[buf] then
     local parser_ok, parser = pcall(vim.treesitter.get_parser, buf)
     if parser_ok and parser then
       pcall(parser.invalidate, parser, true)
-      pcall(parser.parse, parser, true, function()
+      vim.b[buf].oculus_inspect_highlighting_pending_tick = changedtick
+      local parse_ok = pcall(parser.parse, parser, true, function()
         if vim.api.nvim_buf_is_valid(buf) then
           vim.schedule(function()
             if vim.api.nvim_buf_is_valid(buf) then
+              if vim.b[buf].oculus_inspect_highlighting_pending_tick
+                  == changedtick
+              then
+                if vim.api.nvim_buf_get_changedtick(buf) == changedtick then
+                  vim.b[buf].oculus_inspect_highlighting_changedtick =
+                    changedtick
+                end
+                vim.b[buf].oculus_inspect_highlighting_pending_tick = nil
+              end
               vim.cmd("redraw")
             end
           end)
         end
       end)
+      if not parse_ok then
+        if vim.b[buf].oculus_inspect_highlighting_pending_tick
+            == changedtick
+        then
+          vim.b[buf].oculus_inspect_highlighting_pending_tick = nil
+        end
+        return false
+      end
+    else
+      return false
     end
+  else
+    return false
   end
 
   if not inspection_tabs_loading then
     vim.cmd("redraw")
   end
-  vim.b[buf].oculus_inspect_highlighting_refreshed = true
   return true
 end
 
@@ -2095,7 +2123,8 @@ local function apply_inspection_filetype(buf, force_refresh)
     return
   end
   if vim.bo[buf].filetype ~= filetype then
-    vim.b[buf].oculus_inspect_highlighting_refreshed = false
+    vim.b[buf].oculus_inspect_highlighting_changedtick = nil
+    vim.b[buf].oculus_inspect_highlighting_pending_tick = nil
     vim.bo[buf].filetype = filetype
   end
   local reliquary_ok, reliquary = pcall(require, "reliquary")
@@ -2129,7 +2158,6 @@ local function replace_inspection_lines(endpoint, lines)
   vim.bo[endpoint.buf].readonly = false
   vim.bo[endpoint.buf].modifiable = true
   vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, lines)
-  vim.b[endpoint.buf].oculus_inspect_highlighting_refreshed = false
   return true
 end
 
@@ -2265,6 +2293,11 @@ local function select_endpoint(endpoint, session, role, group)
   vim.api.nvim_set_current_win(endpoint.win)
   show_inspection_path(endpoint.buf)
   sidebar_navigating = false
+  vim.schedule(function()
+    if valid_endpoint(endpoint) then
+      refresh_buffer_highlighting(endpoint.buf, false)
+    end
+  end)
   if group and ensure_inspection_sidebar_on_tab then
     ensure_inspection_sidebar_on_tab(group, endpoint.tab)
   end
@@ -5812,6 +5845,11 @@ switch_sidebar_version = function(group, target_role)
   refresh_sidebar(group, endpoint.tab)
   move_cursor_to_line_start(sidebar_win)
   sidebar_navigating = false
+  vim.schedule(function()
+    if valid_endpoint(endpoint) then
+      refresh_buffer_highlighting(endpoint.buf, false)
+    end
+  end)
 end
 
 function M._adjacent_inspection_tab(tab, direction)

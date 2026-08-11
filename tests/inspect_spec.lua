@@ -335,6 +335,82 @@ assert(not parsed)
 assert(inspect._refresh_buffer_highlighting(highlight_buf, true))
 assert(invalidated)
 assert(parsed)
+
+assert((function()
+  local late_highlight_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(
+    late_highlight_buf,
+    0,
+    -1,
+    false,
+    { "local imported = require('oculus')" }
+  )
+  vim.bo[late_highlight_buf].filetype = "lua"
+  vim.bo[late_highlight_buf].syntax = "lua"
+  vim.b[late_highlight_buf].oculus_inspect = { role = "change" }
+  local original_late_highlighter =
+    vim.treesitter.highlighter.active[late_highlight_buf]
+  vim.treesitter.highlighter.active[late_highlight_buf] = nil
+  local late_highlighter = {}
+  local late_start_count = 0
+  local late_invalidated = false
+  local late_parsed = false
+  vim.treesitter.start = function(buf)
+    assert(buf == late_highlight_buf)
+    late_start_count = late_start_count + 1
+    if late_start_count == 2 then
+      vim.treesitter.highlighter.active[buf] = late_highlighter
+    end
+  end
+  vim.treesitter.get_parser = function(buf)
+    assert(buf == late_highlight_buf)
+    return {
+      invalidate = function(_, reload)
+        assert(reload == true)
+        late_invalidated = true
+      end,
+      parse = function(_, range, callback)
+        assert(range == true)
+        late_parsed = true
+        callback()
+      end,
+    }
+  end
+  assert(not inspect._refresh_buffer_highlighting(late_highlight_buf))
+  assert(late_start_count == 1)
+  assert(
+    vim.b[late_highlight_buf].oculus_inspect_highlighting_changedtick
+      == nil
+  )
+  assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
+  assert(late_start_count == 2)
+  assert(late_invalidated)
+  assert(late_parsed)
+  late_invalidated = false
+  late_parsed = false
+  assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
+  assert(not late_invalidated)
+  assert(not late_parsed)
+  local late_tick = vim.api.nvim_buf_get_changedtick(late_highlight_buf)
+  assert(vim.wait(100, function()
+    return vim.b[late_highlight_buf]
+        .oculus_inspect_highlighting_changedtick == late_tick
+  end))
+  vim.api.nvim_buf_set_lines(
+    late_highlight_buf,
+    0,
+    -1,
+    false,
+    { "local imported = require('oculus.inspect')" }
+  )
+  assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
+  assert(late_invalidated)
+  assert(late_parsed)
+  vim.treesitter.highlighter.active[late_highlight_buf] =
+    original_late_highlighter
+  vim.api.nvim_buf_delete(late_highlight_buf, { force = true })
+  return true
+end)())
 vim.treesitter.highlighter.active[highlight_buf] = original_highlighter
 vim.treesitter.get_parser = original_get_parser
 vim.treesitter.stop = original_stop
