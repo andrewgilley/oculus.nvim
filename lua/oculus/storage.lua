@@ -33,6 +33,8 @@ function M.save(path, config)
     project_issue_filters = config.project_issue_filters or {},
     contributors = config.contributors or {},
     projects = config.projects or {},
+    removed_contributors = config.removed_contributors or {},
+    removed_projects = config.removed_projects or {},
     inspect_overviews = config.inspect_overviews or {},
   }
   local ok_encode, encoded = pcall(vim.json.encode, payload)

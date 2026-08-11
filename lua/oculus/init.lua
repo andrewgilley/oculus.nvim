@@ -102,6 +102,8 @@ local defaults = {
   persist_filters = true,
   persist_contributors = true,
   persist_projects = true,
+  removed_contributors = {},
+  removed_projects = {},
   persist_inspect_overviews = true,
   inspect_overviews = {},
   state_file = vim.fn.stdpath("state") .. "/oculus.json",
@@ -218,6 +220,23 @@ local function merge_projects(configured, saved)
   return result
 end
 
+local function without_removed(items, removed, key_fn)
+  local removed_set = {}
+  for _, key in ipairs(removed or {}) do
+    if type(key) == "string" then
+      removed_set[key:lower()] = true
+    end
+  end
+  local result = {}
+  for _, item in ipairs(items or {}) do
+    local key = key_fn(item)
+    if not key or not removed_set[key:lower()] then
+      result[#result + 1] = item
+    end
+  end
+  return result
+end
+
 function M.setup(opts)
   opts = opts or {}
   M.config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts)
@@ -236,6 +255,14 @@ function M.setup(opts)
   then
     local saved = require("oculus.storage").load(M.config.state_file)
     if saved then
+      if type(saved.removed_contributors) == "table" then
+        M.config.removed_contributors = vim.deepcopy(
+          saved.removed_contributors
+        )
+      end
+      if type(saved.removed_projects) == "table" then
+        M.config.removed_projects = vim.deepcopy(saved.removed_projects)
+      end
       if M.config.persist_filters then
         if saved.activity_types ~= nil then
           M.config.activity_types = saved.activity_types
@@ -263,6 +290,20 @@ function M.setup(opts)
         M.config.projects = merge_projects(
           M.config.projects,
           saved.projects
+        )
+      end
+      if M.config.persist_contributors then
+        M.config.contributors = without_removed(
+          M.config.contributors,
+          M.config.removed_contributors,
+          contributor_key
+        )
+      end
+      if M.config.persist_projects then
+        M.config.projects = without_removed(
+          M.config.projects,
+          M.config.removed_projects,
+          project_key
         )
       end
       if M.config.persist_inspect_overviews

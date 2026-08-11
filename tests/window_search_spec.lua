@@ -221,6 +221,7 @@ assert(not initial_project_text:find("  USERS", 1, true))
 assert(not initial_project_text:find("@mitchellh", 1, true))
 assert(initial_project_text:find("t users", 1, true))
 assert(initial_project_text:find("a add", 1, true))
+assert(initial_project_text:find("r remove", 1, true))
 assert(initial_project_text:find("/ search", 1, true))
 do
   local first_project_line
@@ -277,7 +278,7 @@ assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
 assert(initial_user_lines[initial_window_height]
-  == "  t projects  a add  / search  ?: help  q quit")
+  == "  t projects  a add  r remove  / search  ?: help  q quit")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local main_up_mapping =
@@ -1228,7 +1229,8 @@ assert(not page_one_footer_text:find("l/→", 1, true))
 assert(not page_one_footer_text:find("j/←", 1, true))
 assert(not page_one_footer_text:find("? shortcuts", 1, true))
 local user_refresh_mapping = vim.fn.maparg("r", "n", false, true)
-assert(user_refresh_mapping.desc == "Refresh Oculus activity")
+assert(user_refresh_mapping.desc
+  == "Remove selected Oculus item or refresh activity")
 assert(vim.fn.maparg("R", "n", false, true).desc == nil)
 user_refresh_mapping.callback()
 assert(requested_force[#requested_force] == true)
@@ -1242,7 +1244,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  t projects  a add  / search  ?: help  q quit")
+  == "  t projects  a add  r remove  / search  ?: help  q quit")
 
 do
   vim.cmd("tabnew")
@@ -1705,7 +1707,8 @@ do
   assert(state.activity_page == 2)
   assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
   local refresh_mapping = vim.fn.maparg("r", "n", false, true)
-  assert(refresh_mapping.desc == "Refresh Oculus activity")
+  assert(refresh_mapping.desc
+    == "Remove selected Oculus item or refresh activity")
   refresh_mapping.callback()
   assert(repository_forces[#repository_forces] == true)
   local preserved_project_line
