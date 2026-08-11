@@ -1570,8 +1570,8 @@ local function render_contributors()
   footer(lines, searching
       and "esc cancel"
     or showing_users
-        and "t projects  a add  / search  ?: help  q quit"
-      or "t users  a add  / search  ?: help  q quit")
+        and "t projects  a add  r remove  / search  ?: help  q quit"
+      or "t users  a add  r remove  / search  ?: help  q quit")
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
@@ -2469,7 +2469,7 @@ local function render_shortcuts()
     { "t", "Switch between project and user lists" },
     { "s /", "Fuzzy-search projects or user handles" },
     { "a", "Add a GitHub or Codeberg project or account" },
-    { "x", "Remove the selected account" },
+    { "r", "Remove the selected project or account" },
     { "f", "Edit filters for the selected user or project" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
@@ -3513,6 +3513,10 @@ local function add_contributor(contributor)
   end
 
   M.state.contributors[#M.state.contributors + 1] = added
+  M.state.opts.removed_contributors = vim.tbl_filter(function(key)
+    return type(key) ~= "string"
+      or key:lower() ~= contributor_key(added):lower()
+  end, M.state.opts.removed_contributors or {})
   M.state.selected_username = added.username
   persist_contributors()
   return true
@@ -3548,6 +3552,10 @@ local function add_project(project)
 
   M.state.opts.projects = M.state.opts.projects or {}
   M.state.opts.projects[#M.state.opts.projects + 1] = added
+  M.state.opts.removed_projects = vim.tbl_filter(function(key)
+    return type(key) ~= "string"
+      or key:lower() ~= project_key(added):lower()
+  end, M.state.opts.removed_projects or {})
   M.state.selected_project = added
   persist_projects()
   return true
@@ -3605,12 +3613,45 @@ local function prompt_add_account()
   )
 end
 
-local function remove_current_contributor()
+local function remember_removed(option, key)
+  local removed = M.state.opts[option] or {}
+  for _, existing in ipairs(removed) do
+    if type(existing) == "string"
+      and existing:lower() == key:lower()
+    then
+      return
+    end
+  end
+  removed[#removed + 1] = key
+  M.state.opts[option] = removed
+end
+
+local function remove_current_item()
   if M.state.view ~= "contributors" then
     return
   end
-  local contributor = target_on_cursor()
-  local key = contributor_key(contributor)
+  local target = target_on_cursor()
+  if type(target) ~= "table" then
+    return
+  end
+  if target.kind == "project" then
+    local key = project_key(target.project)
+    if not key then
+      return
+    end
+    for index, project in ipairs(M.state.opts.projects or {}) do
+      if project_key(project) == key then
+        table.remove(M.state.opts.projects, index)
+        break
+      end
+    end
+    remember_removed("removed_projects", key)
+    M.state.selected_project = nil
+    persist_projects()
+    render_contributors()
+    return
+  end
+  local key = contributor_key(target)
   if not key then
     return
   end
@@ -3620,6 +3661,7 @@ local function remove_current_contributor()
       break
     end
   end
+  remember_removed("removed_contributors", key)
   M.state.selected_username = nil
   persist_contributors()
   render_contributors()
@@ -4179,7 +4221,6 @@ local function map_keys(buf)
       set_all_filter_types(true)
     end
   end, "Add an Oculus project or user, or enable all filters")
-  map("x", remove_current_contributor, "Remove selected Oculus user")
   map("n", function()
     set_all_filter_types(false)
   end, "Disable all Oculus activity filters")
@@ -4193,7 +4234,13 @@ local function map_keys(buf)
       open_filters(false)
     end
   end, "Move forward or edit Oculus activity categories")
-  map("r", refresh_activity, "Refresh Oculus activity")
+  map("r", function()
+    if M.state.view == "contributors" then
+      remove_current_item()
+    else
+      refresh_activity()
+    end
+  end, "Remove selected Oculus item or refresh activity")
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
   map("u", open_project_issue_activity, "Open Oculus project issues")
