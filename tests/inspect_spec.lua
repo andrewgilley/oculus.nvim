@@ -406,6 +406,96 @@ assert((function()
   assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
   assert(late_invalidated)
   assert(late_parsed)
+
+  local fallback_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(
+    fallback_buf,
+    0,
+    -1,
+    false,
+    { 'const std = @import("std");' }
+  )
+  vim.bo[fallback_buf].filetype = "zig"
+  vim.bo[fallback_buf].syntax = ""
+  vim.b[fallback_buf].oculus_inspect = { role = "parent" }
+  local original_fallback_highlighter =
+    vim.treesitter.highlighter.active[fallback_buf]
+  vim.treesitter.highlighter.active[fallback_buf] = nil
+  local fallback_start_count = 0
+  vim.treesitter.start = function(buf)
+    assert(buf == fallback_buf)
+    fallback_start_count = fallback_start_count + 1
+    error("no Zig parser")
+  end
+  assert(inspect._refresh_buffer_highlighting(fallback_buf))
+  assert(fallback_start_count == 1)
+  assert(vim.bo[fallback_buf].syntax == "zig")
+  assert(vim.b[fallback_buf].current_syntax == "zig")
+  local fallback_tick = vim.api.nvim_buf_get_changedtick(fallback_buf)
+  assert(vim.b[fallback_buf].oculus_inspect_syntax_changedtick
+    == fallback_tick)
+  assert(inspect._refresh_buffer_highlighting(fallback_buf))
+  assert(fallback_start_count == 1)
+  vim.treesitter.highlighter.active[fallback_buf] =
+    original_fallback_highlighter
+  vim.api.nvim_buf_delete(fallback_buf, { force = true })
+
+  local pair_parent = vim.api.nvim_create_buf(false, true)
+  local pair_change = vim.api.nvim_create_buf(false, true)
+  for _, buf in ipairs({ pair_parent, pair_change }) do
+    vim.api.nvim_buf_set_lines(
+      buf,
+      0,
+      -1,
+      false,
+      { "local imported = require('oculus')" }
+    )
+    vim.bo[buf].filetype = "lua"
+    vim.bo[buf].syntax = ""
+    vim.b[buf].oculus_inspect = { role = "change" }
+  end
+  local original_pair_parent_highlighter =
+    vim.treesitter.highlighter.active[pair_parent]
+  local original_pair_change_highlighter =
+    vim.treesitter.highlighter.active[pair_change]
+  vim.treesitter.highlighter.active[pair_parent] = {}
+  vim.treesitter.highlighter.active[pair_change] = nil
+  local pair_parent_stopped = false
+  vim.treesitter.get_parser = function(buf)
+    assert(buf == pair_parent)
+    return {
+      invalidate = function() end,
+      parse = function(_, _, callback)
+        callback()
+      end,
+    }
+  end
+  vim.treesitter.start = function(buf)
+    assert(buf == pair_change)
+    error("pair parser did not attach")
+  end
+  vim.treesitter.stop = function(buf)
+    assert(buf == pair_parent)
+    pair_parent_stopped = true
+    vim.treesitter.highlighter.active[buf] = nil
+  end
+  assert(inspect._synchronize_inspection_highlighting(
+    pair_parent,
+    pair_change
+  ) == "syntax")
+  assert(pair_parent_stopped)
+  for _, buf in ipairs({ pair_parent, pair_change }) do
+    assert(vim.b[buf].oculus_inspect_highlight_engine == "syntax")
+    assert(vim.bo[buf].syntax == "lua")
+    assert(vim.b[buf].current_syntax == "lua")
+  end
+  vim.treesitter.highlighter.active[pair_parent] =
+    original_pair_parent_highlighter
+  vim.treesitter.highlighter.active[pair_change] =
+    original_pair_change_highlighter
+  vim.api.nvim_buf_delete(pair_parent, { force = true })
+  vim.api.nvim_buf_delete(pair_change, { force = true })
+
   vim.treesitter.highlighter.active[late_highlight_buf] =
     original_late_highlighter
   vim.api.nvim_buf_delete(late_highlight_buf, { force = true })
