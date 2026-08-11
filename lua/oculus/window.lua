@@ -2040,7 +2040,6 @@ local function render_loading(target)
       "  USER",
       "  @" .. target.username,
     }
-  footer(lines, "? shortcuts   j/← back   q close")
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Function")
