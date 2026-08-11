@@ -48,6 +48,9 @@ jobs:
       - name: Run opinion tests
         run: nvim --headless -u NONE -l tests/opinion_spec.lua
 
+      - name: Run telemetry tests
+        run: nvim --headless -u NONE -l tests/telemetry_spec.lua
+
       - name: Run window and search tests
         run: nvim --headless -u NONE -l tests/window_search_spec.lua
 

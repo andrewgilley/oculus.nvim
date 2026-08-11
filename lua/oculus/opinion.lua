@@ -96,11 +96,26 @@ local function stop_provider(view)
   end
 end
 
+local function finish_telemetry(view, finish_attributes, error_type)
+  if not view.telemetry_span then
+    return
+  end
+  view.telemetry_context = require("oculus.telemetry").finish(
+    view.telemetry_span,
+    finish_attributes,
+    error_type
+  )
+  view.telemetry_span = nil
+end
+
 local function close_view(view)
   if view.closed then
     return
   end
   view.closed = true
+  if view.pending then
+    finish_telemetry(view, nil, "cancelled")
+  end
   stop_provider(view)
   view.pending = false
   if valid_win(view.win) then
@@ -163,6 +178,9 @@ local function open_view(opts)
         return
       end
       view.closed = true
+      if view.pending then
+        finish_telemetry(view, nil, "cancelled")
+      end
       stop_provider(view)
       view.pending = false
     end,
@@ -286,6 +304,28 @@ function M.consult(request, opts)
 
   local view = open_view(opts)
   view.pending = true
+  local telemetry_attributes = vim.tbl_extend(
+    "force",
+    {
+      ["gen_ai.operation.name"] = "invoke_agent",
+      ["gen_ai.workflow.name"] = request.workflow
+        or "oculus.opinion.consult",
+      ["gen_ai.request.model"] = request.model,
+      ["oculus.opinion.has_inspection"] = context.inspection ~= nil,
+      ["oculus.opinion.has_cursor"] = context.buffer.cursor ~= nil,
+      ["oculus.opinion.buffer.filetype"] = context.buffer.filetype,
+      ["oculus.agent.input.bytes"] = type(request.prompt) == "string"
+          and #request.prompt
+        or nil,
+    },
+    type(request.telemetry_attributes) == "table"
+        and request.telemetry_attributes
+      or {}
+  )
+  view.telemetry_span = require("oculus.telemetry").start(
+    "invoke_agent " .. telemetry_attributes["gen_ai.workflow.name"],
+    telemetry_attributes
+  )
   set_lines(view, {
     "",
     "  Consulting model…",
@@ -306,6 +346,7 @@ function M.consult(request, opts)
       view.pending = false
       view.cancel_provider = nil
       if err then
+        finish_telemetry(view, nil, "provider_error")
         set_lines(view, {
           "",
           "  Model consultation failed",
@@ -316,6 +357,7 @@ function M.consult(request, opts)
       end
       local lines = text_lines(result)
       if not lines then
+        finish_telemetry(view, nil, "empty_output")
         set_lines(view, {
           "",
           "  Model consultation failed",
@@ -327,6 +369,12 @@ function M.consult(request, opts)
       local filetype = type(result) == "table"
           and result.filetype
         or opts.filetype
+      local result_model = type(result) == "table" and result.model or nil
+      finish_telemetry(view, {
+        ["gen_ai.response.model"] = result_model or request.model,
+        ["gen_ai.output.type"] = "text",
+        ["oculus.agent.output.bytes"] = #table.concat(lines, "\n"),
+      })
       set_lines(view, lines, filetype or opts.filetype)
     end)
   end
