@@ -561,6 +561,7 @@ local direct_pull_request = github._project_pull_request_event(
     number = 123,
     title = "Fix project updates",
     user = { login = "contributor" },
+    merged_by = { login = "maintainer" },
     merged_at = "2026-08-02T12:00:00Z",
     html_url = "https://github.com/folke/lazy.nvim/pull/123",
   }
@@ -568,6 +569,9 @@ local direct_pull_request = github._project_pull_request_event(
 assert(direct_pull_request.type == "PullRequestEvent")
 assert(direct_pull_request.payload.action == "merged")
 assert(direct_pull_request.payload.pull_request.number == 123)
+assert(direct_pull_request.actor.login == "maintainer")
+assert(direct_pull_request.payload.pull_request.merged_by.login
+  == "maintainer")
 do
   local enriched_pull_request = github.apply_pull_request({
     type = "PullRequestEvent",
@@ -595,6 +599,11 @@ do
     .. "in example/repository")
   enriched_pull_request.payload.pull_request.user.login =
     "Merge-Maintainer"
+  assert(window._project_pull_request_title(
+    enriched_pull_request,
+    "merged pull request #42 in example/repository"
+  ) == "@merge-maintainer merged pr #42 in example/repository")
+  enriched_pull_request.payload.pull_request.user = nil
   assert(window._project_pull_request_title(
     enriched_pull_request,
     "merged pull request #42 in example/repository"
@@ -758,6 +767,24 @@ for index = 1, 20 do
         html_url = "https://github.com/example/repository/pull/42",
       },
     },
+  } or index == 4 and {
+    id = tostring(index),
+    type = "PullRequestEvent",
+    created_at = "2026-07-04T12:00:00Z",
+    actor = { login = "merge-maintainer" },
+    repo = { name = "example/repository" },
+    payload = {
+      action = "merged",
+      number = 43,
+      pull_request = {
+        number = 43,
+        title = "Show the merge maintainer",
+        user = { login = "pull-author" },
+        merged = true,
+        merged_by = { login = "merge-maintainer" },
+        html_url = "https://github.com/example/repository/pull/43",
+      },
+    },
   } or {
     id = tostring(index),
     type = "CreateEvent",
@@ -870,6 +897,9 @@ assert(first_activity_text:find(
   true
 ))
 assert(not first_activity_text:find(state.contributor.name, 1, true))
+assert(first_activity_text:find(
+  "@merge%-maintainer merged pr #43"
+))
 local activity_search_mapping = vim.fn.maparg("/", "n", false, true)
 assert(activity_search_mapping.desc
   == "Search Oculus projects, users, or activity")

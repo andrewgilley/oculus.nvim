@@ -470,7 +470,7 @@ local function project_pull_request_event(repository_name, pull_request)
   if not number or type(merged_at) ~= "string" or merged_at == "" then
     return nil
   end
-  local merger = pull_request.merged_by or pull_request.user
+  local merger = pull_request.merged_by
   return {
     id = ("project-pr:%s:%s"):format(repository_name, number),
     type = "PullRequestEvent",
@@ -707,7 +707,10 @@ local function activity_pull_request_key(event)
   local number = pull_request.number or payload.number
   local merged = payload.action == "merged"
     or (payload.action == "closed" and pull_request.merged == true)
-  if not merged or not repo or not number or pull_request.user then
+  if not merged or not repo or not number then
+    return nil
+  end
+  if pull_request.title and pull_request.user and pull_request.merged_by then
     return nil
   end
   return ("%s#%s"):format(repo, number), repo, number
