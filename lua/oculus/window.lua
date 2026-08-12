@@ -2631,6 +2631,147 @@ local function contributor_by_username(username)
   return nil
 end
 
+local function activity_repository(event)
+  local repository = event.repo
+      and (event.repo.name or event.repo.full_name)
+    or event.repository
+      and (event.repository.full_name or event.repository.name)
+    or ""
+  return tostring(repository):lower()
+end
+
+local function activity_target_id(payload, target)
+  local value = payload[target]
+  if type(value) == "table" then
+    return value.id or value.number
+  end
+  return nil
+end
+
+local function activity_dedupe_key(event)
+  local payload = event.payload or {}
+  local event_type = event.type or event.event_type or "ActivityEvent"
+  local repository = activity_repository(event)
+  if event_type == "PushEvent" then
+    local before = payload.before
+    local head = payload.head
+    if type(head) == "string" and head ~= "" then
+      return table.concat({ "push", repository, before or "", head }, ":")
+    end
+    local shas = {}
+    for _, commit in ipairs(payload.commits or {}) do
+      if type(commit.sha) == "string" and commit.sha ~= "" then
+        shas[#shas + 1] = commit.sha
+      end
+    end
+    if #shas > 0 then
+      table.sort(shas)
+      return table.concat({ "push", repository, table.concat(shas, ",") }, ":")
+    end
+  elseif event_type == "PullRequestEvent" then
+    local pull_request = payload.pull_request or {}
+    local number = pull_request.number or payload.number
+    if number then
+      local merged = payload.action == "merged"
+        or (payload.action == "closed" and (
+          pull_request.merged == true
+          or pull_request.merged_at ~= nil
+          or pull_request.merged_by ~= nil
+        ))
+      local action = merged and "merged" or payload.action or "updated"
+      return table.concat({
+        "pr",
+        repository,
+        number,
+        action,
+        merged and "" or event.created_at or "",
+      }, ":")
+    end
+  elseif event_type == "IssuesEvent" then
+    local number = activity_target_id(payload, "issue") or payload.number
+    if number then
+      return table.concat({
+        "issue",
+        repository,
+        number,
+        payload.action or "updated",
+        event.created_at or "",
+      }, ":")
+    end
+  end
+
+  for _, target in ipairs({ "comment", "review", "release", "forkee" }) do
+    local id = activity_target_id(payload, target)
+    if id then
+      return table.concat({ event_type, repository, target, id }, ":")
+    end
+  end
+  if event_type == "CreateEvent" or event_type == "DeleteEvent" then
+    local ref = payload.ref
+    if ref then
+      return table.concat({
+        event_type,
+        repository,
+        payload.ref_type or "ref",
+        ref,
+        event.created_at or "",
+      }, ":")
+    end
+  end
+  if event.id ~= nil then
+    return table.concat({ event_type, repository, event.id }, ":")
+  end
+  local url = event.url or event.group_url
+  if type(url) == "string" and url ~= "" then
+    return table.concat({
+      event_type,
+      repository,
+      url,
+      event.created_at or "",
+    }, ":")
+  end
+  -- Without a provider or domain identity, treating similar-looking events
+  -- as equal risks hiding separate actions that happened at the same time.
+  return table.concat({ event_type, repository, tostring(event) }, ":")
+end
+
+local function merge_missing_activity_values(current, duplicate)
+  if type(current) ~= "table" or type(duplicate) ~= "table" then
+    return
+  end
+  for key, value in pairs(duplicate) do
+    local existing = current[key]
+    if existing == nil or existing == "" then
+      current[key] = vim.deepcopy(value)
+    elseif type(existing) == "table" and type(value) == "table" then
+      if vim.islist(existing) and #existing == 0 and #value > 0 then
+        current[key] = vim.deepcopy(value)
+      elseif not vim.islist(existing) and not vim.islist(value) then
+        merge_missing_activity_values(existing, value)
+      end
+    end
+  end
+end
+
+local function deduplicate_activity(events)
+  local result = {}
+  local seen = {}
+  for _, event in ipairs(events or {}) do
+    local key = activity_dedupe_key(event)
+    local existing = seen[key]
+    if existing then
+      merge_missing_activity_values(existing, event)
+    else
+      result[#result + 1] = event
+      seen[key] = event
+    end
+  end
+  return result
+end
+
+M._activity_dedupe_key = activity_dedupe_key
+M._deduplicate_activity = deduplicate_activity
+
 local function activity_page(events, page, page_size)
   local result = {}
   local first = (page - 1) * page_size + 1
@@ -2686,7 +2827,7 @@ local function filter_project_events(events, project)
       result[#result + 1] = event
     end
   end
-  return result
+  return deduplicate_activity(result)
 end
 
 M._filter_project_events = filter_project_events
@@ -2977,7 +3118,7 @@ local function filter_project_issues(events, project)
       filtered[#filtered + 1] = event
     end
   end
-  return filtered
+  return deduplicate_activity(filtered)
 end
 
 M._filter_project_issues = filter_project_issues
@@ -3191,7 +3332,9 @@ local function load_activity(contributor, force, page)
     if err then
       render_error(err)
     else
-      local filtered = actions.filter(events, activity_types_for(contributor))
+      local filtered = deduplicate_activity(
+        actions.filter(events, activity_types_for(contributor))
+      )
       M.state.activity_source_events = filtered
       M.state.activity_loaded_pages = math.max(
         M.state.activity_loaded_pages or 1,
@@ -3493,14 +3636,7 @@ end
 M._activity_matches_query = activity_matches_query
 
 local function activity_search_event_key(event)
-  if event.id ~= nil then
-    return "id:" .. tostring(event.id)
-  end
-  return table.concat({
-    tostring(event.type or ""),
-    tostring(event.url or event.group_url or ""),
-    tostring(event.created_at or ""),
-  }, ":")
+  return activity_dedupe_key(event)
 end
 
 local function activity_search_source(events)
@@ -3510,9 +3646,11 @@ local function activity_search_source(events)
     end
     return filter_project_events(events, M.state.activity_project)
   end
-  return actions.filter(
-    events,
-    activity_types_for(M.state.contributor)
+  return deduplicate_activity(
+    actions.filter(
+      events,
+      activity_types_for(M.state.contributor)
+    )
   )
 end
 

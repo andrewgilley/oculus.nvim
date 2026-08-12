@@ -43,6 +43,35 @@ local restore_inspection_sidebar_for_buffer
 local show_inspection_overview
 local show_sidebar_files
 
+function M._enable_inspection_treesitter_context(opts)
+  if opts and opts.inspect_treesitter_context == false then
+    return false
+  end
+  local ok, context = pcall(require, "treesitter-context")
+  if not ok or type(context) ~= "table" then
+    return false
+  end
+  local multiwindow = not opts
+    or opts.inspect_treesitter_context_multiwindow ~= false
+  local enabled = type(context.enabled) == "function"
+    and context.enabled()
+  local configured_multiwindow = context.config
+    and context.config.multiwindow == true
+  if not enabled or configured_multiwindow ~= multiwindow then
+    if type(context.setup) ~= "function" then
+      return false
+    end
+    local setup_ok = pcall(context.setup, {
+      enable = true,
+      multiwindow = multiwindow,
+    })
+    if not setup_ok then
+      return false
+    end
+  end
+  return true
+end
+
 local function git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
   if message == "" then
@@ -6622,6 +6651,7 @@ local function open_tabs(
     vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
     show_inspection_path(first.buf)
+    M._enable_inspection_treesitter_context(opts)
   end)
   inspection_tabs_loading = false
   vim.o.lazyredraw = previous_lazyredraw
@@ -7109,6 +7139,7 @@ local function open_issue_inspection(
     vim.api.nvim_set_current_tabpage(tab)
     vim.api.nvim_set_current_win(win)
     vim.api.nvim_win_set_cursor(win, { 1, 0 })
+    M._enable_inspection_treesitter_context(opts)
     show_inspection_overview(group)
     page.overview_win = group.overview_win
     page.overview_buf = group.overview_buf

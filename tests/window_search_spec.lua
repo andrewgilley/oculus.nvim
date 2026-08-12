@@ -335,6 +335,82 @@ assert(second_page[8].id == "16")
 local third_page = window._activity_page(page_events, 3, 8)
 assert(#third_page == 4)
 assert(third_page[1].id == "17")
+do
+  local duplicate_activity = window._deduplicate_activity({
+    {
+      id = "pr-feed",
+      type = "PullRequestEvent",
+      repo = { name = "Example/Repository" },
+      payload = {
+        action = "closed",
+        pull_request = {
+          number = 42,
+          merged = true,
+          user = { login = "author" },
+        },
+      },
+    },
+    {
+      id = "pr-direct",
+      type = "PullRequestEvent",
+      repo = { name = "example/repository" },
+      payload = {
+        action = "merged",
+        pull_request = {
+          number = 42,
+          merged_by = { login = "maintainer" },
+        },
+      },
+    },
+    {
+      id = "pr-opened",
+      type = "PullRequestEvent",
+      repo = { name = "example/repository" },
+      payload = {
+        action = "opened",
+        pull_request = { number = 42 },
+      },
+    },
+    {
+      id = "push-feed",
+      type = "PushEvent",
+      repo = { name = "example/repository" },
+      payload = { before = "old", head = "new" },
+    },
+    {
+      id = "push-copy",
+      type = "PushEvent",
+      repo = { name = "example/repository" },
+      payload = { before = "old", head = "new" },
+    },
+    {
+      id = "issue-assigned-one",
+      type = "IssuesEvent",
+      repo = { name = "example/repository" },
+      payload = { action = "assigned", issue = { number = 7 } },
+    },
+    {
+      id = "issue-assigned-two",
+      type = "IssuesEvent",
+      repo = { name = "example/repository" },
+      payload = { action = "assigned", issue = { number = 7 } },
+    },
+    {
+      id = "issue-closed",
+      type = "IssuesEvent",
+      repo = { name = "example/repository" },
+      payload = { action = "closed", issue = { number = 7 } },
+    },
+  })
+  assert(#duplicate_activity == 5)
+  assert(duplicate_activity[1].id == "pr-feed")
+  assert(duplicate_activity[1].payload.pull_request.merged_by.login
+    == "maintainer")
+  assert(duplicate_activity[2].payload.action == "opened")
+  assert(duplicate_activity[3].id == "push-feed")
+  assert(duplicate_activity[4].payload.action == "assigned")
+  assert(duplicate_activity[5].payload.action == "closed")
+end
 local search_mapping = vim.fn.maparg("s", "n", false, true)
 assert(search_mapping.desc == "Search Oculus projects, users, or activity")
 local slash_search_mapping = vim.fn.maparg("/", "n", false, true)
