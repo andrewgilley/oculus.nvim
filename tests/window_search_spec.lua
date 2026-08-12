@@ -278,7 +278,7 @@ assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
 assert(initial_user_lines[initial_window_height]
-  == "  t projects  a add  r remove  / search  ?: help  q quit")
+  == "  t projects  a add  r remove  / search  ?: help")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local main_up_mapping =
@@ -1335,12 +1335,13 @@ assert(not footer_text:find("l/→", 1, true))
 assert(not footer_text:find("j/←", 1, true))
 assert(not footer_text:find("? shortcuts", 1, true))
 assert(footer_text:find("b browser", 1, true))
-assert(footer_text:find("p past", 1, true))
-assert(footer_text:find("f forward", 1, true))
-assert(footer_text:find("r refresh", 1, true))
+assert(not footer_text:find("p past", 1, true))
+assert(not footer_text:find("f forward", 1, true))
+assert(not footer_text:find("r refresh", 1, true))
+assert(not footer_text:find("Tab queue", 1, true))
 assert(not footer_text:find("r recent", 1, true))
 assert(not footer_text:find("u refresh", 1, true))
-assert(footer_text:find("q close", 1, true))
+assert(not footer_text:find("q close", 1, true))
 
 older_mapping.callback()
 assert(state.view == "activity")
@@ -1414,7 +1415,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 assert(returned_user_lines[returned_window_height]
-  == "  t projects  a add  r remove  / search  ?: help  q quit")
+  == "  t projects  a add  r remove  / search  ?: help")
 
 do
   vim.cmd("tabnew")
@@ -1809,7 +1810,10 @@ do
     "\n"
   )
   assert(issue_footer_text:find("f filters", 1, true))
-  assert(issue_footer_text:find("Tab queue", 1, true))
+  assert(not issue_footer_text:find("Tab queue", 1, true))
+  assert(not issue_footer_text:find("p past", 1, true))
+  assert(not issue_footer_text:find("r refresh", 1, true))
+  assert(not issue_footer_text:find("q close", 1, true))
   assert(not issue_footer_text:find("f forward", 1, true))
   local queue_mapping = vim.fn.maparg("<Tab>", "n", false, true)
   assert(queue_mapping.desc == "Queue Oculus activity inspection")
