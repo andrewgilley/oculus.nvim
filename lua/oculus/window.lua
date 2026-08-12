@@ -2697,7 +2697,9 @@ load_project_activity = function(project, force, page)
     M.state.opts,
     { force = force or false }
   )
-  request_opts.per_page = project.provider == "codeberg" and 50 or 100
+  request_opts.per_page = project.provider == "codeberg"
+      and math.min(50, math.max(16, M.state.activity_page_size * 2))
+    or 100
   local activity_types = vim.deepcopy(project_activity_types_for(project) or {})
   table.sort(activity_types)
   local feed_key = table.concat({
@@ -2714,7 +2716,11 @@ load_project_activity = function(project, force, page)
       seen_commits = {},
       seen_pull_requests = {},
       next_page = 1,
-      using_updates = false,
+      -- Codeberg's repository activity feed is both large and dominated by
+      -- review/comment events. Its direct commit and merged-PR endpoints avoid
+      -- scanning several slow feed pages merely to fill one visible page.
+      using_updates = project.provider == "codeberg"
+        and type(provider.repository_updates) == "function",
       complete = #activity_types == 0,
       cached = true,
       notice = nil,
