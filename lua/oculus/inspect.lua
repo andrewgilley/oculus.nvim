@@ -75,6 +75,19 @@ function M._enable_inspection_treesitter_context(opts)
       return false
     end
   end
+  -- Context is rendered in a separate floating window. Linking its surface to
+  -- Normal prevents colorschemes with a panel-style TreesitterContext
+  -- background from drawing an apparent divider above inspected code.
+  vim.api.nvim_set_hl(0, "TreesitterContext", { link = "Normal" })
+  vim.api.nvim_set_hl(0, "TreesitterContextBottom", {
+    link = "TreesitterContext",
+  })
+  vim.api.nvim_set_hl(0, "TreesitterContextLineNumberBottom", {
+    link = "TreesitterContextLineNumber",
+  })
+  vim.api.nvim_set_hl(0, "TreesitterContextSeparator", {
+    link = "TreesitterContext",
+  })
   return true
 end
 
@@ -6109,6 +6122,9 @@ vim.api.nvim_create_autocmd("TabEnter", {
       local endpoint = endpoint_for_tab(group, tab)
       if endpoint then
         apply_inspection_filetype(endpoint.buf, false)
+        M._enable_inspection_treesitter_context(
+          group.persistence_config or {}
+        )
       end
       refresh_sidebar(group, tab)
     end
