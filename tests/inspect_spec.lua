@@ -2359,6 +2359,7 @@ github.issue = function(repo, number, _, callback)
 end
 local replacement_complete = false
 local replacement_error
+local replacement_closed = false
 local replacement_ok, replacement_open_err = inspect.open(
   "https://github.com/andrewgilley/oculus.nvim/issues/78",
   {
@@ -2372,6 +2373,9 @@ local replacement_ok, replacement_open_err = inspect.open(
     on_complete = function(message)
       replacement_error = message
       replacement_complete = true
+    end,
+    on_closed = function()
+      replacement_closed = true
     end,
   }
 )
@@ -2392,7 +2396,11 @@ local replacement_state = vim.api.nvim_tabpage_get_var(
 assert(replacement_state.issue_number == 78)
 assert(vim.b[vim.api.nvim_get_current_buf()].oculus_inspect_overview == true)
 vim.fn.maparg("q", "n", false, true).callback()
+assert(not replacement_closed)
 vim.cmd("tabclose")
+assert(vim.wait(1000, function()
+  return replacement_closed
+end), "closing the issue inspection did not complete its lifecycle")
 vim.api.nvim_set_current_win(issue_origin_win)
 vim.wo[issue_origin_win].number = issue_origin_number
 vim.wo[issue_origin_win].relativenumber = issue_origin_relativenumber

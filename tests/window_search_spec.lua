@@ -1039,6 +1039,30 @@ for line, title_line in pairs(state.activity_title_lines) do
 end
 assert(inspect_source_line)
 vim.api.nvim_win_set_cursor(state.win, { inspect_source_line, 0 })
+local regular_queue_mapping = vim.fn.maparg("<Tab>", "n", false, true)
+assert(regular_queue_mapping.desc == "Queue Oculus activity inspection")
+regular_queue_mapping.callback()
+assert(#state.activity_inspect_queue == 1)
+local regular_queue_namespace =
+  vim.api.nvim_get_namespaces().oculus_activity_inspect_queue
+local regular_queue_marks = vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  regular_queue_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#regular_queue_marks > 0)
+assert(regular_queue_marks[1][4].hl_group == "OculusActivityQueued")
+regular_queue_mapping.callback()
+assert(#state.activity_inspect_queue == 0)
+assert(#vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  regular_queue_namespace,
+  0,
+  -1,
+  {}
+) == 0)
 local inspect_description_text = vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_source_line - 1,
@@ -1637,7 +1661,83 @@ do
     "\n"
   )
   assert(issue_footer_text:find("f filters", 1, true))
+  assert(issue_footer_text:find("Tab queue", 1, true))
   assert(not issue_footer_text:find("f forward", 1, true))
+  local queue_mapping = vim.fn.maparg("<Tab>", "n", false, true)
+  assert(queue_mapping.desc == "Queue Oculus activity inspection")
+  local function issue_title_line(number)
+    local suffix = "/issues/" .. tostring(number)
+    for line, title_line in pairs(state.activity_title_lines) do
+      local target = state.line_targets[line]
+      if line == title_line
+        and type(target) == "string"
+        and target:sub(-#suffix) == suffix
+      then
+        return line, target
+      end
+    end
+  end
+  local first_issue_line, first_issue_url = issue_title_line(1)
+  assert(first_issue_line and first_issue_url)
+  vim.api.nvim_win_set_cursor(state.win, { first_issue_line, 0 })
+  queue_mapping.callback()
+  assert(#state.activity_inspect_queue == 1)
+  local issue_queue_namespace =
+    vim.api.nvim_get_namespaces().oculus_activity_inspect_queue
+  assert(issue_queue_namespace)
+  local function issue_is_highlighted(line)
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+      state.buf,
+      issue_queue_namespace,
+      { line - 1, 0 },
+      { line - 1, -1 },
+      { details = true }
+    )) do
+      if mark[4].hl_group == "OculusActivityQueued" then
+        return true
+      end
+    end
+    return false
+  end
+  assert(issue_is_highlighted(first_issue_line))
+  vim.fn.maparg("p", "n", false, true).callback()
+  assert(state.activity_page == 2)
+  local second_issue_line, second_issue_url = issue_title_line(9)
+  assert(second_issue_line and second_issue_url)
+  vim.api.nvim_win_set_cursor(state.win, { second_issue_line, 0 })
+  queue_mapping.callback()
+  assert(#state.activity_inspect_queue == 2)
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.activity_page == 1)
+  first_issue_line = assert(issue_title_line(1))
+  assert(issue_is_highlighted(first_issue_line))
+
+  local original_queue_inspect_open = inspect.open
+  local queued_urls = {}
+  local queued_lifecycles = {}
+  inspect.open = function(url, _, context, lifecycle)
+    queued_urls[#queued_urls + 1] = url
+    queued_lifecycles[#queued_lifecycles + 1] = lifecycle
+    assert(type(context.issue) == "table")
+    return true
+  end
+  vim.api.nvim_win_set_cursor(state.win, { first_issue_line, 0 })
+  vim.fn.maparg("h", "n", false, true).callback()
+  assert(vim.deep_equal(queued_urls, { first_issue_url }))
+  assert(#state.activity_inspect_queue == 1)
+  queued_lifecycles[1].on_complete()
+  queued_lifecycles[1].on_closed()
+  assert(vim.wait(1000, function()
+    return #queued_urls == 2
+  end), "second queued issue inspection was not opened")
+  assert(queued_urls[2] == second_issue_url)
+  queued_lifecycles[2].on_complete()
+  queued_lifecycles[2].on_closed()
+  assert(vim.wait(1000, function()
+    return state.activity_inspect_queue_running == false
+  end), "issue inspection queue did not finish")
+  assert(#state.activity_inspect_queue == 0)
+  inspect.open = original_queue_inspect_open
   vim.fn.maparg("f", "n", false, true).callback()
   assert(state.view == "issue_filters")
   local issue_filter_text = table.concat(

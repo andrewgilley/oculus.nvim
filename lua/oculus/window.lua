@@ -40,6 +40,9 @@ local inspect_loading_ns = vim.api.nvim_create_namespace(
 local activity_page_loading_ns = vim.api.nvim_create_namespace(
   "oculus_activity_page_loading"
 )
+local activity_inspect_queue_ns = vim.api.nvim_create_namespace(
+  "oculus_activity_inspect_queue"
+)
 local window_highlight_ns = vim.api.nvim_create_namespace(
   "oculus_window_highlights"
 )
@@ -131,6 +134,10 @@ M.state = {
   activity_return = nil,
   project_issue_return = nil,
   project_issue_feed = nil,
+  activity_inspect_queue = {},
+  activity_inspect_queue_lookup = {},
+  activity_inspect_queue_scope = nil,
+  activity_inspect_queue_running = false,
   activity_loading_timer = nil,
   activity_loading_frame = 1,
   restore_cursor = nil,
@@ -256,6 +263,10 @@ local function sync_window_highlights(source_win)
     "OculusContributorSelected",
     { fg = "#ffffff" }
   )
+  vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityQueued", {
+    fg = "#fbd38d",
+    bold = true,
+  })
 end
 
 local function use_window_highlights(win)
@@ -480,7 +491,7 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local activity_commands = "  h inspect   b browser"
+  local activity_commands = "  h inspect   Tab queue   b browser"
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
       activity_commands = activity_commands
@@ -692,6 +703,12 @@ local function set_lines(lines)
   vim.api.nvim_buf_clear_namespace(
     M.state.buf,
     contributor_selection_ns,
+    0,
+    -1
+  )
+  vim.api.nvim_buf_clear_namespace(
+    M.state.buf,
+    activity_inspect_queue_ns,
     0,
     -1
   )
@@ -2084,6 +2101,34 @@ local function render_error(message)
   highlight(6, 2, -1, "Comment")
 end
 
+local function set_activity_inspect_queue_scope()
+  local scope
+  if M.state.activity_project then
+    local project = M.state.activity_project
+    scope = table.concat({
+      "project",
+      project.provider == "codeberg" and "codeberg" or "github",
+      project.repository:lower(),
+      M.state.activity_issue_page and "issues" or "activity",
+    }, ":")
+  elseif M.state.contributor then
+    local contributor = M.state.contributor
+    scope = table.concat({
+      "user",
+      contributor.provider == "codeberg" and "codeberg" or "github",
+      contributor.username:lower(),
+    }, ":")
+  end
+  if scope
+    and M.state.activity_inspect_queue_scope ~= scope
+    and not M.state.activity_inspect_queue_running
+  then
+    M.state.activity_inspect_queue = {}
+    M.state.activity_inspect_queue_lookup = {}
+    M.state.activity_inspect_queue_scope = scope
+  end
+end
+
 local function render_activity(events, cached, notice, opts)
   stop_activity_page_loading()
   opts = opts or {}
@@ -2092,6 +2137,7 @@ local function render_activity(events, cached, notice, opts)
   if opts.issue_page ~= nil then
     M.state.activity_issue_page = opts.issue_page == true
   end
+  set_activity_inspect_queue_scope()
   if not M.state.activity_commit_page then
     M.state.activity_return = nil
   end
@@ -2266,6 +2312,20 @@ local function render_activity(events, cached, notice, opts)
       elseif kind == "main" then
         highlight(line, 0, 5, "OculusActivityIcon")
       end
+    end
+  end
+  for line, title_line in pairs(M.state.activity_title_lines) do
+    local target = M.state.line_targets[line]
+      or M.state.line_targets[title_line]
+    if M.state.activity_inspect_queue_lookup[target] then
+      vim.api.nvim_buf_add_highlight(
+        M.state.buf,
+        activity_inspect_queue_ns,
+        "OculusActivityQueued",
+        line - 1,
+        0,
+        -1
+      )
     end
   end
   if first_event_line then
@@ -2476,6 +2536,7 @@ local function render_shortcuts()
   })
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
+    { "Tab", "Queue an issue for sequential inspection" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Open a project's issue activity" },
     { "r", "Refresh the current activity page" },
@@ -3798,6 +3859,130 @@ local function open_activity_in_browser()
   end
 end
 
+local function rebuild_activity_inspect_queue_lookup()
+  local lookup = {}
+  for _, entry in ipairs(M.state.activity_inspect_queue or {}) do
+    lookup[entry.url] = true
+  end
+  M.state.activity_inspect_queue_lookup = lookup
+end
+
+local function apply_activity_inspect_queue_highlights()
+  if not is_valid_buf(M.state.buf) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(
+    M.state.buf,
+    activity_inspect_queue_ns,
+    0,
+    -1
+  )
+  if M.state.view ~= "activity" then
+    return
+  end
+  for line, title_line in pairs(M.state.activity_title_lines) do
+    local target = M.state.line_targets[line]
+      or M.state.line_targets[title_line]
+    if M.state.activity_inspect_queue_lookup[target] then
+      vim.api.nvim_buf_add_highlight(
+        M.state.buf,
+        activity_inspect_queue_ns,
+        "OculusActivityQueued",
+        line - 1,
+        0,
+        -1
+      )
+    end
+  end
+end
+
+local function toggle_activity_inspect_queue()
+  if M.state.view ~= "activity"
+    or M.state.activity_inspect_queue_running
+  then
+    return
+  end
+  local source_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  local title_line = M.state.activity_title_lines[source_line] or source_line
+  local url = M.state.line_targets[source_line]
+    or M.state.line_targets[title_line]
+  local context = M.state.inspect_targets[source_line]
+    or M.state.inspect_targets[title_line]
+  if type(url) ~= "string"
+    or not inspect._parse_target_url(url)
+  then
+    vim.notify(
+      "Oculus: this activity does not have an inspectable target",
+      vim.log.levels.WARN
+    )
+    return
+  end
+
+  local removed = false
+  for index, entry in ipairs(M.state.activity_inspect_queue) do
+    if entry.url == url then
+      table.remove(M.state.activity_inspect_queue, index)
+      removed = true
+      break
+    end
+  end
+  if not removed then
+    M.state.activity_inspect_queue[#M.state.activity_inspect_queue + 1] = {
+      url = url,
+      context = type(context) == "table" and vim.deepcopy(context) or nil,
+    }
+  end
+  rebuild_activity_inspect_queue_lookup()
+  apply_activity_inspect_queue_highlights()
+end
+
+local open_next_queued_activity
+
+open_next_queued_activity = function(ui_lifecycle)
+  local entry = table.remove(M.state.activity_inspect_queue, 1)
+  rebuild_activity_inspect_queue_lookup()
+  apply_activity_inspect_queue_highlights()
+  if not entry then
+    M.state.activity_inspect_queue_running = false
+    return true
+  end
+
+  local function continue_queue()
+    vim.schedule(function()
+      open_next_queued_activity(nil)
+    end)
+  end
+  local lifecycle = {
+    on_progress = ui_lifecycle and ui_lifecycle.on_progress or nil,
+    on_complete = function(message)
+      if ui_lifecycle and ui_lifecycle.on_complete then
+        ui_lifecycle.on_complete(message)
+      elseif message then
+        vim.notify("Oculus: " .. tostring(message), vim.log.levels.WARN)
+      end
+      if message then
+        continue_queue()
+      end
+    end,
+    on_closed = continue_queue,
+  }
+  local ok, err = inspect.open(
+    entry.url,
+    M.state.opts,
+    entry.context,
+    lifecycle
+  )
+  if not ok then
+    if ui_lifecycle and ui_lifecycle.on_complete then
+      ui_lifecycle.on_complete(err)
+    elseif err then
+      vim.notify("Oculus: " .. tostring(err), vim.log.levels.WARN)
+    end
+    continue_queue()
+  end
+  return ok, err
+end
+
 local function inspect_current()
   if M.state.view ~= "activity" then
     vim.notify(
@@ -3807,7 +3992,10 @@ local function inspect_current()
     return
   end
 
-  local target = target_on_cursor()
+  local queued_entry = not M.state.activity_inspect_queue_running
+      and M.state.activity_inspect_queue[1]
+    or nil
+  local target = queued_entry and queued_entry.url or target_on_cursor()
   if type(target) ~= "string" then
     vim.notify(
       "Oculus: this activity does not have an inspectable target",
@@ -3817,16 +4005,30 @@ local function inspect_current()
   end
 
   local source_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
-  local line = M.state.activity_title_lines[source_line] or source_line
+  if queued_entry then
+    source_line = nil
+    for candidate, title_line in pairs(M.state.activity_title_lines) do
+      if candidate == title_line
+        and M.state.line_targets[candidate] == target
+      then
+        source_line = candidate
+        break
+      end
+    end
+  end
+  local line = source_line
+    and (M.state.activity_title_lines[source_line] or source_line)
+    or nil
   local activity_buf = M.state.buf
-  local activity_line = vim.api.nvim_buf_get_lines(
-    activity_buf,
-    line - 1,
-    line,
-    false
-  )[1] or ""
+  local activity_line = line and vim.api.nvim_buf_get_lines(
+      activity_buf,
+      line - 1,
+      line,
+      false
+    )[1]
+    or ""
   local function set_loading_line(text)
-    if not is_valid_buf(activity_buf) then
+    if not line or not is_valid_buf(activity_buf) then
       return
     end
     local modifiable = vim.bo[activity_buf].modifiable
@@ -3841,7 +4043,8 @@ local function inspect_current()
     vim.bo[activity_buf].modifiable = modifiable
   end
   local function clear_spinner()
-    if is_valid_buf(activity_buf)
+    if source_line
+      and is_valid_buf(activity_buf)
       and M.state.buf == activity_buf
       and M.state.view == "activity"
       and M.state.line_targets[source_line] == target
@@ -3855,14 +4058,10 @@ local function inspect_current()
       )
     end
   end
-  local ok, err = inspect.open(
-    target,
-    M.state.opts,
-    M.state.inspect_targets[source_line]
-      or M.state.inspect_targets[line],
-    {
+  local lifecycle = {
       on_progress = function(frame)
-        if not is_valid_buf(activity_buf)
+        if not source_line
+          or not is_valid_buf(activity_buf)
           or M.state.buf ~= activity_buf
           or M.state.view ~= "activity"
           or M.state.line_targets[source_line] ~= target
@@ -3893,7 +4092,20 @@ local function inspect_current()
         end
       end,
     }
-  )
+  local ok, err
+  if queued_entry then
+    M.state.activity_inspect_queue_running = true
+    open_next_queued_activity(lifecycle)
+    ok = true
+  else
+    ok, err = inspect.open(
+      target,
+      M.state.opts,
+      M.state.inspect_targets[source_line]
+        or M.state.inspect_targets[line],
+      lifecycle
+    )
+  end
   if not ok and err then
     clear_spinner()
     vim.notify("Oculus: " .. err, vim.log.levels.WARN)
@@ -4248,6 +4460,7 @@ local function map_keys(buf)
   end, "Remove selected Oculus item or refresh activity")
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
+  map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
   map("u", open_project_issue_activity, "Open Oculus project issues")
   map("k", function()
     move_cursor(1)

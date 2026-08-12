@@ -5610,12 +5610,42 @@ local function reconcile_foreign_sidebars()
   end
 end
 
+function M._notify_closed_inspection_groups()
+  vim.schedule(function()
+    if inspection_tabs_loading then
+      return
+    end
+    for index = #sidebar_groups, 1, -1 do
+      local group = sidebar_groups[index]
+      local _, has_endpoint = group_foreign_sidebar_state(group)
+      if not has_endpoint and not group.discarded and not group.close_notified
+      then
+        group.close_notified = true
+        table.remove(sidebar_groups, index)
+        close_overview_window(group)
+        if group.sidebar_buf
+          and vim.api.nvim_buf_is_valid(group.sidebar_buf)
+        then
+          pcall(vim.api.nvim_buf_delete, group.sidebar_buf, { force = true })
+        end
+        local lifecycle = group.inspection_lifecycle
+        local callback = lifecycle and lifecycle.on_closed
+        if type(callback) == "function" then
+          pcall(callback)
+        end
+      end
+    end
+  end)
+end
+
 vim.api.nvim_create_autocmd({
   "WinNew",
   "WinEnter",
   "BufWinEnter",
   "FileType",
   "WinClosed",
+  "TabClosed",
+  "BufWipeout",
 }, {
   group = sync_group,
   callback = function(args)
@@ -5626,6 +5656,9 @@ vim.api.nvim_create_autocmd({
           queue_displaced_sidebar_restore(group)
         end
       end
+    end
+    if args.event == "TabClosed" or args.event == "BufWipeout" then
+      M._notify_closed_inspection_groups()
     end
   end,
 })
@@ -6454,6 +6487,7 @@ local function open_tabs(
   local ok, err = pcall(function()
     M._discard_previous_inspections()
     local inspection_sessions = {
+      inspection_lifecycle = loading and loading.lifecycle,
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
@@ -7001,6 +7035,7 @@ local function open_issue_inspection(
 
     local group = {
       kind = "issue",
+      inspection_lifecycle = loading and loading.lifecycle,
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
