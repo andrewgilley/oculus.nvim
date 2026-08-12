@@ -57,13 +57,19 @@ function M._enable_inspection_treesitter_context(opts)
     and context.enabled()
   local configured_multiwindow = context.config
     and context.config.multiwindow == true
-  if not enabled or configured_multiwindow ~= multiwindow then
+  local separator_disabled = context.config
+    and context.config.separator == false
+  if not enabled
+    or configured_multiwindow ~= multiwindow
+    or not separator_disabled
+  then
     if type(context.setup) ~= "function" then
       return false
     end
     local setup_ok = pcall(context.setup, {
       enable = true,
       multiwindow = multiwindow,
+      separator = false,
     })
     if not setup_ok then
       return false
