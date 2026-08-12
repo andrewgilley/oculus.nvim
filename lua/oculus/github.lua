@@ -295,7 +295,7 @@ local function project_pull_request_event(repository, pull_request)
   return {
     id = ("project-pr:%s:%s"):format(repository, number),
     type = "PullRequestEvent",
-    actor = pull_request.user,
+    actor = pull_request.merged_by,
     repo = { name = repository },
     created_at = merged_at,
     payload = {
@@ -307,6 +307,7 @@ local function project_pull_request_event(repository, pull_request)
         user = pull_request.user,
         merged = true,
         merged_at = merged_at,
+        merged_by = pull_request.merged_by,
         html_url = pull_request.html_url,
       },
     },

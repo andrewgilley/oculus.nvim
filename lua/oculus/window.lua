@@ -1269,18 +1269,25 @@ local function project_pull_request_title(event, text)
   local number = pull_request.number or payload.number
   local repository = event.repo
     and (event.repo.name or event.repo.full_name)
-  if merger and author and number and repository then
-    if merger:lower() == author:lower() then
+  if merger and number and repository then
+    if author and merger:lower() == author:lower() then
       return ("%s merged pr #%s in %s"):format(
         merger,
         number,
         repository
       )
     end
-    return ("%s merged pr #%s from %s in %s"):format(
+    if author then
+      return ("%s merged pr #%s from %s in %s"):format(
+        merger,
+        number,
+        author,
+        repository
+      )
+    end
+    return ("%s merged pr #%s in %s"):format(
       merger,
       number,
-      author,
       repository
     )
   end
@@ -2224,7 +2231,7 @@ local function render_activity(events, cached, notice, opts)
       if author then
         item.text = author .. " " .. item.text
       end
-    elseif project and event.type == "PullRequestEvent" then
+    elseif event.type == "PullRequestEvent" then
       item.text = project_pull_request_title(event, item.text)
     end
     local inspect_context = inspect.activity_context(event)
