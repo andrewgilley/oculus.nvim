@@ -650,6 +650,41 @@ do
   }))
   assert(#partial_push.payload.commits == 10)
   assert(not codeberg._push_needs_enrichment(partial_push))
+  local direct_codeberg_commit = codeberg._project_commit_event(
+    "ziglang/zig",
+    {
+      sha = "direct-codeberg-commit",
+      created = "2026-08-11T20:00:12+02:00",
+      html_url = "https://codeberg.org/ziglang/zig/commit/direct",
+      author = { login = "zig-author" },
+      commit = {
+        message = "Avoid scanning the broad activity feed",
+        author = {
+          name = "Zig Author",
+          date = "2026-08-10T12:00:00+02:00",
+        },
+      },
+    }
+  )
+  assert(direct_codeberg_commit.type == "PushEvent")
+  assert(direct_codeberg_commit.actor.login == "zig-author")
+  assert(direct_codeberg_commit.created_at
+    == "2026-08-11T20:00:12+02:00")
+  local direct_codeberg_pull = codeberg._project_pull_request_event(
+    "ziglang/zig",
+    {
+      number = 36462,
+      title = "Load past project items promptly",
+      user = { login = "pull-author" },
+      merged_by = { login = "zig-merger" },
+      merged_at = "2026-08-11T20:00:19+02:00",
+      html_url = "https://codeberg.org/ziglang/zig/pulls/36462",
+    }
+  )
+  assert(direct_codeberg_pull.type == "PullRequestEvent")
+  assert(direct_codeberg_pull.actor.login == "zig-merger")
+  assert(direct_codeberg_pull.payload.pull_request.user.login
+    == "pull-author")
 end
 local original_events = github.events
 local original_enrich_pull_requests = github.enrich_pull_requests
@@ -1900,6 +1935,108 @@ do
   github.repository_events = original_repository_events
   github.repository_updates = original_repository_updates
   github.repository_issues = original_repository_issues
+end
+do
+  local codeberg = require("oculus.codeberg")
+  local original_repository_events = codeberg.repository_events
+  local original_repository_updates = codeberg.repository_updates
+  local original_enrich_pull_requests = codeberg.enrich_pull_requests
+  local original_enrich_pushes = codeberg.enrich_pushes
+  local repository_event_requests = 0
+  local repository_update_pages = {}
+  codeberg.repository_events = function()
+    repository_event_requests = repository_event_requests + 1
+    error("Codeberg project activity should use direct updates")
+  end
+  codeberg.repository_updates = function(repository, opts, callback)
+    assert(repository == "ziglang/zig")
+    assert(opts.per_page == 16)
+    repository_update_pages[#repository_update_pages + 1] = opts.page
+    local events = {}
+    for index = 1, 8 do
+      local event_index = (opts.page - 1) * 8 + index
+      events[#events + 1] = {
+        id = "zig-direct-" .. event_index,
+        type = "PushEvent",
+        actor = { login = "zig-author" },
+        repo = { name = repository },
+        created_at = ("2026-08-%02dT12:00:00Z"):format(
+          20 - event_index
+        ),
+        payload = {
+          size = 1,
+          head = "zigcommit" .. event_index,
+          commits = {
+            {
+              sha = "zigcommit" .. event_index,
+              message = "Zig update " .. event_index,
+            },
+          },
+        },
+      }
+    end
+    callback(events, nil, false)
+  end
+  codeberg.enrich_pull_requests = function(events, _, callback)
+    callback(events)
+  end
+  codeberg.enrich_pushes = function(events, _, callback)
+    callback(events)
+  end
+
+  state.view = "contributors"
+  state.activity_project = nil
+  state.contributor = nil
+  state.events = nil
+  state.activity_loaded = false
+  state.project_activity_feed = nil
+  window.open({
+    width = 0.8,
+    height = 0.8,
+    border = "rounded",
+    results_limit = 8,
+    projects = {
+      {
+        name = "Zig",
+        repository = "ziglang/zig",
+        provider = "codeberg",
+      },
+    },
+  })
+  state = window.state
+  for line, target in pairs(state.line_targets) do
+    if target.kind == "project" then
+      vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+      break
+    end
+  end
+  vim.fn.maparg("<CR>", "n", false, true).callback()
+  assert(#state.events == 8)
+  assert(repository_event_requests == 0)
+  assert(
+    vim.deep_equal(repository_update_pages, { 1 }),
+    vim.inspect(repository_update_pages)
+  )
+  vim.fn.maparg("p", "n", false, true).callback()
+  assert(state.activity_page == 2)
+  assert(#state.events == 8)
+  assert(
+    vim.deep_equal(repository_update_pages, { 1, 2 }),
+    vim.inspect(repository_update_pages)
+  )
+  assert(#vim.api.nvim_buf_get_extmarks(
+    state.buf,
+    activity_page_loading_namespace,
+    0,
+    -1,
+    {}
+  ) == 0)
+  window.close()
+
+  codeberg.repository_events = original_repository_events
+  codeberg.repository_updates = original_repository_updates
+  codeberg.enrich_pull_requests = original_enrich_pull_requests
+  codeberg.enrich_pushes = original_enrich_pushes
 end
 github.events = original_events
 github.enrich_pull_requests = original_enrich_pull_requests
