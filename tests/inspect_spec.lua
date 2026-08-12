@@ -94,6 +94,37 @@ assert(oculus.config.inspect_old_version == "<C-s>")
 assert(oculus.config.inspect_new_version == "<C-d>")
 assert(oculus.config.inspect_next_chunk == "<C-Tab>")
 assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
+assert(oculus.config.inspect_treesitter_context == true)
+assert(oculus.config.inspect_treesitter_context_multiwindow == true)
+do
+  local module_name = "treesitter-context"
+  local original_context = package.loaded[module_name]
+  local setup_options
+  local fake_context = {
+    config = { multiwindow = false },
+    enabled = function()
+      return true
+    end,
+    setup = function(options)
+      setup_options = vim.deepcopy(options)
+    end,
+  }
+  package.loaded[module_name] = fake_context
+  assert(inspect._enable_inspection_treesitter_context({}))
+  assert(vim.deep_equal(setup_options, {
+    enable = true,
+    multiwindow = true,
+  }))
+  setup_options = nil
+  fake_context.config.multiwindow = true
+  assert(inspect._enable_inspection_treesitter_context({}))
+  assert(setup_options == nil)
+  assert(not inspect._enable_inspection_treesitter_context({
+    inspect_treesitter_context = false,
+  }))
+  assert(setup_options == nil)
+  package.loaded[module_name] = original_context
+end
 assert(oculus.config.inspect_next_file == nil)
 assert(oculus.config.persist_inspect_overviews == true)
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "change")
