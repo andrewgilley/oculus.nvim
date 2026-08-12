@@ -92,7 +92,7 @@ function M.events(username, opts, callback)
     )
   then
     vim.schedule(function()
-      callback(cached.events, nil, true, cached.complete)
+      callback(cached.events, nil, true, nil, cached.complete)
     end)
     return
   end
@@ -112,7 +112,7 @@ function M.events(username, opts, callback)
       per_page = per_page,
       complete = complete,
     }
-    callback(events, nil, false, complete)
+    callback(events, nil, false, nil, complete)
   end)
 end
 
@@ -139,6 +139,7 @@ function M.repository_events(repository, opts, callback)
         vim.deepcopy(cached.events),
         nil,
         true,
+        nil,
         cached.complete
       )
     end)
@@ -163,6 +164,7 @@ function M.repository_events(repository, opts, callback)
       vim.deepcopy(events),
       nil,
       false,
+      nil,
       #events < per_page
     )
   end)

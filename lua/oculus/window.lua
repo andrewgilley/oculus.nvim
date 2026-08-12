@@ -2144,6 +2144,9 @@ end
 local function render_activity(events, cached, notice, opts)
   stop_activity_page_loading()
   opts = opts or {}
+  notice = type(notice) == "string" and notice ~= ""
+      and notice
+    or nil
   M.state.view = "activity"
   M.state.activity_commit_page = opts.commit_page == true
   if opts.issue_page ~= nil then
@@ -3627,7 +3630,7 @@ ensure_activity_search_results = function(required_results, requested_page)
 
   local request_id = M.state.request_id
   local source_page = feed.next_page
-  request(subject, request_opts, function(events, err, _, fourth)
+  request(subject, request_opts, function(events, err, _, fourth, fifth)
     if request_id ~= M.state.request_id
       or feed ~= M.state.activity_search_feed
       or not M.state.activity_search_return
@@ -3667,7 +3670,8 @@ ensure_activity_search_results = function(required_results, requested_page)
     local is_codeberg = (project and project.provider)
         == "codeberg"
       or (contributor and contributor.provider) == "codeberg"
-    local provider_complete = fourth == true
+    local completion = callback_kind == "issues" and fourth or fifth
+    local provider_complete = completion == true
       and (
         callback_kind == "issues"
         or (is_codeberg and callback_kind ~= "updates")
