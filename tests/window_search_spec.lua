@@ -909,6 +909,28 @@ activity_search_mapping.callback()
 assert(state.search_kind == "activity")
 assert(state.buf == activity_buf_before_search)
 assert(vim.api.nvim_win_is_valid(state.search_win))
+local activity_main_position = vim.api.nvim_win_get_position(state.win)
+local activity_main_width = vim.api.nvim_win_get_width(state.win)
+local activity_left_width = math.max(
+  30,
+  math.min(
+    math.max(40, math.floor(activity_main_width * 0.52)),
+    activity_main_width - 22
+  )
+)
+local activity_search_config = vim.api.nvim_win_get_config(state.search_win)
+assert(activity_search_config.col == activity_main_position[2] + 2)
+assert(activity_search_config.width
+  == math.max(1, activity_left_width - 6))
+assert(activity_search_config.width < activity_main_width - 8)
+local activity_lines_during_search = vim.api.nvim_buf_get_lines(
+  state.buf,
+  0,
+  3,
+  false
+)
+assert(activity_lines_during_search[2] == "")
+assert(activity_lines_during_search[3] == "")
 local requests_before_activity_search = #activity_search_pages
 vim.api.nvim_buf_set_lines(
   state.search_buf,
