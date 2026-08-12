@@ -498,23 +498,20 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local activity_commands =
-    "  h inspect   Tab queue   b browser   / search"
+  local activity_commands = "  h inspect   b browser   / search"
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
       activity_commands = activity_commands
-        .. "   p past   f filters   r refresh"
+        .. "   f filters"
     else
       if M.state.activity_project then
         activity_commands = activity_commands .. "   u issues"
       end
-      activity_commands = activity_commands
-        .. "   p past   f forward   r refresh"
     end
   end
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    activity_commands .. "   q close",
+    activity_commands,
   }
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1595,8 +1592,8 @@ local function render_contributors()
   footer(lines, searching
       and "esc cancel"
     or showing_users
-        and "t projects  a add  r remove  / search  ?: help  q quit"
-      or "t users  a add  r remove  / search  ?: help  q quit")
+        and "t projects  a add  r remove  / search  ?: help"
+      or "t users  a add  r remove  / search  ?: help")
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
