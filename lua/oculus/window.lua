@@ -3313,24 +3313,36 @@ local function search_win_config()
   end
   local position = vim.api.nvim_win_get_position(M.state.win)
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
-  local activity_search = M.state.search_kind == "activity"
   local left_width = preview_left_width(parent_width)
-  local search_col = activity_search
-      and position[2] + 4
-    or position[2] + 2
-  local search_width = activity_search
-      and math.max(1, parent_width - 8)
-    or math.max(1, left_width - 6)
   return {
     relative = "editor",
-    width = search_width,
+    width = math.max(1, left_width - 6),
     height = 1,
     row = position[1] + 1,
-    col = search_col,
+    col = position[2] + 2,
     style = "minimal",
     border = M.state.opts.border or "rounded",
     zindex = 70,
   }
+end
+
+local function hide_activity_search_heading()
+  if not is_valid_buf(M.state.buf) then
+    return
+  end
+  local line_count = vim.api.nvim_buf_line_count(M.state.buf)
+  if line_count < 3 then
+    return
+  end
+  vim.bo[M.state.buf].modifiable = true
+  vim.api.nvim_buf_set_lines(
+    M.state.buf,
+    1,
+    3,
+    false,
+    { "", "" }
+  )
+  vim.bo[M.state.buf].modifiable = false
 end
 
 local function clear_search_window()
@@ -3873,6 +3885,9 @@ local function open_search()
   local win = vim.api.nvim_open_win(buf, true, config)
   M.state.opening_search = false
   M.state.search_win = win
+  if activity_search then
+    hide_activity_search_heading()
+  end
   vim.wo[win].wrap = false
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
