@@ -116,6 +116,15 @@ do
     multiwindow = true,
     separator = false,
   }))
+  assert(vim.api.nvim_get_hl(0, {
+    name = "TreesitterContext",
+  }).link == "Normal")
+  assert(vim.api.nvim_get_hl(0, {
+    name = "TreesitterContextBottom",
+  }).link == "TreesitterContext")
+  assert(vim.api.nvim_get_hl(0, {
+    name = "TreesitterContextLineNumberBottom",
+  }).link == "TreesitterContextLineNumber")
   setup_options = nil
   fake_context.config.multiwindow = true
   fake_context.config.separator = false
