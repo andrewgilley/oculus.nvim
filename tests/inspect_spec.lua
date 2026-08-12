@@ -101,7 +101,7 @@ do
   local original_context = package.loaded[module_name]
   local setup_options
   local fake_context = {
-    config = { multiwindow = false },
+    config = { multiwindow = false, separator = "─" },
     enabled = function()
       return true
     end,
@@ -114,9 +114,11 @@ do
   assert(vim.deep_equal(setup_options, {
     enable = true,
     multiwindow = true,
+    separator = false,
   }))
   setup_options = nil
   fake_context.config.multiwindow = true
+  fake_context.config.separator = false
   assert(inspect._enable_inspection_treesitter_context({}))
   assert(setup_options == nil)
   assert(not inspect._enable_inspection_treesitter_context({
