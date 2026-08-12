@@ -338,7 +338,10 @@ end
 function M.events(username, opts, callback)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
-  local cached = cache[username]
+  local page = math.max(1, math.floor(opts.page or 1))
+  local cache_key = page == 1 and username
+    or (username .. ":" .. tostring(page))
+  local cached = cache[cache_key]
   local limit = math.min(
     50,
     math.max(1, math.floor(opts.per_page or 30))
@@ -352,14 +355,15 @@ function M.events(username, opts, callback)
     )
   then
     vim.schedule(function()
-      callback(cached.events, nil, true)
+      callback(cached.events, nil, true, cached.complete)
     end)
     return
   end
 
   local url = (
-    "%s/api/v1/users/%s/activities/feeds?only-performed-by=true&limit=%d"
-  ):format(base_url, vim.uri_encode(username), limit)
+    "%s/api/v1/users/%s/activities/feeds"
+      .. "?only-performed-by=true&limit=%d&page=%d"
+  ):format(base_url, vim.uri_encode(username), limit, page)
   request_json(url, opts, function(activities, err)
     if not activities then
       callback(nil, err)
@@ -370,13 +374,14 @@ function M.events(username, opts, callback)
     for _, activity in ipairs(activities) do
       events[#events + 1] = M.normalize_activity(activity)
     end
-    cache[username] = {
+    local complete = #activities < limit
+    cache[cache_key] = {
       events = events,
       fetched_at = os.time(),
       per_page = limit,
-      complete = #activities < limit,
+      complete = complete,
     }
-    callback(events, nil, false)
+    callback(events, nil, false, complete)
   end)
 end
 
@@ -399,7 +404,7 @@ function M.repository_events(repository_name, opts, callback)
     )
   then
     vim.schedule(function()
-      callback(cached.events, nil, true)
+      callback(cached.events, nil, true, cached.complete)
     end)
     return
   end
@@ -423,7 +428,7 @@ function M.repository_events(repository_name, opts, callback)
       per_page = limit,
       complete = #activities < limit,
     }
-    callback(events, nil, false)
+    callback(events, nil, false, #activities < limit)
   end)
 end
 

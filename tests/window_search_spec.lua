@@ -243,7 +243,7 @@ do
 end
 do
   local project_search = vim.fn.maparg("/", "n", false, true)
-  assert(project_search.desc == "Fuzzy-search Oculus projects or users")
+  assert(project_search.desc == "Search Oculus projects, users, or activity")
   project_search.callback()
   vim.api.nvim_buf_set_lines(
     state.search_buf,
@@ -336,9 +336,10 @@ local third_page = window._activity_page(page_events, 3, 8)
 assert(#third_page == 4)
 assert(third_page[1].id == "17")
 local search_mapping = vim.fn.maparg("s", "n", false, true)
-assert(search_mapping.desc == "Fuzzy-search Oculus projects or users")
+assert(search_mapping.desc == "Search Oculus projects, users, or activity")
 local slash_search_mapping = vim.fn.maparg("/", "n", false, true)
-assert(slash_search_mapping.desc == "Fuzzy-search Oculus projects or users")
+assert(slash_search_mapping.desc
+  == "Search Oculus projects, users, or activity")
 assert(slash_search_mapping.callback == search_mapping.callback)
 search_mapping.callback()
 vim.wait(10)
@@ -771,7 +772,20 @@ for index = 1, 20 do
 end
 local deferred_activity_request
 local requested_force = {}
+local activity_search_pages = {}
 github.events = function(_, opts, callback)
+  if opts.activity_search then
+    assert(opts.search_query == "explicit"
+      or opts.search_query == "example/repository")
+    activity_search_pages[#activity_search_pages + 1] = opts.page
+    callback(
+      opts.page == 1 and vim.deepcopy(activity_events) or {},
+      nil,
+      false,
+      true
+    )
+    return
+  end
   requested_per_page[#requested_per_page + 1] = opts.per_page
   requested_force[#requested_force + 1] = opts.force
   if deferred_activity_request == true then
@@ -856,6 +870,78 @@ assert(first_activity_text:find(
   true
 ))
 assert(not first_activity_text:find(state.contributor.name, 1, true))
+local activity_search_mapping = vim.fn.maparg("/", "n", false, true)
+assert(activity_search_mapping.desc
+  == "Search Oculus projects, users, or activity")
+local activity_buf_before_search = state.buf
+local activity_cursor_before_search = vim.api.nvim_win_get_cursor(state.win)
+activity_search_mapping.callback()
+assert(state.search_kind == "activity")
+assert(state.buf == activity_buf_before_search)
+assert(vim.api.nvim_win_is_valid(state.search_win))
+local requests_before_activity_search = #activity_search_pages
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { "explicit" }
+)
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+assert(state.search_query == "explicit")
+assert(state.activity_search_results == nil)
+assert(#state.events == 8)
+assert(#activity_search_pages == requests_before_activity_search)
+vim.fn.maparg("<CR>", "i", false, true).callback()
+assert(state.search_win == nil)
+assert(state.activity_search_return ~= nil)
+assert(state.view == "activity")
+assert(state.activity_search_query == "explicit")
+assert(#state.activity_search_results == 1)
+assert(#state.events == 1)
+assert(state.events[1].id == "1")
+assert(vim.deep_equal(activity_search_pages, { 1, 2 }))
+local activity_search_text = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+assert(activity_search_text:find(
+  "Please keep this branch explicit.",
+  1,
+  true
+))
+vim.fn.maparg("j", "n", false, true).callback()
+assert(state.activity_search_return == nil)
+assert(#state.events == 8)
+assert(vim.deep_equal(
+  vim.api.nvim_win_get_cursor(state.win),
+  activity_cursor_before_search
+))
+activity_search_mapping.callback()
+vim.api.nvim_buf_set_lines(
+  state.search_buf,
+  0,
+  -1,
+  false,
+  { "example/repository" }
+)
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.search_buf })
+assert(#state.events == 8)
+assert(#activity_search_pages == 2)
+vim.fn.maparg("<CR>", "i", false, true).callback()
+assert(#state.activity_search_results == 20)
+assert(state.activity_loaded_pages == 3)
+assert(vim.deep_equal(activity_search_pages, { 1, 2, 1 }))
+local activity_request_count_before_search_page = #requested_per_page
+vim.fn.maparg("p", "n", false, true).callback()
+assert(state.activity_page == 2)
+assert(#state.events == 8)
+assert(#requested_per_page == activity_request_count_before_search_page)
+vim.fn.maparg("j", "n", false, true).callback()
+assert(state.activity_page == 1)
+vim.fn.maparg("j", "n", false, true).callback()
+assert(state.activity_search_return == nil)
+assert(#state.events == 8)
 local expansion_line
 local expansion_count = 0
 for line, event in pairs(state.activity_expansion_targets) do
@@ -1372,8 +1458,36 @@ do
   local project_pushes_enriched = false
   local deferred_project_request
   local repository_issue_requests = {}
+  local project_activity_search_pages = {}
   github.repository_events = function(repository, opts, callback)
     assert(repository == "neovim/neovim")
+    if opts.activity_search then
+      assert(opts.search_query == "Improve startup")
+      project_activity_search_pages[#project_activity_search_pages + 1]
+        = opts.page
+      if opts.page > 1 then
+        callback({}, nil, false, true)
+        return
+      end
+      callback({
+        {
+          id = "project-search-pr",
+          type = "PullRequestEvent",
+          repo = { name = repository },
+          actor = { login = "merge-maintainer" },
+          created_at = "2026-07-02T12:00:00Z",
+          payload = {
+            action = "merged",
+            pull_request = {
+              number = 10,
+              title = "Improve startup",
+              user = { login = "pull-author" },
+            },
+          },
+        },
+      }, nil, false, true)
+      return
+    end
     repository_forces[#repository_forces + 1] = opts.force
     repository_per_page = opts.per_page
     repository_pages[#repository_pages + 1] = opts.page
@@ -1632,6 +1746,40 @@ do
   assert(not project_activity_text:find("• Merged by", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
+  local project_search_cursor = vim.api.nvim_win_get_cursor(state.win)
+  vim.fn.maparg("/", "n", false, true).callback()
+  assert(state.search_kind == "activity")
+  vim.api.nvim_buf_set_lines(
+    state.search_buf,
+    0,
+    -1,
+    false,
+    { "Improve startup" }
+  )
+  vim.api.nvim_exec_autocmds(
+    "TextChangedI",
+    { buffer = state.search_buf }
+  )
+  assert(state.activity_search_results == nil)
+  assert(#state.events == 8)
+  assert(#project_activity_search_pages == 0)
+  vim.fn.maparg("<CR>", "i", false, true).callback()
+  assert(state.activity_search_return ~= nil)
+  assert(#state.activity_search_results == 1)
+  assert(state.events[1].payload.pull_request.number == 10)
+  assert(vim.deep_equal(project_activity_search_pages, { 1, 2 }))
+  local project_search_text = table.concat(
+    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+    "\n"
+  )
+  assert(project_search_text:find("Improve startup", 1, true))
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.activity_search_return == nil)
+  assert(#state.events == 8)
+  assert(vim.deep_equal(
+    vim.api.nvim_win_get_cursor(state.win),
+    project_search_cursor
+  ))
   local project_footer_text = table.concat(
     vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
     "\n"

@@ -74,7 +74,10 @@ end
 function M.events(username, opts, callback)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
-  local cached = cache[username]
+  local page = math.max(1, math.floor(opts.page or 1))
+  local cache_key = page == 1 and username
+    or (username .. ":" .. tostring(page))
+  local cached = cache[cache_key]
   local per_page = math.min(
     100,
     math.max(1, math.floor(opts.per_page or 30))
@@ -89,26 +92,27 @@ function M.events(username, opts, callback)
     )
   then
     vim.schedule(function()
-      callback(cached.events, nil, true)
+      callback(cached.events, nil, true, cached.complete)
     end)
     return
   end
 
   local url = (
-    "https://api.github.com/users/%s/events/public?per_page=%d"
-  ):format(username, per_page)
+    "https://api.github.com/users/%s/events/public?per_page=%d&page=%d"
+  ):format(username, per_page, page)
   request_json(url, opts, function(events, err)
     if not events then
       callback(nil, err)
       return
     end
-    cache[username] = {
+    local complete = #events < per_page
+    cache[cache_key] = {
       events = events,
       fetched_at = os.time(),
       per_page = per_page,
-      complete = #events < per_page,
+      complete = complete,
     }
-    callback(events, nil, false)
+    callback(events, nil, false, complete)
   end)
 end
 
@@ -131,7 +135,12 @@ function M.repository_events(repository, opts, callback)
     )
   then
     vim.schedule(function()
-      callback(vim.deepcopy(cached.events), nil, true)
+      callback(
+        vim.deepcopy(cached.events),
+        nil,
+        true,
+        cached.complete
+      )
     end)
     return
   end
@@ -150,7 +159,12 @@ function M.repository_events(repository, opts, callback)
       per_page = per_page,
       complete = #events < per_page,
     }
-    callback(vim.deepcopy(events), nil, false)
+    callback(
+      vim.deepcopy(events),
+      nil,
+      false,
+      #events < per_page
+    )
   end)
 end
 
