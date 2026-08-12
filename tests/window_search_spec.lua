@@ -809,6 +809,7 @@ github.events = function(_, opts, callback)
       opts.page == 1 and vim.deepcopy(activity_events) or {},
       nil,
       false,
+      nil,
       true
     )
     return
@@ -1519,7 +1520,7 @@ do
       project_activity_search_pages[#project_activity_search_pages + 1]
         = opts.page
       if opts.page > 1 then
-        callback({}, nil, false, true)
+        callback({}, nil, false, nil, true)
         return
       end
       callback({
@@ -1538,7 +1539,7 @@ do
             },
           },
         },
-      }, nil, false, true)
+      }, nil, false, nil, true)
       return
     end
     repository_forces[#repository_forces + 1] = opts.force

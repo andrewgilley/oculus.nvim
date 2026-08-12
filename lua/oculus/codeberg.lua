@@ -355,7 +355,7 @@ function M.events(username, opts, callback)
     )
   then
     vim.schedule(function()
-      callback(cached.events, nil, true, cached.complete)
+      callback(cached.events, nil, true, nil, cached.complete)
     end)
     return
   end
@@ -381,7 +381,7 @@ function M.events(username, opts, callback)
       per_page = limit,
       complete = complete,
     }
-    callback(events, nil, false, complete)
+    callback(events, nil, false, nil, complete)
   end)
 end
 
@@ -404,7 +404,7 @@ function M.repository_events(repository_name, opts, callback)
     )
   then
     vim.schedule(function()
-      callback(cached.events, nil, true, cached.complete)
+      callback(cached.events, nil, true, nil, cached.complete)
     end)
     return
   end
@@ -428,7 +428,7 @@ function M.repository_events(repository_name, opts, callback)
       per_page = limit,
       complete = #activities < limit,
     }
-    callback(events, nil, false, #activities < limit)
+    callback(events, nil, false, nil, #activities < limit)
   end)
 end
 
