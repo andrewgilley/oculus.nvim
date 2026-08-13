@@ -97,14 +97,21 @@ function M._refresh_inspection_treesitter_context_highlights()
   end
   local original_open = render.open
   render.open = function(win, ranges, lines, force_hl_update)
-    if vim.api.nvim_win_is_valid(win)
-      and type(vim.b[vim.api.nvim_win_get_buf(win)].oculus_inspect)
-        == "table"
-    then
-      -- The context buffer is reused as its source rows change.  Force the
-      -- renderer to recopy source Treesitter extmarks so its syntax colors do
-      -- not depend on whether the visible text itself changed.
-      force_hl_update = true
+    if vim.api.nvim_win_is_valid(win) then
+      local buf = vim.api.nvim_win_get_buf(win)
+      if type(vim.b[buf].oculus_inspect) == "table" then
+        local highlighters = vim.treesitter
+            and vim.treesitter.highlighter
+            and vim.treesitter.highlighter.active
+          or nil
+        if highlighters and not highlighters[buf] and vim.treesitter.start then
+          pcall(vim.treesitter.start, buf)
+        end
+        -- The context buffer is reused as its source rows change. Force the
+        -- renderer to recopy source Treesitter extmarks so its syntax colors do
+        -- not depend on whether the visible text itself changed.
+        force_hl_update = true
+      end
     end
     return original_open(win, ranges, lines, force_hl_update)
   end

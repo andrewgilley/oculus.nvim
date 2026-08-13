@@ -114,10 +114,11 @@ do
     end,
   }
   package.loaded[render_module_name] = {
-    open = function(win)
+    open = function(win, _, _, force_hl_update)
       rendered_options = {
         number = vim.wo[win].number,
         relativenumber = vim.wo[win].relativenumber,
+        force_hl_update = force_hl_update,
       }
       return "rendered"
     end,
@@ -158,6 +159,7 @@ do
   assert(vim.deep_equal(rendered_options, {
     number = true,
     relativenumber = false,
+    force_hl_update = true,
   }))
   assert(vim.wo[inspect_win].number == false)
   assert(vim.wo[inspect_win].relativenumber == true)
