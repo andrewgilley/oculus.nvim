@@ -839,6 +839,8 @@ local original_enrich_pull_requests = github.enrich_pull_requests
 local original_enrich_pushes = github.enrich_pushes
 local original_pull_request_commits = github.pull_request_commits
 local requested_per_page = {}
+local activity_review_comment_body = "Please keep this branch explicit. "
+  .. string.rep("Discard wrapped overflow. ", 12)
 local activity_events = {}
 for index = 1, 20 do
   activity_events[index] = index == 1 and {
@@ -854,7 +856,7 @@ for index = 1, 20 do
         html_url = "https://github.com/example/repository/pull/42",
       },
       comment = {
-        body = "Please keep this branch explicit.",
+        body = activity_review_comment_body,
         path = "lua/example.lua",
         line = 15,
         side = "RIGHT",
@@ -1061,6 +1063,21 @@ do
       )
     end
   end
+  local first_event_title
+  for line, title_line in pairs(state.activity_title_lines) do
+    if line == title_line
+      and (not first_event_title or line < first_event_title)
+    then
+      first_event_title = line
+    end
+  end
+  local first_event_lines = 0
+  for _, title_line in pairs(state.activity_title_lines) do
+    if title_line == first_event_title then
+      first_event_lines = first_event_lines + 1
+    end
+  end
+  assert(first_event_lines == 3, first_event_lines)
 end
 local activity_search_mapping = vim.fn.maparg("/", "n", false, true)
 assert(activity_search_mapping.desc
@@ -1302,10 +1319,13 @@ assert(state.activity_commit_page == false)
 assert(vim.api.nvim_win_get_cursor(state.win)[1] == pull_request_line)
 local review_context
 for _, context in pairs(state.inspect_targets) do
-  review_context = context or review_context
+  if context and context.path == "lua/example.lua" then
+    review_context = context
+    break
+  end
 end
 assert(review_context)
-assert(review_context.body == "Please keep this branch explicit.")
+assert(review_context.body == vim.trim(activity_review_comment_body))
 assert(review_context.path == "lua/example.lua")
 assert(review_context.line == 15)
 assert(review_context.side == "change")

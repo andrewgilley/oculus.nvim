@@ -1195,21 +1195,12 @@ local function preview_lines(item, width)
   end
   local detail_indices = {}
   for _, detail_item in ipairs(details) do
-    local remaining = quoted_detail_line(detail_item.text)
-    for _ = 1, 3 do
-      if remaining == "" then
-        break
-      end
-      local text = trim_to_width(remaining, content_width)
-      lines[#lines + 1] = indent .. pad_cell(text, content_width)
-      detail_indices[#lines] = detail_item.detail_index
-      if vim.fn.strdisplaywidth(remaining) <= content_width then
-        break
-      end
-      local suffix_width = text:sub(-4) == '…"' and 2 or 1
-      local consumed = math.max(1, vim.fn.strchars(text) - suffix_width)
-      remaining = vim.fn.strcharpart(remaining, consumed)
-    end
+    local text = trim_to_width(
+      quoted_detail_line(detail_item.text),
+      content_width
+    )
+    lines[#lines + 1] = indent .. pad_cell(text, content_width)
+    detail_indices[#lines] = detail_item.detail_index
   end
   return lines, detail_indices
 end
