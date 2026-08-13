@@ -1358,6 +1358,8 @@ for line, title_line in pairs(state.activity_title_lines) do
   end
 end
 assert(inspect_source_line)
+local inspect_activity_line = state.activity_title_lines[inspect_source_line]
+assert(inspect_activity_line ~= inspect_source_line)
 vim.api.nvim_win_set_cursor(state.win, { inspect_source_line, 0 })
 local regular_queue_mapping = vim.fn.maparg("<Tab>", "n", false, true)
 assert(regular_queue_mapping.desc == "Queue Oculus activity inspection")
@@ -1374,7 +1376,7 @@ local regular_queue_marks = vim.api.nvim_buf_get_extmarks(
 )
 assert(#regular_queue_marks == 1)
 assert(regular_queue_marks[1][4].hl_group == "OculusActivityQueued")
-assert(regular_queue_marks[1][2] + 1 == inspect_source_line)
+assert(regular_queue_marks[1][2] + 1 == inspect_activity_line)
 regular_queue_mapping.callback()
 assert(#state.activity_inspect_queue == 0)
 assert(#vim.api.nvim_buf_get_extmarks(
@@ -1384,8 +1386,6 @@ assert(#vim.api.nvim_buf_get_extmarks(
   -1,
   {}
 ) == 0)
-local inspect_activity_line = state.activity_title_lines[inspect_source_line]
-assert(inspect_activity_line ~= inspect_source_line)
 vim.api.nvim_win_set_cursor(state.win, { inspect_activity_line, 0 })
 regular_queue_mapping.callback()
 assert(#state.activity_inspect_queue == 1)
@@ -1401,8 +1401,10 @@ assert(regular_queue_marks[1][2] + 1 == inspect_activity_line)
 local queued_spinner_line
 for line, title_line in pairs(state.activity_title_lines) do
   if line ~= title_line
-    and title_line ~= inspect_activity_line
     and type(state.line_targets[line]) == "string"
+    and state.line_targets[line] ~= state.line_targets[title_line]
+    and state.activity_expansion_targets[line]
+    and #(state.activity_expansion_targets[line].payload.commits or {}) > 1
   then
     queued_spinner_line = line
     break
@@ -1471,7 +1473,7 @@ for _, mark in ipairs(regular_queue_marks) do
       inspect_activity_line - 1,
       inspect_activity_line,
       false
-    )[1] - 19)
+    )[1] - 21)
   end
 end
 assert(vim.tbl_contains(

@@ -1118,6 +1118,13 @@ end
 local activity_timestamp_width = 19
 local activity_timestamp_gap = "  "
 
+local function activity_title_highlight_end(line)
+  return math.max(
+    0,
+    #line - activity_timestamp_width - #activity_timestamp_gap
+  )
+end
+
 local function activity_content_width(width)
   return math.max(
     1,
@@ -2369,7 +2376,7 @@ local function render_activity(events, cached, notice, opts)
         line - 1,
         0,
         M.state.activity_title_lines[line] == line
-            and math.max(0, #lines[line] - activity_timestamp_width)
+            and activity_title_highlight_end(lines[line])
           or -1
       )
     end
@@ -4484,14 +4491,13 @@ local function apply_activity_inspect_queue_highlights()
         line - 1,
         0,
         M.state.activity_title_lines[line] == line
-            and math.max(
-              0,
-              #vim.api.nvim_buf_get_lines(
+            and activity_title_highlight_end(
+              vim.api.nvim_buf_get_lines(
                 M.state.buf,
                 line - 1,
                 line,
                 false
-              )[1] - activity_timestamp_width
+              )[1]
             )
           or -1
       )
@@ -4507,7 +4513,19 @@ local function toggle_activity_inspect_queue()
   end
   local source_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
   local title_line = M.state.activity_title_lines[source_line] or source_line
-  local line_key = M.state.activity_queue_line_keys[source_line]
+  local line_key = M.state.activity_queue_line_keys[title_line]
+  local expanded_event = M.state.activity_expansion_targets[source_line]
+  local commits = expanded_event
+      and expanded_event.payload
+      and expanded_event.payload.commits
+    or {}
+  if source_line ~= title_line
+    and #commits > 1
+    and M.state.line_targets[source_line]
+      ~= M.state.line_targets[title_line]
+  then
+    line_key = M.state.activity_queue_line_keys[source_line]
+  end
   local url = M.state.line_targets[source_line]
     or M.state.line_targets[title_line]
   local context = M.state.inspect_targets[source_line]
