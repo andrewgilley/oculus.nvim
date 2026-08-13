@@ -96,6 +96,7 @@ assert(oculus.config.inspect_next_chunk == "<C-Tab>")
 assert(oculus.config.inspect_previous_chunk == "<S-Tab>")
 assert(oculus.config.inspect_treesitter_context == true)
 assert(oculus.config.inspect_treesitter_context_multiwindow == true)
+assert(oculus.config.inspect_treesitter_context_mode == "topline")
 do
   local module_name = "treesitter-context"
   local original_context = package.loaded[module_name]
@@ -127,6 +128,7 @@ do
     enable = true,
     multiwindow = true,
     separator = false,
+    mode = "topline",
   }))
   assert(vim.api.nvim_get_hl(0, {
     name = "TreesitterContext",
@@ -164,6 +166,7 @@ do
   setup_options = nil
   fake_context.config.multiwindow = true
   fake_context.config.separator = false
+  fake_context.config.mode = "topline"
   assert(inspect._enable_inspection_treesitter_context({}))
   assert(setup_options == nil)
   assert(not inspect._enable_inspection_treesitter_context({

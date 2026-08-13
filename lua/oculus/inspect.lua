@@ -123,15 +123,21 @@ function M._enable_inspection_treesitter_context(opts)
   M._refresh_inspection_treesitter_context_highlights()
   local multiwindow = not opts
     or opts.inspect_treesitter_context_multiwindow ~= false
+  local mode = opts and opts.inspect_treesitter_context_mode or "topline"
+  if mode ~= "cursor" and mode ~= "topline" then
+    mode = "topline"
+  end
   local enabled = type(context.enabled) == "function"
     and context.enabled()
   local configured_multiwindow = context.config
     and context.config.multiwindow == true
   local separator_disabled = context.config
     and context.config.separator == false
+  local configured_mode = context.config and context.config.mode
   if not enabled
     or configured_multiwindow ~= multiwindow
     or not separator_disabled
+    or configured_mode ~= mode
   then
     if type(context.setup) ~= "function" then
       return false
@@ -140,6 +146,7 @@ function M._enable_inspection_treesitter_context(opts)
       enable = true,
       multiwindow = multiwindow,
       separator = false,
+      mode = mode,
     })
     if not setup_ok then
       return false
