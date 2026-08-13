@@ -43,6 +43,49 @@ local restore_inspection_sidebar_for_buffer
 local show_inspection_overview
 local show_sidebar_files
 
+function M._use_absolute_treesitter_context_numbers()
+  local ok, render = pcall(require, "treesitter-context.render")
+  if not ok
+    or type(render) ~= "table"
+    or type(render.open) ~= "function"
+    or render._oculus_absolute_line_numbers
+  then
+    return
+  end
+  local original_open = render.open
+  render.open = function(win, ...)
+    if not vim.api.nvim_win_is_valid(win) then
+      return original_open(win, ...)
+    end
+    local buf = vim.api.nvim_win_get_buf(win)
+    if type(vim.b[buf].oculus_inspect) ~= "table"
+      or not vim.wo[win].relativenumber
+    then
+      return original_open(win, ...)
+    end
+
+    local had_number = vim.wo[win].number
+    vim.api.nvim_win_call(win, function()
+      vim.cmd("noautocmd setlocal number norelativenumber")
+    end)
+    local result = { pcall(original_open, win, ...) }
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd(
+          "noautocmd setlocal "
+            .. (had_number and "number" or "nonumber")
+            .. " relativenumber"
+        )
+      end)
+    end
+    if not result[1] then
+      error(result[2], 0)
+    end
+    return unpack(result, 2)
+  end
+  render._oculus_absolute_line_numbers = true
+end
+
 function M._enable_inspection_treesitter_context(opts)
   if opts and opts.inspect_treesitter_context == false then
     return false
@@ -51,6 +94,7 @@ function M._enable_inspection_treesitter_context(opts)
   if not ok or type(context) ~= "table" then
     return false
   end
+  M._use_absolute_treesitter_context_numbers()
   local multiwindow = not opts
     or opts.inspect_treesitter_context_multiwindow ~= false
   local enabled = type(context.enabled) == "function"

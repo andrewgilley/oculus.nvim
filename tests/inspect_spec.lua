@@ -99,7 +99,10 @@ assert(oculus.config.inspect_treesitter_context_multiwindow == true)
 do
   local module_name = "treesitter-context"
   local original_context = package.loaded[module_name]
+  local render_module_name = "treesitter-context.render"
+  local original_render = package.loaded[render_module_name]
   local setup_options
+  local rendered_options
   local fake_context = {
     config = { multiwindow = false, separator = "─" },
     enabled = function()
@@ -107,6 +110,15 @@ do
     end,
     setup = function(options)
       setup_options = vim.deepcopy(options)
+    end,
+  }
+  package.loaded[render_module_name] = {
+    open = function(win)
+      rendered_options = {
+        number = vim.wo[win].number,
+        relativenumber = vim.wo[win].relativenumber,
+      }
+      return "rendered"
     end,
   }
   package.loaded[module_name] = fake_context
@@ -125,6 +137,27 @@ do
   assert(vim.api.nvim_get_hl(0, {
     name = "TreesitterContextLineNumberBottom",
   }).link == "TreesitterContextLineNumber")
+  local inspect_buf = vim.api.nvim_create_buf(false, true)
+  local inspect_win = vim.api.nvim_open_win(inspect_buf, false, {
+    relative = "editor",
+    row = 0,
+    col = 0,
+    width = 10,
+    height = 4,
+    style = "minimal",
+  })
+  vim.b[inspect_buf].oculus_inspect = { kind = "commit" }
+  vim.wo[inspect_win].number = false
+  vim.wo[inspect_win].relativenumber = true
+  assert(package.loaded[render_module_name].open(inspect_win) == "rendered")
+  assert(vim.deep_equal(rendered_options, {
+    number = true,
+    relativenumber = false,
+  }))
+  assert(vim.wo[inspect_win].number == false)
+  assert(vim.wo[inspect_win].relativenumber == true)
+  vim.api.nvim_win_close(inspect_win, true)
+  vim.api.nvim_buf_delete(inspect_buf, { force = true })
   setup_options = nil
   fake_context.config.multiwindow = true
   fake_context.config.separator = false
@@ -135,6 +168,7 @@ do
   }))
   assert(setup_options == nil)
   package.loaded[module_name] = original_context
+  package.loaded[render_module_name] = original_render
 end
 assert(oculus.config.inspect_next_file == nil)
 assert(oculus.config.persist_inspect_overviews == true)
