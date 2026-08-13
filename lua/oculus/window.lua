@@ -138,7 +138,11 @@ M.state = {
   project_issue_return = nil,
   project_issue_feed = nil,
   activity_inspect_queue = {},
+  activity_inspect_queue_active = nil,
+  activity_inspect_queue_continuing = false,
+  activity_inspect_queue_deferred_group = nil,
   activity_inspect_queue_lookup = {},
+  activity_queue_line_keys = {},
   activity_inspect_queue_scope = nil,
   activity_inspect_queue_running = false,
   activity_search_query = nil,
@@ -2140,6 +2144,9 @@ local function set_activity_inspect_queue_scope()
     and not M.state.activity_inspect_queue_running
   then
     M.state.activity_inspect_queue = {}
+    M.state.activity_inspect_queue_active = nil
+    M.state.activity_inspect_queue_continuing = false
+    M.state.activity_inspect_queue_deferred_group = nil
     M.state.activity_inspect_queue_lookup = {}
     M.state.activity_inspect_queue_scope = scope
   end
@@ -2170,6 +2177,7 @@ local function render_activity(events, cached, notice, opts)
   M.state.line_targets = {}
   M.state.inspect_targets = {}
   M.state.activity_title_lines = {}
+  M.state.activity_queue_line_keys = {}
   M.state.activity_expansion_targets = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
@@ -2251,7 +2259,9 @@ local function render_activity(events, cached, notice, opts)
         )
       )
     local event_line = #lines + 1
+    local queue_key = tostring(event.id or item.url or event_index)
     M.state.activity_title_lines[event_line] = event_line
+    M.state.activity_queue_line_keys[event_line] = queue_key .. ":title"
     if expands_commits then
       M.state.activity_expansion_targets[event_line] = event
     end
@@ -2288,6 +2298,9 @@ local function render_activity(events, cached, notice, opts)
           end
           M.state.inspect_targets[#lines] = inspect_context
           M.state.activity_title_lines[#lines] = event_line
+          M.state.activity_queue_line_keys[#lines] = queue_key
+            .. ":detail:"
+            .. detail_line_index
           activity_line_kinds[#lines] = "preview"
         end
       end
@@ -2335,10 +2348,9 @@ local function render_activity(events, cached, notice, opts)
       end
     end
   end
-  for line, title_line in pairs(M.state.activity_title_lines) do
-    local target = M.state.line_targets[line]
-      or M.state.line_targets[title_line]
-    if M.state.activity_inspect_queue_lookup[target] then
+  for line in pairs(M.state.activity_title_lines) do
+    local queue_key = M.state.activity_queue_line_keys[line]
+    if queue_key and M.state.activity_inspect_queue_lookup[queue_key] then
       vim.api.nvim_buf_add_highlight(
         M.state.buf,
         activity_inspect_queue_ns,
@@ -4425,7 +4437,11 @@ end
 local function rebuild_activity_inspect_queue_lookup()
   local lookup = {}
   for _, entry in ipairs(M.state.activity_inspect_queue or {}) do
-    lookup[entry.url] = true
+    lookup[entry.line_key or entry.url] = true
+  end
+  local active = M.state.activity_inspect_queue_active
+  if active then
+    lookup[active.line_key or active.url] = true
   end
   M.state.activity_inspect_queue_lookup = lookup
 end
@@ -4443,10 +4459,9 @@ local function apply_activity_inspect_queue_highlights()
   if M.state.view ~= "activity" then
     return
   end
-  for line, title_line in pairs(M.state.activity_title_lines) do
-    local target = M.state.line_targets[line]
-      or M.state.line_targets[title_line]
-    if M.state.activity_inspect_queue_lookup[target] then
+  for line in pairs(M.state.activity_title_lines) do
+    local queue_key = M.state.activity_queue_line_keys[line]
+    if queue_key and M.state.activity_inspect_queue_lookup[queue_key] then
       vim.api.nvim_buf_add_highlight(
         M.state.buf,
         activity_inspect_queue_ns,
@@ -4467,6 +4482,7 @@ local function toggle_activity_inspect_queue()
   end
   local source_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
   local title_line = M.state.activity_title_lines[source_line] or source_line
+  local line_key = M.state.activity_queue_line_keys[source_line]
   local url = M.state.line_targets[source_line]
     or M.state.line_targets[title_line]
   local context = M.state.inspect_targets[source_line]
@@ -4492,6 +4508,7 @@ local function toggle_activity_inspect_queue()
   if not removed then
     M.state.activity_inspect_queue[#M.state.activity_inspect_queue + 1] = {
       url = url,
+      line_key = line_key,
       context = type(context) == "table" and vim.deepcopy(context) or nil,
     }
   end
@@ -4503,21 +4520,43 @@ local open_next_queued_activity
 
 open_next_queued_activity = function(ui_lifecycle)
   local entry = table.remove(M.state.activity_inspect_queue, 1)
+  M.state.activity_inspect_queue_active = entry
   rebuild_activity_inspect_queue_lookup()
   apply_activity_inspect_queue_highlights()
   if not entry then
     M.state.activity_inspect_queue_running = false
+    local deferred = M.state.activity_inspect_queue_deferred_group
+    M.state.activity_inspect_queue_deferred_group = nil
+    if deferred then
+      vim.schedule(function()
+        require("oculus.inspect")._close_inspection_workflow(deferred)
+      end)
+    end
     return true
   end
 
   local function continue_queue()
+    if M.state.activity_inspect_queue_continuing then
+      return false
+    end
+    M.state.activity_inspect_queue_continuing = true
+    if M.state.activity_inspect_queue_active == entry then
+      M.state.activity_inspect_queue_active = nil
+      rebuild_activity_inspect_queue_lookup()
+      apply_activity_inspect_queue_highlights()
+    end
     vim.schedule(function()
+      M.state.activity_inspect_queue_continuing = nil
       open_next_queued_activity(nil)
     end)
+    return true
   end
   local lifecycle = {
     on_progress = ui_lifecycle and ui_lifecycle.on_progress or nil,
     on_complete = function(message)
+      if not message then
+        M.state.activity_inspect_queue_deferred_group = nil
+      end
       if ui_lifecycle and ui_lifecycle.on_complete then
         ui_lifecycle.on_complete(message)
       elseif message then
@@ -4528,6 +4567,16 @@ open_next_queued_activity = function(ui_lifecycle)
       end
     end,
     on_closed = continue_queue,
+    on_close_requested = function(group)
+      if M.state.activity_inspect_queue_deferred_group == group then
+        return true
+      end
+      if #M.state.activity_inspect_queue == 0 then
+        return false
+      end
+      M.state.activity_inspect_queue_deferred_group = group
+      return continue_queue() or true
+    end,
   }
   local ok, err = inspect.open(
     entry.url,
@@ -4604,6 +4653,7 @@ local function inspect_current()
       { text }
     )
     vim.bo[activity_buf].modifiable = modifiable
+    apply_activity_inspect_queue_highlights()
   end
   local function clear_spinner()
     if source_line

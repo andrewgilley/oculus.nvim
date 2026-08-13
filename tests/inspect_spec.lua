@@ -135,6 +135,9 @@ do
     name = "TreesitterContextBottom",
   }).link == "TreesitterContext")
   assert(vim.api.nvim_get_hl(0, {
+    name = "TreesitterContextLineNumber",
+  }).link == "Normal")
+  assert(vim.api.nvim_get_hl(0, {
     name = "TreesitterContextLineNumberBottom",
   }).link == "TreesitterContextLineNumber")
   local inspect_buf = vim.api.nvim_create_buf(false, true)
@@ -2436,6 +2439,7 @@ end
 local replacement_complete = false
 local replacement_error
 local replacement_closed = false
+vim.g.oculus_test_replacement_close_requested = 0
 local replacement_ok, replacement_open_err = inspect.open(
   "https://github.com/andrewgilley/oculus.nvim/issues/78",
   {
@@ -2452,6 +2456,11 @@ local replacement_ok, replacement_open_err = inspect.open(
     end,
     on_closed = function()
       replacement_closed = true
+    end,
+    on_close_requested = function()
+      vim.g.oculus_test_replacement_close_requested =
+        vim.g.oculus_test_replacement_close_requested + 1
+      return vim.g.oculus_test_replacement_close_requested == 1
     end,
   }
 )
@@ -2474,10 +2483,24 @@ assert(vim.b[vim.api.nvim_get_current_buf()].oculus_inspect_overview == true)
 local close_workflow_mapping = vim.fn.maparg("c", "n", false, true)
 assert(close_workflow_mapping.desc == "Close Oculus Inspect workflow")
 close_workflow_mapping.callback()
+assert(vim.g.oculus_test_replacement_close_requested == 1)
+assert(vim.api.nvim_tabpage_is_valid(replacement_tab))
+assert((function()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(replacement_tab)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.b[buf].oculus_inspect_overview_footer then
+      local footer = vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1]
+      return footer:find("c close ", 1, true) ~= nil
+    end
+  end
+  return false
+end)())
+close_workflow_mapping.callback()
 assert(not vim.api.nvim_tabpage_is_valid(replacement_tab))
 assert(vim.wait(1000, function()
   return replacement_closed
 end), "closing the inspect workflow did not complete its lifecycle")
+vim.g.oculus_test_replacement_close_requested = nil
 vim.api.nvim_set_current_win(issue_origin_win)
 vim.wo[issue_origin_win].number = issue_origin_number
 vim.wo[issue_origin_win].relativenumber = issue_origin_relativenumber

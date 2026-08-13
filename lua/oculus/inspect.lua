@@ -126,6 +126,9 @@ function M._enable_inspection_treesitter_context(opts)
   vim.api.nvim_set_hl(0, "TreesitterContextBottom", {
     link = "TreesitterContext",
   })
+  vim.api.nvim_set_hl(0, "TreesitterContextLineNumber", {
+    link = "Normal",
+  })
   vim.api.nvim_set_hl(0, "TreesitterContextLineNumberBottom", {
     link = "TreesitterContextLineNumber",
   })
@@ -3987,6 +3990,9 @@ function M._overview_ui.float_lines(overview, width)
 end
 
 function M._overview_ui.close_footer(group)
+  if M._overview_ui.stop_close_spinner then
+    M._overview_ui.stop_close_spinner(group)
+  end
   local win = group.overview_footer_win
   local buf = group.overview_footer_buf
   group.overview_footer_win = nil
@@ -4028,9 +4034,17 @@ function M._overview_ui.render_footer(group)
     vim.b[buf].oculus_inspect_overview_footer = true
   end
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
+  local close_command = group.overview_close_spinner_frame
+      and (
+        "c close "
+          .. M._overview_ui.agent_spinner_frames[
+            group.overview_close_spinner_frame
+          ]
+      )
+    or "c close"
   local commands = issue_patches
-      and "  p path   e explain   b browser   c close"
-    or "  e explain   b browser   c close"
+      and "  p path   e explain   b browser   " .. close_command
+    or "  e explain   b browser   " .. close_command
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
   then
@@ -4102,6 +4116,44 @@ function M._overview_ui.render_footer(group)
     footer_win,
     group.overview_highlight_source_win
   )
+end
+
+function M._overview_ui.stop_close_spinner(group)
+  local timer = group.overview_close_spinner_timer
+  group.overview_close_spinner_timer = nil
+  group.overview_close_spinner_frame = nil
+  if timer then
+    pcall(timer.stop, timer)
+    if not timer:is_closing() then
+      timer:close()
+    end
+  end
+end
+
+function M._overview_ui.start_close_spinner(group)
+  if not overview_window_is_open(group) then
+    return
+  end
+  M._overview_ui.stop_close_spinner(group)
+  group.overview_close_spinner_frame = 1
+  M._overview_ui.render_footer(group)
+  local timer = vim.uv.new_timer()
+  if not timer then
+    return
+  end
+  group.overview_close_spinner_timer = timer
+  timer:start(80, 80, vim.schedule_wrap(function()
+    if group.overview_close_spinner_timer ~= timer
+      or not overview_window_is_open(group)
+    then
+      return
+    end
+    group.overview_close_spinner_frame = (
+      group.overview_close_spinner_frame
+        % #M._overview_ui.agent_spinner_frames
+    ) + 1
+    M._overview_ui.render_footer(group)
+  end))
 end
 
 function M._overview_ui.content_height(group)
@@ -5315,6 +5367,15 @@ show_inspection_overview = function(group)
     desc = "Open Oculus inspection item in browser",
   })
   vim.keymap.set("n", "c", function()
+    local lifecycle = group.inspection_lifecycle
+    local request_close = lifecycle and lifecycle.on_close_requested
+    if type(request_close) == "function" then
+      M._overview_ui.start_close_spinner(group)
+      if request_close(group) then
+        return
+      end
+      M._overview_ui.stop_close_spinner(group)
+    end
     M._close_inspection_workflow(group)
   end, {
     buffer = buf,
