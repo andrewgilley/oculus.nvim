@@ -121,6 +121,7 @@ local defaults = {
   inspect_previous_chunk = "<S-Tab>",
   inspect_treesitter_context = true,
   inspect_treesitter_context_multiwindow = true,
+  inspect_treesitter_context_mode = "topline",
   telemetry = {
     enabled = false,
     endpoint = nil,
