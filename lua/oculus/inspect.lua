@@ -97,25 +97,35 @@ function M._refresh_inspection_treesitter_context_highlights()
   end
   local original_open = render.open
   render.open = function(win, ranges, lines, force_hl_update)
+    local source_uses_treesitter = false
+    local source_buf
     if vim.api.nvim_win_is_valid(win) then
-      local buf = vim.api.nvim_win_get_buf(win)
-      if type(vim.b[buf].oculus_inspect) == "table" then
+      source_buf = vim.api.nvim_win_get_buf(win)
+      if type(vim.b[source_buf].oculus_inspect) == "table" then
         local highlighters = vim.treesitter
             and vim.treesitter.highlighter
             and vim.treesitter.highlighter.active
           or nil
-        if highlighters and not highlighters[buf] and vim.treesitter.start then
-          pcall(vim.treesitter.start, buf)
+        if highlighters
+          and not highlighters[source_buf]
+          and vim.treesitter.start
+        then
+          pcall(vim.treesitter.start, source_buf)
         end
-        local changedtick = vim.api.nvim_buf_get_changedtick(buf)
-        if vim.b[buf].oculus_context_highlight_tick ~= changedtick then
-          vim.b[buf].oculus_context_highlight_tick = changedtick
-          local parser_ok, parser = pcall(vim.treesitter.get_parser, buf)
+        source_uses_treesitter = highlighters and highlighters[source_buf]
+          or false
+        local changedtick = vim.api.nvim_buf_get_changedtick(source_buf)
+        if vim.b[source_buf].oculus_context_highlight_tick ~= changedtick then
+          vim.b[source_buf].oculus_context_highlight_tick = changedtick
+          local parser_ok, parser = pcall(
+            vim.treesitter.get_parser,
+            source_buf
+          )
           if parser_ok and parser then
             pcall(parser.parse, parser, true, function()
               vim.schedule(function()
                 if vim.api.nvim_win_is_valid(win)
-                  and vim.api.nvim_win_get_buf(win) == buf
+                  and vim.api.nvim_win_get_buf(win) == source_buf
                 then
                   original_open(win, ranges, lines, true)
                 end
@@ -129,7 +139,32 @@ function M._refresh_inspection_treesitter_context_highlights()
         force_hl_update = true
       end
     end
-    return original_open(win, ranges, lines, force_hl_update)
+    local result = { pcall(original_open, win, ranges, lines, force_hl_update) }
+    if result[1]
+      and source_buf
+      and not source_uses_treesitter
+      and vim.bo[source_buf].syntax ~= ""
+    then
+      for _, context_win in ipairs(vim.api.nvim_list_wins()) do
+        local config = vim.api.nvim_win_get_config(context_win)
+        if vim.w[context_win].treesitter_context
+          and config.relative == "win"
+          and config.win == win
+        then
+          vim.api.nvim_buf_call(
+            vim.api.nvim_win_get_buf(context_win),
+            function()
+              vim.cmd("syntax sync fromstart")
+            end
+          )
+          break
+        end
+      end
+    end
+    if not result[1] then
+      error(result[2], 0)
+    end
+    return unpack(result, 2)
   end
   render._oculus_refresh_inspection_highlights = true
 end
