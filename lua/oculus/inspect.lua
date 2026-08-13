@@ -6922,6 +6922,12 @@ local function open_tabs(
     vim.api.nvim_set_current_win(first.win)
     show_inspection_path(first.buf)
     M._enable_inspection_treesitter_context(opts)
+    if loading
+      and loading.lifecycle
+      and loading.lifecycle.overview_on_open
+    then
+      show_inspection_overview(inspection_sessions)
+    end
   end)
   inspection_tabs_loading = false
   vim.o.lazyredraw = previous_lazyredraw
