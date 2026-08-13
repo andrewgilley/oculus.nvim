@@ -4625,11 +4625,19 @@ local function inspect_current()
   end
 
   local source_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+  local loading_target = target
   if queued_entry then
+    -- Queue startup has one loading indicator for the whole batch.  Put it on
+    -- the final item the user marked, not on the first item which happens to
+    -- start loading first.
+    local final_entry = M.state.activity_inspect_queue[
+      #M.state.activity_inspect_queue
+    ]
+    loading_target = final_entry and final_entry.url or target
     source_line = nil
     for candidate, title_line in pairs(M.state.activity_title_lines) do
       if candidate == title_line
-        and M.state.line_targets[candidate] == target
+        and M.state.line_targets[candidate] == loading_target
       then
         source_line = candidate
         break
@@ -4668,7 +4676,7 @@ local function inspect_current()
       and is_valid_buf(activity_buf)
       and M.state.buf == activity_buf
       and M.state.view == "activity"
-      and M.state.line_targets[source_line] == target
+      and M.state.line_targets[source_line] == loading_target
     then
       set_loading_line(activity_line)
       vim.api.nvim_buf_clear_namespace(
@@ -4685,7 +4693,7 @@ local function inspect_current()
           or not is_valid_buf(activity_buf)
           or M.state.buf ~= activity_buf
           or M.state.view ~= "activity"
-          or M.state.line_targets[source_line] ~= target
+          or M.state.line_targets[source_line] ~= loading_target
         then
           return
         end
