@@ -2806,6 +2806,8 @@ end
 
 local function sort_inspections(inspections)
   local ordered = {}
+  local first_commit_by_path = {}
+  local commit_indices = {}
   for index, inspection in ipairs(inspections or {}) do
     local path = inspection.change_file
       or inspection.parent_file
@@ -2826,8 +2828,24 @@ local function sort_inspections(inspections)
       name = name:lower(),
       path = path:lower(),
     }
+    local commit_index = tonumber(inspection.commit_index)
+    if commit_index then
+      commit_indices[commit_index] = true
+      local first = first_commit_by_path[path:lower()]
+      if not first or commit_index < first then
+        first_commit_by_path[path:lower()] = commit_index
+      end
+    end
   end
+  local multi_commit = vim.tbl_count(commit_indices) > 1
   table.sort(ordered, function(left, right)
+    if multi_commit then
+      local left_commit = first_commit_by_path[left.path]
+      local right_commit = first_commit_by_path[right.path]
+      if left_commit ~= right_commit then
+        return (left_commit or math.huge) < (right_commit or math.huge)
+      end
+    end
     if left.depth ~= right.depth then
       return left.depth < right.depth
     end
@@ -2839,6 +2857,16 @@ local function sort_inspections(inspections)
     end
     if left.path ~= right.path then
       return left.path < right.path
+    end
+    if multi_commit
+      and left.inspection.commit_index ~= right.inspection.commit_index
+    then
+      return left.inspection.commit_index < right.inspection.commit_index
+    end
+    if multi_commit
+      and left.inspection.file_index ~= right.inspection.file_index
+    then
+      return left.inspection.file_index < right.inspection.file_index
     end
     return left.index < right.index
   end)
