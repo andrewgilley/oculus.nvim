@@ -10,6 +10,19 @@ local pull_request_commits_cache = {}
 local push_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
+
+local function account(value)
+  return type(value) == "table" and value or nil
+end
+
+local function account_login(value)
+  local value_account = account(value)
+  if not value_account then
+    return nil
+  end
+  local login = value_account.login or value_account.username
+  return type(login) == "string" and login ~= "" and login or nil
+end
 local base_url = "https://codeberg.org"
 
 local function decode_response(stdout)
@@ -470,7 +483,7 @@ local function project_pull_request_event(repository_name, pull_request)
   if not number or type(merged_at) ~= "string" or merged_at == "" then
     return nil
   end
-  local merger = pull_request.merged_by
+  local merger = account(pull_request.merged_by)
   return {
     id = ("project-pr:%s:%s"):format(repository_name, number),
     type = "PullRequestEvent",
@@ -484,10 +497,10 @@ local function project_pull_request_event(repository_name, pull_request)
       pull_request = {
         number = number,
         title = pull_request.title,
-        user = pull_request.user,
+        user = account(pull_request.user),
         merged = true,
         merged_at = merged_at,
-        merged_by = pull_request.merged_by,
+        merged_by = merger,
         html_url = pull_request.html_url,
       },
     },
@@ -710,7 +723,10 @@ local function activity_pull_request_key(event)
   if not merged or not repo or not number then
     return nil
   end
-  if pull_request.title and pull_request.user and pull_request.merged_by then
+  if pull_request.title
+    and account_login(pull_request.user)
+    and account_login(pull_request.merged_by)
+  then
     return nil
   end
   return ("%s#%s"):format(repo, number), repo, number
@@ -722,10 +738,10 @@ local function apply_activity_pull_request(event, details)
   local pull_request = event.payload.pull_request
   pull_request.title = pull_request.title or details.title
   pull_request.html_url = pull_request.html_url or details.html_url
-  if not pull_request.user and details.author then
+  if not account_login(pull_request.user) and details.author then
     pull_request.user = { login = details.author }
   end
-  if not pull_request.merged_by and details.merged_by then
+  if not account_login(pull_request.merged_by) and details.merged_by then
     pull_request.merged_by = { login = details.merged_by }
   end
   if details.merged_by then
@@ -783,9 +799,8 @@ function M.enrich_pull_requests(events, opts, callback)
             local details = {
               title = pull_request.title,
               html_url = pull_request.html_url,
-              author = pull_request.user and pull_request.user.login,
-              merged_by = pull_request.merged_by
-                and pull_request.merged_by.login,
+              author = account_login(pull_request.user),
+              merged_by = account_login(pull_request.merged_by),
             }
             local function finish_details()
               -- Do not permanently cache a missing merger: Codeberg can

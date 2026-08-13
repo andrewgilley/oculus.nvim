@@ -818,6 +818,21 @@ do
   assert(direct_codeberg_pull.actor.login == "zig-merger")
   assert(direct_codeberg_pull.payload.pull_request.user.login
     == "pull-author")
+  local null_merger_pull = codeberg._project_pull_request_event(
+    "ziglang/zig",
+    {
+      number = 36441,
+      title = "Codeberg returns a JSON null merger",
+      user = { login = "Techatrix" },
+      merged_by = vim.NIL,
+      merged_at = "2026-08-13T02:03:28+02:00",
+      html_url = "https://codeberg.org/ziglang/zig/pulls/36441",
+    }
+  )
+  assert(null_merger_pull.actor == nil)
+  assert(null_merger_pull.payload.pull_request.merged_by == nil)
+  assert(codeberg._activity_pull_request_key(null_merger_pull)
+    == "ziglang/zig#36441")
 end
 local original_events = github.events
 local original_enrich_pull_requests = github.enrich_pull_requests
