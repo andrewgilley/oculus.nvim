@@ -728,6 +728,25 @@ do
   assert(merged_pull_request.payload.pull_request.merged_by.login
     == "codeberg-merger")
   assert(codeberg._activity_pull_request_key(merged_pull_request) ~= nil)
+  assert(codeberg._pull_request_timeline_merger({
+    {
+      type = "review",
+      user = { login = "reviewer" },
+    },
+    {
+      type = "merge_pull",
+      user = { login = "andrewrk" },
+    },
+  }) == "andrewrk")
+  assert(codeberg._pull_request_timeline_merger({
+    {
+      type = "merge_pull_request",
+      resolve_doer = { username = "zig-maintainer" },
+    },
+  }) == "zig-maintainer")
+  assert(codeberg._pull_request_timeline_merger({
+    { type = "review", user = { login = "reviewer" } },
+  }) == nil)
   local partial_push = codeberg.normalize_activity({
     id = 43,
     op_type = "commit_repo",
