@@ -497,7 +497,7 @@ local function pull_request_key(event)
       or pull_request.merged_by ~= nil
     ))
   local author = pull_request.user or pull_request.author
-  local merger = pull_request.merged_by or event.actor
+  local merger = pull_request.merged_by
   if pull_request.title
     and (not merged or (author and merger))
   then
@@ -520,6 +520,9 @@ local function apply_pull_request_details(event, details)
   end
   if not event.payload.pull_request.merged_by and details.merged_by then
     event.payload.pull_request.merged_by = { login = details.merged_by }
+  end
+  if details.merged_by then
+    event.actor = { login = details.merged_by }
   end
 end
 
@@ -791,6 +794,7 @@ end
 
 M._project_commit_event = project_commit_event
 M._project_pull_request_event = project_pull_request_event
+M._pull_request_key = pull_request_key
 M._push_needs_enrichment = push_needs_enrichment
 
 return M

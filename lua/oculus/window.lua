@@ -1264,7 +1264,9 @@ local function project_pull_request_title(event, text)
   local author = activity_identity(
     pull_request.user or pull_request.author
   )
-  local merger = activity_identity(pull_request.merged_by)
+  local merger = activity_identity(
+    pull_request.merged_by or payload.merged_by or payload.merger
+  )
     or activity_identity(event.actor)
   local number = pull_request.number or payload.number
   local repository = event.repo
