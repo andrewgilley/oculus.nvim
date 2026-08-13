@@ -3667,6 +3667,125 @@ function M._discard_previous_inspections()
   end
 end
 
+function M._close_inspection_workflow(group)
+  if type(group) ~= "table" then
+    return false
+  end
+
+  local workflow = group
+  for _, candidate in ipairs(sidebar_groups) do
+    if candidate.overview_patch_group == group then
+      workflow = candidate
+      break
+    end
+  end
+  local workflow_groups = {}
+  for index = #sidebar_groups, 1, -1 do
+    local candidate = sidebar_groups[index]
+    if candidate == workflow
+      or candidate == workflow.overview_patch_group
+    then
+      candidate.discarded = true
+      candidate.close_notified = true
+      table.remove(sidebar_groups, index)
+      workflow_groups[#workflow_groups + 1] = candidate
+    end
+  end
+  if #workflow_groups == 0 then
+    workflow_groups[1] = workflow
+  end
+
+  M._tab_navigation_source = nil
+  local tabs = {}
+  local inspection_buffers = {}
+  local sidebar_buffers = {}
+  for _, candidate in ipairs(workflow_groups) do
+    if M._overview_ui and M._overview_ui.stop_agent_spinner then
+      M._overview_ui.stop_agent_spinner(candidate)
+    end
+    for _, process in ipairs({
+      candidate.overview_agent_model_process,
+      candidate.overview_agent_process,
+    }) do
+      if process and type(process.kill) == "function" then
+        pcall(process.kill, process, 15)
+      end
+    end
+    candidate.overview_agent_model_process = nil
+    candidate.overview_agent_process = nil
+    candidate.overview_agent_mode = nil
+    if candidate.sidebar_buf then
+      sidebar_buffers[candidate.sidebar_buf] = true
+    end
+    for _, session in ipairs(candidate) do
+      local endpoints = candidate.kind == "issue"
+          and { session.issue }
+        or { session.parent, session.change }
+      for _, endpoint in ipairs(endpoints) do
+        if endpoint then
+          if endpoint.tab and vim.api.nvim_tabpage_is_valid(endpoint.tab) then
+            tabs[endpoint.tab] = true
+          end
+          if endpoint.buf
+            and vim.api.nvim_buf_is_valid(endpoint.buf)
+            and type(vim.b[endpoint.buf].oculus_inspect) == "table"
+          then
+            inspection_buffers[endpoint.buf] = true
+          end
+        end
+      end
+    end
+    close_overview_window(candidate)
+    if close_inspection_sidebar then
+      close_inspection_sidebar(candidate)
+    end
+  end
+
+  for id, session in pairs(sessions) do
+    for _, candidate in ipairs(workflow_groups) do
+      for _, workflow_session in ipairs(candidate) do
+        if session == workflow_session then
+          sessions[id] = nil
+          break
+        end
+      end
+    end
+  end
+
+  local current_tab = vim.api.nvim_get_current_tabpage()
+  local ordered_tabs = {}
+  for tab in pairs(tabs) do
+    if tab ~= current_tab then
+      ordered_tabs[#ordered_tabs + 1] = tab
+    end
+  end
+  if tabs[current_tab] then
+    ordered_tabs[#ordered_tabs + 1] = current_tab
+  end
+  for _, tab in ipairs(ordered_tabs) do
+    if vim.api.nvim_tabpage_is_valid(tab) then
+      pcall(vim.api.nvim_tabpage_close, tab, true)
+    end
+  end
+  for buf in pairs(sidebar_buffers) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+  for buf in pairs(inspection_buffers) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+
+  local lifecycle = workflow.inspection_lifecycle
+  local callback = lifecycle and lifecycle.on_closed
+  if type(callback) == "function" then
+    pcall(callback)
+  end
+  return true
+end
+
 local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
   if type(config.width) == "number" then
@@ -3910,8 +4029,8 @@ function M._overview_ui.render_footer(group)
   end
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
   local commands = issue_patches
-      and "  p path   e explain   b browser"
-    or "  e explain   b browser"
+      and "  p path   e explain   b browser   c close"
+    or "  e explain   b browser   c close"
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
   then
@@ -5194,6 +5313,14 @@ show_inspection_overview = function(group)
     nowait = true,
     silent = true,
     desc = "Open Oculus inspection item in browser",
+  })
+  vim.keymap.set("n", "c", function()
+    M._close_inspection_workflow(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Close Oculus Inspect workflow",
   })
   vim.keymap.set("n", "q", function()
     show_sidebar_files(group)

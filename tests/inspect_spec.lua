@@ -1490,7 +1490,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  p path   e explain   b browser",
+    "  p path   e explain   b browser   c close",
   }
 ))
 assert(issue_overview:find("  Title\n", 1, true))
@@ -2471,12 +2471,13 @@ local replacement_state = vim.api.nvim_tabpage_get_var(
 )
 assert(replacement_state.issue_number == 78)
 assert(vim.b[vim.api.nvim_get_current_buf()].oculus_inspect_overview == true)
-vim.fn.maparg("q", "n", false, true).callback()
-assert(not replacement_closed)
-vim.cmd("tabclose")
+local close_workflow_mapping = vim.fn.maparg("c", "n", false, true)
+assert(close_workflow_mapping.desc == "Close Oculus Inspect workflow")
+close_workflow_mapping.callback()
+assert(not vim.api.nvim_tabpage_is_valid(replacement_tab))
 assert(vim.wait(1000, function()
   return replacement_closed
-end), "closing the issue inspection did not complete its lifecycle")
+end), "closing the inspect workflow did not complete its lifecycle")
 vim.api.nvim_set_current_win(issue_origin_win)
 vim.wo[issue_origin_win].number = issue_origin_number
 vim.wo[issue_origin_win].relativenumber = issue_origin_relativenumber
