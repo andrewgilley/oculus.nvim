@@ -141,6 +141,7 @@ M.state = {
   activity_inspect_queue_active = nil,
   activity_inspect_queue_continuing = false,
   activity_inspect_queue_deferred_group = nil,
+  activity_inspect_queue_number_options = nil,
   activity_inspect_queue_lookup = {},
   activity_queue_line_keys = {},
   activity_inspect_queue_scope = nil,
@@ -2147,6 +2148,7 @@ local function set_activity_inspect_queue_scope()
     M.state.activity_inspect_queue_active = nil
     M.state.activity_inspect_queue_continuing = false
     M.state.activity_inspect_queue_deferred_group = nil
+    M.state.activity_inspect_queue_number_options = nil
     M.state.activity_inspect_queue_lookup = {}
     M.state.activity_inspect_queue_scope = scope
   end
@@ -4525,6 +4527,7 @@ open_next_queued_activity = function(ui_lifecycle)
   apply_activity_inspect_queue_highlights()
   if not entry then
     M.state.activity_inspect_queue_running = false
+    M.state.activity_inspect_queue_number_options = nil
     local deferred = M.state.activity_inspect_queue_deferred_group
     M.state.activity_inspect_queue_deferred_group = nil
     if deferred then
@@ -4582,7 +4585,8 @@ open_next_queued_activity = function(ui_lifecycle)
     entry.url,
     M.state.opts,
     entry.context,
-    lifecycle
+    lifecycle,
+    M.state.activity_inspect_queue_number_options
   )
   if not ok then
     if ui_lifecycle and ui_lifecycle.on_complete then
@@ -4708,6 +4712,8 @@ local function inspect_current()
   local ok, err
   if queued_entry then
     M.state.activity_inspect_queue_running = true
+    M.state.activity_inspect_queue_number_options =
+      M.inspection_window_options()
     open_next_queued_activity(lifecycle)
     ok = true
   else

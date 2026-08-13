@@ -4034,17 +4034,20 @@ function M._overview_ui.render_footer(group)
     vim.b[buf].oculus_inspect_overview_footer = true
   end
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
-  local close_command = group.overview_close_spinner_frame
-      and (
-        "c close "
-          .. M._overview_ui.agent_spinner_frames[
-            group.overview_close_spinner_frame
-          ]
-      )
+  local close_spinner = group.overview_close_spinner_frame
+      and M._overview_ui.agent_spinner_frames[
+        group.overview_close_spinner_frame
+      ]
+    or nil
+  local close_command = close_spinner
+      and ("c close " .. close_spinner)
     or "c close"
   local commands = issue_patches
       and "  p path   e explain   b browser   " .. close_command
     or "  e explain   b browser   " .. close_command
+  local close_spinner_col = close_spinner
+      and (#commands - #close_spinner)
+    or nil
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
   then
@@ -4095,6 +4098,19 @@ function M._overview_ui.render_footer(group)
       priority = 100,
     }
   )
+  if close_spinner_col then
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      M._overview_ui.footer_ns,
+      1,
+      close_spinner_col,
+      {
+        end_col = close_spinner_col + #close_spinner,
+        hl_group = "DiagnosticInfo",
+        priority = 101,
+      }
+    )
+  end
 
   local footer_win = group.overview_footer_win
   if footer_win and vim.api.nvim_win_is_valid(footer_win) then
@@ -7445,7 +7461,7 @@ local function open_issue(
   end)
 end
 
-function M.open(url, opts, context, lifecycle)
+function M.open(url, opts, context, lifecycle, inspection_window_options)
   opts = opts or {}
   local info = parse_target_url(url)
   if not info then
@@ -7459,13 +7475,18 @@ function M.open(url, opts, context, lifecycle)
   if active then
     return nil, "an inspection is already being prepared"
   end
-  local number_options = {
-    number = vim.wo.number,
-    relativenumber = vim.wo.relativenumber,
-  }
-  local window_ok, window = pcall(require, "oculus.window")
-  if window_ok and type(window.inspection_window_options) == "function" then
-    number_options = window.inspection_window_options() or number_options
+  local supplied_number_options = type(inspection_window_options) == "table"
+  local number_options = supplied_number_options
+      and vim.deepcopy(inspection_window_options)
+    or {
+      number = vim.wo.number,
+      relativenumber = vim.wo.relativenumber,
+    }
+  if not supplied_number_options then
+    local window_ok, window = pcall(require, "oculus.window")
+    if window_ok and type(window.inspection_window_options) == "function" then
+      number_options = window.inspection_window_options() or number_options
+    end
   end
   local comment = context and (context.comment or context) or nil
   if comment then
