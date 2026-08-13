@@ -1372,8 +1372,9 @@ local regular_queue_marks = vim.api.nvim_buf_get_extmarks(
   -1,
   { details = true }
 )
-assert(#regular_queue_marks > 0)
+assert(#regular_queue_marks == 1)
 assert(regular_queue_marks[1][4].hl_group == "OculusActivityQueued")
+assert(regular_queue_marks[1][2] + 1 == inspect_source_line)
 regular_queue_mapping.callback()
 assert(#state.activity_inspect_queue == 0)
 assert(#vim.api.nvim_buf_get_extmarks(
@@ -1383,6 +1384,20 @@ assert(#vim.api.nvim_buf_get_extmarks(
   -1,
   {}
 ) == 0)
+local inspect_activity_line = state.activity_title_lines[inspect_source_line]
+assert(inspect_activity_line ~= inspect_source_line)
+vim.api.nvim_win_set_cursor(state.win, { inspect_activity_line, 0 })
+regular_queue_mapping.callback()
+assert(#state.activity_inspect_queue == 1)
+regular_queue_marks = vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  regular_queue_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#regular_queue_marks == 1)
+assert(regular_queue_marks[1][2] + 1 == inspect_activity_line)
 local inspect_description_text = vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_source_line - 1,
@@ -1398,7 +1413,7 @@ inspect.open = function(url, _, context, lifecycle)
     1,
     true
   ) == 1)
-  assert(context == review_context)
+  assert(vim.deep_equal(context, review_context))
   inspect_lifecycle = lifecycle
   lifecycle.on_progress("⠋")
   return true
@@ -1406,8 +1421,6 @@ end
 local inspect_mapping = vim.fn.maparg("h", "n", false, true)
 assert(inspect_mapping.desc
   == "Inspect Oculus change or issue")
-local inspect_activity_line = state.activity_title_lines[inspect_source_line]
-assert(inspect_activity_line ~= inspect_source_line)
 local inspect_activity_text = vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_activity_line - 1,
@@ -1437,6 +1450,15 @@ assert(
 assert(first_loading_text:find(" ⠋", 1, true))
 assert(first_loading_text:sub(-21)
   == inspect_activity_text:sub(-21))
+regular_queue_marks = vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  regular_queue_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#regular_queue_marks == 1)
+assert(regular_queue_marks[1][2] + 1 == inspect_activity_line)
 assert(vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_source_line - 1,
@@ -1469,6 +1491,10 @@ assert(#vim.api.nvim_buf_get_extmarks(
   -1,
   {}
 ) == 0)
+inspect_lifecycle.on_closed()
+assert(vim.wait(1000, function()
+  return state.activity_inspect_queue_running == false
+end), "queued inspection did not finish")
 inspect.open = original_inspect_open
 
 local past_mapping = vim.fn.maparg("p", "n", false, true)
