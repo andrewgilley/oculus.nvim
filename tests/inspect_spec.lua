@@ -136,7 +136,7 @@ do
   }).link == "Normal")
   assert(vim.api.nvim_get_hl(0, {
     name = "TreesitterContextBottom",
-  }).link == "TreesitterContext")
+  }).link == nil)
   assert(vim.api.nvim_get_hl(0, {
     name = "TreesitterContextLineNumber",
   }).link == "Normal")
