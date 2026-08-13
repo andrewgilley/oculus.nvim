@@ -1109,19 +1109,26 @@ local function event_text(item, width)
   return item.text
 end
 
-local function activity_item_line(item, timestamp, width)
-  local timestamp_width = 19
-  local gap = "  "
-  local content_width = math.max(
+local activity_timestamp_width = 19
+local activity_timestamp_gap = "  "
+
+local function activity_content_width(width)
+  return math.max(
     1,
-    width - timestamp_width - vim.fn.strdisplaywidth(gap)
+    width
+      - activity_timestamp_width
+      - vim.fn.strdisplaywidth(activity_timestamp_gap)
   )
+end
+
+local function activity_item_line(item, timestamp, width)
+  local content_width = activity_content_width(width)
   local prefix = ("  %s  "):format(item.icon)
   local text_width = math.max(1, content_width - vim.fn.strdisplaywidth(prefix))
   local content = prefix .. event_text(item, text_width)
   return pad_cell(content, content_width)
-    .. gap
-    .. left_pad_cell(timestamp, timestamp_width)
+    .. activity_timestamp_gap
+    .. left_pad_cell(timestamp, activity_timestamp_width)
 end
 
 local function activity_loading_line(line, frame)
@@ -1164,7 +1171,11 @@ local function preview_lines(item, width)
     return nil
   end
   local indent = "     "
-  local content_width = math.max(1, width - vim.fn.strdisplaywidth(indent) - 1)
+  local row_width = activity_content_width(width)
+  local content_width = math.max(
+    1,
+    row_width - vim.fn.strdisplaywidth(indent)
+  )
   local lines = {}
   local details = {}
   if summary then
@@ -1190,7 +1201,7 @@ local function preview_lines(item, width)
         break
       end
       local text = trim_to_width(remaining, content_width)
-      lines[#lines + 1] = indent .. pad_cell(text, content_width) .. " "
+      lines[#lines + 1] = indent .. pad_cell(text, content_width)
       detail_indices[#lines] = detail_item.detail_index
       if vim.fn.strdisplaywidth(remaining) <= content_width then
         break

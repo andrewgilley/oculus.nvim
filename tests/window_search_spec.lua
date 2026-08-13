@@ -1039,6 +1039,29 @@ assert(not first_activity_text:find(state.contributor.name, 1, true))
 assert(first_activity_text:find(
   "@merge%-maintainer merged pr #43"
 ))
+do
+  local rendered_activity_lines = vim.api.nvim_buf_get_lines(
+    state.buf,
+    0,
+    -1,
+    false
+  )
+  for line, title_line in pairs(state.activity_title_lines) do
+    if line ~= title_line then
+      local title = rendered_activity_lines[title_line]
+      local date_start = title and title:find("%d%d/%d%d/%d%d")
+      assert(date_start, title)
+      local date_column = vim.fn.strdisplaywidth(
+        title:sub(1, date_start - 1)
+      ) + 1
+      assert(
+        vim.fn.strdisplaywidth(rendered_activity_lines[line])
+          < date_column,
+        rendered_activity_lines[line]
+      )
+    end
+  end
+end
 local activity_search_mapping = vim.fn.maparg("/", "n", false, true)
 assert(activity_search_mapping.desc
   == "Search Oculus projects, users, or activity")
