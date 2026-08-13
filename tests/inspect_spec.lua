@@ -823,6 +823,28 @@ assert(vim.deep_equal(
   }
 ))
 vim.g.oculus_test_sorted_inspections = nil
+vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
+  { change_file = "src/late.lua", commit_index = 3, file_index = 1 },
+  { change_file = "src/first.lua", commit_index = 1, file_index = 1 },
+  { change_file = "src/late.lua", commit_index = 2, file_index = 1 },
+  { change_file = "README.md", commit_index = 2, file_index = 2 },
+  { change_file = "src/first.lua", commit_index = 3, file_index = 2 },
+})
+assert(vim.deep_equal(
+  vim.tbl_map(function(inspection)
+    return (inspection.change_file or inspection.parent_file)
+      .. ":"
+      .. inspection.commit_index
+  end, vim.g.oculus_test_sorted_inspections),
+  {
+    "src/first.lua:1",
+    "src/first.lua:3",
+    "README.md:2",
+    "src/late.lua:2",
+    "src/late.lua:3",
+  }
+))
+vim.g.oculus_test_sorted_inspections = nil
 assert(inspect._sidebar_target_role(
   1,
   "change",
