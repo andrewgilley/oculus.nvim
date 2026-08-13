@@ -143,6 +143,7 @@ M.state = {
   activity_inspect_queue_deferred_group = nil,
   activity_inspect_queue_number_options = nil,
   activity_inspect_queue_lookup = {},
+  activity_inspect_queue_show_highlights = true,
   activity_queue_line_keys = {},
   activity_inspect_queue_scope = nil,
   activity_inspect_queue_running = false,
@@ -1136,7 +1137,11 @@ local function activity_item_line(item, timestamp, width)
     .. left_pad_cell(timestamp, activity_timestamp_width)
 end
 
-local function activity_loading_line(line, frame)
+local function activity_loading_line(line, frame, has_timestamp)
+  if not has_timestamp then
+    local body = line:gsub("%s+$", "")
+    return body .. " " .. frame, #body + 1
+  end
   local timestamp_width = 19
   local gap_width = 2
   local tail_width = timestamp_width + gap_width
@@ -2150,6 +2155,7 @@ local function set_activity_inspect_queue_scope()
     M.state.activity_inspect_queue_deferred_group = nil
     M.state.activity_inspect_queue_number_options = nil
     M.state.activity_inspect_queue_lookup = {}
+    M.state.activity_inspect_queue_show_highlights = true
     M.state.activity_inspect_queue_scope = scope
   end
 end
@@ -2352,14 +2358,19 @@ local function render_activity(events, cached, notice, opts)
   end
   for line in pairs(M.state.activity_title_lines) do
     local queue_key = M.state.activity_queue_line_keys[line]
-    if queue_key and M.state.activity_inspect_queue_lookup[queue_key] then
+    if M.state.activity_inspect_queue_show_highlights
+      and queue_key
+      and M.state.activity_inspect_queue_lookup[queue_key]
+    then
       vim.api.nvim_buf_add_highlight(
         M.state.buf,
         activity_inspect_queue_ns,
         "OculusActivityQueued",
         line - 1,
         0,
-        -1
+        M.state.activity_title_lines[line] == line
+            and math.max(0, #lines[line] - activity_timestamp_width)
+          or -1
       )
     end
   end
@@ -4458,7 +4469,9 @@ local function apply_activity_inspect_queue_highlights()
     0,
     -1
   )
-  if M.state.view ~= "activity" then
+  if M.state.view ~= "activity"
+    or not M.state.activity_inspect_queue_show_highlights
+  then
     return
   end
   for line in pairs(M.state.activity_title_lines) do
@@ -4470,7 +4483,17 @@ local function apply_activity_inspect_queue_highlights()
         "OculusActivityQueued",
         line - 1,
         0,
-        -1
+        M.state.activity_title_lines[line] == line
+            and math.max(
+              0,
+              #vim.api.nvim_buf_get_lines(
+                M.state.buf,
+                line - 1,
+                line,
+                false
+              )[1] - activity_timestamp_width
+            )
+          or -1
       )
     end
   end
@@ -4514,6 +4537,7 @@ local function toggle_activity_inspect_queue()
       context = type(context) == "table" and vim.deepcopy(context) or nil,
     }
   end
+  M.state.activity_inspect_queue_show_highlights = true
   rebuild_activity_inspect_queue_lookup()
   apply_activity_inspect_queue_highlights()
 end
@@ -4563,6 +4587,8 @@ open_next_queued_activity = function(ui_lifecycle)
     on_complete = function(message)
       if not message then
         M.state.activity_inspect_queue_deferred_group = nil
+        M.state.activity_inspect_queue_show_highlights = false
+        apply_activity_inspect_queue_highlights()
       end
       if ui_lifecycle and ui_lifecycle.on_complete then
         ui_lifecycle.on_complete(message)
@@ -4626,6 +4652,7 @@ local function inspect_current()
 
   local source_line = vim.api.nvim_win_get_cursor(M.state.win)[1]
   local loading_target = target
+  local loading_line_key
   if queued_entry then
     -- Queue startup has one loading indicator for the whole batch.  Put it on
     -- the final item the user marked, not on the first item which happens to
@@ -4634,9 +4661,10 @@ local function inspect_current()
       #M.state.activity_inspect_queue
     ]
     loading_target = final_entry and final_entry.url or target
+    loading_line_key = final_entry and final_entry.line_key or nil
     source_line = nil
-    for candidate, title_line in pairs(M.state.activity_title_lines) do
-      if candidate == title_line
+    for candidate, line_key in pairs(M.state.activity_queue_line_keys) do
+      if line_key == loading_line_key
         and M.state.line_targets[candidate] == loading_target
       then
         source_line = candidate
@@ -4645,7 +4673,10 @@ local function inspect_current()
     end
   end
   local line = source_line
-    and (M.state.activity_title_lines[source_line] or source_line)
+    and (
+      queued_entry and source_line
+      or (M.state.activity_title_lines[source_line] or source_line)
+    )
     or nil
   local activity_buf = M.state.buf
   local activity_line = line and vim.api.nvim_buf_get_lines(
@@ -4699,7 +4730,11 @@ local function inspect_current()
         end
         clear_spinner()
         local loading_line, spinner_column =
-          activity_loading_line(activity_line, frame)
+          activity_loading_line(
+            activity_line,
+            frame,
+            M.state.activity_title_lines[line] == line
+          )
         set_loading_line(loading_line)
         vim.api.nvim_buf_add_highlight(
           activity_buf,
