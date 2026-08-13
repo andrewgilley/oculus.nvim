@@ -668,6 +668,7 @@ do
     == "pull-author")
   assert(enriched_pull_request.payload.pull_request.merged_by.login
     == "merge-maintainer")
+  assert(enriched_pull_request.actor.login == "merge-maintainer")
   assert(window._project_pull_request_title(
     enriched_pull_request,
     "merged pull request #42 in example/repository"
@@ -686,6 +687,32 @@ do
   ) == "@merge-maintainer merged pr #42 in example/repository")
 end
 do
+  local ambiguous_merger = {
+    type = "PullRequestEvent",
+    repo = { name = "example/repository" },
+    actor = { login = "pull-author" },
+    payload = {
+      action = "merged",
+      pull_request = {
+        number = 44,
+        title = "Resolve the authoritative merger",
+        user = { login = "pull-author" },
+        merged = true,
+      },
+    },
+  }
+  local key, repository, number = github._pull_request_key(
+    ambiguous_merger
+  )
+  assert(key == "example/repository#44")
+  assert(repository == "example/repository")
+  assert(number == 44)
+  ambiguous_merger.payload.pull_request.merged_by = {
+    login = "merge-maintainer",
+  }
+  assert(github._pull_request_key(ambiguous_merger) == nil)
+end
+do
   local codeberg = require("oculus.codeberg")
   local merged_pull_request = codeberg.normalize_activity({
     id = 42,
@@ -700,6 +727,7 @@ do
   })
   assert(merged_pull_request.payload.pull_request.merged_by.login
     == "codeberg-merger")
+  assert(codeberg._activity_pull_request_key(merged_pull_request) ~= nil)
   local partial_push = codeberg.normalize_activity({
     id = 43,
     op_type = "commit_repo",

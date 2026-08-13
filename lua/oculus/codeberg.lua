@@ -728,6 +728,9 @@ local function apply_activity_pull_request(event, details)
   if not pull_request.merged_by and details.merged_by then
     pull_request.merged_by = { login = details.merged_by }
   end
+  if details.merged_by then
+    event.actor = { login = details.merged_by }
+  end
 end
 
 function M.enrich_pull_requests(events, opts, callback)
@@ -1035,6 +1038,7 @@ end
 M._apply_push_comparison = apply_push_comparison
 M._project_commit_event = project_commit_event
 M._project_pull_request_event = project_pull_request_event
+M._activity_pull_request_key = activity_pull_request_key
 M._push_needs_enrichment = push_needs_enrichment
 
 return M
