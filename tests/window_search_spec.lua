@@ -1407,13 +1407,15 @@ local inspect_description_text = vim.api.nvim_buf_get_lines(
 
 local original_inspect_open = inspect.open
 local inspect_lifecycle
-inspect.open = function(url, _, context, lifecycle)
+inspect.open = function(url, _, context, lifecycle, number_options)
   assert(url:find(
     "https://github.com/example/repository/pull/42",
     1,
     true
   ) == 1)
   assert(vim.deep_equal(context, review_context))
+  assert(number_options.number == true)
+  assert(number_options.relativenumber == true)
   inspect_lifecycle = lifecycle
   lifecycle.on_progress("⠋")
   return true

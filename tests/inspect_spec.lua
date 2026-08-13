@@ -2490,7 +2490,22 @@ assert((function()
     local buf = vim.api.nvim_win_get_buf(win)
     if vim.b[buf].oculus_inspect_overview_footer then
       local footer = vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1]
-      return footer:find("c close ", 1, true) ~= nil
+      if not footer:find("c close ", 1, true) then
+        return false
+      end
+      local footer_ns = vim.api.nvim_get_namespaces()
+        .oculus_inspect_overview_footer
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+        buf,
+        footer_ns,
+        0,
+        -1,
+        { details = true }
+      )) do
+        if mark[4].hl_group == "DiagnosticInfo" then
+          return true
+        end
+      end
     end
   end
   return false
