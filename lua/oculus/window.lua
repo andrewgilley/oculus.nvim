@@ -4555,6 +4555,10 @@ open_next_queued_activity = function(ui_lifecycle)
     return true
   end
   local lifecycle = {
+    -- A queued handoff keeps the overview visible while the replacement is
+    -- loading.  Have the replacement claim that view as soon as its tabs are
+    -- ready instead of leaving the user on its first code tab.
+    overview_on_open = M.state.activity_inspect_queue_deferred_group ~= nil,
     on_progress = ui_lifecycle and ui_lifecycle.on_progress or nil,
     on_complete = function(message)
       if not message then
