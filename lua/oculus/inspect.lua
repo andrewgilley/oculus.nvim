@@ -107,6 +107,22 @@ function M._refresh_inspection_treesitter_context_highlights()
         if highlighters and not highlighters[buf] and vim.treesitter.start then
           pcall(vim.treesitter.start, buf)
         end
+        local changedtick = vim.api.nvim_buf_get_changedtick(buf)
+        if vim.b[buf].oculus_context_highlight_tick ~= changedtick then
+          vim.b[buf].oculus_context_highlight_tick = changedtick
+          local parser_ok, parser = pcall(vim.treesitter.get_parser, buf)
+          if parser_ok and parser then
+            pcall(parser.parse, parser, true, function()
+              vim.schedule(function()
+                if vim.api.nvim_win_is_valid(win)
+                  and vim.api.nvim_win_get_buf(win) == buf
+                then
+                  original_open(win, ranges, lines, true)
+                end
+              end)
+            end)
+          end
+        end
         -- The context buffer is reused as its source rows change. Force the
         -- renderer to recopy source Treesitter extmarks so its syntax colors do
         -- not depend on whether the visible text itself changed.
