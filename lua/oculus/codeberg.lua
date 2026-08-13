@@ -733,6 +733,27 @@ local function apply_activity_pull_request(event, details)
   end
 end
 
+local function pull_request_timeline_merger(timeline)
+  for index = #(timeline or {}), 1, -1 do
+    local entry = timeline[index]
+    if type(entry) == "table"
+      and (entry.type == "merge_pull"
+        or entry.type == "merge_pull_request")
+    then
+      local user = entry.user or entry.resolve_doer
+      local login = type(user) == "table"
+          and (user.login or user.username)
+        or nil
+      if type(login) == "string" and login ~= "" then
+        return login
+      end
+    end
+  end
+  return nil
+end
+
+M._pull_request_timeline_merger = pull_request_timeline_merger
+
 function M.enrich_pull_requests(events, opts, callback)
   opts = opts or {}
   local pending = 0
@@ -766,8 +787,29 @@ function M.enrich_pull_requests(events, opts, callback)
               merged_by = pull_request.merged_by
                 and pull_request.merged_by.login,
             }
-            activity_pull_request_cache[key] = details
-            apply_activity_pull_request(event, details)
+            local function finish_details()
+              -- Do not permanently cache a missing merger: Codeberg can
+              -- populate the merge timeline shortly after the PR closes.
+              if details.merged_by then
+                activity_pull_request_cache[key] = details
+              else
+                activity_pull_request_cache[key] = nil
+              end
+              apply_activity_pull_request(event, details)
+              complete()
+            end
+            if not details.merged_by then
+              local timeline_url = (
+                "%s/api/v1/repos/%s/issues/%s/timeline?limit=50"
+              ):format(base_url, repo, number)
+              request_json(timeline_url, opts, function(timeline)
+                details.merged_by = pull_request_timeline_merger(timeline)
+                finish_details()
+              end)
+              return
+            end
+            finish_details()
+            return
           else
             activity_pull_request_cache[key] = false
           end
