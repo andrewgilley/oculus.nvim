@@ -214,9 +214,10 @@ function M._enable_inspection_treesitter_context(opts)
   -- Normal prevents colorschemes with a panel-style TreesitterContext
   -- background from drawing an apparent divider above inspected code.
   vim.api.nvim_set_hl(0, "TreesitterContext", { link = "Normal" })
-  vim.api.nvim_set_hl(0, "TreesitterContextBottom", {
-    link = "TreesitterContext",
-  })
+  -- nvim-treesitter-context applies this group as a high-priority line
+  -- highlight to its final visible row. Keep it background-only: linking it
+  -- to Normal supplies a foreground and masks that row's token highlights.
+  vim.api.nvim_set_hl(0, "TreesitterContextBottom", { bg = "NONE" })
   vim.api.nvim_set_hl(0, "TreesitterContextLineNumber", {
     link = "Normal",
   })
