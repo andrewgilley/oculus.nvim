@@ -1398,6 +1398,20 @@ regular_queue_marks = vim.api.nvim_buf_get_extmarks(
 )
 assert(#regular_queue_marks == 1)
 assert(regular_queue_marks[1][2] + 1 == inspect_activity_line)
+local queued_spinner_line
+for line, title_line in pairs(state.activity_title_lines) do
+  if line == title_line
+    and line ~= inspect_activity_line
+    and type(state.line_targets[line]) == "string"
+  then
+    queued_spinner_line = line
+    break
+  end
+end
+assert(queued_spinner_line)
+vim.api.nvim_win_set_cursor(state.win, { queued_spinner_line, 0 })
+regular_queue_mapping.callback()
+assert(#state.activity_inspect_queue == 2)
 local inspect_description_text = vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_source_line - 1,
@@ -1408,16 +1422,17 @@ local inspect_description_text = vim.api.nvim_buf_get_lines(
 local original_inspect_open = inspect.open
 local inspect_lifecycle
 inspect.open = function(url, _, context, lifecycle, number_options)
-  assert(url:find(
-    "https://github.com/example/repository/pull/42",
-    1,
-    true
-  ) == 1)
-  assert(vim.deep_equal(context, review_context))
+  if url:find("https://github.com/example/repository/pull/42", 1, true) then
+    assert(vim.deep_equal(context, review_context))
+  else
+    assert(url == state.line_targets[queued_spinner_line])
+  end
   assert(number_options.number == true)
   assert(number_options.relativenumber == true)
   inspect_lifecycle = lifecycle
-  lifecycle.on_progress("⠋")
+  if lifecycle.on_progress then
+    lifecycle.on_progress("⠋")
+  end
   return true
 end
 local inspect_mapping = vim.fn.maparg("h", "n", false, true)
@@ -1425,8 +1440,8 @@ assert(inspect_mapping.desc
   == "Inspect Oculus change or issue")
 local inspect_activity_text = vim.api.nvim_buf_get_lines(
   state.buf,
-  inspect_activity_line - 1,
-  inspect_activity_line,
+  queued_spinner_line - 1,
+  queued_spinner_line,
   false
 )[1]
 inspect_mapping.callback()
@@ -1435,8 +1450,8 @@ local inspect_loading_namespace =
 assert(inspect_loading_namespace)
 local first_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
-  inspect_activity_line - 1,
-  inspect_activity_line,
+  queued_spinner_line - 1,
+  queued_spinner_line,
   false
 )[1]
 assert(
@@ -1459,8 +1474,19 @@ regular_queue_marks = vim.api.nvim_buf_get_extmarks(
   -1,
   { details = true }
 )
-assert(#regular_queue_marks == 1)
-assert(regular_queue_marks[1][2] + 1 == inspect_activity_line)
+assert(#regular_queue_marks == 2)
+assert(vim.tbl_contains(
+  vim.tbl_map(function(mark)
+    return mark[2] + 1
+  end, regular_queue_marks),
+  inspect_activity_line
+))
+assert(vim.tbl_contains(
+  vim.tbl_map(function(mark)
+    return mark[2] + 1
+  end, regular_queue_marks),
+  queued_spinner_line
+))
 assert(vim.api.nvim_buf_get_lines(
   state.buf,
   inspect_source_line - 1,
@@ -1470,8 +1496,8 @@ assert(vim.api.nvim_buf_get_lines(
 inspect_lifecycle.on_progress("⠙")
 local second_loading_text = vim.api.nvim_buf_get_lines(
   state.buf,
-  inspect_activity_line - 1,
-  inspect_activity_line,
+  queued_spinner_line - 1,
+  queued_spinner_line,
   false
 )[1]
 assert(vim.fn.strdisplaywidth(second_loading_text)
@@ -1482,8 +1508,8 @@ assert(second_loading_text:sub(-21)
 inspect_lifecycle.on_complete()
 assert(vim.api.nvim_buf_get_lines(
   state.buf,
-  inspect_activity_line - 1,
-  inspect_activity_line,
+  queued_spinner_line - 1,
+  queued_spinner_line,
   false
 )[1] == inspect_activity_text)
 assert(#vim.api.nvim_buf_get_extmarks(
@@ -1493,6 +1519,11 @@ assert(#vim.api.nvim_buf_get_extmarks(
   -1,
   {}
 ) == 0)
+first_loading_text = inspect_lifecycle
+inspect_lifecycle.on_closed()
+assert(vim.wait(1000, function()
+  return inspect_lifecycle ~= first_loading_text
+end), "second queued inspection did not start")
 inspect_lifecycle.on_closed()
 assert(vim.wait(1000, function()
   return state.activity_inspect_queue_running == false
@@ -1517,6 +1548,7 @@ browser.open = function(url)
   opened_activity_url = url
   return true
 end
+vim.api.nvim_win_set_cursor(state.win, { inspect_activity_line, 0 })
 browser_mapping.callback()
 assert(opened_activity_url:find(
   "https://github.com/example/repository/pull/42",
