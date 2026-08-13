@@ -1400,8 +1400,8 @@ assert(#regular_queue_marks == 1)
 assert(regular_queue_marks[1][2] + 1 == inspect_activity_line)
 local queued_spinner_line
 for line, title_line in pairs(state.activity_title_lines) do
-  if line == title_line
-    and line ~= inspect_activity_line
+  if line ~= title_line
+    and title_line ~= inspect_activity_line
     and type(state.line_targets[line]) == "string"
   then
     queued_spinner_line = line
@@ -1454,19 +1454,8 @@ local first_loading_text = vim.api.nvim_buf_get_lines(
   queued_spinner_line,
   false
 )[1]
-assert(
-  vim.fn.strdisplaywidth(first_loading_text)
-    == vim.fn.strdisplaywidth(inspect_activity_text),
-  ("%d ~= %d (%q / %q)"):format(
-    vim.fn.strdisplaywidth(first_loading_text),
-    vim.fn.strdisplaywidth(inspect_activity_text),
-    first_loading_text,
-    inspect_activity_text
-  )
-)
-assert(first_loading_text:find(" ⠋", 1, true))
-assert(first_loading_text:sub(-21)
-  == inspect_activity_text:sub(-21))
+assert(first_loading_text
+  == inspect_activity_text:gsub("%s+$", "") .. " ⠋")
 regular_queue_marks = vim.api.nvim_buf_get_extmarks(
   state.buf,
   regular_queue_namespace,
@@ -1475,6 +1464,16 @@ regular_queue_marks = vim.api.nvim_buf_get_extmarks(
   { details = true }
 )
 assert(#regular_queue_marks == 2)
+for _, mark in ipairs(regular_queue_marks) do
+  if mark[2] + 1 == inspect_activity_line then
+    assert(mark[4].end_col == #vim.api.nvim_buf_get_lines(
+      state.buf,
+      inspect_activity_line - 1,
+      inspect_activity_line,
+      false
+    )[1] - 19)
+  end
+end
 assert(vim.tbl_contains(
   vim.tbl_map(function(mark)
     return mark[2] + 1
@@ -1500,11 +1499,8 @@ local second_loading_text = vim.api.nvim_buf_get_lines(
   queued_spinner_line,
   false
 )[1]
-assert(vim.fn.strdisplaywidth(second_loading_text)
-  == vim.fn.strdisplaywidth(inspect_activity_text))
-assert(second_loading_text:find(" ⠙", 1, true))
-assert(second_loading_text:sub(-21)
-  == inspect_activity_text:sub(-21))
+assert(second_loading_text
+  == inspect_activity_text:gsub("%s+$", "") .. " ⠙")
 inspect_lifecycle.on_complete()
 assert(vim.api.nvim_buf_get_lines(
   state.buf,
@@ -1515,6 +1511,13 @@ assert(vim.api.nvim_buf_get_lines(
 assert(#vim.api.nvim_buf_get_extmarks(
   state.buf,
   inspect_loading_namespace,
+  0,
+  -1,
+  {}
+) == 0)
+assert(#vim.api.nvim_buf_get_extmarks(
+  state.buf,
+  regular_queue_namespace,
   0,
   -1,
   {}
