@@ -64,6 +64,7 @@ local window_highlight_groups = {
   "WinSeparator",
   "OculusInspectOverviewSection",
   "OculusInspectAgentModelSelected",
+  "OculusInspectQueueCurrent",
 }
 local commit_activity_url
 local load_project_activity
@@ -4464,6 +4465,11 @@ local function rebuild_activity_inspect_queue_lookup()
     lookup[active.line_key or active.url] = true
   end
   M.state.activity_inspect_queue_lookup = lookup
+  if inspect._overview_ui
+    and inspect._overview_ui.refresh_queue_sidebar
+  then
+    inspect._overview_ui.refresh_queue_sidebar()
+  end
 end
 
 local function apply_activity_inspect_queue_highlights()
@@ -4553,11 +4559,37 @@ local function toggle_activity_inspect_queue()
       url = url,
       line_key = line_key,
       context = type(context) == "table" and vim.deepcopy(context) or nil,
+      title = is_valid_buf(M.state.buf)
+          and vim.api.nvim_buf_get_lines(M.state.buf, title_line - 1, title_line, false)[1]
+        or nil,
     }
   end
   M.state.activity_inspect_queue_show_highlights = true
   rebuild_activity_inspect_queue_lookup()
   apply_activity_inspect_queue_highlights()
+end
+
+-- Return the currently active inspection and the remaining queued activities
+-- for consumers that need to mirror queue state outside the activity window.
+function M.inspect_queue_snapshot()
+  local function copy(entry)
+    if type(entry) ~= "table" then
+      return nil
+    end
+    return {
+      url = entry.url,
+      title = entry.title,
+      line_key = entry.line_key,
+    }
+  end
+  local pending = {}
+  for _, entry in ipairs(M.state.activity_inspect_queue or {}) do
+    pending[#pending + 1] = copy(entry)
+  end
+  return {
+    active = copy(M.state.activity_inspect_queue_active),
+    pending = pending,
+  }
 end
 
 local open_next_queued_activity
