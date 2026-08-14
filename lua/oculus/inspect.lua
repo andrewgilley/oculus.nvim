@@ -4170,6 +4170,10 @@ end
 function M._overview_ui.close_queue_sidebar(group)
   local win = group.overview_queue_win
   local buf = group.overview_queue_buf
+  if group.overview_queue_cursor_autocmd then
+    pcall(vim.api.nvim_del_autocmd, group.overview_queue_cursor_autocmd)
+    group.overview_queue_cursor_autocmd = nil
+  end
   group.overview_queue_win = nil
   group.overview_queue_buf = nil
   if win and vim.api.nvim_win_is_valid(win) then
@@ -4206,6 +4210,14 @@ function M._overview_ui.refresh_queue_sidebar(group)
   end
   if #entries == 0 then
     M._overview_ui.close_queue_sidebar(group)
+    local overview_win = group.overview_win
+    local original = group.overview_original_config
+    if overview_win
+      and vim.api.nvim_win_is_valid(overview_win)
+      and original
+    then
+      vim.api.nvim_win_set_config(overview_win, vim.deepcopy(original))
+    end
     return
   end
   local function queue_sidebar_label(entry)
@@ -4227,16 +4239,29 @@ function M._overview_ui.refresh_queue_sidebar(group)
   if not overview_win or not vim.api.nvim_win_is_valid(overview_win) then
     return
   end
-  local overview_config = vim.api.nvim_win_get_config(overview_win)
-  local overview_width = vim.api.nvim_win_get_width(overview_win)
-  local overview_height = vim.api.nvim_win_get_height(overview_win)
-  local width = math.min(32, math.max(20, math.floor(overview_width * 0.45)))
-  local overview_col = tonumber(overview_config.col) or 0
-  local col = overview_col - width
-  if col < 0 then
-    col = overview_col + overview_width + 1
+  local current_config = vim.api.nvim_win_get_config(overview_win)
+  local base_config = group.overview_original_config
+      or current_config
+  local total_width = tonumber(base_config.width)
+      or vim.api.nvim_win_get_width(overview_win)
+  local total_col = tonumber(base_config.col) or 0
+  local total_height = tonumber(base_config.height)
+      or vim.api.nvim_win_get_height(overview_win)
+  local width = math.min(32, math.max(20, math.floor(total_width * 0.35)))
+  local overview_width = math.max(20, total_width - width - 1)
+  local overview_config = vim.deepcopy(current_config)
+  overview_config.width = overview_width
+  overview_config.col = total_col + width + 1
+  overview_config.height = total_height
+  if current_config.width ~= overview_config.width
+    or current_config.col ~= overview_config.col
+  then
+    vim.api.nvim_win_set_config(overview_win, overview_config)
   end
-  col = math.max(0, math.min(col, math.max(0, vim.o.columns - width - 1)))
+  local col = math.max(0, math.min(
+    total_col,
+    math.max(0, vim.o.columns - width - 1)
+  ))
   local lines = { "QUEUE", "" }
   local current_line
   local current_index
@@ -4274,18 +4299,11 @@ function M._overview_ui.refresh_queue_sidebar(group)
       priority = 110,
     })
   end
-  local selected_line = selected_index + 2
-  vim.api.nvim_buf_set_extmark(buf, sidebar_ns, selected_line - 1, 0, {
-    end_col = #(lines[selected_line] or ""),
-    hl_group = "OculusInspectAgentModelSelected",
-    hl_mode = "combine",
-    priority = 120,
-  })
   local config = {
     relative = "editor",
     width = width,
-    height = overview_height,
-    row = tonumber(overview_config.row) or 0,
+    height = total_height,
+    row = tonumber(base_config.row) or 0,
     col = col,
     style = "minimal",
     border = { "", "", "", "│", "", "", "", "" },
@@ -4295,8 +4313,12 @@ function M._overview_ui.refresh_queue_sidebar(group)
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_set_config(win, config)
   else
-    win = vim.api.nvim_open_win(buf, false, config)
+    local focus = vim.api.nvim_get_current_win()
+    win = vim.api.nvim_open_win(buf, true, config)
     group.overview_queue_win = win
+    if focus and vim.api.nvim_win_is_valid(focus) then
+      vim.api.nvim_set_current_win(focus)
+    end
   end
   vim.wo[win].wrap = false
   vim.wo[win].number = false
@@ -4312,6 +4334,27 @@ function M._overview_ui.refresh_queue_sidebar(group)
     win,
     group.overview_highlight_source_win
   )
+  if not group.overview_queue_cursor_autocmd then
+    group.overview_queue_cursor_autocmd = vim.api.nvim_create_autocmd(
+      "CursorMoved",
+      {
+        group = sync_group,
+        buffer = buf,
+        callback = function()
+          if not group.overview_queue_win
+            or not vim.api.nvim_win_is_valid(group.overview_queue_win)
+            or vim.api.nvim_get_current_win() ~= group.overview_queue_win
+          then
+            return
+          end
+          local line = vim.api.nvim_win_get_cursor(group.overview_queue_win)[1]
+          if line > 2 then
+            require("oculus.window").select_inspect_queue(line - 2)
+          end
+        end,
+      }
+    )
+  end
 end
 
 function M._overview_ui.move_queue_cursor(group, direction)
@@ -5600,6 +5643,7 @@ show_inspection_overview = function(group)
     group.overview_window_config,
     group.overview
   )
+  group.overview_original_config = vim.deepcopy(config)
   group.overview_content_width =
     math.max(12, (config.width or 28) - 4)
   local buf = vim.api.nvim_create_buf(false, true)
