@@ -4267,13 +4267,13 @@ function M._overview_ui.refresh_queue_sidebar(group)
     total_col + total_width - width - 1,
     math.max(0, vim.o.columns - width - 1)
   ))
-  local lines = { "QUEUE", "" }
+  local lines = {}
   local current_line
   local current_index
   for entry_index, item in ipairs(entries) do
     local line = #lines + 1
     local prefix = item.current and "> " or "  "
-    lines[line] = prefix .. queue_sidebar_label(item.entry)
+    lines[line] = "│" .. prefix .. queue_sidebar_label(item.entry)
     if item.current then
       current_line = line
       current_index = entry_index
@@ -4298,10 +4298,17 @@ function M._overview_ui.refresh_queue_sidebar(group)
   vim.bo[buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   if current_line then
-    vim.api.nvim_buf_set_extmark(buf, sidebar_ns, current_line - 1, 0, {
+    vim.api.nvim_buf_set_extmark(buf, sidebar_ns, current_line - 1, 1, {
       end_col = #(lines[current_line] or ""),
       hl_group = "OculusInspectQueueCurrent",
       priority = 110,
+    })
+  end
+  for line = 1, #lines do
+    vim.api.nvim_buf_set_extmark(buf, sidebar_ns, line - 1, 0, {
+      end_col = 1,
+      hl_group = "WinSeparator",
+      priority = 105,
     })
   end
   local config = {
@@ -4311,7 +4318,7 @@ function M._overview_ui.refresh_queue_sidebar(group)
     row = tonumber(base_config.row) or 0,
     col = col,
     style = "minimal",
-    border = { "", "", "", "", "", "", "", "│" },
+    border = "none",
     zindex = (tonumber(overview_config.zindex) or 70) + 1,
   }
   local win = group.overview_queue_win
@@ -4353,8 +4360,8 @@ function M._overview_ui.refresh_queue_sidebar(group)
             return
           end
           local line = vim.api.nvim_win_get_cursor(group.overview_queue_win)[1]
-          if line > 2 then
-            require("oculus.window").select_inspect_queue(line - 2)
+          if line > 0 then
+            require("oculus.window").select_inspect_queue(line)
           end
         end,
       }
@@ -4370,8 +4377,7 @@ function M._overview_ui.move_queue_cursor(group, direction)
   then
     return false
   end
-  local count = math.max(0,
-    vim.api.nvim_buf_line_count(group.overview_queue_buf) - 2)
+  local count = vim.api.nvim_buf_line_count(group.overview_queue_buf)
   if count == 0 then
     return false
   end
@@ -4383,6 +4389,9 @@ function M._overview_ui.move_queue_cursor(group, direction)
   end
   group.overview_queue_cursor = index
   M._overview_ui.refresh_queue_sidebar(group)
+  if index > 1 then
+    require("oculus.window").select_inspect_queue(index)
+  end
   return true
 end
 
