@@ -2578,7 +2578,7 @@ local function render_shortcuts()
   })
   -- AGENT_CHANGE_BEGIN codeberg-andrew-kelley-20260727 13 Use forge-neutral shortcut descriptions
   section("STARTUP LISTS", {
-    { "t", "Switch between project and user lists" },
+    { "v", "Switch between project and user lists" },
     { "s /", "Search projects or user handles" },
     { "a", "Add a GitHub or Codeberg project or account" },
     { "r", "Remove the selected project or account" },
@@ -5115,7 +5115,7 @@ local function map_keys(buf)
   map("q", M.close, "Close Oculus")
   map("<Esc>", M.close, "Close Oculus")
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
-  map("t", toggle_community_view, "Switch Oculus project and user lists")
+  map("v", toggle_community_view, "Switch Oculus project and user lists")
   map("s", open_search, "Search Oculus projects, users, or activity")
   map("/", open_search, "Search Oculus projects, users, or activity")
   map("<CR>", select_current, "Select Oculus item")
