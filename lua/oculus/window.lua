@@ -64,7 +64,6 @@ local window_highlight_groups = {
   "WinSeparator",
   "OculusInspectOverviewSection",
   "OculusInspectAgentModelSelected",
-  "OculusInspectQueueCurrent",
 }
 local commit_activity_url
 local load_project_activity
@@ -4465,11 +4464,6 @@ local function rebuild_activity_inspect_queue_lookup()
     lookup[active.line_key or active.url] = true
   end
   M.state.activity_inspect_queue_lookup = lookup
-  if inspect._overview_ui
-    and inspect._overview_ui.refresh_queue_sidebar
-  then
-    inspect._overview_ui.refresh_queue_sidebar()
-  end
 end
 
 local function apply_activity_inspect_queue_highlights()
@@ -4559,9 +4553,6 @@ local function toggle_activity_inspect_queue()
       url = url,
       line_key = line_key,
       context = type(context) == "table" and vim.deepcopy(context) or nil,
-      title = is_valid_buf(M.state.buf)
-          and vim.api.nvim_buf_get_lines(M.state.buf, title_line - 1, title_line, false)[1]
-        or nil,
     }
     M.state.activity_inspect_queue[#M.state.activity_inspect_queue + 1] = entry
     -- The first entry opens immediately; preload only the handoff items so
@@ -4579,79 +4570,6 @@ end
 
 -- Return the currently active inspection and the remaining queued activities
 -- for consumers that need to mirror queue state outside the activity window.
-function M.inspect_queue_snapshot()
-  local function copy(entry)
-    if type(entry) ~= "table" then
-      return nil
-    end
-    return {
-      url = entry.url,
-      title = entry.title,
-      line_key = entry.line_key,
-    }
-  end
-  local pending = {}
-  for _, entry in ipairs(M.state.activity_inspect_queue or {}) do
-    pending[#pending + 1] = copy(entry)
-  end
-  return {
-    active = copy(M.state.activity_inspect_queue_active),
-    pending = pending,
-  }
-end
-
-function M.select_inspect_queue(index)
-  if M.state.activity_inspect_queue_running then
-    return false
-  end
-  index = tonumber(index)
-  if not index or index < 2 then
-    return false
-  end
-  local pending_index = index - 1
-  local entry = M.state.activity_inspect_queue[pending_index]
-  if not entry then
-    return false
-  end
-  table.remove(M.state.activity_inspect_queue, pending_index)
-  local previous = M.state.activity_inspect_queue_active
-  if previous and previous.url ~= entry.url then
-    table.insert(M.state.activity_inspect_queue, 1, previous)
-  end
-  M.state.activity_inspect_queue_active = entry
-  M.state.activity_inspect_queue_show_highlights = false
-  rebuild_activity_inspect_queue_lookup()
-  apply_activity_inspect_queue_highlights()
-  local lifecycle = {
-    overview_on_open = true,
-    on_closed = function()
-      if M.state.activity_inspect_queue_active == entry then
-        M.state.activity_inspect_queue_active = nil
-        rebuild_activity_inspect_queue_lookup()
-        apply_activity_inspect_queue_highlights()
-      end
-    end,
-  }
-  local ok, err = inspect.open(
-    entry.url,
-    M.state.opts,
-    entry.context,
-    lifecycle,
-    M.inspection_window_options()
-  )
-  if not ok then
-    M.state.activity_inspect_queue_active = previous
-    table.insert(M.state.activity_inspect_queue, pending_index, entry)
-    rebuild_activity_inspect_queue_lookup()
-    apply_activity_inspect_queue_highlights()
-    if err then
-      vim.notify("Oculus: " .. tostring(err), vim.log.levels.WARN)
-    end
-    return false
-  end
-  return true
-end
-
 local open_next_queued_activity
 
 open_next_queued_activity = function(ui_lifecycle)
