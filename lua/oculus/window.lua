@@ -4600,6 +4600,58 @@ function M.inspect_queue_snapshot()
   }
 end
 
+function M.select_inspect_queue(index)
+  if M.state.activity_inspect_queue_running then
+    return false
+  end
+  index = tonumber(index)
+  if not index or index < 2 then
+    return false
+  end
+  local pending_index = index - 1
+  local entry = M.state.activity_inspect_queue[pending_index]
+  if not entry then
+    return false
+  end
+  table.remove(M.state.activity_inspect_queue, pending_index)
+  local previous = M.state.activity_inspect_queue_active
+  if previous and previous.url ~= entry.url then
+    table.insert(M.state.activity_inspect_queue, 1, previous)
+  end
+  M.state.activity_inspect_queue_active = entry
+  M.state.activity_inspect_queue_show_highlights = false
+  rebuild_activity_inspect_queue_lookup()
+  apply_activity_inspect_queue_highlights()
+  local lifecycle = {
+    overview_on_open = true,
+    on_closed = function()
+      if M.state.activity_inspect_queue_active == entry then
+        M.state.activity_inspect_queue_active = nil
+        rebuild_activity_inspect_queue_lookup()
+        apply_activity_inspect_queue_highlights()
+      end
+    end,
+  }
+  local ok, err = inspect.open(
+    entry.url,
+    M.state.opts,
+    entry.context,
+    lifecycle,
+    M.inspection_window_options()
+  )
+  if not ok then
+    M.state.activity_inspect_queue_active = previous
+    table.insert(M.state.activity_inspect_queue, pending_index, entry)
+    rebuild_activity_inspect_queue_lookup()
+    apply_activity_inspect_queue_highlights()
+    if err then
+      vim.notify("Oculus: " .. tostring(err), vim.log.levels.WARN)
+    end
+    return false
+  end
+  return true
+end
+
 local open_next_queued_activity
 
 open_next_queued_activity = function(ui_lifecycle)
