@@ -4218,6 +4218,10 @@ function M._overview_ui.refresh_queue_sidebar(group)
     then
       vim.api.nvim_win_set_config(overview_win, vim.deepcopy(original))
     end
+    if original and original.width then
+      group.overview_content_width = math.max(12, original.width - 4)
+      M._overview_ui.render(group)
+    end
     return
   end
   local function queue_sidebar_label(entry)
@@ -4248,18 +4252,19 @@ function M._overview_ui.refresh_queue_sidebar(group)
   local total_height = tonumber(base_config.height)
       or vim.api.nvim_win_get_height(overview_win)
   local width = math.min(32, math.max(20, math.floor(total_width * 0.35)))
-  local overview_width = math.max(20, total_width - width - 1)
-  local overview_config = vim.deepcopy(current_config)
-  overview_config.width = overview_width
-  overview_config.col = total_col + width + 1
-  overview_config.height = total_height
+  local overview_config = vim.deepcopy(base_config)
   if current_config.width ~= overview_config.width
     or current_config.col ~= overview_config.col
   then
     vim.api.nvim_win_set_config(overview_win, overview_config)
   end
+  local left_content_width = math.max(12, total_width - width - 4)
+  if group.overview_content_width ~= left_content_width then
+    group.overview_content_width = left_content_width
+    M._overview_ui.render(group)
+  end
   local col = math.max(0, math.min(
-    total_col,
+    total_col + total_width - width - 1,
     math.max(0, vim.o.columns - width - 1)
   ))
   local lines = { "QUEUE", "" }
@@ -4306,7 +4311,7 @@ function M._overview_ui.refresh_queue_sidebar(group)
     row = tonumber(base_config.row) or 0,
     col = col,
     style = "minimal",
-    border = { "", "", "", "│", "", "", "", "" },
+    border = { "", "", "", "", "", "", "", "│" },
     zindex = (tonumber(overview_config.zindex) or 70) + 1,
   }
   local win = group.overview_queue_win
