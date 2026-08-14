@@ -3258,7 +3258,6 @@ local function sidebar_overview_lines(overview, width)
     end
   end
   field("Author", value_or(author, "Unknown"))
-  field("URL", overview.url)
   if is_pull_request or is_issue then
     field(
       is_issue and "Issue number" or "PR number",
@@ -3986,7 +3985,6 @@ M._overview_ui = {
     Title = true,
     Description = true,
     Author = true,
-    URL = true,
     ["PR number"] = true,
     ["Issue number"] = true,
     Status = true,
