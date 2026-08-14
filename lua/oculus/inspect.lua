@@ -161,6 +161,42 @@ function M._refresh_inspection_treesitter_context_highlights()
         end
       end
     end
+    if result[1] and vim.api.nvim_win_is_valid(win) then
+      local display_options = {
+        "tabstop",
+        "shiftwidth",
+        "softtabstop",
+        "vartabstop",
+        "varsofttabstop",
+        "expandtab",
+        "list",
+        "listchars",
+      }
+      for _, context_win in ipairs(vim.api.nvim_list_wins()) do
+        local config = vim.api.nvim_win_get_config(context_win)
+        if vim.w[context_win].treesitter_context
+          and config.relative == "win"
+          and config.win == win
+        then
+          for _, option in ipairs(display_options) do
+            local ok, value = pcall(
+              vim.api.nvim_get_option_value,
+              option,
+              { win = win }
+            )
+            if ok then
+              pcall(
+                vim.api.nvim_set_option_value,
+                option,
+                value,
+                { win = context_win }
+              )
+            end
+          end
+          break
+        end
+      end
+    end
     if not result[1] then
       error(result[2], 0)
     end
