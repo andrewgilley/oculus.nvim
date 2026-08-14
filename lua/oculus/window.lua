@@ -4555,7 +4555,7 @@ local function toggle_activity_inspect_queue()
     end
   end
   if not removed then
-    M.state.activity_inspect_queue[#M.state.activity_inspect_queue + 1] = {
+    local entry = {
       url = url,
       line_key = line_key,
       context = type(context) == "table" and vim.deepcopy(context) or nil,
@@ -4563,6 +4563,14 @@ local function toggle_activity_inspect_queue()
           and vim.api.nvim_buf_get_lines(M.state.buf, title_line - 1, title_line, false)[1]
         or nil,
     }
+    M.state.activity_inspect_queue[#M.state.activity_inspect_queue + 1] = entry
+    -- The first entry opens immediately; preload only the handoff items so
+    -- its preparation is not duplicated by the initial inspect call.
+    if #M.state.activity_inspect_queue > 1
+      and type(inspect.preload) == "function"
+    then
+      inspect.preload(entry.url, M.state.opts, entry.context)
+    end
   end
   M.state.activity_inspect_queue_show_highlights = true
   rebuild_activity_inspect_queue_lookup()

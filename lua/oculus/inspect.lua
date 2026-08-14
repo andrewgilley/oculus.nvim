@@ -1,4 +1,5 @@
 local M = {}
+M._preload_cache = {}
 
 local github = require("oculus.github")
 local codeberg = require("oculus.codeberg")
@@ -4231,21 +4232,28 @@ function M._overview_ui.refresh_queue_sidebar(group)
   local overview_height = vim.api.nvim_win_get_height(overview_win)
   local width = math.min(32, math.max(20, math.floor(overview_width * 0.45)))
   local overview_col = tonumber(overview_config.col) or 0
-  local col = overview_col - width - 1
+  local col = overview_col - width
   if col < 0 then
     col = overview_col + overview_width + 1
   end
   col = math.max(0, math.min(col, math.max(0, vim.o.columns - width - 1)))
   local lines = { "QUEUE", "" }
   local current_line
-  for _, item in ipairs(entries) do
+  local current_index
+  for entry_index, item in ipairs(entries) do
     local line = #lines + 1
     local prefix = item.current and "> " or "  "
     lines[line] = prefix .. queue_sidebar_label(item.entry)
     if item.current then
       current_line = line
+      current_index = entry_index
     end
   end
+  local selected_index = math.min(
+    math.max(group.overview_queue_cursor or current_index or 1, 1),
+    #entries
+  )
+  group.overview_queue_cursor = selected_index
   local buf = group.overview_queue_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     buf = vim.api.nvim_create_buf(false, true)
@@ -4266,6 +4274,13 @@ function M._overview_ui.refresh_queue_sidebar(group)
       priority = 110,
     })
   end
+  local selected_line = selected_index + 2
+  vim.api.nvim_buf_set_extmark(buf, sidebar_ns, selected_line - 1, 0, {
+    end_col = #(lines[selected_line] or ""),
+    hl_group = "OculusInspectAgentModelSelected",
+    hl_mode = "combine",
+    priority = 120,
+  })
   local config = {
     relative = "editor",
     width = width,
@@ -4273,10 +4288,8 @@ function M._overview_ui.refresh_queue_sidebar(group)
     row = tonumber(overview_config.row) or 0,
     col = col,
     style = "minimal",
-    border = overview_config.border or "rounded",
-    title = "QUEUE",
-    title_pos = "center",
-    zindex = math.max(1, (tonumber(overview_config.zindex) or 70) - 1),
+    border = { "", "", "", "│", "", "", "", "" },
+    zindex = (tonumber(overview_config.zindex) or 70) + 1,
   }
   local win = group.overview_queue_win
   if win and vim.api.nvim_win_is_valid(win) then
@@ -4293,13 +4306,36 @@ function M._overview_ui.refresh_queue_sidebar(group)
   vim.wo[win].winhighlight = table.concat({
     "Normal:OculusNormal",
     "NormalFloat:OculusNormal",
-    "FloatBorder:OculusBorder",
-    "FloatTitle:OculusBorder",
+    "FloatBorder:WinSeparator",
   }, ",")
   require("oculus.window").apply_window_highlights(
     win,
     group.overview_highlight_source_win
   )
+end
+
+function M._overview_ui.move_queue_cursor(group, direction)
+  if not group.overview_queue_win
+    or not vim.api.nvim_win_is_valid(group.overview_queue_win)
+    or not group.overview_queue_buf
+    or not vim.api.nvim_buf_is_valid(group.overview_queue_buf)
+  then
+    return false
+  end
+  local count = math.max(0,
+    vim.api.nvim_buf_line_count(group.overview_queue_buf) - 2)
+  if count == 0 then
+    return false
+  end
+  local index = (group.overview_queue_cursor or 1) + (direction < 0 and -1 or 1)
+  if index < 1 then
+    index = count
+  elseif index > count then
+    index = 1
+  end
+  group.overview_queue_cursor = index
+  M._overview_ui.refresh_queue_sidebar(group)
+  return true
 end
 
 function M._overview_ui.render_footer(group)
@@ -5643,6 +5679,22 @@ show_inspection_overview = function(group)
       end,
     }
   )
+  vim.keymap.set("n", "<C-Tab>", function()
+    M._overview_ui.move_queue_cursor(group, 1)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Next Oculus overview queue item",
+  })
+  vim.keymap.set("n", "<S-Tab>", function()
+    M._overview_ui.move_queue_cursor(group, -1)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Previous Oculus overview queue item",
+  })
   vim.keymap.set("n", "e", function()
     M._overview_ui.open_model_picker(group, "explanation")
   end, {
@@ -7765,6 +7817,62 @@ local function open_issue(
   end)
 end
 
+M.preload = function(url, opts, context)
+  local key = type(url) == "string" and url or nil
+  if not key or M._preload_cache[key] then
+    return false
+  end
+  local info = parse_target_url(url)
+  if not info then
+    return false
+  end
+  M._preload_cache[key] = { status = "loading" }
+  local function failed(err)
+    M._preload_cache[key] = { status = "error", error = err }
+  end
+  if info.kind == "issue" then
+    resolve_issue_details(info, opts or {}, context, function(details, err)
+      if not details then
+        failed(err)
+        return
+      end
+      ensure_repository(info, opts or {}, function(repository, repo_err)
+        if not repository then
+          failed(repo_err)
+          return
+        end
+        M._preload_cache[key] = {
+          status = "ready",
+          kind = "issue",
+          info = info,
+          details = details,
+          repository = repository,
+        }
+      end)
+    end)
+    return true
+  end
+  resolve_target(info, opts or {}, function(resolved, resolve_err)
+    if not resolved then
+      failed(resolve_err)
+      return
+    end
+    prepare(resolved, opts or {}, function(inspections, err)
+      if not inspections then
+        failed(err)
+        return
+      end
+      M._preload_cache[key] = {
+        status = "ready",
+        kind = "revision",
+        info = resolved,
+        inspections = inspections,
+      }
+    end)
+  end)
+  return true
+end
+
 function M.open(url, opts, context, lifecycle, inspection_window_options)
   opts = opts or {}
   local info = parse_target_url(url)
@@ -7808,6 +7916,24 @@ function M.open(url, opts, context, lifecycle, inspection_window_options)
       .. tostring(loading)
   end
   if info.kind == "issue" then
+    local cached = M._preload_cache[url]
+    if cached and cached.status == "ready" and cached.kind == "issue" then
+      open_issue_inspection(
+        cached.info,
+        cached.details,
+        cached.repository,
+        loading,
+        number_options,
+        opts,
+        function(_, issue_err)
+          active = false
+          if issue_err then
+            show_loading_error(loading, issue_err)
+          end
+        end
+      )
+      return true
+    end
     open_issue(
       info,
       opts,
@@ -7830,6 +7956,27 @@ function M.open(url, opts, context, lifecycle, inspection_window_options)
       return
     end
 
+    local cached = M._preload_cache[url]
+    local function open_prepared(inspections, prepared_info)
+      open_tabs(
+        inspections,
+        loading,
+        prepared_info.comment,
+        prepared_info,
+        number_options,
+        opts,
+        function(_, open_err)
+          active = false
+          if open_err then
+            show_loading_error(loading, open_err)
+          end
+        end
+      )
+    end
+    if cached and cached.status == "ready" and cached.kind == "revision" then
+      open_prepared(cached.inspections, cached.info)
+      return
+    end
     prepare(
       resolved,
       opts,
@@ -7839,21 +7986,7 @@ function M.open(url, opts, context, lifecycle, inspection_window_options)
           show_loading_error(loading, err)
           return
         end
-        open_tabs(
-          inspections,
-          loading,
-          resolved.comment,
-          resolved,
-          number_options,
-          opts,
-          function(_, open_err)
-            active = false
-            if open_err then
-              show_loading_error(loading, open_err)
-              return
-            end
-          end
-        )
+        open_prepared(inspections, resolved)
       end
     )
   end)
