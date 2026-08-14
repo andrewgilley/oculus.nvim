@@ -2191,6 +2191,10 @@ local function set_change_highlights()
     fg = diagnostic_info.fg or 0x61afef,
     bold = true,
   })
+  vim.api.nvim_set_hl(0, "OculusInspectQueueCurrent", {
+    fg = diagnostic_info.fg or 0x61afef,
+    bold = true,
+  })
   vim.api.nvim_set_hl(0, "OculusInspectHiddenCursor", {
     fg = normal.bg,
     bg = normal.bg,
@@ -3731,6 +3735,9 @@ local function close_overview_window(group)
   if M._overview_ui and M._overview_ui.close_agent_window then
     M._overview_ui.close_agent_window(group, false)
   end
+  if M._overview_ui and M._overview_ui.close_queue_sidebar then
+    M._overview_ui.close_queue_sidebar(group)
+  end
   group.overview_win = nil
   group.overview_buf = nil
   restore_overview_cursor(group)
@@ -4157,6 +4164,142 @@ function M._overview_ui.close_footer(group)
   if buf and vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_delete(buf, { force = true })
   end
+end
+
+function M._overview_ui.close_queue_sidebar(group)
+  local win = group.overview_queue_win
+  local buf = group.overview_queue_buf
+  group.overview_queue_win = nil
+  group.overview_queue_buf = nil
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_win_close(win, true)
+  end
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+end
+
+function M._overview_ui.refresh_queue_sidebar(group)
+  if not group then
+    for _, candidate in ipairs(sidebar_groups) do
+      if candidate.overview_win
+        and vim.api.nvim_win_is_valid(candidate.overview_win)
+      then
+        M._overview_ui.refresh_queue_sidebar(candidate)
+      end
+    end
+    return
+  end
+  local ok, snapshot = pcall(function()
+    return require("oculus.window").inspect_queue_snapshot()
+  end)
+  if not ok or type(snapshot) ~= "table" then
+    return
+  end
+  local entries = {}
+  if snapshot.active then
+    entries[#entries + 1] = { entry = snapshot.active, current = true }
+  end
+  for _, entry in ipairs(snapshot.pending or {}) do
+    entries[#entries + 1] = { entry = entry, current = false }
+  end
+  if #entries == 0 then
+    M._overview_ui.close_queue_sidebar(group)
+    return
+  end
+  local function queue_sidebar_label(entry)
+    local title = type(entry.title) == "string" and vim.trim(entry.title) or ""
+    if title == "" then
+      local info = entry.url and parse_target_url(entry.url) or nil
+      if info then
+        title = (info.kind == "pull_request" and "PR #" .. tostring(info.number)
+            or info.kind == "issue" and "Issue #" .. tostring(info.number)
+            or "Commit " .. tostring(info.sha or ""))
+          .. " · " .. tostring(info.owner or "") .. "/" .. tostring(info.repo or "")
+      else
+        title = tostring(entry.url or "Queued activity")
+      end
+    end
+    return title:gsub("%s+", " ")
+  end
+  local overview_win = group.overview_win
+  if not overview_win or not vim.api.nvim_win_is_valid(overview_win) then
+    return
+  end
+  local overview_config = vim.api.nvim_win_get_config(overview_win)
+  local overview_width = vim.api.nvim_win_get_width(overview_win)
+  local overview_height = vim.api.nvim_win_get_height(overview_win)
+  local width = math.min(32, math.max(20, math.floor(overview_width * 0.45)))
+  local overview_col = tonumber(overview_config.col) or 0
+  local col = overview_col - width - 1
+  if col < 0 then
+    col = overview_col + overview_width + 1
+  end
+  col = math.max(0, math.min(col, math.max(0, vim.o.columns - width - 1)))
+  local lines = { "QUEUE", "" }
+  local current_line
+  for _, item in ipairs(entries) do
+    local line = #lines + 1
+    local prefix = item.current and "> " or "  "
+    lines[line] = prefix .. queue_sidebar_label(item.entry)
+    if item.current then
+      current_line = line
+    end
+  end
+  local buf = group.overview_queue_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    buf = vim.api.nvim_create_buf(false, true)
+    group.overview_queue_buf = buf
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = "oculus-inspect-overview-queue"
+  end
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+  if current_line then
+    vim.api.nvim_buf_set_extmark(buf, sidebar_ns, current_line - 1, 0, {
+      end_col = #(lines[current_line] or ""),
+      hl_group = "OculusInspectQueueCurrent",
+      priority = 110,
+    })
+  end
+  local config = {
+    relative = "editor",
+    width = width,
+    height = overview_height,
+    row = tonumber(overview_config.row) or 0,
+    col = col,
+    style = "minimal",
+    border = overview_config.border or "rounded",
+    title = "QUEUE",
+    title_pos = "center",
+    zindex = math.max(1, (tonumber(overview_config.zindex) or 70) - 1),
+  }
+  local win = group.overview_queue_win
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_win_set_config(win, config)
+  else
+    win = vim.api.nvim_open_win(buf, false, config)
+    group.overview_queue_win = win
+  end
+  vim.wo[win].wrap = false
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].cursorline = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].winhighlight = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+    "FloatBorder:OculusBorder",
+    "FloatTitle:OculusBorder",
+  }, ",")
+  require("oculus.window").apply_window_highlights(
+    win,
+    group.overview_highlight_source_win
+  )
 end
 
 function M._overview_ui.render_footer(group)
@@ -5437,6 +5580,7 @@ show_inspection_overview = function(group)
   end
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_win = win
+  M._overview_ui.refresh_queue_sidebar(group)
   group.overview_scroll_autocmd = vim.api.nvim_create_autocmd(
     "WinScrolled",
     {
