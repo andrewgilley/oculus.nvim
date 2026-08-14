@@ -263,10 +263,10 @@ do
   vim.fn.maparg("<Esc>", "n", false, true).callback()
   assert(state.community_view == "projects")
 end
-local community_view_mapping = vim.fn.maparg("t", "n", false, true)
+local community_view_mapping = vim.fn.maparg("v", "n", false, true)
 assert(community_view_mapping.desc
   == "Switch Oculus project and user lists")
-assert(vim.fn.maparg("v", "n", false, true).desc == nil)
+assert(vim.fn.maparg("t", "n", false, true).desc == nil)
 community_view_mapping.callback()
 local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
