@@ -977,12 +977,17 @@ local resolved_pull_request = inspect._apply_pull_request(pull_request, {
   head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   head_ref = "feature",
   commit_count = 3,
+  commits = {
+    { commit = { message = "Add overview support\n\nDetails" } },
+    { commit = { message = "Tidy overview layout" } },
+  },
 })
 assert(resolved_pull_request.base_ref == "main")
 assert(resolved_pull_request.head_ref == "feature")
 assert(resolved_pull_request.base_sha:match("^a+$"))
 assert(resolved_pull_request.head_sha:match("^b+$"))
 assert(resolved_pull_request.commit_count == 3)
+assert(#resolved_pull_request.commits == 2)
 assert(resolved_pull_request.author == "reviewer")
 assert(resolved_pull_request.created_at == "2026-07-30T12:00:00-04:00")
 
@@ -1021,6 +1026,9 @@ assert(pull_request_overview_text:find(
 assert(pull_request_overview_text:find("\n  Title\n", 1, true))
 assert(pull_request_overview_text:find("\n  Description\n", 1, true))
 assert(pull_request_overview_text:find("\n  Author\n", 1, true))
+assert(pull_request_overview_text:find("\n  Commits\n", 1, true))
+assert(pull_request_overview_text:find("Add overview support", 1, true))
+assert(pull_request_overview_text:find("Tidy overview layout", 1, true))
 assert(not pull_request_overview_text:find("\n  URL\n", 1, true))
 assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
 assert(pull_request_overview_text:find("\n  Status\n", 1, true))

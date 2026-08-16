@@ -3254,6 +3254,22 @@ local function sidebar_overview_lines(overview, width)
     end
   end
   field("Author", value_or(author, "Unknown"))
+  if is_pull_request and type(overview.commits) == "table"
+    and #overview.commits > 0
+  then
+    lines[#lines + 1] = "  Commits"
+    for _, commit in ipairs(overview.commits) do
+      local message = type(commit) == "table"
+          and (commit.message
+            or (type(commit.commit) == "table" and commit.commit.message))
+        or nil
+      if type(message) == "string" and vim.trim(message) ~= "" then
+        local subject = vim.trim(message):match("^[^\r\n]*")
+        append_sidebar_text(lines, "- " .. subject, width, "  ")
+      end
+    end
+    lines[#lines + 1] = ""
+  end
   if is_pull_request or is_issue then
     field(
       is_issue and "Issue number" or "PR number",
@@ -7387,6 +7403,7 @@ local function apply_pull_request(info, details)
     "head_ref",
     "fetch_ref",
     "commit_count",
+    "commits",
   }) do
     resolved[key] = details[key]
   end
@@ -7412,7 +7429,20 @@ local function resolve_target(info, opts, callback)
         callback(nil, message)
         return
       end
-      callback(apply_pull_request(info, details))
+      local resolved = apply_pull_request(info, details)
+      if type(provider.pull_request_commits) ~= "function" then
+        callback(resolved)
+        return
+      end
+      provider.pull_request_commits(
+        info.owner .. "/" .. info.repo,
+        info.number,
+        opts,
+        function(commits)
+          resolved.commits = commits or {}
+          callback(resolved)
+        end
+      )
     end
   )
 end
