@@ -8,8 +8,7 @@ local browser = require("oculus.browser")
 local active = false
 local change_ns = vim.api.nvim_create_namespace("oculus_inspect_changes")
 local oil_ns = vim.api.nvim_create_namespace("oculus_inspect_oil")
-local sidebar_ns =
-  vim.api.nvim_create_namespace("oculus_inspect_sidebar")
+local sidebar_ns = vim.api.nvim_create_namespace("oculus_inspect_sidebar")
 local sessions = {}
 local sidebar_groups = {}
 local next_session = 0
@@ -20,16 +19,12 @@ local oil_contexts = {}
 local oil_window_contexts = {}
 local default_sidebar_toggle = "<leader>oi"
 local default_overview_toggle = "<leader>op"
-local default_version_keys = {
-  old = "<C-s>",
-  new = "<C-d>",
-}
+local default_version_keys = { old = "<C-s>", new = "<C-d>" }
 local default_next_chunk = "<C-Tab>"
 local default_previous_chunk = "<S-Tab>"
 local changed_file_read_concurrency = 8
 local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
-local inspection_statusline_option =
-  "%!v:lua.require('oculus.inspect')._inspection_statusline()"
+local inspection_statusline_option = "%!v:lua.require('oculus.inspect')._inspection_statusline()"
 local inspection_sidebar_statusline_option = "[oculus] "
 local normalize_inspection_view
 local refresh_sidebar
@@ -5439,12 +5434,15 @@ show_inspection_overview = function(group)
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_win = win
   group.overview_scroll_autocmd = vim.api.nvim_create_autocmd(
-    "WinScrolled",
+    { "WinScrolled", "CursorMoved" },
     {
       group = sync_group,
-      pattern = tostring(win),
       callback = function()
-        M._overview_ui.clamp_scroll(group)
+        if overview_window_is_open(group)
+          and vim.api.nvim_get_current_win() == group.overview_win
+        then
+          M._overview_ui.clamp_scroll(group)
+        end
       end,
     }
   )
