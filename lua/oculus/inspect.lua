@@ -3392,12 +3392,18 @@ refresh_sidebar = function(group, tab)
     underline = true,
     default = true,
   })
-  local active_chunk =
-    sidebar_chunk(group, group[active_index], active_role)
-  vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   local sidebar_win = group.sidebar_windows
       and group.sidebar_windows[tab]
     or nil
+  local sidebar_is_focused = sidebar_win
+    and vim.api.nvim_win_is_valid(sidebar_win)
+    and vim.api.nvim_get_current_win() == sidebar_win
+    and vim.api.nvim_get_current_buf() == buf
+  local active_chunk = group[active_index].active_chunk
+  if sidebar_is_focused then
+    active_chunk = sidebar_chunk(group, group[active_index], active_role)
+  end
+  vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
   if group.patch_suggestions then
     local endpoint = sidebar_endpoint(
       group,
@@ -3419,10 +3425,6 @@ refresh_sidebar = function(group, tab)
       end
     end
   end
-  local sidebar_is_focused = sidebar_win
-    and vim.api.nvim_win_is_valid(sidebar_win)
-    and vim.api.nvim_get_current_win() == sidebar_win
-    and vim.api.nvim_get_current_buf() == buf
   local active_row = group.sidebar_rows[active_index]
   local active_chunk_line = active_chunk
       and group.sidebar_chunk_lines[active_index]
