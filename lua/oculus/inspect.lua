@@ -4370,12 +4370,20 @@ function M._overview_ui.clamp_scroll(group)
   vim.api.nvim_win_call(win, function()
     local view = vim.fn.winsaveview()
     local topline = math.max(1, math.min(max_topline, view.topline))
-    if topline == view.topline then
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local cursor_line = math.max(1, math.min(line_count, cursor[1]))
+    if topline == view.topline
+      and (view.topfill or 0) == 0
+      and cursor_line == cursor[1]
+    then
       return
     end
     view.topline = topline
     view.topfill = 0
     vim.fn.winrestview(view)
+    if cursor_line ~= cursor[1] then
+      vim.api.nvim_win_set_cursor(win, { cursor_line, cursor[2] })
+    end
     changed = true
   end)
   return changed
