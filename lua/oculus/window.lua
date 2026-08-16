@@ -1620,8 +1620,8 @@ local function render_contributors()
   footer(lines, searching
       and "esc cancel"
     or showing_users
-        and "t projects  a add  r remove  / search  ?: help"
-      or "t users  a add  r remove  / search  ?: help")
+        and "v projects  a add  r remove  / search  ?: help"
+      or "v users  a add  r remove  / search  ?: help")
   local commands_line = #lines
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
