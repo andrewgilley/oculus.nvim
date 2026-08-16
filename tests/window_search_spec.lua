@@ -219,7 +219,7 @@ assert(not initial_project_text:find("COMMUNITY ACTIVITY", 1, true))
 assert(initial_project_text:find("example/project", 1, true))
 assert(not initial_project_text:find("  USERS", 1, true))
 assert(not initial_project_text:find("@mitchellh", 1, true))
-assert(initial_project_text:find("t users", 1, true))
+assert(initial_project_text:find("v users", 1, true))
 assert(initial_project_text:find("a add", 1, true))
 assert(initial_project_text:find("r remove", 1, true))
 assert(initial_project_text:find("/ search", 1, true))
@@ -278,7 +278,7 @@ assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
 assert(initial_user_lines[initial_window_height]
-  == "  t projects  a add  r remove  / search  ?: help")
+  == "  v projects  a add  r remove  / search  ?: help")
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
 local main_up_mapping =

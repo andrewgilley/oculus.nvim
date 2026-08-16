@@ -5118,7 +5118,18 @@ local function map_keys(buf)
   map("v", toggle_community_view, "Switch Oculus project and user lists")
   map("s", open_search, "Search Oculus projects, users, or activity")
   map("/", open_search, "Search Oculus projects, users, or activity")
-  map("<CR>", select_current, "Select Oculus item")
+  map("<CR>", function()
+    if M.state.view == "contributors" or M.state.view == "activity" then
+      move_cursor(1)
+    else
+      select_current()
+    end
+  end, "Move down or select Oculus item")
+  map("<BS>", function()
+    if M.state.view == "contributors" or M.state.view == "activity" then
+      move_cursor(-1)
+    end
+  end, "Move up in Oculus")
   map("l", move_right, "Move right in Oculus")
   map("<Right>", move_right, "Move right in Oculus")
   map("<Space>", function()
