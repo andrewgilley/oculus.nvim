@@ -2526,8 +2526,21 @@ local function position_change_cursor(win, line)
   local buf = vim.api.nvim_win_get_buf(win)
   local line_count = vim.api.nvim_buf_line_count(buf)
   line = math.min(math.max(1, line), line_count)
+  local horizontal = vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    return {
+      leftcol = view.leftcol,
+      skipcol = view.skipcol,
+    }
+  end)
   vim.api.nvim_win_set_cursor(win, { line, 0 })
   normalize_inspection_view(win)
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    view.leftcol = horizontal.leftcol
+    view.skipcol = horizontal.skipcol
+    vim.fn.winrestview(view)
+  end)
   return true
 end
 
@@ -2617,11 +2630,22 @@ local function move_cursor_to_line_start(win, line)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
+  local horizontal = vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    return {
+      leftcol = view.leftcol,
+      skipcol = view.skipcol,
+    }
+  end)
   if line then
     set_change_cursor(win, line)
   end
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! ^")
+    local view = vim.fn.winsaveview()
+    view.leftcol = horizontal.leftcol
+    view.skipcol = horizontal.skipcol
+    vim.fn.winrestview(view)
   end)
   if line then
     sync_window(win)
