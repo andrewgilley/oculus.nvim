@@ -691,10 +691,10 @@ local function gemini_command(model, effort)
       "--sandbox",
     }
 
-    if model and model ~= "" then
-      local base_model = model
-      local parsed_effort = effort
+    local base_model = model
+    local parsed_effort = effort
 
+    if model and model ~= "" then
       if not parsed_effort or parsed_effort == "" then
         local match_model, match_effort =
           tostring(model):match("^(gemini%-[%w._-]+)[:%-](%a+)$")
@@ -712,24 +712,16 @@ local function gemini_command(model, effort)
         end
       end
 
-      if not parsed_effort or parsed_effort == "" then
-        if
-          tostring(base_model):lower():match("3%.7")
-          or tostring(base_model):lower():match("gemini%-3%.7%-flash")
-        then
-          parsed_effort = "high"
-        end
-      end
-
       cmd[#cmd + 1] = "--model"
       cmd[#cmd + 1] = base_model
-
-      if parsed_effort and parsed_effort ~= "" then
-        cmd[#cmd + 1] = "--effort"
-        cmd[#cmd + 1] = parsed_effort
-      end
     end
 
+    if not parsed_effort or parsed_effort == "" then
+      parsed_effort = "high"
+    end
+
+    cmd[#cmd + 1] = "--effort"
+    cmd[#cmd + 1] = parsed_effort
     return cmd
   end
 
