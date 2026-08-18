@@ -449,7 +449,7 @@ function M.gemini_accessible()
     return true
   end
 
-  if vim.fn.exepath("gemini") ~= "" or vim.fn.exepath("agy") ~= "" then
+  if vim.fn.exepath("agy") ~= "" then
     return true
   end
 
@@ -465,7 +465,7 @@ function M.models(callback)
   local has_gemini = M.gemini_accessible()
 
   if executable == "" and not has_gemini then
-    return nil, "Codex or Gemini is not installed or available on PATH"
+    return nil, "Codex or Antigravity CLI (agy) is not installed or available on PATH"
   end
 
   if executable == "" then
@@ -682,27 +682,6 @@ local function codex_command(model)
 end
 
 local function gemini_command(model)
-  local gemini_exec = vim.fn.exepath("gemini")
-
-  if gemini_exec ~= "" then
-    local cmd = {
-      gemini_exec,
-      "-p",
-      "",
-      "--output-format",
-      "text",
-      "--approval-mode",
-      "plan",
-    }
-
-    if model and model ~= "" then
-      cmd[#cmd + 1] = "-m"
-      cmd[#cmd + 1] = model
-    end
-
-    return cmd
-  end
-
   local agy_exec = vim.fn.exepath("agy")
 
   if agy_exec ~= "" then
@@ -720,7 +699,7 @@ local function gemini_command(model)
     return cmd
   end
 
-  return nil, "Gemini CLI is not installed or is not available on PATH"
+  return nil, "Antigravity CLI (agy) is not installed or is not available on PATH"
 end
 
 local function agent_command(model)
