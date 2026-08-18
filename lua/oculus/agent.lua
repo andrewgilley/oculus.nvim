@@ -689,6 +689,7 @@ local function gemini_command(model, effort)
       agy_exec,
       "--print",
       "--sandbox",
+      "--dangerously-skip-permissions",
     }
 
     local base_model = model
