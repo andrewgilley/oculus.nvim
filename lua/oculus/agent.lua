@@ -376,9 +376,8 @@ function M.normalize_models(values)
       and (
         id == "gpt-5.6"
         or id:match("^gpt%-5%.6%-")
-        or id == "gemini"
-        or id:match("^gemini%-")
-        or id:match("^gemini")
+        or id == "gemini-3.7-flash"
+        or id:match("^gemini%-3%.7%-flash")
       )
       and not value.hidden
     then
@@ -411,14 +410,10 @@ function M.normalize_models(values)
     local lower_id = id:lower()
 
     if lower_id:match("^gemini") then
-      if lower_id:match("%-pro") or lower_id:match("%-ultra") or lower_id == "gemini-pro" then
+      if lower_id:match("3%.7%-flash") then
         return 101
-      elseif lower_id:match("%-flash%-lite") or lower_id:match("%-lite") or lower_id:match("%-flash%-8b") then
-        return 103
-      elseif lower_id:match("%-flash") or lower_id == "gemini-flash" then
-        return 102
       else
-        return 104
+        return 102
       end
     end
 
@@ -439,15 +434,48 @@ function M.normalize_models(values)
   return models
 end
 
+M.default_gemini_models = {
+  {
+    model = "gemini-3.7-flash",
+    displayName = "Gemini 3.7 Flash",
+    isDefault = false,
+  },
+}
+
+function M.gemini_accessible()
+  if (type(vim.env.GEMINI_API_KEY) == "string" and vim.env.GEMINI_API_KEY ~= "")
+    or (type(vim.env.GOOGLE_API_KEY) == "string" and vim.env.GOOGLE_API_KEY ~= "")
+  then
+    return true
+  end
+
+  if vim.fn.exepath("gemini") ~= "" or vim.fn.exepath("agy") ~= "" then
+    return true
+  end
+
+  return false
+end
+
 function M.models(callback)
   if type(callback) ~= "function" then
     return nil, "model discovery requires a callback"
   end
 
   local executable = vim.fn.exepath("codex")
+  local has_gemini = M.gemini_accessible()
+
+  if executable == "" and not has_gemini then
+    return nil, "Codex or Gemini is not installed or available on PATH"
+  end
 
   if executable == "" then
-    return nil, "Codex is not installed or is not available on PATH"
+    local models = M.normalize_models(M.default_gemini_models)
+
+    vim.schedule(function()
+      callback(models)
+    end)
+
+    return {}
   end
 
   local process
@@ -469,6 +497,11 @@ function M.models(callback)
 
     finished = true
     stop()
+
+    if (not models or #models == 0) and has_gemini then
+      models = M.normalize_models(M.default_gemini_models)
+      err = nil
+    end
 
     vim.schedule(function()
       callback(models, err)
@@ -501,12 +534,32 @@ function M.models(callback)
         return
       end
 
-      local models = M.normalize_models(
+      local raw_models = vim.deepcopy(
         message.result and message.result.data or {}
       )
 
+      if has_gemini then
+        local existing = {}
+
+        for _, item in ipairs(raw_models) do
+          local id = item.model or item.id
+
+          if id then
+            existing[id] = true
+          end
+        end
+
+        for _, gemini_model in ipairs(M.default_gemini_models) do
+          if not existing[gemini_model.model] then
+            raw_models[#raw_models + 1] = gemini_model
+          end
+        end
+      end
+
+      local models = M.normalize_models(raw_models)
+
       if #models == 0 then
-        finish(nil, "Codex reported no available models")
+        finish(nil, "No available models found")
         return
       end
 
@@ -568,6 +621,16 @@ function M.models(callback)
   end)
 
   if not ok then
+    if has_gemini then
+      local models = M.normalize_models(M.default_gemini_models)
+
+      vim.schedule(function()
+        callback(models)
+      end)
+
+      return {}
+    end
+
     return nil, tostring(result)
   end
 
@@ -618,11 +681,75 @@ local function codex_command(model)
   return command
 end
 
-local function command_error(result)
+local function gemini_command(model)
+  local gemini_exec = vim.fn.exepath("gemini")
+
+  if gemini_exec ~= "" then
+    local cmd = {
+      gemini_exec,
+      "-p",
+      "",
+      "--output-format",
+      "text",
+      "--approval-mode",
+      "plan",
+    }
+
+    if model and model ~= "" then
+      cmd[#cmd + 1] = "-m"
+      cmd[#cmd + 1] = model
+    end
+
+    return cmd
+  end
+
+  local agy_exec = vim.fn.exepath("agy")
+
+  if agy_exec ~= "" then
+    local cmd = {
+      agy_exec,
+      "--print",
+      "--sandbox",
+    }
+
+    if model and model ~= "" then
+      cmd[#cmd + 1] = "--model"
+      cmd[#cmd + 1] = model
+    end
+
+    return cmd
+  end
+
+  return nil, "Gemini CLI is not installed or is not available on PATH"
+end
+
+local function agent_command(model)
+  if model and tostring(model):lower():match("^gemini") then
+    local cmd, err = gemini_command(model)
+
+    if cmd then
+      return cmd
+    end
+
+    if vim.fn.exepath("codex") ~= "" then
+      return codex_command(model)
+    end
+
+    return nil, err or "No agent executable available for Gemini model"
+  end
+
+  return codex_command(model)
+end
+
+local function command_error(result, model)
   local message = vim.trim(result.stderr or "")
 
   if message == "" then
-    message = "Codex exited without producing an explanation"
+    if model and tostring(model):lower():match("^gemini") then
+      message = "Gemini exited without producing an explanation"
+    else
+      message = "Codex exited without producing an explanation"
+    end
   end
 
   return message
@@ -666,7 +793,7 @@ function M.explain(request, callback)
     telemetry_attributes
   )
 
-  local command, command_err = codex_command(configured_model)
+  local command, command_err = agent_command(configured_model)
 
   if not command then
     telemetry.finish(telemetry_span, nil, "dependency_unavailable")
@@ -679,12 +806,20 @@ function M.explain(request, callback)
     text = true,
   }, function(result)
     vim.schedule(function()
+      local is_gemini = configured_model
+        and tostring(configured_model):lower():match("^gemini")
+
       if result.code ~= 0 then
         local context = telemetry.finish(telemetry_span, {
           ["process.exit.code"] = result.code,
-        }, "codex_exit_error")
+        }, is_gemini and "gemini_exit_error" or "codex_exit_error")
 
-        callback(nil, command_error(result), { telemetry = context })
+        callback(
+          nil,
+          command_error(result, configured_model),
+          { telemetry = context }
+        )
+
         return
       end
 
@@ -696,9 +831,12 @@ function M.explain(request, callback)
           ["oculus.agent.output.bytes"] = 0,
         }, "empty_output")
 
-        callback(nil, "Codex returned an empty explanation", {
-          telemetry = context,
-        })
+        callback(
+          nil,
+          is_gemini and "Gemini returned an empty explanation"
+            or "Codex returned an empty explanation",
+          { telemetry = context }
+        )
 
         return
       end
@@ -729,4 +867,6 @@ function M.explain(request, callback)
 end
 
 M._codex_command = codex_command
+M._gemini_command = gemini_command
+M._agent_command = agent_command
 return M
