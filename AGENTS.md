@@ -6,4 +6,4 @@
 - Once you have completed the task the user asked for, commit the intended changes
   with a concise, descriptive commit message and push them to the configured remote.
 
-- Do not modify `README.md` unless the user explicitly requests it.
+- Do not create, add, or modify `README.md` unless the user explicitly requests it.
