@@ -1411,9 +1411,9 @@ local normalized_mixed_models = require("oculus.agent").normalize_models({
 })
 
 assert(#normalized_mixed_models == 3)
-assert(normalized_mixed_models[1].id == "gpt-5.6-sol")
-assert(normalized_mixed_models[2].id == "gpt-5.6-terra")
-assert(normalized_mixed_models[3].id == "gemini-3.7-flash")
+assert(normalized_mixed_models[1].id == "gemini-3.7-flash")
+assert(normalized_mixed_models[2].id == "gpt-5.6-sol")
+assert(normalized_mixed_models[3].id == "gpt-5.6-terra")
 assert(type(require("oculus.agent").gemini_accessible) == "function")
 assert(type(require("oculus.agent").default_gemini_models) == "table")
 assert(#require("oculus.agent").default_gemini_models == 1)

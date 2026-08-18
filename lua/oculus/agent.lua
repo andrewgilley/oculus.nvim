@@ -392,13 +392,19 @@ function M.normalize_models(values)
   end
 
   local gpt_family_order = {
-    sol = 1,
-    terra = 2,
-    luna = 3,
+    sol = 2,
+    terra = 3,
+    luna = 4,
   }
 
   local function model_rank(model)
     local id = model.id or ""
+    local lower_id = id:lower()
+
+    if lower_id:match("3%.7%-flash") or lower_id == "gemini-3.7-flash" then
+      return 1
+    end
+
     local gpt_family = id:match("^gpt%-5%.6%-([^-]+)")
 
     if gpt_family and gpt_family_order[gpt_family] then
@@ -407,14 +413,8 @@ function M.normalize_models(values)
       return 10
     end
 
-    local lower_id = id:lower()
-
     if lower_id:match("^gemini") then
-      if lower_id:match("3%.7%-flash") then
-        return 101
-      else
-        return 102
-      end
+      return 100
     end
 
     return math.huge
