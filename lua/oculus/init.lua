@@ -1,5 +1,4 @@
 local M = {}
-
 local default_inspect_search_paths = {}
 local default_inspect_sidebar_width = 28 / math.max(1, vim.o.columns)
 
@@ -27,15 +26,12 @@ local defaults = {
   activity_search_max_pages = 5,
   activity_types = nil,
   user_activity_types = {},
-
   project_activity_types = {
     "push",
     "merged_pull_request",
     "assigned_issue",
   },
-
   project_issue_filters = {},
-
   projects = {
     {
       name = "Neovim",
@@ -43,70 +39,60 @@ local defaults = {
       provider = "github",
       description = "Vim-fork focused on extensibility and usability.",
     },
-
     {
       name = "Ghostty",
       repository = "ghostty-org/ghostty",
       provider = "github",
       description = "Ghostty is a fast, feature-rich, and cross-platform terminal emulator that uses platform-native UI and GPU acceleration.",
     },
-
     {
       name = "Zig",
       repository = "ziglang/zig",
       provider = "codeberg",
       description = "A general-purpose programming language and toolchain for maintaining robust, optimal, and reusable software.",
     },
-
     {
       name = "Fil-C",
       repository = "pizlonator/fil-c",
       provider = "github",
       description = "Fil-C provides completely compatible memory safety for C and C++.",
     },
-
     {
       name = "WebAssembly Component Model",
       repository = "WebAssembly/component-model",
       provider = "github",
       description = "Repository for design and specification of the Component Model.",
     },
-
     {
       name = "Wasmtime",
       repository = "bytecodealliance/wasmtime",
       provider = "github",
       description = "A fast and secure runtime for WebAssembly.",
     },
-
     {
       name = "lazy.nvim",
       repository = "folke/lazy.nvim",
       provider = "github",
       description = "A modern plugin manager for Neovim.",
     },
-
     {
       name = "oculus.nvim",
       repository = "andrewgilley/oculus.nvim",
       provider = "github",
       description = "Neovim browser for public GitHub activity of community members.",
     },
-
     {
       name = "Zug",
       repository = "andrewgilley/zug",
       provider = "github",
       description = "WebAssembly runtime.",
     },
-
     {
       name = "Odin",
       repository = "odin-lang/Odin",
       provider = "github",
       description = "The data-oriented language for sane software development.",
     },
-
     {
       name = "Stockfish",
       repository = "official-stockfish/Stockfish",
@@ -136,7 +122,6 @@ local defaults = {
   inspect_treesitter_context = true,
   inspect_treesitter_context_multiwindow = true,
   inspect_treesitter_context_mode = "topline",
-
   telemetry = {
     enabled = false,
     endpoint = nil,
@@ -149,7 +134,6 @@ local defaults = {
     exporter = nil,
     on_error = nil,
   },
-
   opinion = {
     provider = nil,
     width = 0.64,
@@ -158,40 +142,33 @@ local defaults = {
     title = " Oculus opinion ",
     filetype = "markdown",
   },
-
   token = nil,
-
   contributors = {
     {
       name = "Luke Wagner",
       username = "lukewagner",
       provider = "github",
     },
-
     {
       name = "Alex Crichton",
       username = "alexcrichton",
       provider = "github",
     },
-
     {
       name = "folke",
       username = "folke",
       provider = "github",
     },
-
     {
       name = "Andrew Gilley",
       username = "andrewgilley",
       provider = "github",
     },
-
     {
       name = "Bill Hall",
       username = "gingerBill",
       provider = "github",
     },
-
     {
       name = "vondele",
       username = "vondele",
@@ -219,6 +196,7 @@ local function merge_contributors(configured, saved)
 
   for _, contributor in ipairs(result) do
     local key = contributor_key(contributor)
+
     if key then
       present[key] = true
     end
@@ -226,6 +204,7 @@ local function merge_contributors(configured, saved)
 
   for _, contributor in ipairs(saved or {}) do
     local key = contributor_key(contributor)
+
     if key and not present[key] then
       result[#result + 1] = vim.deepcopy(contributor)
       present[key] = true
@@ -251,6 +230,7 @@ local function merge_projects(configured, saved)
 
   for _, project in ipairs(result) do
     local key = project_key(project)
+
     if key then
       present[key] = true
     end
@@ -258,6 +238,7 @@ local function merge_projects(configured, saved)
 
   for _, project in ipairs(saved or {}) do
     local key = project_key(project)
+
     if key and not present[key] then
       result[#result + 1] = vim.deepcopy(project)
       present[key] = true
@@ -280,6 +261,7 @@ local function without_removed(items, removed, key_fn)
 
   for _, item in ipairs(items or {}) do
     local key = key_fn(item)
+
     if not key or not removed_set[key:lower()] then
       result[#result + 1] = item
     end
@@ -322,12 +304,15 @@ function M.setup(opts)
         if saved.activity_types ~= nil then
           M.config.activity_types = saved.activity_types
         end
+
         if type(saved.user_activity_types) == "table" then
           M.config.user_activity_types = saved.user_activity_types
         end
+
         if type(saved.project_activity_types) == "table" then
           M.config.project_activity_types = saved.project_activity_types
         end
+
         if type(saved.project_issue_filters) == "table" then
           M.config.project_issue_filters = saved.project_issue_filters
         end
