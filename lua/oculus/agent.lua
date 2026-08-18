@@ -681,13 +681,12 @@ local function codex_command(model)
   return command
 end
 
-local function gemini_command(model, effort)
+local function gemini_command(model, effort, prompt)
   local agy_exec = vim.fn.exepath("agy")
 
   if agy_exec ~= "" then
     local cmd = {
       agy_exec,
-      "--print",
       "--sandbox",
       "--dangerously-skip-permissions",
     }
@@ -723,15 +722,21 @@ local function gemini_command(model, effort)
 
     cmd[#cmd + 1] = "--effort"
     cmd[#cmd + 1] = parsed_effort
+
+    if prompt and prompt ~= "" then
+      cmd[#cmd + 1] = "-p"
+      cmd[#cmd + 1] = prompt
+    end
+
     return cmd
   end
 
   return nil, "Antigravity CLI (agy) is not installed or is not available on PATH"
 end
 
-local function agent_command(model, effort)
+local function agent_command(model, effort, prompt)
   if model and tostring(model):lower():match("^gemini") then
-    local cmd, err = gemini_command(model, effort)
+    local cmd, err = gemini_command(model, effort, prompt)
 
     if cmd then
       return cmd
@@ -800,16 +805,19 @@ function M.explain(request, callback)
   )
 
   local command, command_err =
-    agent_command(configured_model, request.effort)
+    agent_command(configured_model, request.effort, request.prompt)
 
   if not command then
     telemetry.finish(telemetry_span, nil, "dependency_unavailable")
     return nil, command_err
   end
 
+  local is_gemini = configured_model
+    and tostring(configured_model):lower():match("^gemini")
+
   local ok, process = pcall(vim.system, command, {
     cwd = request.cwd,
-    stdin = request.prompt,
+    stdin = is_gemini and nil or request.prompt,
     text = true,
   }, function(result)
     vim.schedule(function()
