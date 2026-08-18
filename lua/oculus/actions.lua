@@ -74,12 +74,15 @@ end
 
 local function value(root, ...)
   local current = root
+
   for _, key in ipairs({ ... }) do
     if type(current) ~= "table" then
       return nil
     end
+
     current = current[key]
   end
+
   return current
 end
 
@@ -88,20 +91,23 @@ local function sentence(event, opts)
   if type(event.oculus_text) == "string" then
     return event.oculus_text
   end
-  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 3
 
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 3
   local payload = event.payload or {}
   local repo = value(event, "repo", "name") or "an unknown repository"
   local kind = event.type or "ActivityEvent"
 
   if kind == "PushEvent" then
     local count = payload.size or #(payload.commits or {})
+
     if opts and opts.omit_single_commit_count and count == 1 then
       return ("Pushed commit to %s"):format(repo)
     end
+
     if count == 0 then
       return ("Pushed to %s"):format(repo)
     end
+
     local noun = count == 1 and "commit" or "commits"
     return ("Pushed %d %s to %s"):format(count, noun, repo)
   end
@@ -109,11 +115,13 @@ local function sentence(event, opts)
   if kind == "PullRequestEvent" then
     local number = value(payload, "pull_request", "number") or payload.number
     local action = payload.action or "Updated"
+
     if action == "merged"
       or (action == "closed" and value(payload, "pull_request", "merged"))
     then
       action = "Merged"
     end
+
     return ("%s pull request%s in %s"):format(
       action,
       number and (" #" .. number) or "",
@@ -123,6 +131,7 @@ local function sentence(event, opts)
 
   if kind == "PullRequestReviewEvent" then
     local number = value(payload, "pull_request", "number")
+
     return ("Reviewed pull request%s in %s"):format(
       number and (" #" .. number) or "",
       repo
@@ -131,6 +140,7 @@ local function sentence(event, opts)
 
   if kind == "PullRequestReviewCommentEvent" then
     local number = value(payload, "pull_request", "number")
+
     return ("Commented on pull request review%s in %s"):format(
       number and (" #" .. number) or "",
       repo
@@ -139,15 +149,18 @@ local function sentence(event, opts)
 
   if kind == "IssueCommentEvent" then
     local number = value(payload, "issue", "number")
+
     local target = value(payload, "issue", "pull_request")
       and "pull request"
       or "issue"
+
     if target == "pull request" then
       return ("Commented on pull request%s in %s"):format(
         number and (" #" .. number) or "",
         repo
       )
     end
+
     return ("Commented on issue%s in %s"):format(
       number and (" #" .. number) or "",
       repo
@@ -157,12 +170,15 @@ local function sentence(event, opts)
   if kind == "IssuesEvent" then
     local number = value(payload, "issue", "number")
     local title = value(payload, "issue", "title")
+
     local title_in_preview = payload.action == "assigned"
       or payload.action == "closed"
+
     local title_suffix = not title_in_preview
       and title
       and (" · " .. title)
       or ""
+
     return ("%s issue%s in %s%s"):format(
       payload.action or "Updated",
       number and (" #" .. number) or "",
@@ -191,13 +207,17 @@ local function preview_text(text, limit, add_ellipsis)
   end
 
   local preview = text:gsub("[%c%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+
   if preview == "" then
     return nil
   end
+
   local max_chars = limit or 80
+
   if add_ellipsis and vim.fn.strchars(preview) > max_chars then
     return vim.fn.strcharpart(preview, 0, math.max(0, max_chars - 1)) .. "…"
   end
+
   return vim.fn.strcharpart(preview, 0, max_chars)
 end
 
@@ -218,40 +238,50 @@ local function detail(event)
   if event.oculus_detail ~= nil then
     return event.oculus_detail
   end
-  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 4
 
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 4
   if event.type == "PushEvent" then
     local commits = value(event, "payload", "commits") or {}
+
     if #commits > 1 then
       local messages = {}
+
       for _, commit in ipairs(commits) do
         if #messages >= 3 then
           break
         end
+
         local message = preview_text(commit.message, nil, true)
+
         if message then
           messages[#messages + 1] = message
         end
       end
+
       if #messages > 0 then
         if #commits > 3 then
           messages[#messages + 1] = "..."
         end
+
         return messages
       end
     end
 
     local message = commits[#commits] and commits[#commits].message
+
     if not message then
       return nil
     end
 
     local first_line = message:match("[^\r\n]+")
+
     local pr_number = first_line
       and first_line:match("^Merge pull request #(%d+)")
+
     if pr_number then
       local body = message:gsub("^[^\r\n]+[\r\n]*", "")
       local title = preview_text(body:match("[^\r\n]+"), nil, true)
+
       if title then
         return ("PR #%s · %s"):format(pr_number, quoted(title))
       end
@@ -259,28 +289,35 @@ local function detail(event)
 
     return first_line
   end
+
   if event.type == "PullRequestEvent" then
     local title = preview_text(value(event, "payload", "pull_request", "title"))
     return title and quoted(title) or nil
   end
+
   if event.type == "PullRequestReviewEvent" then
     local title = preview_text(value(event, "payload", "review", "body"))
       or preview_text(value(event, "payload", "pull_request", "title"))
+
     return title and quoted(title) or nil
   end
+
   if event.type == "IssuesEvent" then
     local action = value(event, "payload", "action")
+
     if action == "assigned" or action == "closed" then
       local title = preview_text(value(event, "payload", "issue", "title"))
       return title and quoted(title) or nil
     end
   end
+
   if
     event.type == "IssueCommentEvent"
     or event.type == "CommitCommentEvent"
   then
     return preview_text(value(event, "payload", "comment", "body"), nil, true)
   end
+
   if event.type == "PullRequestReviewCommentEvent" then
     local text = preview_text(
       value(event, "payload", "comment", "body"),
@@ -288,8 +325,10 @@ local function detail(event)
       true
     )
       or preview_text(value(event, "payload", "pull_request", "title"))
+
     return text and quoted(text) or nil
   end
+
   return nil
 end
 
@@ -301,10 +340,12 @@ local function summary(event)
     local title = preview_text(value(event, "payload", "issue", "title"))
     return title and bulleted(title) or nil
   end
+
   if event.type == "PullRequestReviewCommentEvent" then
     local title = preview_text(value(event, "payload", "pull_request", "title"))
     return title and bulleted(title) or nil
   end
+
   return nil
 end
 
@@ -312,13 +353,16 @@ local function comment_url(comment, fallback)
   if type(comment) ~= "table" then
     return fallback
   end
+
   local url = comment.html_url or fallback
   local body = type(comment.body) == "string" and comment.body or nil
+
   if not body or body == "" then
     return url
   end
 
   local target = preview_text(body, 60)
+
   if not target or target == "" then
     return url
   end
@@ -326,9 +370,11 @@ local function comment_url(comment, fallback)
   local fragment, base_url = url:match("#(.+)$"), url:gsub("#.*$", "")
   local anchor = fragment and (fragment .. ":~:text=") or ":~:text="
   local author = value(comment, "user", "login")
+
   local text_fragment = author
     and (vim.uri_encode(author) .. "," .. vim.uri_encode(target))
     or vim.uri_encode(target)
+
   return base_url .. "#" .. anchor .. text_fragment
 end
 
@@ -337,15 +383,17 @@ local function event_url(event)
   if type(event.url) == "string" and event.url ~= "" then
     return event.url
   end
-  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 5
 
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 5
   local repo = value(event, "repo", "name")
+
   if not repo then
     return "https://github.com"
   end
 
   local base = "https://github.com/" .. repo
   local payload = event.payload or {}
+
   if event.type == "PullRequestEvent" then
     local number = value(payload, "pull_request", "number") or payload.number
     return number and (base .. "/pull/" .. number) or base
@@ -369,6 +417,7 @@ local function event_url(event)
   elseif event.type == "PushEvent" and payload.head then
     return base .. "/commit/" .. payload.head
   end
+
   return base
 end
 
@@ -377,13 +426,15 @@ local function push_group_url(event)
   if type(event.group_url) == "string" and event.group_url ~= "" then
     return event.group_url
   end
-  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 6
 
+  -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 6
   if event.type ~= "PushEvent" then
     return nil
   end
+
   local repo = value(event, "repo", "name")
   local payload = event.payload or {}
+
   if not repo then
     return nil
   end
@@ -391,7 +442,9 @@ local function push_group_url(event)
   local branch = type(payload.ref) == "string"
       and payload.ref:match("^refs/heads/(.+)$")
     or nil
+
   local target = branch or payload.head
+
   if not target or target == "" then
     return nil
   end
@@ -417,16 +470,19 @@ function M.filter(events, activity_types)
   end
 
   local allowed = {}
+
   for _, event_type in ipairs(activity_types) do
     allowed[event_type] = true
   end
 
   local filtered = {}
+
   for _, event in ipairs(events) do
     if allowed[event.type] then
       filtered[#filtered + 1] = event
     end
   end
+
   return filtered
 end
 
