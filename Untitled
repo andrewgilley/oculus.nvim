@@ -1,0 +1,9 @@
+local first = function()
+
+  print(1)
+end
+
+local second = function()
+
+  print(2)
+end
