@@ -1366,9 +1366,9 @@ assert(require("oculus.agent").model_from_stderr(table.concat({
 
 assert(require("oculus.agent").model_from_stderr(table.concat({
   "Google Gemini",
-  "model: gemini-2.5-pro",
+  "model: gemini-3.7-flash",
   "provider: google",
-}, "\n")) == "gemini-2.5-pro")
+}, "\n")) == "gemini-3.7-flash")
 
 local normalized_models = require("oculus.agent").normalize_models({
   {
@@ -1389,38 +1389,59 @@ assert(normalized_models[2].is_default)
 assert(normalized_models[3].id == "gpt-5.6-luna")
 
 local normalized_gemini_models = require("oculus.agent").normalize_models({
-  { model = "gemini-2.5-flash", displayName = "Gemini 2.5 Flash" },
   {
-    model = "gemini-2.5-pro",
-    displayName = "Gemini 2.5 Pro",
+    model = "gemini-3.7-flash",
+    displayName = "Gemini 3.7 Flash",
     isDefault = true,
   },
-  {
-    model = "gemini-2.5-flash-lite",
-    displayName = "Gemini 2.5 Flash Lite",
-  },
+  { model = "gemini-2.5-pro", displayName = "Gemini 2.5 Pro" },
   { model = "gemini-hidden", displayName = "Hidden", hidden = true },
   { model = "claude-3-opus", displayName = "Claude 3 Opus" },
 })
 
-assert(#normalized_gemini_models == 3)
-assert(normalized_gemini_models[1].id == "gemini-2.5-pro")
+assert(#normalized_gemini_models == 1)
+assert(normalized_gemini_models[1].id == "gemini-3.7-flash")
 assert(normalized_gemini_models[1].is_default)
-assert(normalized_gemini_models[2].id == "gemini-2.5-flash")
-assert(normalized_gemini_models[3].id == "gemini-2.5-flash-lite")
 
 local normalized_mixed_models = require("oculus.agent").normalize_models({
-  { model = "gemini-2.5-flash", displayName = "Gemini 2.5 Flash" },
+  { model = "gemini-3.7-flash", displayName = "Gemini 3.7 Flash" },
   { model = "gpt-5.6-terra", displayName = "Terra" },
   { model = "gemini-2.5-pro", displayName = "Gemini 2.5 Pro" },
   { model = "gpt-5.6-sol", displayName = "Sol" },
 })
 
-assert(#normalized_mixed_models == 4)
+assert(#normalized_mixed_models == 3)
 assert(normalized_mixed_models[1].id == "gpt-5.6-sol")
 assert(normalized_mixed_models[2].id == "gpt-5.6-terra")
-assert(normalized_mixed_models[3].id == "gemini-2.5-pro")
-assert(normalized_mixed_models[4].id == "gemini-2.5-flash")
+assert(normalized_mixed_models[3].id == "gemini-3.7-flash")
+assert(type(require("oculus.agent").gemini_accessible) == "function")
+assert(type(require("oculus.agent").default_gemini_models) == "table")
+assert(#require("oculus.agent").default_gemini_models == 1)
+assert(require("oculus.agent").default_gemini_models[1].model == "gemini-3.7-flash")
+local agent_module_for_test = require("oculus.agent")
+local original_accessible_fn = agent_module_for_test.gemini_accessible
+
+agent_module_for_test.gemini_accessible = function()
+  return true
+end
+
+local discovered_agent_models
+
+agent_module_for_test.models(function(models)
+  discovered_agent_models = models
+end)
+
+assert(discovered_agent_models ~= nil)
+local found_gemini_37_flash = false
+
+for _, model_entry in ipairs(discovered_agent_models) do
+  if model_entry.id == "gemini-3.7-flash" then
+    found_gemini_37_flash = true
+  end
+end
+
+assert(found_gemini_37_flash)
+agent_module_for_test.gemini_accessible = original_accessible_fn
 
 local normalized_explanation, normalized_locations =
   require("oculus.agent").normalize_result(vim.json.encode({

@@ -5650,7 +5650,7 @@ function M._overview_ui.render_models(group, models, err)
   if err then
     group.overview_agent_mode = "error"
 
-    group.overview_agent_error = "Could not load Codex models: "
+    group.overview_agent_error = "Could not load models: "
       .. tostring(err)
 
     M._overview_ui.render(group)
@@ -6263,7 +6263,7 @@ function M._overview_ui.open_explanation(group, model)
       group,
       actual_model,
       normalized,
-      err or "Codex returned no explanation"
+      err or "Agent returned no explanation"
     )
   end
 
@@ -6376,7 +6376,7 @@ function M._overview_ui.open_patch_locations(group, model)
       group,
       actual_model,
       response and locations or nil,
-      err or "Codex returned no patch locations"
+      err or "Agent returned no patch locations"
     )
   end
 
