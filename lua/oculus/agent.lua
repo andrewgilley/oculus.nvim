@@ -681,7 +681,7 @@ local function codex_command(model)
   return command
 end
 
-local function gemini_command(model)
+local function gemini_command(model, effort)
   local agy_exec = vim.fn.exepath("agy")
 
   if agy_exec ~= "" then
@@ -692,8 +692,42 @@ local function gemini_command(model)
     }
 
     if model and model ~= "" then
+      local base_model = model
+      local parsed_effort = effort
+
+      if not parsed_effort or parsed_effort == "" then
+        local match_model, match_effort =
+          tostring(model):match("^(gemini%-[%w._-]+)[:%-](%a+)$")
+
+        if
+          match_effort
+          and (
+            match_effort == "low"
+            or match_effort == "medium"
+            or match_effort == "high"
+          )
+        then
+          base_model = match_model
+          parsed_effort = match_effort
+        end
+      end
+
+      if not parsed_effort or parsed_effort == "" then
+        if
+          tostring(base_model):lower():match("3%.7")
+          or tostring(base_model):lower():match("gemini%-3%.7%-flash")
+        then
+          parsed_effort = "high"
+        end
+      end
+
       cmd[#cmd + 1] = "--model"
-      cmd[#cmd + 1] = model
+      cmd[#cmd + 1] = base_model
+
+      if parsed_effort and parsed_effort ~= "" then
+        cmd[#cmd + 1] = "--effort"
+        cmd[#cmd + 1] = parsed_effort
+      end
     end
 
     return cmd
@@ -702,9 +736,9 @@ local function gemini_command(model)
   return nil, "Antigravity CLI (agy) is not installed or is not available on PATH"
 end
 
-local function agent_command(model)
+local function agent_command(model, effort)
   if model and tostring(model):lower():match("^gemini") then
-    local cmd, err = gemini_command(model)
+    local cmd, err = gemini_command(model, effort)
 
     if cmd then
       return cmd
@@ -772,7 +806,8 @@ function M.explain(request, callback)
     telemetry_attributes
   )
 
-  local command, command_err = agent_command(configured_model)
+  local command, command_err =
+    agent_command(configured_model, request.effort)
 
   if not command then
     telemetry.finish(telemetry_span, nil, "dependency_unavailable")
