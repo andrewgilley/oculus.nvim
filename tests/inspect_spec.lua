@@ -1350,6 +1350,12 @@ assert(commit_agent_prompt:find("File: lua/inspect.lua", 1, true))
 assert(commit_agent_prompt:find("+new behavior", 1, true))
 
 assert(commit_agent_prompt:find(
+  "Ensure the paragraph only contains natural language structure with no\ncode, symbols, or sections.",
+  1,
+  true
+))
+
+assert(commit_agent_prompt:find(
   "Discuss file changes naturally without citing numbered diff chunks.",
   1,
   true
@@ -2284,6 +2290,12 @@ assert(patch_request.prompt:find(
 
 assert(not patch_request.prompt:find(
   "Explain the reason or motivation behind this repository activity.",
+  1,
+  true
+))
+
+assert(not patch_request.prompt:find(
+  "no code, symbols, or sections",
   1,
   true
 ))

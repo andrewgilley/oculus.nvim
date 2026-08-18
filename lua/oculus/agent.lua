@@ -112,6 +112,11 @@ local function prompt(group, purpose)
       "locations array may contain zero to three entries. Do not use Markdown",
       "fences and do not include fields outside this schema.",
     })
+  else
+    vim.list_extend(lines, {
+      "Ensure the paragraph only contains natural language structure with no",
+      "code, symbols, or sections.",
+    })
   end
 
   vim.list_extend(lines, {
