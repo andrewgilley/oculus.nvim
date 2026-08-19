@@ -3354,25 +3354,6 @@ end
 
 M._virtual_counter = {}
 
-function M._virtual_counter.group_total_chunks(group)
-  local total = 0
-  for _, session in ipairs(group or {}) do
-    total = total + #inspection_chunks(group, session)
-  end
-  return total
-end
-
-function M._virtual_counter.group_session_chunk_offset(group, target_session)
-  local offset = 0
-  for _, session in ipairs(group or {}) do
-    if session == target_session then
-      return offset
-    end
-    offset = offset + #inspection_chunks(group, session)
-  end
-  return offset
-end
-
 function M._virtual_counter.place_virtual_counter(buf, line, chunk_index, chunk_count)
   if
     not buf
@@ -3410,13 +3391,12 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
     return
   end
 
-  local total_chunks = M._virtual_counter.group_total_chunks(group)
-  if total_chunks == 0 then
+  local file_chunks = #inspection_chunks(group, session)
+  if file_chunks == 0 then
     return
   end
 
-  local offset = M._virtual_counter.group_session_chunk_offset(group, session)
-  local active = session.active_chunk or 1
+  local active = math.min(math.max(1, session.active_chunk or 1), file_chunks)
 
   if group.kind == "issue" then
     if valid_endpoint(session.issue) then
@@ -3429,8 +3409,8 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
           M._virtual_counter.place_virtual_counter(
             buf,
             section.line,
-            offset + active,
-            total_chunks
+            active,
+            file_chunks
           )
         end
       end
@@ -3449,8 +3429,8 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
         M._virtual_counter.place_virtual_counter(
           buf,
           start,
-          offset + active,
-          total_chunks
+          active,
+          file_chunks
         )
       end
     end
@@ -3483,8 +3463,8 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
         M._virtual_counter.place_virtual_counter(
           buf,
           start,
-          offset + active,
-          total_chunks
+          active,
+          file_chunks
         )
       end
     end
@@ -7960,11 +7940,13 @@ local function select_sidebar_entry(group, direction, preferred_role)
     entry = group.sidebar_entries[target_line]
 
     if entry then
-      break
+      if group.chunk_view_mode ~= "virtual" or entry.chunk_index ~= nil then
+        break
+      end
     end
   end
 
-  if not entry then
+  if not entry or (group.chunk_view_mode == "virtual" and not entry.chunk_index) then
     return
   end
 
