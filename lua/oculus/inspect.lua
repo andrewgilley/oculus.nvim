@@ -4995,8 +4995,8 @@ function M._overview_ui.render_footer(group)
     or "c close"
 
   local commands = issue_patches
-      and "  w worktree   p path   e explain   b browser   " .. close_command
-    or "  e explain   b browser   " .. close_command
+      and "  b browser   e explain   p path   w worktree   " .. close_command
+    or "  b browser   e explain   " .. close_command
 
   local close_spinner_col = close_spinner
       and (#commands - #close_spinner)

@@ -1895,7 +1895,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  w worktree   p path   e explain   b browser   c close",
+    "  b browser   e explain   p path   w worktree   c close",
   }
 ))
 
