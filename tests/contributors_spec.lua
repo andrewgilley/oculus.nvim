@@ -127,7 +127,7 @@ local project_start_lines = table.concat(
 
 assert(project_start_lines:find("PROJECTS", 1, true))
 assert(not project_start_lines:find("No users added.", 1, true))
-assert(project_start_lines:find("t users", 1, true))
+assert(project_start_lines:find("v users", 1, true))
 local original_select = vim.ui.select
 local original_input = vim.ui.input
 
@@ -166,7 +166,7 @@ assert(not table.concat(
   "\n"
 ):find("example/new-project", 1, true))
 
-vim.fn.maparg("t", "n", false, true).callback()
+vim.fn.maparg("v", "n", false, true).callback()
 
 local empty_lines = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
@@ -216,7 +216,7 @@ end
 vim.fn.maparg("a", "n", false, true).callback()
 vim.ui.select = original_select
 vim.ui.input = original_input
-vim.fn.maparg("t", "n", false, true).callback()
+vim.fn.maparg("v", "n", false, true).callback()
 
 vim.ui.select = function(items, _, callback)
   callback(items[1])
@@ -250,7 +250,7 @@ assert(oculus.config.projects[#oculus.config.projects].provider
   == "codeberg")
 
 window.open(oculus.config)
-vim.fn.maparg("t", "n", false, true).callback()
+vim.fn.maparg("v", "n", false, true).callback()
 
 local restarted_lines = table.concat(
   vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false),
@@ -290,7 +290,7 @@ oculus.setup({
 window.open(oculus.config)
 vim.fn.maparg("r", "n", false, true).callback()
 assert(#window.state.opts.projects == 0)
-vim.fn.maparg("t", "n", false, true).callback()
+vim.fn.maparg("v", "n", false, true).callback()
 vim.fn.maparg("r", "n", false, true).callback()
 assert(#window.state.contributors == 0)
 window.close()

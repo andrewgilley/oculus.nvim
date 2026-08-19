@@ -402,1081 +402,1111 @@ assert(vim.api.nvim_get_hl(
   { name = "OculusInspectCursorLine", link = false }
 ).nocombine ~= true)
 
-local hidden_cursor_hl = vim.api.nvim_get_hl(
-  0,
-  { name = "OculusInspectHiddenCursor", link = false }
-)
+do
+  local hidden_cursor_hl = vim.api.nvim_get_hl(
+    0,
+    { name = "OculusInspectHiddenCursor", link = false }
+  )
 
-assert(hidden_cursor_hl.fg == 0x101820)
-assert(hidden_cursor_hl.bg == 0x101820)
-assert(hidden_cursor_hl.blend == 100)
+  assert(hidden_cursor_hl.fg == 0x101820)
+  assert(hidden_cursor_hl.bg == 0x101820)
+  assert(hidden_cursor_hl.blend == 100)
 
-assert(vim.api.nvim_get_hl(
-  0,
-  { name = "OculusOilChange", link = false }
-).fg == 0xfbd38d)
+  assert(vim.api.nvim_get_hl(
+    0,
+    { name = "OculusOilChange", link = false }
+  ).fg == 0xfbd38d)
 
-assert(vim.api.nvim_get_hl(
-  0,
-  { name = "OculusOilChange", link = false }
-).bg == 0x101820)
+  assert(vim.api.nvim_get_hl(
+    0,
+    { name = "OculusOilChange", link = false }
+  ).bg == 0x101820)
 
-assert(vim.api.nvim_get_hl(
-  0,
-  { name = "OculusOilChange", link = false }
-).bold ~= true)
-
-local dimming_win = vim.api.nvim_get_current_win()
-local original_winhighlight = vim.wo[dimming_win].winhighlight
-
-vim.wo[dimming_win].winhighlight =
-  "NormalNC:Comment,CursorLine:Visual"
-
-assert(inspect._prevent_window_dimming(dimming_win))
-
-assert(vim.wo[dimming_win].winhighlight
-  == "CursorLine:Visual,NormalNC:Normal")
-
-assert(inspect._preserve_cursorline_text_highlighting(dimming_win))
-
-assert(vim.wo[dimming_win].winhighlight
-  == "NormalNC:Normal,CursorLine:OculusInspectCursorLine")
-
-vim.wo[dimming_win].winhighlight = original_winhighlight
-local highlight_buf = vim.api.nvim_create_buf(false, true)
-
-vim.api.nvim_buf_set_lines(
-  highlight_buf,
-  0,
-  -1,
-  false,
-  { "local highlighted = true" }
-)
-
-vim.bo[highlight_buf].filetype = "lua"
-vim.bo[highlight_buf].syntax = "lua"
-vim.b[highlight_buf].oculus_inspect = { role = "change" }
-local fake_highlighter = {}
-local invalidated = false
-local parsed = false
-
-local parser = {
-  invalidate = function(_, reload)
-    assert(reload == true)
-    invalidated = true
-  end,
-  parse = function(_, range, callback)
-    assert(range == true)
-    parsed = true
-    callback()
-  end,
-}
-
-local original_highlighter =
-  vim.treesitter.highlighter.active[highlight_buf]
-
-local original_get_parser = vim.treesitter.get_parser
-local original_stop = vim.treesitter.stop
-local original_start = vim.treesitter.start
-vim.treesitter.highlighter.active[highlight_buf] = fake_highlighter
-
-vim.treesitter.get_parser = function(buf)
-  assert(buf == highlight_buf)
-  return parser
+  assert(vim.api.nvim_get_hl(
+    0,
+    { name = "OculusOilChange", link = false }
+  ).bold ~= true)
 end
 
-vim.treesitter.stop = function()
-  error("refresh must preserve the active highlighter")
+do
+  local dimming_win = vim.api.nvim_get_current_win()
+  local original_winhighlight = vim.wo[dimming_win].winhighlight
+
+  vim.wo[dimming_win].winhighlight =
+    "NormalNC:Comment,CursorLine:Visual"
+
+  assert(inspect._prevent_window_dimming(dimming_win))
+
+  assert(vim.wo[dimming_win].winhighlight
+    == "CursorLine:Visual,NormalNC:Normal")
+
+  assert(inspect._preserve_cursorline_text_highlighting(dimming_win))
+
+  assert(vim.wo[dimming_win].winhighlight
+    == "NormalNC:Normal,CursorLine:OculusInspectCursorLine")
+
+  vim.wo[dimming_win].winhighlight = original_winhighlight
 end
-
-vim.treesitter.start = function()
-  error("refresh must preserve the active highlighter")
-end
-
-assert(inspect._refresh_buffer_highlighting(highlight_buf))
-assert(vim.bo[highlight_buf].syntax == "lua")
-assert(invalidated)
-assert(parsed)
-
-assert(vim.treesitter.highlighter.active[highlight_buf]
-  == fake_highlighter)
-
-invalidated = false
-parsed = false
-assert(inspect._refresh_buffer_highlighting(highlight_buf))
-assert(not invalidated)
-assert(not parsed)
-assert(inspect._refresh_buffer_highlighting(highlight_buf, true))
-assert(invalidated)
-assert(parsed)
-
-assert((function()
-  local late_highlight_buf = vim.api.nvim_create_buf(false, true)
+do
+  local highlight_buf = vim.api.nvim_create_buf(false, true)
 
   vim.api.nvim_buf_set_lines(
-    late_highlight_buf,
+    highlight_buf,
     0,
     -1,
     false,
-    { "local imported = require('oculus')" }
+    { "local highlighted = true" }
   )
 
-  vim.bo[late_highlight_buf].filetype = "lua"
-  vim.bo[late_highlight_buf].syntax = "lua"
-  vim.b[late_highlight_buf].oculus_inspect = { role = "change" }
+  vim.bo[highlight_buf].filetype = "lua"
+  vim.bo[highlight_buf].syntax = "lua"
+  vim.b[highlight_buf].oculus_inspect = { role = "change" }
+  local fake_highlighter = {}
+  local invalidated = false
+  local parsed = false
 
-  local original_late_highlighter =
-    vim.treesitter.highlighter.active[late_highlight_buf]
+  local parser = {
+    invalidate = function(_, reload)
+      assert(reload == true)
+      invalidated = true
+    end,
+    parse = function(_, range, callback)
+      assert(range == true)
+      parsed = true
+      callback()
+    end,
+  }
 
-  vim.treesitter.highlighter.active[late_highlight_buf] = nil
-  local late_highlighter = {}
-  local late_start_count = 0
-  local late_invalidated = false
-  local late_parsed = false
+  local original_highlighter =
+    vim.treesitter.highlighter.active[highlight_buf]
 
-  vim.treesitter.start = function(buf)
-    assert(buf == late_highlight_buf)
-    late_start_count = late_start_count + 1
-
-    if late_start_count == 2 then
-      vim.treesitter.highlighter.active[buf] = late_highlighter
-    end
-  end
+  local original_get_parser = vim.treesitter.get_parser
+  local original_stop = vim.treesitter.stop
+  local original_start = vim.treesitter.start
+  vim.treesitter.highlighter.active[highlight_buf] = fake_highlighter
 
   vim.treesitter.get_parser = function(buf)
-    assert(buf == late_highlight_buf)
-
-    return {
-      invalidate = function(_, reload)
-        assert(reload == true)
-        late_invalidated = true
-      end,
-      parse = function(_, range, callback)
-        assert(range == true)
-        late_parsed = true
-        callback()
-      end,
-    }
+    assert(buf == highlight_buf)
+    return parser
   end
 
-  assert(not inspect._refresh_buffer_highlighting(late_highlight_buf))
-  assert(late_start_count == 1)
-
-  assert(
-    vim.b[late_highlight_buf].oculus_inspect_highlighting_changedtick
-      == nil
-  )
-
-  assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
-  assert(late_start_count == 2)
-  assert(late_invalidated)
-  assert(late_parsed)
-  late_invalidated = false
-  late_parsed = false
-  assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
-  assert(not late_invalidated)
-  assert(not late_parsed)
-  local late_tick = vim.api.nvim_buf_get_changedtick(late_highlight_buf)
-
-  assert(vim.wait(100, function()
-    return vim.b[late_highlight_buf]
-        .oculus_inspect_highlighting_changedtick == late_tick
-  end))
-
-  vim.api.nvim_buf_set_lines(
-    late_highlight_buf,
-    0,
-    -1,
-    false,
-    { "local imported = require('oculus.inspect')" }
-  )
-
-  assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
-  assert(late_invalidated)
-  assert(late_parsed)
-  local fallback_buf = vim.api.nvim_create_buf(false, true)
-
-  vim.api.nvim_buf_set_lines(
-    fallback_buf,
-    0,
-    -1,
-    false,
-    { 'const std = @import("std");' }
-  )
-
-  vim.bo[fallback_buf].filetype = "zig"
-  vim.bo[fallback_buf].syntax = ""
-  vim.b[fallback_buf].oculus_inspect = { role = "parent" }
-
-  local original_fallback_highlighter =
-    vim.treesitter.highlighter.active[fallback_buf]
-
-  vim.treesitter.highlighter.active[fallback_buf] = nil
-  local fallback_start_count = 0
-
-  vim.treesitter.start = function(buf)
-    assert(buf == fallback_buf)
-    fallback_start_count = fallback_start_count + 1
-    error("no Zig parser")
+  vim.treesitter.stop = function()
+    error("refresh must preserve the active highlighter")
   end
 
-  assert(inspect._refresh_buffer_highlighting(fallback_buf))
-  assert(fallback_start_count == 1)
-  assert(vim.bo[fallback_buf].syntax == "zig")
-  assert(vim.b[fallback_buf].current_syntax == "zig")
-  local fallback_tick = vim.api.nvim_buf_get_changedtick(fallback_buf)
+  vim.treesitter.start = function()
+    error("refresh must preserve the active highlighter")
+  end
 
-  assert(vim.b[fallback_buf].oculus_inspect_syntax_changedtick
-    == fallback_tick)
+  assert(inspect._refresh_buffer_highlighting(highlight_buf))
+  assert(vim.bo[highlight_buf].syntax == "lua")
+  assert(invalidated)
+  assert(parsed)
 
-  assert(inspect._refresh_buffer_highlighting(fallback_buf))
-  assert(fallback_start_count == 1)
+  assert(vim.treesitter.highlighter.active[highlight_buf]
+    == fake_highlighter)
 
-  vim.treesitter.highlighter.active[fallback_buf] =
-    original_fallback_highlighter
+  invalidated = false
+  parsed = false
+  assert(inspect._refresh_buffer_highlighting(highlight_buf))
+  assert(not invalidated)
+  assert(not parsed)
+  assert(inspect._refresh_buffer_highlighting(highlight_buf, true))
+  assert(invalidated)
+  assert(parsed)
 
-  vim.api.nvim_buf_delete(fallback_buf, { force = true })
-  local pair_parent = vim.api.nvim_create_buf(false, true)
-  local pair_change = vim.api.nvim_create_buf(false, true)
+  assert((function()
+    local late_highlight_buf = vim.api.nvim_create_buf(false, true)
 
-  for _, buf in ipairs({ pair_parent, pair_change }) do
     vim.api.nvim_buf_set_lines(
-      buf,
+      late_highlight_buf,
       0,
       -1,
       false,
       { "local imported = require('oculus')" }
     )
 
-    vim.bo[buf].filetype = "lua"
-    vim.bo[buf].syntax = ""
-    vim.b[buf].oculus_inspect = { role = "change" }
-  end
+    vim.bo[late_highlight_buf].filetype = "lua"
+    vim.bo[late_highlight_buf].syntax = "lua"
+    vim.b[late_highlight_buf].oculus_inspect = { role = "change" }
 
-  local original_pair_parent_highlighter =
-    vim.treesitter.highlighter.active[pair_parent]
+    local original_late_highlighter =
+      vim.treesitter.highlighter.active[late_highlight_buf]
 
-  local original_pair_change_highlighter =
-    vim.treesitter.highlighter.active[pair_change]
+    vim.treesitter.highlighter.active[late_highlight_buf] = nil
+    local late_highlighter = {}
+    local late_start_count = 0
+    local late_invalidated = false
+    local late_parsed = false
 
-  vim.treesitter.highlighter.active[pair_parent] = {}
-  vim.treesitter.highlighter.active[pair_change] = nil
-  local pair_parent_stopped = false
+    vim.treesitter.start = function(buf)
+      assert(buf == late_highlight_buf)
+      late_start_count = late_start_count + 1
 
-  vim.treesitter.get_parser = function(buf)
-    assert(buf == pair_parent)
+      if late_start_count == 2 then
+        vim.treesitter.highlighter.active[buf] = late_highlighter
+      end
+    end
 
-    return {
-      invalidate = function() end,
-      parse = function(_, _, callback)
-        callback()
-      end,
-    }
-  end
+    vim.treesitter.get_parser = function(buf)
+      assert(buf == late_highlight_buf)
 
-  vim.treesitter.start = function(buf)
-    assert(buf == pair_change)
-    error("pair parser did not attach")
-  end
+      return {
+        invalidate = function(_, reload)
+          assert(reload == true)
+          late_invalidated = true
+        end,
+        parse = function(_, range, callback)
+          assert(range == true)
+          late_parsed = true
+          callback()
+        end,
+      }
+    end
 
-  vim.treesitter.stop = function(buf)
-    assert(buf == pair_parent)
-    pair_parent_stopped = true
-    vim.treesitter.highlighter.active[buf] = nil
-  end
+    assert(not inspect._refresh_buffer_highlighting(late_highlight_buf))
+    assert(late_start_count == 1)
 
-  assert(inspect._synchronize_inspection_highlighting(
-    pair_parent,
-    pair_change
-  ) == "syntax")
+    assert(
+      vim.b[late_highlight_buf].oculus_inspect_highlighting_changedtick
+        == nil
+    )
 
-  assert(pair_parent_stopped)
+    assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
+    assert(late_start_count == 2)
+    assert(late_invalidated)
+    assert(late_parsed)
+    late_invalidated = false
+    late_parsed = false
+    assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
+    assert(not late_invalidated)
+    assert(not late_parsed)
+    local late_tick = vim.api.nvim_buf_get_changedtick(late_highlight_buf)
 
-  for _, buf in ipairs({ pair_parent, pair_change }) do
-    assert(vim.b[buf].oculus_inspect_highlight_engine == "syntax")
-    assert(vim.bo[buf].syntax == "lua")
-    assert(vim.b[buf].current_syntax == "lua")
-  end
+    assert(vim.wait(100, function()
+      return vim.b[late_highlight_buf]
+          .oculus_inspect_highlighting_changedtick == late_tick
+    end))
 
-  vim.treesitter.highlighter.active[pair_parent] =
-    original_pair_parent_highlighter
+    vim.api.nvim_buf_set_lines(
+      late_highlight_buf,
+      0,
+      -1,
+      false,
+      { "local imported = require('oculus.inspect')" }
+    )
 
-  vim.treesitter.highlighter.active[pair_change] =
-    original_pair_change_highlighter
+    assert(inspect._refresh_buffer_highlighting(late_highlight_buf))
+    assert(late_invalidated)
+    assert(late_parsed)
+    local fallback_buf = vim.api.nvim_create_buf(false, true)
 
-  vim.api.nvim_buf_delete(pair_parent, { force = true })
-  vim.api.nvim_buf_delete(pair_change, { force = true })
+    vim.api.nvim_buf_set_lines(
+      fallback_buf,
+      0,
+      -1,
+      false,
+      { 'const std = @import("std");' }
+    )
 
-  vim.treesitter.highlighter.active[late_highlight_buf] =
-    original_late_highlighter
+    vim.bo[fallback_buf].filetype = "zig"
+    vim.bo[fallback_buf].syntax = ""
+    vim.b[fallback_buf].oculus_inspect = { role = "parent" }
 
-  vim.api.nvim_buf_delete(late_highlight_buf, { force = true })
-  return true
-end)())
+    local original_fallback_highlighter =
+      vim.treesitter.highlighter.active[fallback_buf]
 
-vim.treesitter.highlighter.active[highlight_buf] = original_highlighter
-vim.treesitter.get_parser = original_get_parser
-vim.treesitter.stop = original_stop
-vim.treesitter.start = original_start
-vim.api.nvim_buf_delete(highlight_buf, { force = true })
-local filetype_buf = vim.api.nvim_create_buf(false, true)
+    vim.treesitter.highlighter.active[fallback_buf] = nil
+    local fallback_start_count = 0
 
-vim.api.nvim_buf_set_lines(
-  filetype_buf,
-  0,
-  -1,
-  false,
-  { "print('inspected python')" }
-)
+    vim.treesitter.start = function(buf)
+      assert(buf == fallback_buf)
+      fallback_start_count = fallback_start_count + 1
+      error("no Zig parser")
+    end
 
-vim.bo[filetype_buf].filetype = "lua"
+    assert(inspect._refresh_buffer_highlighting(fallback_buf))
+    assert(fallback_start_count == 1)
+    assert(vim.bo[fallback_buf].syntax == "zig")
+    assert(vim.b[fallback_buf].current_syntax == "zig")
+    local fallback_tick = vim.api.nvim_buf_get_changedtick(fallback_buf)
 
-vim.b[filetype_buf].oculus_inspect = {
-  role = "parent",
-  source_path = vim.fs.joinpath(root, "src", "inspection.py"),
-}
+    assert(vim.b[fallback_buf].oculus_inspect_syntax_changedtick
+      == fallback_tick)
 
-local original_reliquary = package.loaded.reliquary
-local reliquary_buf
-local reliquary_filetype
-local reliquary_apply_count = 0
+    assert(inspect._refresh_buffer_highlighting(fallback_buf))
+    assert(fallback_start_count == 1)
 
-local normal_before_filetype = vim.api.nvim_get_hl(0, {
-  name = "Normal",
-  link = false,
-})
+    vim.treesitter.highlighter.active[fallback_buf] =
+      original_fallback_highlighter
 
-local filetype_colorscheme_bg = 0x2a3340
+    vim.api.nvim_buf_delete(fallback_buf, { force = true })
+    local pair_parent = vim.api.nvim_create_buf(false, true)
+    local pair_change = vim.api.nvim_create_buf(false, true)
 
-package.loaded.reliquary = {
-  apply = function(buf)
-    reliquary_apply_count = reliquary_apply_count + 1
-    reliquary_buf = buf
-    reliquary_filetype = vim.bo[buf].filetype
+    for _, buf in ipairs({ pair_parent, pair_change }) do
+      vim.api.nvim_buf_set_lines(
+        buf,
+        0,
+        -1,
+        false,
+        { "local imported = require('oculus')" }
+      )
 
-    vim.api.nvim_set_hl(0, "Normal", {
-      fg = normal_before_filetype.fg,
-      bg = filetype_colorscheme_bg,
-    })
+      vim.bo[buf].filetype = "lua"
+      vim.bo[buf].syntax = ""
+      vim.b[buf].oculus_inspect = { role = "change" }
+    end
 
-    return "st"
-  end,
-}
+    local original_pair_parent_highlighter =
+      vim.treesitter.highlighter.active[pair_parent]
 
-local filetype_current_buf = vim.api.nvim_get_current_buf()
-assert(inspect._apply_inspection_filetype(filetype_buf) == "python")
-assert(vim.bo[filetype_buf].filetype == "python")
-assert(reliquary_buf == filetype_buf)
-assert(reliquary_filetype == "python")
-assert(vim.api.nvim_get_current_buf() == filetype_current_buf)
-assert(reliquary_apply_count == 1)
+    local original_pair_change_highlighter =
+      vim.treesitter.highlighter.active[pair_change]
 
-local filetype_window_highlight_ns = assert(
-  vim.api.nvim_get_namespaces().oculus_window_highlights
-)
+    vim.treesitter.highlighter.active[pair_parent] = {}
+    vim.treesitter.highlighter.active[pair_change] = nil
+    local pair_parent_stopped = false
 
-assert(vim.api.nvim_get_hl(filetype_window_highlight_ns, {
-  name = "OculusNormal",
-  link = false,
-}).bg == filetype_colorscheme_bg)
+    vim.treesitter.get_parser = function(buf)
+      assert(buf == pair_parent)
 
-assert(vim.api.nvim_get_hl(filetype_window_highlight_ns, {
-  name = "OculusBorder",
-  link = false,
-}).bg == filetype_colorscheme_bg)
+      return {
+        invalidate = function() end,
+        parse = function(_, _, callback)
+          callback()
+        end,
+      }
+    end
 
-vim.api.nvim_set_hl(0, "Normal", normal_before_filetype)
-require("oculus.window").refresh_window_highlights()
-package.loaded.reliquary = original_reliquary
-vim.api.nvim_buf_delete(filetype_buf, { force = true })
-local viewport_buf = vim.api.nvim_get_current_buf()
-local viewport_win = vim.api.nvim_get_current_win()
-local viewport_lines = {}
+    vim.treesitter.start = function(buf)
+      assert(buf == pair_change)
+      error("pair parser did not attach")
+    end
 
-for index = 1, 40 do
-  viewport_lines[index] = "line " .. index
+    vim.treesitter.stop = function(buf)
+      assert(buf == pair_parent)
+      pair_parent_stopped = true
+      vim.treesitter.highlighter.active[buf] = nil
+    end
+
+    assert(inspect._synchronize_inspection_highlighting(
+      pair_parent,
+      pair_change
+    ) == "syntax")
+
+    assert(pair_parent_stopped)
+
+    for _, buf in ipairs({ pair_parent, pair_change }) do
+      assert(vim.b[buf].oculus_inspect_highlight_engine == "syntax")
+      assert(vim.bo[buf].syntax == "lua")
+      assert(vim.b[buf].current_syntax == "lua")
+    end
+
+    vim.treesitter.highlighter.active[pair_parent] =
+      original_pair_parent_highlighter
+
+    vim.treesitter.highlighter.active[pair_change] =
+      original_pair_change_highlighter
+
+    vim.api.nvim_buf_delete(pair_parent, { force = true })
+    vim.api.nvim_buf_delete(pair_change, { force = true })
+
+    vim.treesitter.highlighter.active[late_highlight_buf] =
+      original_late_highlighter
+
+    vim.api.nvim_buf_delete(late_highlight_buf, { force = true })
+    return true
+  end)())
+
+  vim.treesitter.highlighter.active[highlight_buf] = original_highlighter
+  vim.treesitter.get_parser = original_get_parser
+  vim.treesitter.stop = original_stop
+  vim.treesitter.start = original_start
+  vim.api.nvim_buf_delete(highlight_buf, { force = true })
+end
+do
+  local filetype_buf = vim.api.nvim_create_buf(false, true)
+
+  vim.api.nvim_buf_set_lines(
+    filetype_buf,
+    0,
+    -1,
+    false,
+    { "print('inspected python')" }
+  )
+
+  vim.bo[filetype_buf].filetype = "lua"
+
+  vim.b[filetype_buf].oculus_inspect = {
+    role = "parent",
+    source_path = vim.fs.joinpath(root, "src", "inspection.py"),
+  }
+
+  local original_reliquary = package.loaded.reliquary
+  local reliquary_buf
+  local reliquary_filetype
+  local reliquary_apply_count = 0
+
+  local normal_before_filetype = vim.api.nvim_get_hl(0, {
+    name = "Normal",
+    link = false,
+  })
+
+  local filetype_colorscheme_bg = 0x2a3340
+
+  package.loaded.reliquary = {
+    apply = function(buf)
+      reliquary_apply_count = reliquary_apply_count + 1
+      reliquary_buf = buf
+      reliquary_filetype = vim.bo[buf].filetype
+
+      vim.api.nvim_set_hl(0, "Normal", {
+        fg = normal_before_filetype.fg,
+        bg = filetype_colorscheme_bg,
+      })
+
+      return "st"
+    end,
+  }
+
+  local filetype_current_buf = vim.api.nvim_get_current_buf()
+  assert(inspect._apply_inspection_filetype(filetype_buf) == "python")
+  assert(vim.bo[filetype_buf].filetype == "python")
+  assert(reliquary_buf == filetype_buf)
+  assert(reliquary_filetype == "python")
+  assert(vim.api.nvim_get_current_buf() == filetype_current_buf)
+  assert(reliquary_apply_count == 1)
+
+  local filetype_window_highlight_ns = assert(
+    vim.api.nvim_get_namespaces().oculus_window_highlights
+  )
+
+  assert(vim.api.nvim_get_hl(filetype_window_highlight_ns, {
+    name = "OculusNormal",
+    link = false,
+  }).bg == filetype_colorscheme_bg)
+
+  assert(vim.api.nvim_get_hl(filetype_window_highlight_ns, {
+    name = "OculusBorder",
+    link = false,
+  }).bg == filetype_colorscheme_bg)
+
+  vim.api.nvim_set_hl(0, "Normal", normal_before_filetype)
+  require("oculus.window").refresh_window_highlights()
+  package.loaded.reliquary = original_reliquary
+  vim.api.nvim_buf_delete(filetype_buf, { force = true })
 end
 
-vim.api.nvim_buf_set_lines(
-  viewport_buf,
-  0,
-  -1,
-  false,
-  viewport_lines
-)
+do
+  local viewport_buf = vim.api.nvim_get_current_buf()
+  local viewport_win = vim.api.nvim_get_current_win()
+  local viewport_lines = {}
 
-for _, expected in ipairs({
-  { cursor = 5, topline = 1, column = 0 },
-  {
-    cursor = 15,
-    topline = 5,
-    column = #viewport_lines[15] - 1,
-  },
-}) do
-  vim.api.nvim_win_call(viewport_win, function()
-    vim.fn.winrestview({ topline = 1 })
+  for index = 1, 40 do
+    viewport_lines[index] = "line " .. index
+  end
+
+  vim.api.nvim_buf_set_lines(
+    viewport_buf,
+    0,
+    -1,
+    false,
+    viewport_lines
+  )
+
+  for _, expected in ipairs({
+    { cursor = 5, topline = 1, column = 0 },
+    {
+      cursor = 15,
+      topline = 5,
+      column = #viewport_lines[15] - 1,
+    },
+  }) do
+    vim.api.nvim_win_call(viewport_win, function()
+      vim.fn.winrestview({ topline = 1 })
+    end)
+
+    vim.api.nvim_win_set_cursor(viewport_win, { expected.cursor, 0 })
+    inspect._normalize_inspection_view(viewport_win)
+    local view = vim.api.nvim_win_call(viewport_win, vim.fn.winsaveview)
+    local cursor = vim.api.nvim_win_get_cursor(viewport_win)
+    assert(view.topline == expected.topline)
+    assert(cursor[2] == expected.column)
+  end
+
+  local comment = inspect.activity_comment({
+    type = "PullRequestReviewCommentEvent",
+    payload = {
+      comment = {
+        body = "Please keep this branch explicit.",
+        path = "lua/oculus/inspect.lua",
+        start_line = 15,
+        line = 17,
+        side = "RIGHT",
+        commit_id = "aaaaaaaa",
+      },
+    },
+  })
+
+  assert(comment)
+  assert(comment.body == "Please keep this branch explicit.")
+  assert(comment.path == "lua/oculus/inspect.lua")
+  assert(comment.line == 15)
+  assert(comment.side == "change")
+  assert(comment.commit == "aaaaaaaa")
+
+  local left_comment = inspect.activity_comment({
+    type = "PullRequestReviewCommentEvent",
+    payload = {
+      comment = {
+        body = "This was removed.",
+        path = "lua/oculus/inspect.lua",
+        original_line = 12,
+        side = "LEFT",
+        original_commit_id = "bbbbbbbb",
+      },
+    },
+  })
+
+  assert(left_comment)
+  assert(left_comment.line == 12)
+  assert(left_comment.side == "parent")
+  assert(left_comment.commit == "bbbbbbbb")
+
+  assert(inspect.activity_comment({
+    type = "IssueCommentEvent",
+    payload = {
+      comment = {
+        body = "Not attached to code.",
+        path = "README.md",
+        line = 1,
+      },
+    },
+  }) == nil)
+
+  local comment_view = assert(inspect._comment_float({
+    tab = vim.api.nvim_get_current_tabpage(),
+    win = viewport_win,
+    buf = viewport_buf,
+  }, comment))
+
+  assert(vim.api.nvim_get_current_win() == viewport_win)
+  local comment_config = vim.api.nvim_win_get_config(comment_view.win)
+  assert(comment_config.relative == "win")
+  assert(comment_config.win == viewport_win)
+  assert(comment_config.anchor == "SW")
+  assert(comment_config.bufpos[1] == comment.line - 1)
+  assert(comment_config.col > 0)
+  assert(comment_config.focusable == false)
+
+  assert(vim.api.nvim_buf_get_lines(
+    comment_view.buf,
+    0,
+    -1,
+    false
+  )[1] == comment.body)
+
+  vim.api.nvim_win_close(comment_view.win, true)
+  vim.api.nvim_buf_set_lines(viewport_buf, 0, -1, false, { "" })
+  vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
+  vim.bo[viewport_buf].modified = false
+end
+
+do
+  local shortened_sidebar_row = inspect._sidebar_row(
+    "a-very-long-changed-file-name.lua",
+    24
+  )
+
+  assert(shortened_sidebar_row.line:match("^• …"))
+  assert(shortened_sidebar_row.line:match(" P C $"))
+
+  assert(shortened_sidebar_row.parent_column
+    < shortened_sidebar_row.change_column)
+
+  assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
+
+  local versioned_sidebar_row = inspect._sidebar_row(
+    "inspect.lua",
+    24,
+    2
+  )
+
+  assert(versioned_sidebar_row.line:match("^• inspect%.lua v%.2"))
+  assert(versioned_sidebar_row.line:match(" P C $"))
+  assert(versioned_sidebar_row.version_column)
+
+  assert(versioned_sidebar_row.version_end_column
+    == versioned_sidebar_row.version_column + 3)
+
+  assert(vim.fn.strdisplaywidth(versioned_sidebar_row.line) == 24)
+
+  local versioned_sessions = inspect._assign_sidebar_versions({
+    { file = "lua/oculus/inspect.lua", commit_index = 1 },
+    { file = "lua/oculus/inspect.lua", commit_index = 2 },
+    { file = "tests/inspect.lua", commit_index = 2 },
+    { file = "lua/oculus/inspect.lua", commit_index = 3 },
+  })
+
+  assert(versioned_sessions[1].sidebar_version == 1)
+  assert(versioned_sessions[2].sidebar_version == 2)
+  assert(versioned_sessions[3].sidebar_version == nil)
+  assert(versioned_sessions[4].sidebar_version == 3)
+  assert(versioned_sessions[1].sidebar_version_count == 3)
+
+  assert(inspect._sidebar_chunk_row(
+    { old_count = 1, new_start = 25, new_count = 4 },
+    false
+  ) == "  ├─ 25-28 (+3)")
+
+  assert(inspect._sidebar_chunk_row(
+    { old_count = 2, new_start = 31, new_count = 0 },
+    true
+  ) == "  └─ 31-31 (-2)")
+
+  assert(inspect._sidebar_chunk_row(
+    { old_count = 2, new_start = 40, new_count = 2 },
+    true
+  ) == "  └─ 40-41")
+
+  assert(inspect._sidebar_file(
+    "a/very/long/path/to/a/changed/file.lua"
+  ) == "file.lua")
+
+  assert(inspect._sidebar_file(
+    "lua\\oculus\\inspect.lua"
+  ) == "inspect.lua")
+
+  assert(inspect._sidebar_file("README.md") == "README.md")
+
+  vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
+    { change_file = "tests/unit/inspect_spec.lua" },
+    { change_file = "lua/oculus/window.lua" },
+    { change_file = "README.md" },
+    { parent_file = "lua/init.lua" },
+    { change_file = "LICENSE" },
+    { change_file = "tests/inspect_spec.lua" },
+    { change_file = "lua/oculus/inspect.lua" },
+  })
+
+  assert(vim.deep_equal(
+    vim.tbl_map(function(inspection)
+      return inspection.change_file or inspection.parent_file
+    end, vim.g.oculus_test_sorted_inspections),
+    {
+      "LICENSE",
+      "README.md",
+      "lua/init.lua",
+      "tests/inspect_spec.lua",
+      "lua/oculus/inspect.lua",
+      "lua/oculus/window.lua",
+      "tests/unit/inspect_spec.lua",
+    }
+  ))
+
+  vim.g.oculus_test_sorted_inspections = nil
+
+  vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
+    { change_file = "src/late.lua", commit_index = 3, file_index = 1 },
+    { change_file = "src/first.lua", commit_index = 1, file_index = 1 },
+    { change_file = "src/late.lua", commit_index = 2, file_index = 1 },
+    { change_file = "README.md", commit_index = 2, file_index = 2 },
+    { change_file = "src/first.lua", commit_index = 3, file_index = 2 },
+  })
+
+  assert(vim.deep_equal(
+    vim.tbl_map(function(inspection)
+      return (inspection.change_file or inspection.parent_file)
+        .. ":"
+        .. inspection.commit_index
+    end, vim.g.oculus_test_sorted_inspections),
+    {
+      "src/first.lua:1",
+      "src/first.lua:3",
+      "README.md:2",
+      "src/late.lua:2",
+      "src/late.lua:3",
+    }
+  ))
+
+  vim.g.oculus_test_sorted_inspections = nil
+
+  assert(inspect._sidebar_target_role(
+    1,
+    "change",
+    { pair_index = 2 }
+  ) == "parent")
+
+  assert(inspect._sidebar_target_role(
+    1,
+    "change",
+    { pair_index = 1 }
+  ) == "change")
+
+  assert(inspect._sidebar_target_role(
+    1,
+    "parent",
+    { pair_index = 2 },
+    { kind = "commit", [2] = { last_role = "change" } },
+    "parent"
+  ) == "change")
+
+  assert(inspect._chunk_navigation_role(
+    { kind = "commit" },
+    {},
+    "change",
+    { last_role = "change" },
+    true
+  ) == "change")
+
+  assert(inspect._inspection_directory(
+    root,
+    "lua/oculus/inspect.lua"
+  ) == vim.fs.joinpath(root, "lua", "oculus"))
+
+  assert(inspect._inspection_directory(
+    root,
+    "not-present/inspect.lua"
+  ) == root)
+
+  assert(inspect._inspection_statusline_path({
+    repository = root,
+    source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
+    file = "lua/oculus/inspect.lua",
+  }) == vim.fs.basename(root) .. "/lua/oculus/inspect.lua")
+
+  assert(inspect._inspection_buffer_name({
+    source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
+    commit = "0123456789abcdef",
+    role = "change",
+    pair_index = 2,
+  }) == vim.fs.joinpath(root, "lua", "oculus", "inspect.lua")
+    .. "@oculus-change-0123456789ab-2")
+end
+
+do
+  local parsed = inspect._parse_commit_url(
+    "https://github.com/neovim/neovim/commit/"
+      .. "0123456789abcdef0123456789abcdef01234567#diff"
+  )
+
+  assert(parsed)
+  assert(parsed.owner == "neovim")
+  assert(parsed.repo == "neovim")
+  assert(parsed.sha == "0123456789abcdef0123456789abcdef01234567")
+  assert(parsed.remote_url == "https://github.com/neovim/neovim.git")
+
+  local codeberg_commit = inspect._parse_commit_url(
+    "https://codeberg.org/ziglang/zig/commit/0123456"
+  )
+
+  assert(codeberg_commit)
+  assert(codeberg_commit.forge == "codeberg")
+  assert(codeberg_commit.owner == "ziglang")
+  assert(codeberg_commit.repo == "zig")
+  assert(codeberg_commit.sha == "0123456")
+  assert(codeberg_commit.remote_url == "https://codeberg.org/ziglang/zig.git")
+  assert(inspect._parse_commit_url("https://github.com/a/b/issues/1") == nil)
+  assert(inspect._parse_commit_url("https://github.com/a/b/commit/123") == nil)
+
+  assert(inspect._parse_commit_url(
+    "https://github.com/a/b/commit/01234567890123456789012345678901234567890"
+  ) == nil)
+
+  assert(inspect._parse_commit_url(
+    "https://github.com/../b/commit/0123456"
+  ) == nil)
+
+  local pull_request = inspect._parse_pull_request_url(
+    "https://github.com/neovim/neovim/pull/123/files#diff-test"
+  )
+
+  assert(pull_request)
+  assert(pull_request.kind == "pull_request")
+  assert(pull_request.owner == "neovim")
+  assert(pull_request.repo == "neovim")
+  assert(pull_request.number == 123)
+
+  assert(inspect._parse_pull_request_url(
+    "https://github.com/neovim/neovim/issues/123#issuecomment-456"
+  ) == nil)
+
+  assert(inspect._parse_pull_request_url(
+    "https://github.com/neovim/neovim/issues/not-a-number"
+  ) == nil)
+
+  local issue = inspect._parse_issue_url(
+    "https://github.com/neovim/neovim/issues/123#issuecomment-456"
+  )
+
+  assert(issue)
+  assert(issue.kind == "issue")
+  assert(issue.forge == "github")
+  assert(issue.owner == "neovim")
+  assert(issue.repo == "neovim")
+  assert(issue.number == 123)
+
+  local codeberg_issue = inspect._parse_issue_url(
+    "https://codeberg.org/ziglang/zig/issues/42"
+  )
+
+  assert(codeberg_issue)
+  assert(codeberg_issue.kind == "issue")
+  assert(codeberg_issue.forge == "codeberg")
+  assert(codeberg_issue.number == 42)
+
+  local codeberg_pull_request = inspect._parse_pull_request_url(
+    "https://codeberg.org/ziglang/zig/pulls/35754#issuecomment-1"
+  )
+
+  assert(codeberg_pull_request)
+  assert(codeberg_pull_request.forge == "codeberg")
+  assert(codeberg_pull_request.owner == "ziglang")
+  assert(codeberg_pull_request.repo == "zig")
+  assert(codeberg_pull_request.number == 35754)
+  assert(not codeberg_pull_request.via_issue)
+
+  assert(codeberg_pull_request.remote_url
+    == "https://codeberg.org/ziglang/zig.git")
+
+  local resolved_pull_request = inspect._apply_pull_request(pull_request, {
+    title = "Test pull request",
+    body = "This pull request improves the Inspect workflow.",
+    author = "reviewer",
+    state = "open",
+    draft = false,
+    merged = false,
+    html_url = "https://github.com/neovim/neovim/pull/123",
+    created_at = "2026-07-30T12:00:00-04:00",
+    base_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    base_ref = "main",
+    head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    head_ref = "feature",
+    commit_count = 3,
+    commits = {
+      { commit = { message = "Add overview support\n\nDetails" } },
+      { commit = { message = "Tidy overview layout" } },
+    },
+  })
+
+  assert(resolved_pull_request.base_ref == "main")
+  assert(resolved_pull_request.head_ref == "feature")
+  assert(resolved_pull_request.base_sha:match("^a+$"))
+  assert(resolved_pull_request.head_sha:match("^b+$"))
+  assert(resolved_pull_request.commit_count == 3)
+  assert(#resolved_pull_request.commits == 2)
+  assert(resolved_pull_request.author == "reviewer")
+  assert(resolved_pull_request.created_at == "2026-07-30T12:00:00-04:00")
+
+  local pull_request_overview = inspect._inspection_overview(
+    resolved_pull_request,
+    {}
+  )
+
+  local pull_request_overview_text = table.concat(
+    inspect._sidebar_overview_lines(pull_request_overview, 28),
+    "\n"
+  )
+
+  assert(not pull_request_overview_text:match("\n$"))
+
+  assert(pull_request_overview_text:find(
+    "OVERVIEW",
+    1,
+    true
+  ))
+
+  assert(pull_request_overview_text:match("^OVERVIEW\n"))
+
+  assert(pull_request_overview_text:gsub("%s+", " "):find(
+    "Title Test pull request",
+    1,
+    true
+  ))
+
+  assert(pull_request_overview_text:find("#123", 1, true))
+
+  assert(pull_request_overview_text:find(
+    "\n  Title\n  Test pull request",
+    1,
+    true
+  ))
+
+  assert(pull_request_overview_text:find("@reviewer", 1, true))
+
+  assert(pull_request_overview_text:find(
+    "This pull request improves",
+    1,
+    true
+  ))
+
+  assert(pull_request_overview_text:find("\n  Title\n", 1, true))
+  assert(pull_request_overview_text:find("\n  Description\n", 1, true))
+  assert(pull_request_overview_text:find("\n  Author\n", 1, true))
+  assert(pull_request_overview_text:find("\n  Commits\n", 1, true))
+  assert(pull_request_overview_text:find("Add overview support", 1, true))
+  assert(pull_request_overview_text:find("Tidy overview layout", 1, true))
+  assert(not pull_request_overview_text:find("\n  URL\n", 1, true))
+  assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
+  assert(pull_request_overview_text:find("\n  Status\n", 1, true))
+  local pull_request_overview_lines =
+    inspect._sidebar_overview_lines(pull_request_overview, 28)
+
+  assert(pull_request_overview_lines[#pull_request_overview_lines - 1]
+    == "  Date")
+
+  assert(pull_request_overview_lines[#pull_request_overview_lines]
+    :match("^  %a+ %d%d?, %d%d%d%d$"))
+
+  assert(not pull_request_overview_text:find("Repository", 1, true))
+  assert(not pull_request_overview_text:find("Branches", 1, true))
+  assert(not pull_request_overview_text:find("Changes", 1, true))
+  assert(not pull_request_overview_text:find("Created", 1, true))
+  assert(not pull_request_overview_text:find("Updated", 1, true))
+  assert(not pull_request_overview_text:find("changed files", 1, true))
+end
+
+do
+  local parsed_commit_overview = inspect._parse_commit_overview(
+    table.concat({
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "Ada Lovelace",
+      "ada@example.com",
+      "2026-07-30T12:00:00-04:00",
+      "Keep Inspect context visible",
+      "Show the relevant commit details in the sidebar.",
+    }, "\0")
+  )
+
+  assert(parsed_commit_overview)
+  assert(parsed_commit_overview.author_name == "Ada Lovelace")
+  assert(parsed_commit_overview.subject == "Keep Inspect context visible")
+
+  local commit_overview = inspect._inspection_overview({
+    kind = "commit",
+    forge = "github",
+    host = "github.com",
+    owner = "neovim",
+    repo = "neovim",
+    sha = parsed_commit_overview.sha,
+    commit_details = parsed_commit_overview,
+  }, {
+    {
+      change_file = "lua/inspect.lua",
+      commit_index = 1,
+      hunks = {
+        { old_count = 2, new_count = 5 },
+      },
+    },
+  })
+
+  local commit_overview_text = table.concat(
+    inspect._sidebar_overview_lines(commit_overview, 28),
+    "\n"
+  )
+
+  assert(commit_overview_text:match("^OVERVIEW\n"))
+
+  assert(commit_overview_text:gsub("%s+", " "):find(
+    "Title Keep Inspect context visible",
+    1,
+    true
+  ))
+
+  assert(commit_overview_text:find(
+    "\n  Title\n  Keep Inspect context",
+    1,
+    true
+  ))
+
+  assert(commit_overview_text:find("Ada Lovelace", 1, true))
+  assert(commit_overview_text:find("\n  Title\n", 1, true))
+  assert(commit_overview_text:find("\n  Description\n", 1, true))
+  assert(commit_overview_text:find("\n  Author\n", 1, true))
+  assert(not commit_overview_text:find("\n  URL\n", 1, true))
+  assert(commit_overview_text:find("\n  Date\n", 1, true))
+
+  local commit_overview_lines =
+    inspect._sidebar_overview_lines(commit_overview, 28)
+
+  assert(commit_overview_lines[#commit_overview_lines - 1]
+    == "  Date")
+
+  assert(commit_overview_lines[#commit_overview_lines]
+    :match("^  %a+ %d%d?, %d%d%d%d$"))
+
+  assert(not commit_overview_text:find("Repository", 1, true))
+  assert(not commit_overview_text:find("\nCommit\n", 1, true))
+  assert(not commit_overview_text:find("Authored", 1, true))
+  assert(not commit_overview_text:find("Changes", 1, true))
+
+  local commit_agent_prompt = require("oculus.agent").prompt({
+    overview = commit_overview,
+    {
+      change_file = "lua/inspect.lua",
+      change_repository = root,
+      status = "M",
+      patch = table.concat({
+        "@@ -1 +1 @@",
+        "-old behavior",
+        "+new behavior",
+        "@@ -10 +10 @@",
+        "-second old behavior",
+        "+second new behavior",
+      }, "\n"),
+    },
+  })
+
+  assert(commit_agent_prompt:find("Repository: neovim/neovim", 1, true))
+  assert(commit_agent_prompt:find("File: lua/inspect.lua", 1, true))
+  assert(commit_agent_prompt:find("+new behavior", 1, true))
+
+  assert(commit_agent_prompt:find(
+    "Ensure the paragraph only contains natural language structure with no\ncode, symbols, or sections.",
+    1,
+    true
+  ))
+
+  assert(commit_agent_prompt:find(
+    "Discuss file changes naturally without citing numbered diff chunks.",
+    1,
+    true
+  ))
+
+  assert(not commit_agent_prompt:find("Chunk reference:", 1, true))
+  assert(not commit_agent_prompt:find("#chunk-", 1, true))
+end
+
+do
+  assert(require("oculus.agent").model_from_stderr(table.concat({
+    "OpenAI Codex",
+    "model: gpt-test-agent",
+    "provider: openai",
+  }, "\n")) == "gpt-test-agent")
+
+  assert(require("oculus.agent").model_from_stderr(table.concat({
+    "Google Gemini",
+    "model: gemini-3.7-flash",
+    "provider: google",
+  }, "\n")) == "gemini-3.7-flash")
+
+  local normalized_models = require("oculus.agent").normalize_models({
+    {
+      model = "gpt-5.6-terra",
+      displayName = "Terra",
+      isDefault = true,
+    },
+    { model = "gpt-5.6-luna", displayName = "Luna" },
+    { model = "gpt-5.6-sol", displayName = "Sol" },
+    { model = "gpt-5.6-hidden", displayName = "Hidden", hidden = true },
+    { model = "gpt-5.4", displayName = "GPT 5.4" },
+  })
+
+  assert(#normalized_models == 3)
+  assert(normalized_models[1].id == "gpt-5.6-sol")
+  assert(normalized_models[2].id == "gpt-5.6-terra")
+  assert(normalized_models[2].is_default)
+  assert(normalized_models[3].id == "gpt-5.6-luna")
+
+  local normalized_gemini_models = require("oculus.agent").normalize_models({
+    {
+      model = "gemini-3.7-flash",
+      displayName = "Gemini 3.7 Flash",
+      isDefault = true,
+    },
+    { model = "gemini-2.5-pro", displayName = "Gemini 2.5 Pro" },
+    { model = "gemini-hidden", displayName = "Hidden", hidden = true },
+    { model = "claude-3-opus", displayName = "Claude 3 Opus" },
+  })
+
+  assert(#normalized_gemini_models == 1)
+  assert(normalized_gemini_models[1].id == "gemini-3.7-flash")
+  assert(normalized_gemini_models[1].is_default)
+
+  local normalized_mixed_models = require("oculus.agent").normalize_models({
+    { model = "gemini-3.7-flash", displayName = "Gemini 3.7 Flash" },
+    { model = "gpt-5.6-terra", displayName = "Terra" },
+    { model = "gemini-2.5-pro", displayName = "Gemini 2.5 Pro" },
+    { model = "gpt-5.6-sol", displayName = "Sol" },
+  })
+
+  assert(#normalized_mixed_models == 3)
+  assert(normalized_mixed_models[1].id == "gemini-3.7-flash")
+  assert(normalized_mixed_models[2].id == "gpt-5.6-sol")
+  assert(normalized_mixed_models[3].id == "gpt-5.6-terra")
+  assert(type(require("oculus.agent").gemini_accessible) == "function")
+  assert(type(require("oculus.agent").default_gemini_models) == "table")
+  assert(#require("oculus.agent").default_gemini_models == 1)
+  assert(require("oculus.agent").default_gemini_models[1].model == "gemini-3.7-flash")
+  local agent_module_for_test = require("oculus.agent")
+  local original_accessible_fn = agent_module_for_test.gemini_accessible
+  local original_exepath = vim.fn.exepath
+
+  vim.fn.exepath = function(cmd)
+    if cmd == "codex" then
+      return ""
+    end
+    return original_exepath(cmd)
+  end
+
+  agent_module_for_test.gemini_accessible = function()
+    return true
+  end
+
+  local discovered_agent_models
+
+  agent_module_for_test.models(function(models)
+    discovered_agent_models = models
   end)
 
-  vim.api.nvim_win_set_cursor(viewport_win, { expected.cursor, 0 })
-  inspect._normalize_inspection_view(viewport_win)
-  local view = vim.api.nvim_win_call(viewport_win, vim.fn.winsaveview)
-  local cursor = vim.api.nvim_win_get_cursor(viewport_win)
-  assert(view.topline == expected.topline)
-  assert(cursor[2] == expected.column)
-end
-
-local comment = inspect.activity_comment({
-  type = "PullRequestReviewCommentEvent",
-  payload = {
-    comment = {
-      body = "Please keep this branch explicit.",
-      path = "lua/oculus/inspect.lua",
-      start_line = 15,
-      line = 17,
-      side = "RIGHT",
-      commit_id = "aaaaaaaa",
-    },
-  },
-})
-
-assert(comment)
-assert(comment.body == "Please keep this branch explicit.")
-assert(comment.path == "lua/oculus/inspect.lua")
-assert(comment.line == 15)
-assert(comment.side == "change")
-assert(comment.commit == "aaaaaaaa")
-
-local left_comment = inspect.activity_comment({
-  type = "PullRequestReviewCommentEvent",
-  payload = {
-    comment = {
-      body = "This was removed.",
-      path = "lua/oculus/inspect.lua",
-      original_line = 12,
-      side = "LEFT",
-      original_commit_id = "bbbbbbbb",
-    },
-  },
-})
-
-assert(left_comment)
-assert(left_comment.line == 12)
-assert(left_comment.side == "parent")
-assert(left_comment.commit == "bbbbbbbb")
-
-assert(inspect.activity_comment({
-  type = "IssueCommentEvent",
-  payload = {
-    comment = {
-      body = "Not attached to code.",
-      path = "README.md",
-      line = 1,
-    },
-  },
-}) == nil)
-
-local comment_view = assert(inspect._comment_float({
-  tab = vim.api.nvim_get_current_tabpage(),
-  win = viewport_win,
-  buf = viewport_buf,
-}, comment))
-
-assert(vim.api.nvim_get_current_win() == viewport_win)
-local comment_config = vim.api.nvim_win_get_config(comment_view.win)
-assert(comment_config.relative == "win")
-assert(comment_config.win == viewport_win)
-assert(comment_config.anchor == "SW")
-assert(comment_config.bufpos[1] == comment.line - 1)
-assert(comment_config.col > 0)
-assert(comment_config.focusable == false)
-
-assert(vim.api.nvim_buf_get_lines(
-  comment_view.buf,
-  0,
-  -1,
-  false
-)[1] == comment.body)
-
-vim.api.nvim_win_close(comment_view.win, true)
-vim.api.nvim_buf_set_lines(viewport_buf, 0, -1, false, { "" })
-vim.api.nvim_win_set_cursor(viewport_win, { 1, 0 })
-vim.bo[viewport_buf].modified = false
-
-local shortened_sidebar_row = inspect._sidebar_row(
-  "a-very-long-changed-file-name.lua",
-  24
-)
-
-assert(shortened_sidebar_row.line:match("^• …"))
-assert(shortened_sidebar_row.line:match(" P C $"))
-
-assert(shortened_sidebar_row.parent_column
-  < shortened_sidebar_row.change_column)
-
-assert(vim.fn.strdisplaywidth(shortened_sidebar_row.line) == 24)
-
-local versioned_sidebar_row = inspect._sidebar_row(
-  "inspect.lua",
-  24,
-  2
-)
-
-assert(versioned_sidebar_row.line:match("^• inspect%.lua v%.2"))
-assert(versioned_sidebar_row.line:match(" P C $"))
-assert(versioned_sidebar_row.version_column)
-
-assert(versioned_sidebar_row.version_end_column
-  == versioned_sidebar_row.version_column + 3)
-
-assert(vim.fn.strdisplaywidth(versioned_sidebar_row.line) == 24)
-
-local versioned_sessions = inspect._assign_sidebar_versions({
-  { file = "lua/oculus/inspect.lua", commit_index = 1 },
-  { file = "lua/oculus/inspect.lua", commit_index = 2 },
-  { file = "tests/inspect.lua", commit_index = 2 },
-  { file = "lua/oculus/inspect.lua", commit_index = 3 },
-})
-
-assert(versioned_sessions[1].sidebar_version == 1)
-assert(versioned_sessions[2].sidebar_version == 2)
-assert(versioned_sessions[3].sidebar_version == nil)
-assert(versioned_sessions[4].sidebar_version == 3)
-assert(versioned_sessions[1].sidebar_version_count == 3)
-
-assert(inspect._sidebar_chunk_row(
-  { old_count = 1, new_start = 25, new_count = 4 },
-  false
-) == "  ├─ 25-28 (+3)")
-
-assert(inspect._sidebar_chunk_row(
-  { old_count = 2, new_start = 31, new_count = 0 },
-  true
-) == "  └─ 31-31 (-2)")
-
-assert(inspect._sidebar_chunk_row(
-  { old_count = 2, new_start = 40, new_count = 2 },
-  true
-) == "  └─ 40-41")
-
-assert(inspect._sidebar_file(
-  "a/very/long/path/to/a/changed/file.lua"
-) == "file.lua")
-
-assert(inspect._sidebar_file(
-  "lua\\oculus\\inspect.lua"
-) == "inspect.lua")
-
-assert(inspect._sidebar_file("README.md") == "README.md")
-
-vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
-  { change_file = "tests/unit/inspect_spec.lua" },
-  { change_file = "lua/oculus/window.lua" },
-  { change_file = "README.md" },
-  { parent_file = "lua/init.lua" },
-  { change_file = "LICENSE" },
-  { change_file = "tests/inspect_spec.lua" },
-  { change_file = "lua/oculus/inspect.lua" },
-})
-
-assert(vim.deep_equal(
-  vim.tbl_map(function(inspection)
-    return inspection.change_file or inspection.parent_file
-  end, vim.g.oculus_test_sorted_inspections),
-  {
-    "LICENSE",
-    "README.md",
-    "lua/init.lua",
-    "tests/inspect_spec.lua",
-    "lua/oculus/inspect.lua",
-    "lua/oculus/window.lua",
-    "tests/unit/inspect_spec.lua",
-  }
-))
-
-vim.g.oculus_test_sorted_inspections = nil
-
-vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
-  { change_file = "src/late.lua", commit_index = 3, file_index = 1 },
-  { change_file = "src/first.lua", commit_index = 1, file_index = 1 },
-  { change_file = "src/late.lua", commit_index = 2, file_index = 1 },
-  { change_file = "README.md", commit_index = 2, file_index = 2 },
-  { change_file = "src/first.lua", commit_index = 3, file_index = 2 },
-})
-
-assert(vim.deep_equal(
-  vim.tbl_map(function(inspection)
-    return (inspection.change_file or inspection.parent_file)
-      .. ":"
-      .. inspection.commit_index
-  end, vim.g.oculus_test_sorted_inspections),
-  {
-    "src/first.lua:1",
-    "src/first.lua:3",
-    "README.md:2",
-    "src/late.lua:2",
-    "src/late.lua:3",
-  }
-))
-
-vim.g.oculus_test_sorted_inspections = nil
-
-assert(inspect._sidebar_target_role(
-  1,
-  "change",
-  { pair_index = 2 }
-) == "parent")
-
-assert(inspect._sidebar_target_role(
-  1,
-  "change",
-  { pair_index = 1 }
-) == "change")
-
-assert(inspect._sidebar_target_role(
-  1,
-  "parent",
-  { pair_index = 2 },
-  { kind = "commit", [2] = { last_role = "change" } },
-  "parent"
-) == "change")
-
-assert(inspect._chunk_navigation_role(
-  { kind = "commit" },
-  {},
-  "change",
-  { last_role = "change" },
-  true
-) == "change")
-
-assert(inspect._inspection_directory(
-  root,
-  "lua/oculus/inspect.lua"
-) == vim.fs.joinpath(root, "lua", "oculus"))
-
-assert(inspect._inspection_directory(
-  root,
-  "not-present/inspect.lua"
-) == root)
-
-assert(inspect._inspection_statusline_path({
-  repository = root,
-  source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
-  file = "lua/oculus/inspect.lua",
-}) == vim.fs.basename(root) .. "/lua/oculus/inspect.lua")
-
-assert(inspect._inspection_buffer_name({
-  source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
-  commit = "0123456789abcdef",
-  role = "change",
-  pair_index = 2,
-}) == vim.fs.joinpath(root, "lua", "oculus", "inspect.lua")
-  .. "@oculus-change-0123456789ab-2")
-
-local parsed = inspect._parse_commit_url(
-  "https://github.com/neovim/neovim/commit/"
-    .. "0123456789abcdef0123456789abcdef01234567#diff"
-)
-
-assert(parsed)
-assert(parsed.owner == "neovim")
-assert(parsed.repo == "neovim")
-assert(parsed.sha == "0123456789abcdef0123456789abcdef01234567")
-assert(parsed.remote_url == "https://github.com/neovim/neovim.git")
-
-local codeberg_commit = inspect._parse_commit_url(
-  "https://codeberg.org/ziglang/zig/commit/0123456"
-)
-
-assert(codeberg_commit)
-assert(codeberg_commit.forge == "codeberg")
-assert(codeberg_commit.owner == "ziglang")
-assert(codeberg_commit.repo == "zig")
-assert(codeberg_commit.sha == "0123456")
-assert(codeberg_commit.remote_url == "https://codeberg.org/ziglang/zig.git")
-assert(inspect._parse_commit_url("https://github.com/a/b/issues/1") == nil)
-assert(inspect._parse_commit_url("https://github.com/a/b/commit/123") == nil)
-
-assert(inspect._parse_commit_url(
-  "https://github.com/a/b/commit/01234567890123456789012345678901234567890"
-) == nil)
-
-assert(inspect._parse_commit_url(
-  "https://github.com/../b/commit/0123456"
-) == nil)
-
-local pull_request = inspect._parse_pull_request_url(
-  "https://github.com/neovim/neovim/pull/123/files#diff-test"
-)
-
-assert(pull_request)
-assert(pull_request.kind == "pull_request")
-assert(pull_request.owner == "neovim")
-assert(pull_request.repo == "neovim")
-assert(pull_request.number == 123)
-
-assert(inspect._parse_pull_request_url(
-  "https://github.com/neovim/neovim/issues/123#issuecomment-456"
-) == nil)
-
-assert(inspect._parse_pull_request_url(
-  "https://github.com/neovim/neovim/issues/not-a-number"
-) == nil)
-
-local issue = inspect._parse_issue_url(
-  "https://github.com/neovim/neovim/issues/123#issuecomment-456"
-)
-
-assert(issue)
-assert(issue.kind == "issue")
-assert(issue.forge == "github")
-assert(issue.owner == "neovim")
-assert(issue.repo == "neovim")
-assert(issue.number == 123)
-
-local codeberg_issue = inspect._parse_issue_url(
-  "https://codeberg.org/ziglang/zig/issues/42"
-)
-
-assert(codeberg_issue)
-assert(codeberg_issue.kind == "issue")
-assert(codeberg_issue.forge == "codeberg")
-assert(codeberg_issue.number == 42)
-
-local codeberg_pull_request = inspect._parse_pull_request_url(
-  "https://codeberg.org/ziglang/zig/pulls/35754#issuecomment-1"
-)
-
-assert(codeberg_pull_request)
-assert(codeberg_pull_request.forge == "codeberg")
-assert(codeberg_pull_request.owner == "ziglang")
-assert(codeberg_pull_request.repo == "zig")
-assert(codeberg_pull_request.number == 35754)
-assert(not codeberg_pull_request.via_issue)
-
-assert(codeberg_pull_request.remote_url
-  == "https://codeberg.org/ziglang/zig.git")
-
-local resolved_pull_request = inspect._apply_pull_request(pull_request, {
-  title = "Test pull request",
-  body = "This pull request improves the Inspect workflow.",
-  author = "reviewer",
-  state = "open",
-  draft = false,
-  merged = false,
-  html_url = "https://github.com/neovim/neovim/pull/123",
-  created_at = "2026-07-30T12:00:00-04:00",
-  base_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  base_ref = "main",
-  head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  head_ref = "feature",
-  commit_count = 3,
-  commits = {
-    { commit = { message = "Add overview support\n\nDetails" } },
-    { commit = { message = "Tidy overview layout" } },
-  },
-})
-
-assert(resolved_pull_request.base_ref == "main")
-assert(resolved_pull_request.head_ref == "feature")
-assert(resolved_pull_request.base_sha:match("^a+$"))
-assert(resolved_pull_request.head_sha:match("^b+$"))
-assert(resolved_pull_request.commit_count == 3)
-assert(#resolved_pull_request.commits == 2)
-assert(resolved_pull_request.author == "reviewer")
-assert(resolved_pull_request.created_at == "2026-07-30T12:00:00-04:00")
-
-local pull_request_overview = inspect._inspection_overview(
-  resolved_pull_request,
-  {}
-)
-
-local pull_request_overview_text = table.concat(
-  inspect._sidebar_overview_lines(pull_request_overview, 28),
-  "\n"
-)
-
-assert(not pull_request_overview_text:match("\n$"))
-
-assert(pull_request_overview_text:find(
-  "OVERVIEW",
-  1,
-  true
-))
-
-assert(pull_request_overview_text:match("^OVERVIEW\n"))
-
-assert(pull_request_overview_text:gsub("%s+", " "):find(
-  "Title Test pull request",
-  1,
-  true
-))
-
-assert(pull_request_overview_text:find("#123", 1, true))
-
-assert(pull_request_overview_text:find(
-  "\n  Title\n  Test pull request",
-  1,
-  true
-))
-
-assert(pull_request_overview_text:find("@reviewer", 1, true))
-
-assert(pull_request_overview_text:find(
-  "This pull request improves",
-  1,
-  true
-))
-
-assert(pull_request_overview_text:find("\n  Title\n", 1, true))
-assert(pull_request_overview_text:find("\n  Description\n", 1, true))
-assert(pull_request_overview_text:find("\n  Author\n", 1, true))
-assert(pull_request_overview_text:find("\n  Commits\n", 1, true))
-assert(pull_request_overview_text:find("Add overview support", 1, true))
-assert(pull_request_overview_text:find("Tidy overview layout", 1, true))
-assert(not pull_request_overview_text:find("\n  URL\n", 1, true))
-assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
-assert(pull_request_overview_text:find("\n  Status\n", 1, true))
-assert(pull_request_overview_text:find("\n  Date\n", 1, true))
-
-local pull_request_overview_lines =
-  inspect._sidebar_overview_lines(pull_request_overview, 28)
-
-assert(pull_request_overview_lines[#pull_request_overview_lines - 1]
-  == "  Date")
-
-assert(pull_request_overview_lines[#pull_request_overview_lines]
-  :match("^  %a+ %d%d?, %d%d%d%d$"))
-
-assert(not pull_request_overview_text:find("Repository", 1, true))
-assert(not pull_request_overview_text:find("Branches", 1, true))
-assert(not pull_request_overview_text:find("Changes", 1, true))
-assert(not pull_request_overview_text:find("Created", 1, true))
-assert(not pull_request_overview_text:find("Updated", 1, true))
-assert(not pull_request_overview_text:find("changed files", 1, true))
-
-local parsed_commit_overview = inspect._parse_commit_overview(
-  table.concat({
-    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "Ada Lovelace",
-    "ada@example.com",
-    "2026-07-30T12:00:00-04:00",
-    "Keep Inspect context visible",
-    "Show the relevant commit details in the sidebar.",
-  }, "\0")
-)
-
-assert(parsed_commit_overview)
-assert(parsed_commit_overview.author_name == "Ada Lovelace")
-assert(parsed_commit_overview.subject == "Keep Inspect context visible")
-
-local commit_overview = inspect._inspection_overview({
-  kind = "commit",
-  forge = "github",
-  host = "github.com",
-  owner = "neovim",
-  repo = "neovim",
-  sha = parsed_commit_overview.sha,
-  commit_details = parsed_commit_overview,
-}, {
-  {
-    change_file = "lua/inspect.lua",
-    commit_index = 1,
-    hunks = {
-      { old_count = 2, new_count = 5 },
-    },
-  },
-})
-
-local commit_overview_text = table.concat(
-  inspect._sidebar_overview_lines(commit_overview, 28),
-  "\n"
-)
-
-assert(commit_overview_text:match("^OVERVIEW\n"))
-
-assert(commit_overview_text:gsub("%s+", " "):find(
-  "Title Keep Inspect context visible",
-  1,
-  true
-))
-
-assert(commit_overview_text:find(
-  "\n  Title\n  Keep Inspect context",
-  1,
-  true
-))
-
-assert(commit_overview_text:find("Ada Lovelace", 1, true))
-assert(commit_overview_text:find("\n  Title\n", 1, true))
-assert(commit_overview_text:find("\n  Description\n", 1, true))
-assert(commit_overview_text:find("\n  Author\n", 1, true))
-assert(not commit_overview_text:find("\n  URL\n", 1, true))
-assert(commit_overview_text:find("\n  Date\n", 1, true))
-
-local commit_overview_lines =
-  inspect._sidebar_overview_lines(commit_overview, 28)
-
-assert(commit_overview_lines[#commit_overview_lines - 1]
-  == "  Date")
-
-assert(commit_overview_lines[#commit_overview_lines]
-  :match("^  %a+ %d%d?, %d%d%d%d$"))
-
-assert(not commit_overview_text:find("Repository", 1, true))
-assert(not commit_overview_text:find("\nCommit\n", 1, true))
-assert(not commit_overview_text:find("Authored", 1, true))
-assert(not commit_overview_text:find("Changes", 1, true))
-
-local commit_agent_prompt = require("oculus.agent").prompt({
-  overview = commit_overview,
-  {
-    change_file = "lua/inspect.lua",
-    change_repository = root,
-    status = "M",
-    patch = table.concat({
-      "@@ -1 +1 @@",
-      "-old behavior",
-      "+new behavior",
-      "@@ -10 +10 @@",
-      "-second old behavior",
-      "+second new behavior",
-    }, "\n"),
-  },
-})
-
-assert(commit_agent_prompt:find("Repository: neovim/neovim", 1, true))
-assert(commit_agent_prompt:find("File: lua/inspect.lua", 1, true))
-assert(commit_agent_prompt:find("+new behavior", 1, true))
-
-assert(commit_agent_prompt:find(
-  "Ensure the paragraph only contains natural language structure with no\ncode, symbols, or sections.",
-  1,
-  true
-))
-
-assert(commit_agent_prompt:find(
-  "Discuss file changes naturally without citing numbered diff chunks.",
-  1,
-  true
-))
-
-assert(not commit_agent_prompt:find("Chunk reference:", 1, true))
-assert(not commit_agent_prompt:find("#chunk-", 1, true))
-
-assert(require("oculus.agent").model_from_stderr(table.concat({
-  "OpenAI Codex",
-  "model: gpt-test-agent",
-  "provider: openai",
-}, "\n")) == "gpt-test-agent")
-
-assert(require("oculus.agent").model_from_stderr(table.concat({
-  "Google Gemini",
-  "model: gemini-3.7-flash",
-  "provider: google",
-}, "\n")) == "gemini-3.7-flash")
-
-local normalized_models = require("oculus.agent").normalize_models({
-  {
-    model = "gpt-5.6-terra",
-    displayName = "Terra",
-    isDefault = true,
-  },
-  { model = "gpt-5.6-luna", displayName = "Luna" },
-  { model = "gpt-5.6-sol", displayName = "Sol" },
-  { model = "gpt-5.6-hidden", displayName = "Hidden", hidden = true },
-  { model = "gpt-5.4", displayName = "GPT 5.4" },
-})
-
-assert(#normalized_models == 3)
-assert(normalized_models[1].id == "gpt-5.6-sol")
-assert(normalized_models[2].id == "gpt-5.6-terra")
-assert(normalized_models[2].is_default)
-assert(normalized_models[3].id == "gpt-5.6-luna")
-
-local normalized_gemini_models = require("oculus.agent").normalize_models({
-  {
-    model = "gemini-3.7-flash",
-    displayName = "Gemini 3.7 Flash",
-    isDefault = true,
-  },
-  { model = "gemini-2.5-pro", displayName = "Gemini 2.5 Pro" },
-  { model = "gemini-hidden", displayName = "Hidden", hidden = true },
-  { model = "claude-3-opus", displayName = "Claude 3 Opus" },
-})
-
-assert(#normalized_gemini_models == 1)
-assert(normalized_gemini_models[1].id == "gemini-3.7-flash")
-assert(normalized_gemini_models[1].is_default)
-
-local normalized_mixed_models = require("oculus.agent").normalize_models({
-  { model = "gemini-3.7-flash", displayName = "Gemini 3.7 Flash" },
-  { model = "gpt-5.6-terra", displayName = "Terra" },
-  { model = "gemini-2.5-pro", displayName = "Gemini 2.5 Pro" },
-  { model = "gpt-5.6-sol", displayName = "Sol" },
-})
-
-assert(#normalized_mixed_models == 3)
-assert(normalized_mixed_models[1].id == "gemini-3.7-flash")
-assert(normalized_mixed_models[2].id == "gpt-5.6-sol")
-assert(normalized_mixed_models[3].id == "gpt-5.6-terra")
-assert(type(require("oculus.agent").gemini_accessible) == "function")
-assert(type(require("oculus.agent").default_gemini_models) == "table")
-assert(#require("oculus.agent").default_gemini_models == 1)
-assert(require("oculus.agent").default_gemini_models[1].model == "gemini-3.7-flash")
-local agent_module_for_test = require("oculus.agent")
-local original_accessible_fn = agent_module_for_test.gemini_accessible
-
-agent_module_for_test.gemini_accessible = function()
-  return true
-end
-
-local discovered_agent_models
-
-agent_module_for_test.models(function(models)
-  discovered_agent_models = models
-end)
-
-assert(discovered_agent_models ~= nil)
-local found_gemini_37_flash = false
-
-for _, model_entry in ipairs(discovered_agent_models) do
-  if model_entry.id == "gemini-3.7-flash" then
-    found_gemini_37_flash = true
+  vim.wait(1000, function()
+    return discovered_agent_models ~= nil
+  end)
+
+  assert(discovered_agent_models ~= nil)
+  local found_gemini_37_flash = false
+
+  for _, model_entry in ipairs(discovered_agent_models) do
+    if model_entry.id == "gemini-3.7-flash" then
+      found_gemini_37_flash = true
+    end
   end
-end
 
-assert(found_gemini_37_flash)
-agent_module_for_test.gemini_accessible = original_accessible_fn
+  assert(found_gemini_37_flash)
+  agent_module_for_test.gemini_accessible = original_accessible_fn
+  vim.fn.exepath = original_exepath
 
-local normalized_explanation, normalized_locations =
-  require("oculus.agent").normalize_result(vim.json.encode({
-    explanation = "A structured explanation.",
-    locations = {
-      {
-        path = vim.fs.basename(root) .. "/one.lua",
-        line = 17,
-        reason = "First",
+  local normalized_explanation, normalized_locations =
+    require("oculus.agent").normalize_result(vim.json.encode({
+      explanation = "A structured explanation.",
+      locations = {
+        {
+          path = vim.fs.basename(root) .. "/one.lua",
+          line = 17,
+          reason = "First",
+        },
+        { path = "two.lua", line = "24", reason = "Second" },
+        { path = "three.lua", reason = "Third" },
+        { path = "four.lua", reason = "Fourth" },
+        { path = "five.lua", reason = "Fifth" },
+        { path = "six.lua", reason = "Must be omitted" },
       },
-      { path = "two.lua", line = "24", reason = "Second" },
-      { path = "three.lua", reason = "Third" },
-      { path = "four.lua", reason = "Fourth" },
-      { path = "five.lua", reason = "Fifth" },
-      { path = "six.lua", reason = "Must be omitted" },
-    },
-  }), true, root)
+    }), true, root)
 
-assert(normalized_explanation == "A structured explanation.")
-assert(#normalized_locations == 3)
+  assert(normalized_explanation == "A structured explanation.")
+  assert(#normalized_locations == 3)
 
-assert(normalized_locations[1].path
-  == vim.fs.basename(root) .. "/one.lua")
+  assert(normalized_locations[1].path
+    == vim.fs.basename(root) .. "/one.lua")
 
-assert(normalized_locations[1].line == 17)
-assert(normalized_locations[2].line == 24)
+  assert(normalized_locations[1].line == 17)
+  assert(normalized_locations[2].line == 24)
 
-assert(normalized_locations[3].path
-  == vim.fs.basename(root) .. "/three.lua")
+  assert(normalized_locations[3].path
+    == vim.fs.basename(root) .. "/three.lua")
+end
 
 local persisted_overview_file = vim.fn.tempname()
 local persisted_overviews = {}
@@ -3361,33 +3391,39 @@ assert(not inspect._entered_oil_subdirectory(
   root
 ))
 
-vim.api.nvim_buf_set_lines(
-  viewport_buf,
-  0,
-  -1,
-  false,
-  { "nested", "unchanged.lua", "new.lua", "old.lua" }
-)
+do
+  local oil_test_buf = vim.api.nvim_create_buf(false, true)
 
-assert(inspect._first_changed_oil_file_line(
-  viewport_buf,
-  oil_session,
-  "change",
-  "lua/oculus",
-  {
-    get_entry_on_line = function(_, line)
-      if line == 1 then
-        return { name = "nested", type = "directory" }
-      elseif line == 2 then
-        return { name = "unchanged.lua", type = "file" }
-      elseif line == 3 then
-        return { name = "new.lua", type = "file" }
-      end
+  vim.api.nvim_buf_set_lines(
+    oil_test_buf,
+    0,
+    -1,
+    false,
+    { "nested", "unchanged.lua", "new.lua", "old.lua" }
+  )
 
-      return { name = "old.lua", type = "file" }
-    end,
-  }
-) == 3)
+  assert(inspect._first_changed_oil_file_line(
+    oil_test_buf,
+    oil_session,
+    "change",
+    "lua/oculus",
+    {
+      get_entry_on_line = function(_, line)
+        if line == 1 then
+          return { name = "nested", type = "directory" }
+        elseif line == 2 then
+          return { name = "unchanged.lua", type = "file" }
+        elseif line == 3 then
+          return { name = "new.lua", type = "file" }
+        end
+
+        return { name = "old.lua", type = "file" }
+      end,
+    }
+  ) == 3)
+
+  vim.api.nvim_buf_delete(oil_test_buf, { force = true })
+end
 
 local hunks = inspect._parse_hunks(table.concat({
   "@@ -10,2 +10,3 @@ local function changed()",
