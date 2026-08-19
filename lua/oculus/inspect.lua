@@ -7473,7 +7473,7 @@ local function load_tab(
     vim.api.nvim_set_current_win(endpoint.win)
   end
 
-  local working_directory = inspection_directory(path, file)
+  local working_directory = git.inspection_directory(path, file)
   vim.cmd("tcd " .. vim.fn.fnameescape(working_directory))
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
