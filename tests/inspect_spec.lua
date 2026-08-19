@@ -217,7 +217,7 @@ assert(oculus.config.inspect_next_file == nil)
 assert(oculus.config.persist_inspect_overviews == true)
 
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "change")
-  == "change")
+  == "parent")
 
 assert(inspect._progressed_chunk_role({ kind = "commit" }, "parent")
   == "parent")
@@ -1058,6 +1058,59 @@ do
     "change",
     { last_role = "change" },
     true
+  ) == "parent")
+
+  assert(inspect._chunk_navigation_role(
+    { kind = "commit" },
+    {},
+    "change",
+    { last_role = "change" },
+    false
+  ) == "change")
+
+  assert(inspect._sidebar_target_role(
+    1,
+    "change",
+    { pair_index = 1 },
+    { kind = "commit" },
+    "change",
+    1
+  ) == "parent")
+
+  assert(inspect._sidebar_target_role(
+    1,
+    "change",
+    { pair_index = 1 },
+    { kind = "commit" },
+    "change",
+    -1
+  ) == "change")
+
+  assert(inspect._sidebar_target_role(
+    1,
+    "parent",
+    { pair_index = 1 },
+    { kind = "commit" },
+    "parent",
+    -1
+  ) == "parent")
+
+  assert(inspect._sidebar_target_role(
+    1,
+    "change",
+    { pair_index = 2 },
+    { kind = "commit", [2] = { last_role = "change" } },
+    "change",
+    1
+  ) == "parent")
+
+  assert(inspect._sidebar_target_role(
+    2,
+    "change",
+    { pair_index = 1 },
+    { kind = "commit", [1] = { last_role = "change" } },
+    "change",
+    -1
   ) == "change")
 
   assert(inspect._inspection_directory(
