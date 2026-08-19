@@ -2623,6 +2623,33 @@ do
   assert(#marks == 1)
   assert(marks[1][4].virt_text[1][1]:find("%[1/1%]"))
 
+  local test_session2 = {
+    file = "test_virtual_file2.lua",
+    repository = root,
+    status = "M",
+    parent_content = { "a", "b", "c", "d" },
+    change_content = { "a", "b mod", "c", "d mod" },
+    hunks = {
+      { old_start = 2, old_count = 1, new_start = 2, new_count = 1 },
+      { old_start = 4, old_count = 1, new_start = 4, new_count = 1 },
+    },
+    active_chunk = 2,
+  }
+  local p_buf2 = vim.api.nvim_create_buf(false, true)
+  local c_buf2 = vim.api.nvim_create_buf(false, true)
+  test_session2.parent = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = p_buf2 }
+  test_session2.change = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = c_buf2 }
+
+  local multi_grp = {
+    test_session,
+    test_session2,
+    chunk_view_mode = "virtual",
+  }
+  inspect._refresh_virtual_counters(multi_grp, test_session2)
+  local marks2 = vim.api.nvim_buf_get_extmarks(c_buf2, inspect._virtual_counter_ns, 0, -1, { details = true })
+  assert(#marks2 == 1)
+  assert(marks2[1][4].virt_text[1][1]:find("%[2/2%]"))
+
   test_grp.chunk_view_mode = "sidebar"
   inspect._clear_virtual_counters(test_grp)
   local marks_after = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
