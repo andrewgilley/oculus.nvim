@@ -1976,16 +1976,16 @@ end
 
 assert(overview_footer_buf)
 
-assert(vim.deep_equal(
-  vim.api.nvim_buf_get_lines(overview_footer_buf, 0, -1, false),
-  {
-    "  " .. string.rep(
-      "─",
-      math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
-    ),
-    "  b browser   e explain   p path   w worktree   s sidebar   c close   q quit",
-  }
+local overview_footer_lines =
+  vim.api.nvim_buf_get_lines(overview_footer_buf, 0, -1, false)
+
+assert(overview_footer_lines[1] == "  " .. string.rep(
+  "─",
+  math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
 ))
+
+assert(overview_footer_lines[2]:find("  b browser   e explain   p path   w worktree   s sidebar   c close", 1, true))
+assert(overview_footer_lines[2]:sub(-#("q quit")) == "q quit")
 
 assert(issue_overview:find("  Title\n", 1, true))
 
@@ -2406,9 +2406,7 @@ local focused_path_footer = vim.api.nvim_buf_get_lines(
 
 assert(focused_path_footer:find("<Space> toggle", 1, true))
 assert(focused_path_footer:find("<CR> open paths", 1, true))
-
-assert(focused_path_footer:sub(-#("<Space> toggle   <CR> open paths"))
-  == "<Space> toggle   <CR> open paths")
+assert(focused_path_footer:sub(-#("q quit")) == "q quit")
 
 assert(explanation_text:find(
   "Agent suggestion (gpt-5.6-test-agent)",

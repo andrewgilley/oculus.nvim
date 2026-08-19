@@ -4012,32 +4012,34 @@ function M._overview_ui.render_footer(group)
       and "v virtual"
     or "s sidebar"
 
-  local commands = issue_patches
-      and ("  b browser   e explain   p path   w worktree   " .. view_command .. "   " .. close_command .. "   q quit")
-    or ("  b browser   e explain   " .. view_command .. "   " .. close_command .. "   q quit")
+  local left_commands = issue_patches
+      and ("  b browser   e explain   p path   w worktree   " .. view_command .. "   " .. close_command)
+    or ("  b browser   e explain   " .. view_command .. "   " .. close_command)
+
+  local right_commands = "q quit"
+
+  if #(group.overview_agent_locations or {}) > 0
+    and group.overview_agent_mode == "patch_locations"
+  then
+    right_commands = "<Space> toggle   <CR> open paths   q quit"
+  end
+
+  local padding = math.max(
+    3,
+    width
+      - 2
+      - vim.fn.strdisplaywidth(left_commands)
+      - vim.fn.strdisplaywidth(right_commands)
+  )
+
+  local commands = left_commands
+    .. string.rep(" ", padding)
+    .. right_commands
 
   local close_spinner_col
   if close_spinner then
     local spinner_start = commands:find(close_spinner, 1, true)
     close_spinner_col = spinner_start and (spinner_start - 1) or nil
-  end
-
-  if #(group.overview_agent_locations or {}) > 0
-    and group.overview_agent_mode == "patch_locations"
-  then
-    local path_commands = "<Space> toggle   <CR> open paths"
-
-    local padding = math.max(
-      1,
-      width
-        - 2
-        - vim.fn.strdisplaywidth(commands)
-        - vim.fn.strdisplaywidth(path_commands)
-    )
-
-    commands = commands
-      .. string.rep(" ", padding)
-      .. path_commands
   end
 
   local footer_lines = {
