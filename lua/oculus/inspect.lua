@@ -6161,10 +6161,13 @@ function M._overview_ui.open_worktree_workflow(group, opts)
 
             if ok then
               vim.cmd("tcd " .. vim.fn.fnameescape(worktree_dir))
-              vim.bo.modifiable = true
-              vim.bo.readonly = false
               local patch_win = vim.api.nvim_get_current_win()
               local patch_buf = vim.api.nvim_get_current_buf()
+              vim.bo[patch_buf].buftype = ""
+              vim.bo[patch_buf].modifiable = true
+              vim.bo[patch_buf].readonly = false
+              vim.b[patch_buf].oculus_inspect_repository = worktree_dir
+              vim.b[patch_buf].oculus_inspect_directory = worktree_dir
 
               for option, value in pairs(code_options) do
                 if option ~= "highlight_namespace" then
@@ -6196,6 +6199,8 @@ function M._overview_ui.open_worktree_workflow(group, opts)
                 path = relative:gsub("\\", "/"),
                 line = target_line,
                 location = location,
+                repository = worktree_dir,
+                directory = worktree_dir,
               }
             end
           end
@@ -6266,6 +6271,11 @@ function M._overview_ui.open_worktree_workflow(group, opts)
         vim.cmd("tcd " .. vim.fn.fnameescape(worktree_dir))
         local target_win = vim.api.nvim_get_current_win()
         local target_buf = vim.api.nvim_get_current_buf()
+        vim.bo[target_buf].buftype = ""
+        vim.bo[target_buf].modifiable = true
+        vim.bo[target_buf].readonly = false
+        vim.b[target_buf].oculus_inspect_repository = worktree_dir
+        vim.b[target_buf].oculus_inspect_directory = worktree_dir
 
         local patch_item = {
           tab = vim.api.nvim_get_current_tabpage(),
@@ -6273,6 +6283,8 @@ function M._overview_ui.open_worktree_workflow(group, opts)
           buf = target_buf,
           path = relative,
           line = 1,
+          repository = worktree_dir,
+          directory = worktree_dir,
         }
 
         group.overview_patch_tabs = group.overview_patch_tabs or {}
@@ -7346,9 +7358,13 @@ function M._overview_ui.prepare_patch_sidebar(source_group, opened)
   local repository = require("oculus.agent").repository(source_group)
 
   for index, patch in ipairs(opened) do
+    local patch_repo = patch.repository or repository
+    local patch_dir = patch.directory or patch_repo
+
     group[index] = {
       file = patch.path,
-      repository = repository,
+      repository = patch_repo,
+      directory = patch_dir,
       sections = {
         {
           line = patch.line,
@@ -7359,6 +7375,14 @@ function M._overview_ui.prepare_patch_sidebar(source_group, opened)
       active_chunk = 1,
       last_role = "issue",
     }
+
+    if patch.buf and vim.api.nvim_buf_is_valid(patch.buf) then
+      vim.bo[patch.buf].buftype = ""
+      vim.bo[patch.buf].modifiable = true
+      vim.bo[patch.buf].readonly = false
+      vim.b[patch.buf].oculus_inspect_repository = patch_repo
+      vim.b[patch.buf].oculus_inspect_directory = patch_dir
+    end
   end
 
   prepare_inspection_sidebar(group)

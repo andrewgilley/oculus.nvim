@@ -2562,6 +2562,13 @@ do
       and #vim.api.nvim_list_tabpages() > tabs_before_wt
   end), "Worktree was not created or tab was not opened")
 
+  local wt_buf = vim.api.nvim_get_current_buf()
+  assert(vim.bo[wt_buf].modifiable == true)
+  assert(vim.bo[wt_buf].buftype == "")
+  assert(vim.bo[wt_buf].readonly == false)
+  assert(vim.b[wt_buf].oculus_inspect_repository == test_worktree_dir)
+  assert(vim.fs.normalize(vim.fn.getcwd()) == vim.fs.normalize(test_worktree_dir))
+
   if #vim.api.nvim_list_tabpages() > tabs_before_wt then
     vim.cmd("tabclose")
   end
