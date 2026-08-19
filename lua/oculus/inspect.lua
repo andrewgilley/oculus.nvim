@@ -1321,7 +1321,7 @@ local function place_sign(buf, line, text, highlight)
   vim.api.nvim_buf_set_extmark(buf, change_ns, line - 1, 0, {
     sign_text = text,
     sign_hl_group = highlight,
-    priority = 50,
+    priority = 100,
   })
 end
 
@@ -2212,8 +2212,7 @@ function M._virtual_counter.place_virtual_counter(buf, line, chunk_index, chunk_
       },
     },
     virt_text_pos = "eol",
-    hl_mode = "combine",
-    priority = 50,
+    priority = 10,
   })
 end
 
