@@ -3397,12 +3397,13 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
   end
 
   local active = math.min(math.max(1, session.active_chunk or 1), file_chunks)
+  local is_virtual = (group.chunk_view_mode or "virtual") ~= "sidebar"
 
   if group.kind == "issue" then
     if valid_endpoint(session.issue) then
       local buf = session.issue.buf
       vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
-      if group.chunk_view_mode == "virtual" then
+      if is_virtual then
         local sections = session.sections or {}
         local section = sections[active] or sections[1]
         if section and section.line then
@@ -3421,7 +3422,7 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
   if valid_endpoint(session.parent) then
     local buf = session.parent.buf
     vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
-    if group.chunk_view_mode == "virtual" then
+    if is_virtual then
       local hunks = session.hunks or {}
       local hunk = hunks[active] or hunks[1]
       if hunk then
@@ -3439,7 +3440,7 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
   if valid_endpoint(session.change) then
     local buf = session.change.buf
     vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
-    if group.chunk_view_mode == "virtual" then
+    if is_virtual then
       local hunks = session.hunks or {}
       local hunk = hunks[active] or hunks[1]
       if hunk then
@@ -4429,7 +4430,7 @@ close_inspection_sidebar = function(group)
 end
 
 open_inspection_sidebar = function(group, target_tab, restore_only)
-  if group.sidebar_displaced_by_foreign or group.chunk_view_mode == "virtual" then
+  if group.sidebar_displaced_by_foreign or (group.chunk_view_mode or "virtual") ~= "sidebar" then
     return
   end
 
@@ -4475,7 +4476,7 @@ ensure_inspection_sidebar_on_tab = function(group, tab)
     sidebar_navigating
     or not group.sidebar_visible
     or group.sidebar_displaced_by_foreign
-    or group.chunk_view_mode == "virtual"
+    or (group.chunk_view_mode or "virtual") ~= "sidebar"
   then
     return
   end
@@ -4515,6 +4516,8 @@ local function toggle_inspection_sidebar(group)
   if group.sidebar_visible then
     close_inspection_sidebar(group)
   else
+    group.chunk_view_mode = "sidebar"
+    M._clear_virtual_counters(group)
     open_inspection_sidebar(
       group,
       vim.api.nvim_get_current_tabpage(),
@@ -5156,9 +5159,9 @@ function M._overview_ui.render_footer(group)
       and ("c close " .. close_spinner)
     or "c close"
 
-  local view_command = group.chunk_view_mode == "virtual"
-      and "s sidebar"
-    or "v virtual"
+  local view_command = (group.chunk_view_mode == "sidebar")
+      and "v virtual"
+    or "s sidebar"
 
   local commands = issue_patches
       and ("  b browser   e explain   p path   w worktree   " .. view_command .. "   " .. close_command)
@@ -7274,7 +7277,7 @@ show_sidebar_files = function(group)
   group.sidebar_focus_generation =
     (group.sidebar_focus_generation or 0) + 1
 
-  if group.chunk_view_mode == "virtual" then
+  if (group.chunk_view_mode or "virtual") ~= "sidebar" then
     close_inspection_sidebar(group)
     M._refresh_virtual_counters(group)
   end
@@ -7506,6 +7509,7 @@ local function prepare_inspection_sidebar(group)
     end
   end
 
+  group.chunk_view_mode = group.chunk_view_mode or "virtual"
   group.sidebar_lines = lines
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
@@ -7518,11 +7522,14 @@ local function prepare_inspection_sidebar(group)
 end
 
 local function activate_inspection_sidebar(group, open_immediately)
+  group.chunk_view_mode = group.chunk_view_mode or "virtual"
   map_inspection_sidebar_toggle(group)
   sidebar_groups[#sidebar_groups + 1] = group
 
-  if open_immediately ~= false then
+  if group.chunk_view_mode == "sidebar" and open_immediately ~= false then
     open_inspection_sidebar(group)
+  else
+    M._refresh_virtual_counters(group)
   end
 end
 
@@ -8796,6 +8803,9 @@ local function open_tabs(
       new_version = opts.inspect_new_version,
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
+      chunk_view_mode = opts.chunk_view_mode
+        or opts.inspect_chunk_view_mode
+        or "virtual",
       overview = inspection_overview(info),
       browser_config = { browser_command = opts.browser_command },
       persist_inspect_overviews = opts.persist_inspect_overviews ~= false,
@@ -9436,6 +9446,9 @@ local function open_issue_inspection(
       new_version = opts.inspect_new_version,
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
+      chunk_view_mode = opts.chunk_view_mode
+        or opts.inspect_chunk_view_mode
+        or "virtual",
       overview = inspection_overview(resolved),
       browser_config = { browser_command = opts.browser_command },
       persist_inspect_overviews = opts.persist_inspect_overviews ~= false,
