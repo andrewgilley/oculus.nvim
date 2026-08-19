@@ -1895,7 +1895,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  p path   e explain   b browser   c close",
+    "  w worktree   p path   e explain   b browser   c close",
   }
 ))
 
@@ -2516,6 +2516,60 @@ assert(explanation_text:gsub("%s+", " "):find(
 ))
 
 assert(vim.api.nvim_win_is_valid(overview_win))
+local issue_overview_buf = vim.api.nvim_win_get_buf(overview_win)
+local issue_worktree_mapping = vim.api.nvim_buf_call(issue_overview_buf, function()
+  return vim.fn.maparg("w", "n", false, true)
+end)
+assert(issue_worktree_mapping.desc == "Create Oculus worktree for patch/fix")
+
+do
+  local test_worktree_branch = "oculus-test-worktree-branch"
+  local test_worktree_dir = vim.fs.joinpath(
+    vim.fs.dirname(root),
+    vim.fs.basename(root) .. "-" .. test_worktree_branch
+  )
+
+  vim.system({ "git", "-C", root, "worktree", "remove", "--force", test_worktree_dir }):wait()
+  vim.system({ "git", "-C", root, "branch", "-D", test_worktree_branch }):wait()
+
+  local dummy_group = {
+    kind = "issue",
+    overview = {
+      issue_number = 77,
+      kind = "issue",
+    },
+    {
+      repository = root,
+      file = "README.md",
+      sections = { { line = 1 } },
+    },
+    overview_agent_locations = {
+      {
+        path = "README.md",
+        line = 1,
+      },
+    },
+  }
+
+  local tabs_before_wt = #vim.api.nvim_list_tabpages()
+  local opened_wt = inspect._overview_ui.open_worktree_workflow(dummy_group, {
+    branch_name = test_worktree_branch,
+  })
+
+  assert(opened_wt)
+  assert(vim.wait(10000, function()
+    return vim.uv.fs_stat(test_worktree_dir) ~= nil
+      and #vim.api.nvim_list_tabpages() > tabs_before_wt
+  end), "Worktree was not created or tab was not opened")
+
+  if #vim.api.nvim_list_tabpages() > tabs_before_wt then
+    vim.cmd("tabclose")
+  end
+
+  vim.system({ "git", "-C", root, "worktree", "remove", "--force", test_worktree_dir }):wait()
+  vim.system({ "git", "-C", root, "branch", "-D", test_worktree_branch }):wait()
+end
+
 local issue_main_win
 local issue_sidebar_win
 
