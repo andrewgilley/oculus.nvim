@@ -1997,8 +1997,12 @@ local function previous_inspection_chunk(group, session, current_chunk)
   end
 end
 
-local function progressed_chunk_role(_, current_role)
-  return current_role
+local function progressed_chunk_role(group, current_role)
+  if group and group.kind == "issue" then
+    return "issue"
+  end
+
+  return "parent"
 end
 
 local function chunk_navigation_role(
@@ -2008,15 +2012,19 @@ local function chunk_navigation_role(
   target_session,
   forward
 )
-  if target_session ~= current_session and target_session.last_role then
-    return target_session.last_role
+  if group and group.kind == "issue" then
+    return "issue"
   end
 
   if forward then
     return progressed_chunk_role(group, current_role)
   end
 
-  return current_role
+  if target_session ~= current_session and target_session and target_session.last_role then
+    return target_session.last_role
+  end
+
+  return current_role or "parent"
 end
 
 local function chunk_start_for_role(
@@ -2353,21 +2361,33 @@ local function sidebar_target_role(
   active_role,
   entry,
   group,
-  preferred_role
+  preferred_role,
+  direction
 )
   if group and group.kind == "issue" then
     return "issue"
   end
 
+  if direction == 1 then
+    return "parent"
+  end
+
   if entry and entry.pair_index ~= active_index then
     local session = group and group[entry.pair_index]
+
+    if direction == -1 then
+      return session and session.last_role
+        or preferred_role
+        or active_role
+        or "parent"
+    end
 
     return session and session.last_role
       or preferred_role
       or "parent"
   end
 
-  return preferred_role or active_role
+  return preferred_role or active_role or "parent"
 end
 
 local function sidebar_endpoint(group, session, role)
@@ -6787,7 +6807,8 @@ local function select_sidebar_entry(group, direction, preferred_role)
     active_role,
     entry,
     group,
-    preferred_role
+    preferred_role,
+    direction
   )
 
   local endpoint = sidebar_endpoint(group, session, role)
