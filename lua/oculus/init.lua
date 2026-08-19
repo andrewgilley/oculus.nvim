@@ -23,7 +23,6 @@ local defaults = {
   push_detail_limit = 10,
   cache_ttl = 300,
   request_timeout = 15,
-  activity_search_max_pages = 5,
   activity_types = nil,
   user_activity_types = {},
   project_activity_types = {

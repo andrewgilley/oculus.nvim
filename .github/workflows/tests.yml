@@ -51,8 +51,8 @@ jobs:
       - name: Run telemetry tests
         run: nvim --headless -u NONE -l tests/telemetry_spec.lua
 
-      - name: Run window and search tests
-        run: nvim --headless -u NONE -l tests/window_search_spec.lua
+      - name: Run window tests
+        run: nvim --headless -u NONE -l tests/window_spec.lua
 
       - name: Run inspect tests
         env:
