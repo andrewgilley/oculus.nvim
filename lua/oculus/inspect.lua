@@ -4013,12 +4013,14 @@ function M._overview_ui.render_footer(group)
     or "s sidebar"
 
   local commands = issue_patches
-      and ("  b browser   e explain   p path   w worktree   " .. view_command .. "   " .. close_command)
-    or ("  b browser   e explain   " .. view_command .. "   " .. close_command)
+      and ("  b browser   e explain   p path   w worktree   " .. view_command .. "   " .. close_command .. "   q quit")
+    or ("  b browser   e explain   " .. view_command .. "   " .. close_command .. "   q quit")
 
-  local close_spinner_col = close_spinner
-      and (#commands - #close_spinner)
-    or nil
+  local close_spinner_col
+  if close_spinner then
+    local spinner_start = commands:find(close_spinner, 1, true)
+    close_spinner_col = spinner_start and (spinner_start - 1) or nil
+  end
 
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
