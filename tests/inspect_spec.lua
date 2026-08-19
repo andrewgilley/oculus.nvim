@@ -2709,6 +2709,7 @@ do
   local marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks == 1)
   assert(marks[1][4].virt_text[1][1]:find("%[1/1%]"))
+  assert(marks[1][4].hl_mode == "combine")
 
   local test_session2 = {
     file = "test_virtual_file2.lua",
@@ -2736,6 +2737,7 @@ do
   local marks2 = vim.api.nvim_buf_get_extmarks(c_buf2, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks2 == 1)
   assert(marks2[1][4].virt_text[1][1]:find("%[2/2%]"))
+  assert(marks2[1][4].hl_mode == "combine")
 
   test_grp.chunk_view_mode = "sidebar"
   inspect._clear_virtual_counters(test_grp)

@@ -2212,6 +2212,7 @@ function M._virtual_counter.place_virtual_counter(buf, line, chunk_index, chunk_
       },
     },
     virt_text_pos = "eol",
+    hl_mode = "combine",
     priority = 10,
   })
 end
@@ -7607,6 +7608,7 @@ local function apply_inspection_window_options(win, options)
 
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
+  vim.wo[win].signcolumn = "yes"
   prevent_window_dimming(win)
   preserve_cursorline_text_highlighting(win)
 end
