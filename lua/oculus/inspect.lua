@@ -7,6 +7,7 @@ local active = false
 local change_ns = vim.api.nvim_create_namespace("oculus_inspect_changes")
 local oil_ns = vim.api.nvim_create_namespace("oculus_inspect_oil")
 local sidebar_ns = vim.api.nvim_create_namespace("oculus_inspect_sidebar")
+M._virtual_counter_ns = vim.api.nvim_create_namespace("oculus_inspect_virtual_counter")
 local sessions = {}
 local sidebar_groups = {}
 local next_session = 0
@@ -2574,6 +2575,11 @@ local function set_change_highlights()
     underdashed = cursorline.underdashed,
     strikethrough = cursorline.strikethrough,
   })
+
+  vim.api.nvim_set_hl(0, "OculusInspectVirtualCounter", {
+    link = "Comment",
+    default = true,
+  })
 end
 
 set_change_highlights()
@@ -3257,6 +3263,7 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
 
   show_inspection_path(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
+  M._refresh_virtual_counters(group, session)
   return endpoint
 end
 
@@ -3342,6 +3349,179 @@ local function map_file_navigation(endpoint, session, role, group)
       silent = true,
       desc = "Previous Oculus changed chunk",
     })
+  end
+end
+
+M._virtual_counter = {}
+
+function M._virtual_counter.group_total_chunks(group)
+  local total = 0
+  for _, session in ipairs(group or {}) do
+    total = total + #inspection_chunks(group, session)
+  end
+  return total
+end
+
+function M._virtual_counter.group_session_chunk_offset(group, target_session)
+  local offset = 0
+  for _, session in ipairs(group or {}) do
+    if session == target_session then
+      return offset
+    end
+    offset = offset + #inspection_chunks(group, session)
+  end
+  return offset
+end
+
+function M._virtual_counter.place_virtual_counter(buf, line, chunk_index, chunk_count)
+  if
+    not buf
+    or not vim.api.nvim_buf_is_valid(buf)
+    or not line
+    or not chunk_index
+    or not chunk_count
+    or chunk_count == 0
+  then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  if line_count == 0 then
+    return
+  end
+
+  line = math.min(math.max(1, line), line_count)
+
+  vim.api.nvim_buf_set_extmark(buf, M._virtual_counter_ns, line - 1, 0, {
+    virt_text = {
+      {
+        ("\t[%d/%d]"):format(chunk_index, chunk_count),
+        "OculusInspectVirtualCounter",
+      },
+    },
+    virt_text_pos = "eol",
+    hl_mode = "combine",
+    priority = 50,
+  })
+end
+
+function M._virtual_counter.refresh_session_virtual_counters(group, session)
+  if not group or not session then
+    return
+  end
+
+  local total_chunks = M._virtual_counter.group_total_chunks(group)
+  if total_chunks == 0 then
+    return
+  end
+
+  local offset = M._virtual_counter.group_session_chunk_offset(group, session)
+  local active = session.active_chunk or 1
+
+  if group.kind == "issue" then
+    if valid_endpoint(session.issue) then
+      local buf = session.issue.buf
+      vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
+      if group.chunk_view_mode == "virtual" then
+        local sections = session.sections or {}
+        local section = sections[active] or sections[1]
+        if section and section.line then
+          M._virtual_counter.place_virtual_counter(
+            buf,
+            section.line,
+            offset + active,
+            total_chunks
+          )
+        end
+      end
+    end
+    return
+  end
+
+  if valid_endpoint(session.parent) then
+    local buf = session.parent.buf
+    vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
+    if group.chunk_view_mode == "virtual" then
+      local hunks = session.hunks or {}
+      local hunk = hunks[active] or hunks[1]
+      if hunk then
+        local start = hunk_start(hunk, "parent")
+        M._virtual_counter.place_virtual_counter(
+          buf,
+          start,
+          offset + active,
+          total_chunks
+        )
+      end
+    end
+  end
+
+  if valid_endpoint(session.change) then
+    local buf = session.change.buf
+    vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
+    if group.chunk_view_mode == "virtual" then
+      local hunks = session.hunks or {}
+      local hunk = hunks[active] or hunks[1]
+      if hunk then
+        local start
+        if session.focused_chunks then
+          start = session.focused_start
+            or chunk_start_for_role(
+              hunk,
+              "change",
+              hunk_start(hunk, "change"),
+              session.change_content
+            )
+        else
+          start = chunk_start_for_role(
+            hunk,
+            "change",
+            hunk_start(hunk, "change"),
+            session.change_content
+          )
+        end
+        M._virtual_counter.place_virtual_counter(
+          buf,
+          start,
+          offset + active,
+          total_chunks
+        )
+      end
+    end
+  end
+end
+
+function M._refresh_virtual_counters(group, session)
+  if not group then
+    return
+  end
+
+  if session then
+    M._virtual_counter.refresh_session_virtual_counters(group, session)
+  else
+    for _, s in ipairs(group) do
+      M._virtual_counter.refresh_session_virtual_counters(group, s)
+    end
+  end
+end
+
+function M._clear_virtual_counters(group)
+  if not group then
+    return
+  end
+
+  for _, session in ipairs(group) do
+    for _, role in ipairs({ "issue", "parent", "change" }) do
+      local endpoint = session[role]
+      if valid_endpoint(endpoint) then
+        vim.api.nvim_buf_clear_namespace(
+          endpoint.buf,
+          M._virtual_counter_ns,
+          0,
+          -1
+        )
+      end
+    end
   end
 end
 
@@ -4269,7 +4449,7 @@ close_inspection_sidebar = function(group)
 end
 
 open_inspection_sidebar = function(group, target_tab, restore_only)
-  if group.sidebar_displaced_by_foreign then
+  if group.sidebar_displaced_by_foreign or group.chunk_view_mode == "virtual" then
     return
   end
 
@@ -4311,9 +4491,11 @@ open_inspection_sidebar = function(group, target_tab, restore_only)
 end
 
 ensure_inspection_sidebar_on_tab = function(group, tab)
-  if sidebar_navigating
+  if
+    sidebar_navigating
     or not group.sidebar_visible
     or group.sidebar_displaced_by_foreign
+    or group.chunk_view_mode == "virtual"
   then
     return
   end
@@ -4994,9 +5176,13 @@ function M._overview_ui.render_footer(group)
       and ("c close " .. close_spinner)
     or "c close"
 
+  local view_command = group.chunk_view_mode == "virtual"
+      and "s sidebar"
+    or "v virtual"
+
   local commands = issue_patches
-      and "  b browser   e explain   p path   w worktree   " .. close_command
-    or "  b browser   e explain   " .. close_command
+      and ("  b browser   e explain   p path   w worktree   " .. view_command .. "   " .. close_command)
+    or ("  b browser   e explain   " .. view_command .. "   " .. close_command)
 
   local close_spinner_col = close_spinner
       and (#commands - #close_spinner)
@@ -6891,6 +7077,30 @@ show_inspection_overview = function(group)
     desc = "Open Oculus inspection item in browser",
   })
 
+  vim.keymap.set("n", "v", function()
+    group.chunk_view_mode = "virtual"
+    close_inspection_sidebar(group)
+    M._refresh_virtual_counters(group)
+    show_sidebar_files(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Switch to Oculus Inspect virtual chunk counter mode",
+  })
+
+  vim.keymap.set("n", "s", function()
+    group.chunk_view_mode = "sidebar"
+    M._clear_virtual_counters(group)
+    open_inspection_sidebar(group)
+    show_sidebar_files(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Switch to Oculus Inspect sidebar mode",
+  })
+
   vim.keymap.set("n", "c", function()
     local lifecycle = group.inspection_lifecycle
     local request_close = lifecycle and lifecycle.on_close_requested
@@ -7083,6 +7293,11 @@ show_sidebar_files = function(group)
 
   group.sidebar_focus_generation =
     (group.sidebar_focus_generation or 0) + 1
+
+  if group.chunk_view_mode == "virtual" then
+    close_inspection_sidebar(group)
+    M._refresh_virtual_counters(group)
+  end
 
   sidebar_navigating = false
 end
@@ -7828,6 +8043,12 @@ local function select_sidebar_entry(group, direction, preferred_role)
       chunk_count = #inspection_chunks(group, session),
     }
 
+    if entry.chunk_index then
+      session.active_chunk = entry.chunk_index
+    end
+
+    M._refresh_virtual_counters(group, session)
+
     group.focused_win = nil
     sidebar_navigating = false
     return
@@ -7914,8 +8135,13 @@ focus_sidebar_selection = function(group)
     show_file_top(endpoint.win)
   end
 
+  if chunk_index then
+    session.active_chunk = chunk_index
+  end
+
   show_inspection_path(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
+  M._refresh_virtual_counters(group, session)
   sidebar_navigating = false
 end
 
@@ -8096,6 +8322,9 @@ vim.api.nvim_create_autocmd("TabEnter", {
       end
 
       refresh_sidebar(group, tab)
+      if group.chunk_view_mode == "virtual" then
+        M._refresh_virtual_counters(group)
+      end
     end
   end,
 })

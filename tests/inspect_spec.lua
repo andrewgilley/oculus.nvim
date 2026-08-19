@@ -1895,7 +1895,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  b browser   e explain   p path   w worktree   c close",
+    "  b browser   e explain   p path   w worktree   v virtual   c close",
   }
 ))
 
@@ -2522,6 +2522,16 @@ local issue_worktree_mapping = vim.api.nvim_buf_call(issue_overview_buf, functio
 end)
 assert(issue_worktree_mapping.desc == "Create Oculus worktree for patch/fix")
 
+local issue_virtual_mapping = vim.api.nvim_buf_call(issue_overview_buf, function()
+  return vim.fn.maparg("v", "n", false, true)
+end)
+assert(issue_virtual_mapping.desc == "Switch to Oculus Inspect virtual chunk counter mode")
+
+local issue_sidebar_mapping = vim.api.nvim_buf_call(issue_overview_buf, function()
+  return vim.fn.maparg("s", "n", false, true)
+end)
+assert(issue_sidebar_mapping.desc == "Switch to Oculus Inspect sidebar mode")
+
 do
   local test_worktree_branch = "oculus-test-worktree-branch"
   local test_worktree_dir = vim.fs.joinpath(
@@ -2575,6 +2585,48 @@ do
 
   vim.system({ "git", "-C", root, "worktree", "remove", "--force", test_worktree_dir }):wait()
   vim.system({ "git", "-C", root, "branch", "-D", test_worktree_branch }):wait()
+end
+
+do
+  local test_session = {
+    file = "test_virtual_file.lua",
+    repository = root,
+    status = "M",
+    parent_content = { "line 1", "line 2", "line 3" },
+    change_content = { "line 1", "line 2 mod", "line 3" },
+    hunks = {
+      {
+        old_start = 2,
+        old_count = 1,
+        new_start = 2,
+        new_count = 1,
+      },
+    },
+    active_chunk = 1,
+  }
+
+  local p_buf = vim.api.nvim_create_buf(false, true)
+  local c_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, test_session.parent_content)
+  vim.api.nvim_buf_set_lines(c_buf, 0, -1, false, test_session.change_content)
+
+  test_session.parent = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = p_buf }
+  test_session.change = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = c_buf }
+
+  local test_grp = {
+    test_session,
+    chunk_view_mode = "virtual",
+  }
+
+  inspect._refresh_virtual_counters(test_grp, test_session)
+  local marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
+  assert(#marks == 1)
+  assert(marks[1][4].virt_text[1][1]:find("%[1/1%]"))
+
+  test_grp.chunk_view_mode = "sidebar"
+  inspect._clear_virtual_counters(test_grp)
+  local marks_after = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
+  assert(#marks_after == 0)
 end
 
 local issue_main_win
