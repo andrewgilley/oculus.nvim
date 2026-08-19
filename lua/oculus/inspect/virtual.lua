@@ -29,8 +29,7 @@ function M.place_virtual_counter(buf, line, chunk_index, chunk_count)
       },
     },
     virt_text_pos = "eol",
-    hl_mode = "combine",
-    priority = 50,
+    priority = 10,
   })
 end
 
