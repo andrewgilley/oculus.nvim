@@ -1347,7 +1347,7 @@ local function set_change_highlights()
     vim.api.nvim_get_hl(0, { name = "Function", link = false })
 
   local cursorline =
-    vim.api.nvim_get_hl(0, { name = "CursorLine", link = false })
+    vim.api.nvim_get_hl(0, { name = "CursorLine" })
 
   vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
     fg = 0xfee2e2,
@@ -7590,6 +7590,8 @@ local function apply_inspection_window_options(win, options)
   if not vim.api.nvim_win_is_valid(win) or type(options) ~= "table" then
     return
   end
+
+  set_change_highlights()
 
   if type(options.number) == "boolean" then
     vim.wo[win].number = options.number
