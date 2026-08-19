@@ -825,7 +825,7 @@ do
     {
       cursor = 15,
       topline = 5,
-      column = #viewport_lines[15] - 1,
+      column = 0,
     },
   }) do
     vim.api.nvim_win_call(viewport_win, function()
@@ -5288,7 +5288,7 @@ if integration_root and (integration_sha or integration_url) then
   )[1] or ""
 
   if initial_cursor[1] >= 10 then
-    assert(initial_cursor[2] == math.max(0, #initial_line - 1))
+    assert(initial_cursor[2] == ((initial_line:find("%S") or 1) - 1))
   end
 
   local initial_view = vim.api.nvim_win_call(
@@ -5311,7 +5311,7 @@ if integration_root and (integration_sha or integration_url) then
 
   if initial_parent_cursor[1] >= 10 then
     assert(initial_parent_cursor[2]
-      == math.max(0, #initial_parent_line - 1))
+      == ((initial_parent_line:find("%S") or 1) - 1))
   end
 
   local initial_parent_view = vim.api.nvim_win_call(
