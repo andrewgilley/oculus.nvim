@@ -7642,7 +7642,7 @@ local function open_tabs(
 
     for index, paths in ipairs(inspections) do
       local hunks = paths.hunks
-        or (paths.patch and paths.patch ~= "" and parse_hunks(paths.patch) or {})
+        or patch.session_hunks(paths)
 
       inspection_sessions[index] = {
         file = paths.change_file or paths.parent_file,
