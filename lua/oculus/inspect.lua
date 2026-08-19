@@ -1400,7 +1400,7 @@ local function set_change_highlights()
   })
 
   vim.api.nvim_set_hl(0, "OculusInspectVirtualCounter", {
-    link = "Comment",
+    fg = diagnostic_info.fg or 0x61afef,
     default = true,
   })
 end
