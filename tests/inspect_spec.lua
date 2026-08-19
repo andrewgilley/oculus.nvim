@@ -1895,7 +1895,7 @@ assert(vim.deep_equal(
       "─",
       math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
     ),
-    "  b browser   e explain   p path   w worktree   v virtual   c close",
+    "  b browser   e explain   p path   w worktree   s sidebar   c close",
   }
 ))
 
@@ -2615,7 +2615,6 @@ do
 
   local test_grp = {
     test_session,
-    chunk_view_mode = "virtual",
   }
 
   inspect._refresh_virtual_counters(test_grp, test_session)
@@ -3709,6 +3708,7 @@ if integration_root and (integration_sha or integration_url) then
       inspect_sidebar_width = 0.30,
       inspect_old_version = "gS",
       inspect_new_version = "gD",
+      inspect_chunk_view_mode = "sidebar",
     },
     nil,
     {
