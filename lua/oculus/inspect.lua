@@ -4995,7 +4995,7 @@ function M._overview_ui.render_footer(group)
     or "c close"
 
   local commands = issue_patches
-      and "  p path   e explain   b browser   " .. close_command
+      and "  w worktree   p path   e explain   b browser   " .. close_command
     or "  e explain   b browser   " .. close_command
 
   local close_spinner_col = close_spinner
@@ -6091,6 +6091,278 @@ function M._overview_ui.open_patch_location(group)
   return true
 end
 
+function M._overview_ui.open_worktree_workflow(group, opts)
+  opts = opts or {}
+  local repository = require("oculus.agent").repository(group)
+
+  if type(repository) ~= "string" or repository == "" then
+    vim.notify(
+      "Oculus: no repository available for worktree creation",
+      vim.log.levels.WARN
+    )
+    return false
+  end
+
+  local default_branch = ""
+  local overview = group.overview or {}
+  local issue_num = overview.issue_number
+    or (group.issue and group.issue.number)
+    or (vim.t.oculus_inspect and vim.t.oculus_inspect.issue_number)
+
+  if issue_num then
+    default_branch = "fix-issue-" .. issue_num
+  end
+
+  local function proceed_with_branch(branch_name)
+    if not branch_name or vim.trim(branch_name) == "" then
+      return
+    end
+
+    branch_name = vim.trim(branch_name)
+    local branch_slug = branch_name:gsub("[^%w%-_.]+", "-")
+    local worktree_dir = vim.fs.joinpath(
+      vim.fs.dirname(repository),
+      vim.fs.basename(repository) .. "-" .. branch_slug
+    )
+
+    local function setup_worktree_files()
+      local locations = group.overview_agent_locations or {}
+      local selected = group.overview_agent_selected_locations or {}
+      local targets = {}
+
+      for index, location in ipairs(locations) do
+        if selected[index] then
+          targets[#targets + 1] = location
+        end
+      end
+
+      if #targets == 0 and #locations > 0 then
+        targets = locations
+      end
+
+      if #targets > 0 then
+        local code_options = group.overview_code_window_options or {}
+        local opened = {}
+
+        for _, location in ipairs(targets) do
+          local _, relative =
+            M._overview_ui.patch_location_path(group, location)
+
+          if not relative or relative == "" then
+            relative = location.path or location.filename or location.file
+          end
+
+          if relative then
+            local absolute = vim.fs.joinpath(worktree_dir, relative)
+            local ok = pcall(
+              vim.cmd,
+              "tabedit " .. vim.fn.fnameescape(absolute)
+            )
+
+            if ok then
+              vim.cmd("tcd " .. vim.fn.fnameescape(worktree_dir))
+              vim.bo.modifiable = true
+              vim.bo.readonly = false
+              local patch_win = vim.api.nvim_get_current_win()
+              local patch_buf = vim.api.nvim_get_current_buf()
+
+              for option, value in pairs(code_options) do
+                if option ~= "highlight_namespace" then
+                  pcall(function()
+                    vim.wo[patch_win][option] = value
+                  end)
+                end
+              end
+
+              vim.wo[patch_win].cursorline = true
+              vim.wo[patch_win].cursorlineopt = "line"
+              vim.wo[patch_win].statusline = ""
+              vim.wo[patch_win].winfixbuf = false
+
+              local target_line = math.max(
+                1,
+                math.min(
+                  tonumber(location.line) or 1,
+                  math.max(1, vim.api.nvim_buf_line_count(patch_buf))
+                )
+              )
+
+              vim.api.nvim_win_set_cursor(patch_win, { target_line, 0 })
+
+              opened[#opened + 1] = {
+                tab = vim.api.nvim_get_current_tabpage(),
+                win = patch_win,
+                buf = patch_buf,
+                path = relative:gsub("\\", "/"),
+                line = target_line,
+                location = location,
+              }
+            end
+          end
+        end
+
+        if #opened > 0 then
+          group.overview_patch_tabs = group.overview_patch_tabs or {}
+
+          for _, patch in ipairs(opened) do
+            group.overview_patch_tabs[#group.overview_patch_tabs + 1] = patch
+          end
+
+          group.overview_agent_mode = nil
+          group.overview_return = nil
+          close_overview_window(group)
+          local patch_group =
+            M._overview_ui.prepare_patch_sidebar(group, opened)
+          group.overview_patch_group = patch_group
+          local first = opened[1]
+
+          if
+            vim.api.nvim_tabpage_is_valid(first.tab)
+            and vim.api.nvim_win_is_valid(first.win)
+          then
+            vim.api.nvim_set_current_tabpage(first.tab)
+            vim.api.nvim_set_current_win(first.win)
+          end
+
+          return
+        end
+      end
+
+      close_overview_window(group)
+      vim.cmd("tabedit")
+      vim.cmd("tcd " .. vim.fn.fnameescape(worktree_dir))
+
+      local ok, oil = pcall(require, "oil")
+
+      if ok and oil and oil.open then
+        oil.open(worktree_dir)
+      else
+        pcall(vim.cmd, "Oil " .. vim.fn.fnameescape(worktree_dir))
+      end
+
+      local oil_buf = vim.api.nvim_get_current_buf()
+
+      local function handle_oil_selection()
+        local entry
+        local ok_entry, cur_entry = pcall(function()
+          return oil.get_cursor_entry()
+        end)
+
+        if ok_entry and cur_entry then
+          entry = cur_entry
+        end
+
+        if not entry or entry.type == "directory" then
+          return false
+        end
+
+        local current_dir = (oil.get_current_dir and oil.get_current_dir())
+          or worktree_dir
+
+        local file_path = vim.fs.joinpath(current_dir, entry.name)
+        local relative = file_path:sub(#worktree_dir + 2):gsub("\\", "/")
+
+        vim.cmd("edit " .. vim.fn.fnameescape(file_path))
+        vim.cmd("tcd " .. vim.fn.fnameescape(worktree_dir))
+        local target_win = vim.api.nvim_get_current_win()
+        local target_buf = vim.api.nvim_get_current_buf()
+
+        local patch_item = {
+          tab = vim.api.nvim_get_current_tabpage(),
+          win = target_win,
+          buf = target_buf,
+          path = relative,
+          line = 1,
+        }
+
+        group.overview_patch_tabs = group.overview_patch_tabs or {}
+        group.overview_patch_tabs[#group.overview_patch_tabs + 1] = patch_item
+        local patch_group =
+          M._overview_ui.prepare_patch_sidebar(group, { patch_item })
+        group.overview_patch_group = patch_group
+        return true
+      end
+
+      for _, lhs in ipairs({ "<CR>", "l" }) do
+        local original = vim.api.nvim_buf_call(oil_buf, function()
+          return vim.fn.maparg(lhs, "n", false, true)
+        end)
+
+        vim.keymap.set("n", lhs, function()
+          if handle_oil_selection() then
+            return
+          end
+
+          if original and original.rhs and original.rhs ~= "" then
+            vim.cmd(original.rhs)
+          elseif original and original.callback then
+            original.callback()
+          end
+        end, {
+          buffer = oil_buf,
+          nowait = true,
+          silent = true,
+          desc = "Select patch location in Oculus worktree",
+        })
+      end
+    end
+
+    if vim.uv.fs_stat(worktree_dir) then
+      setup_worktree_files()
+      return
+    end
+
+    run({
+      "git",
+      "-C",
+      repository,
+      "worktree",
+      "add",
+      "-b",
+      branch_name,
+      worktree_dir,
+    }, function(_, err)
+      if not err then
+        setup_worktree_files()
+        return
+      end
+
+      run({
+        "git",
+        "-C",
+        repository,
+        "worktree",
+        "add",
+        worktree_dir,
+        branch_name,
+      }, function(_, err2)
+        if not err2 or vim.uv.fs_stat(worktree_dir) then
+          setup_worktree_files()
+          return
+        end
+
+        vim.notify(
+          "Oculus: could not create worktree: " .. tostring(err2 or err),
+          vim.log.levels.ERROR
+        )
+      end)
+    end)
+  end
+
+  if opts.branch_name then
+    proceed_with_branch(opts.branch_name)
+  else
+    vim.ui.input({
+      prompt = "Worktree branch name: ",
+      default = default_branch,
+    }, function(input_val)
+      proceed_with_branch(input_val)
+    end)
+  end
+
+  return true
+end
+
 function M._overview_ui.open_model_picker(group, request_kind)
   if not overview_window_is_open(group) then
     return
@@ -6566,6 +6838,15 @@ show_inspection_overview = function(group)
   })
 
   if require("oculus.agent").needs_patch_locations(group) then
+    vim.keymap.set("n", "w", function()
+      M._overview_ui.open_worktree_workflow(group)
+    end, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = "Create Oculus worktree for patch/fix",
+    })
+
     vim.keymap.set("n", "p", function()
       if M._overview_ui.toggle_patch_locations_focus(group) then
         return
