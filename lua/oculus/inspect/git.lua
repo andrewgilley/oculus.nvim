@@ -117,165 +117,229 @@ function M.map_concurrently(items, limit, worker, callback)
 end
 
 function M.directory(path)
-  return path and vim.fn.isdirectory(path) == 1
+  local stat = vim.uv.fs_stat(path)
+  return stat and stat.type == "directory"
 end
 
 function M.inspection_directory(repository, file)
-  if not repository or not file or file == "" then
+  if not file then
     return repository
   end
 
-  local full_path = vim.fs.joinpath(repository, file)
-  return M.directory(full_path) and full_path or vim.fs.dirname(full_path)
+  local parent = vim.fs.dirname(vim.fs.joinpath(repository, file))
+  return M.directory(parent) and parent or repository
 end
 
 function M.forge_repository(url)
-  if not url or url == "" then
+  if type(url) ~= "string" then
     return nil
   end
 
-  local patterns = {
-    "^https?://github%.com/([^/]+/[^/#?]+)",
-    "^https?://codeberg%.org/([^/]+/[^/#?]+)",
-    "^git@github%.com:([^/]+/[^/#?]+)",
-    "^git@codeberg%.org:([^/]+/[^/#?]+)",
-    "^ssh://git@github%.com/([^/]+/[^/#?]+)",
-    "^ssh://git@codeberg%.org/([^/]+/[^/#?]+)",
-  }
+  local forge
+  local owner
+  local repo
 
-  for _, pattern in ipairs(patterns) do
-    local repository = url:match(pattern)
+  for _, candidate in ipairs({
+    { name = "github", host = "github%.com" },
+    { name = "codeberg", host = "codeberg%.org" },
+  }) do
+    owner, repo = url:match(
+      "^https?://" .. candidate.host .. "/([^/]+)/([^/]+)"
+    )
 
-    if repository then
-      return repository:gsub("%.git$", "")
+    if not owner then
+      owner, repo = url:match(
+        "^git@" .. candidate.host .. ":([^/]+)/([^/]+)"
+      )
+    end
+
+    if not owner then
+      owner, repo = url:match(
+        "^ssh://git@" .. candidate.host .. "/([^/]+)/([^/]+)"
+      )
+    end
+
+    if owner then
+      forge = candidate.name
+      break
     end
   end
 
-  return nil
-end
-
-function M.github_repository(url)
-  return M.forge_repository(url)
-end
-
-function M.repository_root(path)
-  if not M.directory(path) then
-    path = vim.fs.dirname(path)
-  end
-
-  if not path or path == "" or not M.directory(path) then
+  if not forge or not owner or not repo then
     return nil
   end
 
-  local git_dir = vim.fs.find(".git", { path = path, upward = true })[1]
-  return git_dir and vim.fs.dirname(git_dir) or nil
+  repo = repo:gsub("[/?#].*$", ""):gsub("%.git$", "")
+  return forge, (owner .. "/" .. repo):lower()
+end
+
+function M.github_repository(url)
+  local forge, repository = M.forge_repository(url)
+
+  if forge == "github" then
+    return repository
+  end
+end
+
+function M.repository_root(path)
+  if type(path) ~= "string" or path == "" then
+    return nil
+  end
+
+  local stat = vim.uv.fs_stat(path)
+
+  if stat and stat.type ~= "directory" then
+    path = vim.fs.dirname(path)
+  end
+
+  if not vim.uv.fs_stat(path) then
+    return nil
+  end
+
+  return vim.fs.root(path, ".git")
 end
 
 function M.local_candidates(info, opts)
-  local explicit_roots = {}
   local candidates = {}
   local seen = {}
 
   local function add(path, explicit, search_path)
-    if not path or path == "" then
+    local root = M.repository_root(path)
+
+    if not root then
       return
     end
 
-    local candidate = vim.fs.normalize(path)
-    local key = candidate:lower()
+    root = vim.fs.normalize(root)
+
+    local key = vim.uv.os_uname().sysname == "Windows_NT"
+        and root:lower()
+      or root
 
     if seen[key] then
       if explicit then
         seen[key].explicit = true
       end
+
       if search_path then
         seen[key].search_path = true
       end
+
       return
     end
 
-    local entry = {
-      path = candidate,
+    local candidate = {
+      path = root,
       explicit = explicit or false,
       search_path = search_path or false,
     }
-    seen[key] = entry
-    candidates[#candidates + 1] = entry
+
+    seen[key] = candidate
+    candidates[#candidates + 1] = candidate
   end
 
   local function add_search_path(path)
-    if not path or path == "" or not M.directory(path) then
+    if type(path) ~= "string" or not M.directory(path) then
       return
     end
 
-    local base = vim.fs.normalize(path)
-    add(base, false, true)
+    add(path, false, true)
+    local children = {}
 
-    if info and info.repository then
-      local parts = vim.split(info.repository, "/")
-      local org = parts[1]
-      local name = parts[2]
+    local pending = {
+      { path = path, depth = 0 },
+    }
 
-      if name then
-        add(vim.fs.joinpath(base, name), false, true)
-      end
+    local next_directory = 1
 
-      if org and name then
-        add(vim.fs.joinpath(base, org, name), false, true)
-      end
-    end
+    while pending[next_directory] do
+      local current = pending[next_directory]
+      next_directory = next_directory + 1
+      local scanner = vim.uv.fs_scandir(current.path)
 
-    local handle = vim.uv.fs_scandir(base)
-    if handle then
-      while true do
-        local name, type = vim.uv.fs_scandir_next(handle)
+      while scanner do
+        local name, kind = vim.uv.fs_scandir_next(scanner)
+
         if not name then
           break
         end
 
-        if type == "directory" then
-          local child = vim.fs.joinpath(base, name)
-          add(child, false, true)
+        local child = vim.fs.joinpath(current.path, name)
 
-          if info and info.repository then
-            local repo_parts = vim.split(info.repository, "/")
-            local repo_name = repo_parts[2]
-            if repo_name then
-              add(vim.fs.joinpath(child, repo_name), false, true)
-            end
+        local child_is_directory = kind == "directory"
+          or kind == "link"
+          or (kind == nil and M.directory(child))
+
+        if child_is_directory and not name:match("^%.") then
+          local marker = vim.fs.joinpath(child, ".git")
+
+          if vim.uv.fs_stat(marker) then
+            children[#children + 1] = {
+              path = child,
+              depth = current.depth + 1,
+            }
+          elseif current.depth < 1 then
+            pending[#pending + 1] = {
+              path = child,
+              depth = current.depth + 1,
+            }
           end
         end
       end
     end
+
+    table.sort(children, function(left, right)
+      local left_matches = info and info.repo and (vim.fs.basename(left.path):lower()
+        == info.repo:lower()) or false
+
+      local right_matches = info and info.repo and (vim.fs.basename(right.path):lower()
+        == info.repo:lower()) or false
+
+      if left_matches ~= right_matches then
+        return left_matches
+      end
+
+      if left.depth ~= right.depth then
+        return left.depth < right.depth
+      end
+
+      return left.path:lower() < right.path:lower()
+    end)
+
+    for _, child in ipairs(children) do
+      add(child.path, false, true)
+    end
   end
 
-  for _, repo in ipairs((opts and opts.inspect_repositories) or {}) do
-    if type(repo) == "table" and repo.path then
+  for _, repo in ipairs(opts.inspect_repositories or {}) do
+    if type(repo) == "table" and type(repo.path) == "string" then
       add(repo.path, true, false)
-      explicit_roots[#explicit_roots + 1] = vim.fs.normalize(repo.path)
     elseif type(repo) == "string" then
       add(repo, true, false)
-      explicit_roots[#explicit_roots + 1] = vim.fs.normalize(repo)
     end
   end
 
-  if info and info.repository and opts and opts.inspect_repositories then
-    local repo_config = opts.inspect_repositories[info.repository]
-    if type(repo_config) == "string" then
-      add(repo_config, true, false)
-    elseif type(repo_config) == "table" and repo_config.path then
-      add(repo_config.path, true, false)
+  if info and info.repo and info.owner and opts.inspect_repositories then
+    local named = opts.inspect_repositories[info.owner .. "/" .. info.repo]
+
+    if type(named) == "table" and type(named.path) == "string" then
+      add(named.path, true, false)
+    elseif type(named) == "string" then
+      add(named, true, false)
     end
   end
 
-  local cwd = vim.fn.getcwd()
-  add(cwd, false, false)
-  local current_root = M.repository_root(cwd)
-  if current_root then
-    add(current_root, false, false)
+  add(vim.fn.getcwd(), false, false)
+
+  if opts.cwd then
+    local ok, cwd = pcall(vim.fs.normalize, opts.cwd)
+
+    if ok then
+      add(cwd, false)
+    end
   end
 
-  for _, path in ipairs((opts and opts.inspect_search_paths) or {}) do
+  for _, path in ipairs(opts.inspect_search_paths or {}) do
     add_search_path(path)
   end
 
@@ -284,139 +348,176 @@ end
 
 function M.find_local_repository(info, opts, callback)
   local candidates = M.local_candidates(info, opts)
-  local verified_candidates = {}
+  local index = 1
+  local slug = (info.owner .. "/" .. info.repo):lower()
 
-  local function matching_remote(remotes)
-    if not info or not info.repository then
-      return false
-    end
+  local function matching_remote(output)
+    for line in (output or ""):gmatch("[^\r\n]+") do
+      local remote, url =
+        line:match("^(%S+)%s+(%S+)%s+%(fetch%)$")
 
-    local target_repo = info.repository:lower()
+      local forge, repository = M.forge_repository(url)
 
-    for _, remote in ipairs(vim.split(remotes, "\n")) do
-      local forge_repo = M.forge_repository(remote)
-      if forge_repo and forge_repo:lower() == target_repo then
-        return true
+      if forge == info.forge and repository == slug then
+        return remote
       end
     end
-
-    return false
   end
 
   local function contains_target(candidate, target_callback)
-    if not info then
-      target_callback(false)
+    local revisions = {}
+
+    if info.kind == "pull_request" then
+      revisions = { info.base_sha, info.head_sha }
+    else
+      revisions = { info.sha }
+    end
+
+    local revision_index = 1
+
+    local function inspect_revision()
+      local revision = revisions[revision_index]
+      revision_index = revision_index + 1
+
+      if type(revision) ~= "string" or revision == "" then
+        target_callback(false)
+        return
+      end
+
+      M.run({
+        "git",
+        "-C",
+        candidate.path,
+        "cat-file",
+        "-e",
+        revision .. "^{commit}",
+      }, function(_, revision_err)
+        if revision_err then
+          target_callback(false)
+          return
+        end
+
+        if revision_index <= #revisions then
+          inspect_revision()
+          return
+        end
+
+        target_callback(true)
+      end)
+    end
+
+    inspect_revision()
+  end
+
+  local function inspect_next()
+    local candidate = candidates[index]
+    index = index + 1
+
+    if not candidate then
+      callback()
       return
     end
 
-    local revision = info.sha or info.head or info.base
-    if not revision then
-      target_callback(true)
-      return
-    end
+    M.run({ "git", "-C", candidate.path, "remote", "-v" }, function(remotes)
+      local remote = matching_remote(remotes)
 
-    M.run({ "git", "-C", candidate.path, "cat-file", "-e", revision .. "^{commit}" }, function(stdout, err)
-      target_callback(err == nil)
+      if remote or candidate.explicit then
+        callback(candidate.path, remote or info.remote_url)
+        return
+      end
+
+      if not candidate.search_path then
+        inspect_next()
+        return
+      end
+
+      contains_target(candidate, function(matches_target)
+        if matches_target then
+          callback(candidate.path, info.remote_url)
+          return
+        end
+
+        inspect_next()
+      end)
     end)
   end
 
-  M.map_concurrently(candidates, 4, function(candidate, _, worker_callback)
-    if not M.directory(candidate.path) then
-      worker_callback(nil)
-      return
-    end
-
-    M.run({ "git", "-C", candidate.path, "remote", "-v" }, function(remotes, err)
-      if err or not remotes then
-        worker_callback(nil)
-        return
-      end
-
-      if matching_remote(remotes) then
-        contains_target(candidate, function(has_target)
-          worker_callback({
-            path = candidate.path,
-            has_target = has_target,
-            explicit = candidate.explicit,
-            search_path = candidate.search_path,
-          })
-        end)
-      else
-        worker_callback(nil)
-      end
-    end)
-  end, function(results)
-    for _, result in ipairs(results or {}) do
-      if result then
-        verified_candidates[#verified_candidates + 1] = result
-      end
-    end
-
-    for _, candidate in ipairs(verified_candidates) do
-      if candidate.has_target then
-        callback(candidate.path)
-        return
-      end
-    end
-
-    for _, candidate in ipairs(verified_candidates) do
-      if candidate.explicit then
-        callback(candidate.path)
-        return
-      end
-    end
-
-    for _, candidate in ipairs(verified_candidates) do
-      if not candidate.search_path then
-        callback(candidate.path)
-        return
-      end
-    end
-
-    if #verified_candidates > 0 then
-      callback(verified_candidates[1].path)
-      return
-    end
-
-    callback(nil)
-  end)
+  inspect_next()
 end
 
 function M.download_destination(info, opts)
-  local source_root = ((opts and opts.inspect_search_paths) or {})[1]
-    or vim.fn.stdpath("data")
+  local source_root = (opts.inspect_search_paths or {})[1]
 
-  if not info or not info.repository then
-    return vim.fs.joinpath(source_root, "oculus-inspections")
+  if type(source_root) ~= "string" or source_root == "" then
+    return nil, "no default source directory is configured"
   end
 
-  return vim.fs.joinpath(source_root, info.repository)
+  return vim.fs.joinpath(vim.fs.normalize(source_root), info.repo)
 end
 
 function M.offer_repository_download(info, opts, callback)
-  local destination = M.download_destination(info, opts)
+  local destination, destination_err = M.download_destination(info, opts)
 
-  local prompt = string.format(
-    "Local clone of %s not found. Clone to %s? [y/N] ",
-    info.repository or "repository",
-    destination
-  )
+  if not destination then
+    callback(nil, destination_err)
+    return
+  end
 
-  vim.ui.input({ prompt = prompt }, function(input)
-    if not input or not input:match("^[yY]") then
-      callback(nil, "repository clone aborted")
+  if M.repository_root(destination) then
+    callback(destination)
+    return
+  end
+
+  if M.directory(destination) then
+    callback(
+      nil,
+      "cannot use the existing destination because it is not a Git "
+        .. "repository: "
+        .. destination
+    )
+
+    return
+  end
+
+  local choices = {
+    {
+      download = true,
+      label = "Download repository",
+    },
+    {
+      download = false,
+      label = "Do not download",
+    },
+  }
+
+  vim.ui.select(choices, {
+    prompt = ("No local clone of %s/%s was found. Download it to %s?")
+      :format(info.owner, info.repo, destination),
+    format_item = function(choice)
+      return choice.label
+    end,
+  }, function(choice)
+    if not choice or not choice.download then
+      callback(nil, "repository download was declined")
       return
     end
 
-    local clone_url = info.provider == "codeberg"
-        and string.format("https://codeberg.org/%s.git", info.repository)
-      or string.format("https://github.com/%s.git", info.repository)
+    local source_root = vim.fs.dirname(destination)
+    local made_root = vim.fn.mkdir(source_root, "p")
 
-    vim.fn.mkdir(vim.fs.dirname(destination), "p")
+    if made_root == 0 and not M.directory(source_root) then
+      callback(nil, "could not create source directory: " .. source_root)
+      return
+    end
 
-    M.run({ "git", "clone", clone_url, destination }, function(output, err)
-      if err then
-        callback(nil, "git clone failed: " .. err)
+    M.run({
+      "git",
+      "clone",
+      info.remote_url,
+      destination,
+    }, function(_, clone_err)
+      if clone_err then
+        callback(nil, "could not download repository: " .. clone_err)
         return
       end
 
@@ -426,97 +527,155 @@ function M.offer_repository_download(info, opts, callback)
 end
 
 function M.ensure_repository(info, opts, callback)
-  M.find_local_repository(info, opts, function(repository)
+  M.find_local_repository(info, opts, function(repository, fetch_source)
     if repository then
-      callback(repository)
+      callback(repository, nil, fetch_source or info.remote_url)
       return
     end
 
-    M.offer_repository_download(info, opts, callback)
+    M.offer_repository_download(info, opts, function(downloaded, download_err)
+      if not downloaded then
+        callback(nil, download_err)
+        return
+      end
+
+      callback(downloaded, nil, info.remote_url)
+    end)
   end)
 end
 
 function M.resolve_revision(repository, revision, callback)
-  if not revision or revision == "" then
-    callback(nil, "missing revision")
-    return
-  end
-
-  M.run({ "git", "-C", repository, "rev-parse", "--verify", revision .. "^{commit}" }, function(sha, err)
-    if err then
-      callback(nil, err)
-      return
-    end
-
-    callback(sha)
-  end)
+  M.run({
+    "git",
+    "-C",
+    repository,
+    "rev-parse",
+    revision .. "^{commit}",
+  }, callback)
 end
 
 function M.resolve_pair(repository, info, callback)
-  local base_ref = info.base or (info.sha and info.sha .. "~1") or "HEAD~1"
-  local head_ref = info.head or info.sha or "HEAD"
-
-  M.resolve_revision(repository, base_ref, function(base_sha, base_err)
-    if base_err then
-      callback(nil, base_err)
-      return
-    end
-
-    M.resolve_revision(repository, head_ref, function(head_sha, head_err)
-      if head_err then
-        callback(nil, head_err)
+  if info.kind == "pull_request" then
+    M.resolve_revision(repository, info.base_sha, function(base, base_err)
+      if base_err then
+        callback(nil, base_err)
         return
       end
 
-      callback({
-        base = base_sha,
-        head = head_sha,
-      })
+      M.resolve_revision(repository, info.head_sha, function(head, head_err)
+        if head_err then
+          callback(nil, head_err)
+          return
+        end
+
+        callback({ commit = head, parent = base })
+      end)
+    end)
+
+    return
+  end
+
+  M.resolve_revision(repository, info.sha, function(commit, resolve_err)
+    if resolve_err then
+      callback(nil, resolve_err)
+      return
+    end
+
+    M.run({
+      "git",
+      "-C",
+      repository,
+      "rev-parse",
+      commit .. "^",
+    }, function(parent, parent_err)
+      if parent_err then
+        callback(nil, "this commit does not have an inspectable parent")
+        return
+      end
+
+      callback({ commit = commit, parent = parent })
     end)
   end)
 end
 
 function M.fetch_pair(repository, fetch_source, info, callback)
-  local remote_url = fetch_source
-  if not remote_url then
-    callback(true)
-    return
-  end
-
-  M.run({ "git", "-C", repository, "fetch", remote_url }, function(_, err)
-    if err then
-      callback(nil, err)
+  M.resolve_pair(repository, info, function(commits)
+    if commits then
+      callback(commits)
       return
     end
 
-    callback(true)
+    local command = {
+      "git",
+      "-C",
+      repository,
+      "fetch",
+      "--filter=blob:none",
+      fetch_source or info.remote_url,
+    }
+
+    if info.kind == "pull_request" then
+      command[#command + 1] = info.base_sha
+
+      command[#command + 1] = info.fetch_ref
+        or ("refs/pull/%d/head"):format(info.number)
+    else
+      command[#command + 1] = info.sha
+    end
+
+    M.run(command, function(_, err)
+      if err then
+        local target = info.kind == "pull_request"
+            and ("pull request #" .. info.number)
+          or ("commit " .. info.sha)
+
+        callback(nil, "could not fetch " .. target .. ": " .. err)
+        return
+      end
+
+      M.resolve_pair(repository, info, function(resolved, resolve_err)
+        if resolve_err then
+          callback(nil, "could not resolve commit: " .. resolve_err)
+          return
+        end
+
+        callback(resolved)
+      end)
+    end)
   end)
 end
 
 function M.revision_pairs(repository, info, commits, callback)
-  if not commits or #commits == 0 then
-    M.resolve_pair(repository, info, function(pair, err)
-      if err then
-        callback(nil, err)
-        return
-      end
-
-      callback({ pair })
-    end)
+  if info.kind ~= "pull_request" then
+    callback({ commits })
     return
   end
 
-  local pairs = {}
-  for _, commit in ipairs(commits) do
-    pairs[#pairs + 1] = {
-      base = commit.sha .. "~1",
-      head = commit.sha,
-      message = commit.commit and commit.commit.message,
-      author = commit.commit and commit.commit.author,
-    }
-  end
+  M.run({
+    "git",
+    "-C",
+    repository,
+    "rev-list",
+    "--reverse",
+    "--topo-order",
+    "--parents",
+    commits.parent .. ".." .. commits.commit,
+  }, function(output, err)
+    if err then
+      callback(nil, "could not list pull request commits: " .. err)
+      return
+    end
 
-  callback(pairs)
+    local patch = require("oculus.inspect.patch")
+    local pairs = patch.parse_revision_pairs(output)
+
+    if #pairs == 0 then
+      callback(nil, "the pull request does not contain inspectable commits")
+      return
+    end
+
+    callback(pairs)
+  end)
 end
 
 return M

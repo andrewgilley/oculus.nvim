@@ -314,1185 +314,8 @@ function M._enable_inspection_treesitter_context(opts)
   return true
 end
 
-local function git_error(result, fallback)
-  local message = vim.trim(result.stderr or "")
-
-  if message == "" then
-    message = fallback
-  end
-
-  return message
-end
-
-local function run(command, callback)
-  vim.system(command, { text = true }, function(result)
-    vim.schedule(function()
-      if result.code ~= 0 then
-        callback(nil, git_error(result, "git command failed"))
-        return
-      end
-
-      callback(vim.trim(result.stdout or ""))
-    end)
-  end)
-end
-
-local function run_raw(command, callback)
-  vim.system(command, { text = true }, function(result)
-    vim.schedule(function()
-      if result.code ~= 0 then
-        callback(nil, git_error(result, "git command failed"))
-        return
-      end
-
-      callback(result.stdout or "")
-    end)
-  end)
-end
-
-local function map_concurrently(items, limit, worker, callback)
-  local count = #items
-
-  if count == 0 then
-    callback({})
-    return
-  end
-
-  limit = math.max(1, math.floor(tonumber(limit) or 1))
-  local results = {}
-  local completed = {}
-  local next_index = 1
-  local active_count = 0
-  local completed_count = 0
-  local stopped = false
-  local pumping = false
-  local repump = false
-  local pump
-
-  local function finish(index, result, err)
-    if stopped or completed[index] then
-      return
-    end
-
-    completed[index] = true
-    active_count = active_count - 1
-
-    if err then
-      stopped = true
-      callback(nil, err)
-      return
-    end
-
-    results[index] = result
-    completed_count = completed_count + 1
-
-    if completed_count == count then
-      stopped = true
-      callback(results)
-      return
-    end
-
-    pump()
-  end
-
-  pump = function()
-    if stopped then
-      return
-    end
-
-    if pumping then
-      repump = true
-      return
-    end
-
-    pumping = true
-
-    repeat
-      repump = false
-
-      while not stopped
-        and active_count < limit
-        and next_index <= count
-      do
-        local index = next_index
-        next_index = next_index + 1
-        active_count = active_count + 1
-
-        worker(items[index], index, function(result, err)
-          finish(index, result, err)
-        end)
-      end
-    until not repump
-
-    pumping = false
-  end
-
-  pump()
-end
-
-local function parse_commit_url(url)
-  if type(url) ~= "string" then
-    return nil
-  end
-
-  local owner, repo, sha, suffix = url:match(
-    "^https?://github%.com/([^/]+)/([^/]+)/commit/([0-9a-fA-F]+)(.*)$"
-  )
-
-  local forge = "github"
-  local host = "github.com"
-
-  if not owner then
-    owner, repo, sha, suffix = url:match(
-      "^https?://codeberg%.org/([^/]+)/([^/]+)/commit/([0-9a-fA-F]+)(.*)$"
-    )
-
-    forge = "codeberg"
-    host = "codeberg.org"
-  end
-
-  if not owner or not repo or not sha then
-    return nil
-  end
-
-  repo = repo:gsub("%.git$", "")
-
-  if
-    not owner:match("^[%w][%w._-]*$")
-    or not repo:match("^[%w._-]+$")
-    or repo == "."
-    or repo == ".."
-    or #sha < 7
-    or #sha > 40
-    or (suffix ~= "" and not suffix:match("^[/?#]"))
-  then
-    return nil
-  end
-
-  return {
-    kind = "commit",
-    forge = forge,
-    host = host,
-    owner = owner,
-    repo = repo,
-    sha = sha:lower(),
-    remote_url = ("https://%s/%s/%s.git"):format(host, owner, repo),
-  }
-end
-
-local function parse_pull_request_url(url)
-  if type(url) ~= "string" then
-    return nil
-  end
-
-  local owner, repo, number, suffix = url:match(
-    "^https?://github%.com/([^/]+)/([^/]+)/pull/(%d+)(.*)$"
-  )
-
-  local forge = "github"
-  local host = "github.com"
-
-  if not owner then
-    owner, repo, number, suffix = url:match(
-      "^https?://codeberg%.org/([^/]+)/([^/]+)/pulls/(%d+)(.*)$"
-    )
-
-    forge = "codeberg"
-    host = "codeberg.org"
-  end
-
-  if
-    not owner
-    or not repo
-    or not number
-    or not owner:match("^[%w][%w._-]*$")
-    or not repo:match("^[%w._-]+$")
-    or repo == "."
-    or repo == ".."
-    or (suffix ~= "" and not suffix:match("^[/?#]"))
-  then
-    return nil
-  end
-
-  repo = repo:gsub("%.git$", "")
-
-  return {
-    kind = "pull_request",
-    forge = forge,
-    host = host,
-    owner = owner,
-    repo = repo,
-    number = tonumber(number),
-    remote_url = ("https://%s/%s/%s.git"):format(host, owner, repo),
-  }
-end
-
-local function parse_issue_url(url)
-  if type(url) ~= "string" then
-    return nil
-  end
-
-  local owner, repo, number, suffix = url:match(
-    "^https?://github%.com/([^/]+)/([^/]+)/issues/(%d+)(.*)$"
-  )
-
-  local forge = "github"
-  local host = "github.com"
-
-  if not owner then
-    owner, repo, number, suffix = url:match(
-      "^https?://codeberg%.org/([^/]+)/([^/]+)/issues/(%d+)(.*)$"
-    )
-
-    forge = "codeberg"
-    host = "codeberg.org"
-  end
-
-  if
-    not owner
-    or not repo
-    or not number
-    or not owner:match("^[%w][%w._-]*$")
-    or not repo:match("^[%w._-]+$")
-    or repo == "."
-    or repo == ".."
-    or (suffix ~= "" and not suffix:match("^[/?#]"))
-  then
-    return nil
-  end
-
-  repo = repo:gsub("%.git$", "")
-
-  return {
-    kind = "issue",
-    forge = forge,
-    host = host,
-    owner = owner,
-    repo = repo,
-    number = tonumber(number),
-    remote_url = ("https://%s/%s/%s.git"):format(host, owner, repo),
-  }
-end
-
-local function parse_target_url(url)
-  return parse_commit_url(url)
-    or parse_pull_request_url(url)
-    or parse_issue_url(url)
-end
-
-local function parse_commit_overview(output)
-  if type(output) ~= "string" or output == "" then
-    return nil
-  end
-
-  local fields = vim.split(output, "\0", { plain = true })
-
-  if #fields < 7 then
-    return nil
-  end
-
-  return {
-    sha = vim.trim(fields[1] or ""),
-    parents = vim.split(
-      vim.trim(fields[2] or ""),
-      "%s+",
-      { trimempty = true }
-    ),
-    author_name = vim.trim(fields[3] or ""),
-    author_email = vim.trim(fields[4] or ""),
-    authored_at = vim.trim(fields[5] or ""),
-    subject = vim.trim(fields[6] or ""),
-    body = vim.trim(fields[7] or ""),
-  }
-end
-
-local function activity_comment(event)
-  if type(event) ~= "table" then
-    return nil
-  end
-
-  if
-    event.type ~= "PullRequestReviewCommentEvent"
-    and event.type ~= "CommitCommentEvent"
-  then
-    return nil
-  end
-
-  local comment = event.payload and event.payload.comment or nil
-
-  if type(comment) ~= "table" then
-    return nil
-  end
-
-  local body = type(comment.body) == "string"
-      and vim.trim(comment.body)
-    or ""
-
-  local path = type(comment.path) == "string"
-      and comment.path
-    or nil
-
-  local side = comment.side == "LEFT" and "parent" or "change"
-
-  local line = side == "parent"
-      and (
-        tonumber(comment.original_start_line)
-        or tonumber(comment.original_line)
-      )
-    or (
-      tonumber(comment.start_line)
-      or tonumber(comment.line)
-      or tonumber(comment.original_line)
-    )
-
-  if body == "" or not path or path == "" or not line then
-    return nil
-  end
-
-  return {
-    body = body,
-    path = path:gsub("\\", "/"),
-    line = math.max(1, line),
-    side = side,
-    commit = side == "parent"
-        and (comment.original_commit_id or comment.commit_id)
-      or comment.commit_id,
-  }
-end
-
-local function activity_context(event)
-  local comment = activity_comment(event)
-
-  if comment then
-    return comment
-  end
-
-  if type(event) ~= "table"
-    or (
-      event.type ~= "IssuesEvent"
-      and event.type ~= "IssueCommentEvent"
-    )
-  then
-    return nil
-  end
-
-  local payload = event.payload or {}
-  local issue = payload.issue
-
-  if type(issue) ~= "table" or issue.pull_request then
-    return nil
-  end
-
-  local issue_body = type(issue.body) == "string" and issue.body or nil
-
-  local comment_body = type(payload.comment) == "table"
-      and type(payload.comment.body) == "string"
-      and payload.comment.body
-    or nil
-
-  return {
-    issue = {
-      number = issue.number,
-      title = issue.title,
-      body = issue_body,
-      comment = comment_body,
-      html_url = issue.html_url,
-      created_at = issue.created_at,
-    },
-  }
-end
-
-local function first_changed_paths(output)
-  local line = output and output:match("[^\r\n]+")
-
-  if not line then
-    return nil, nil
-  end
-
-  local fields = vim.split(line, "\t", { plain = true })
-  local status = fields[1] or ""
-
-  if (status:sub(1, 1) == "R" or status:sub(1, 1) == "C")
-    and fields[2]
-    and fields[3]
-  then
-    return fields[2], fields[3]
-  end
-
-  return fields[2], fields[2]
-end
-
-local function parse_changed_files(output)
-  local changes = {}
-
-  for line in (output or ""):gmatch("[^\r\n]+") do
-    local fields = vim.split(line, "\t", { plain = true })
-    local status = (fields[1] or ""):sub(1, 1)
-
-    if
-      (status == "R" or status == "C")
-      and fields[2]
-      and fields[3]
-    then
-      changes[#changes + 1] = {
-        status = status,
-        old_path = fields[2],
-        new_path = fields[3],
-      }
-    elseif status ~= "" and fields[2] then
-      changes[#changes + 1] = {
-        status = status,
-        old_path = fields[2],
-        new_path = fields[2],
-      }
-    end
-  end
-
-  return changes
-end
-
-local function parse_hunks(patch)
-  local hunks = {}
-
-  for old_start, old_count, new_start, new_count in
-    (patch or ""):gmatch(
-      "@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@"
-    )
-  do
-    hunks[#hunks + 1] = {
-      old_start = tonumber(old_start),
-      old_count = old_count == "" and 1 or tonumber(old_count),
-      new_start = tonumber(new_start),
-      new_count = new_count == "" and 1 or tonumber(new_count),
-    }
-  end
-
-  return hunks
-end
-
-local function hunk_start(hunk, role)
-  return math.max(
-    1,
-    role == "parent" and hunk.old_start or hunk.new_start
-  )
-end
-
-local function focused_hunk_start(hunk)
-  local before = hunk.old_count == 0
-      and hunk.old_start
-    or hunk.old_start - 1
-
-  return math.max(1, before + 1)
-end
-
-local function revision_hunk_index_at_line(session, role, line)
-  for index, hunk in ipairs(session.hunks or {}) do
-    local start = hunk_start(hunk, role)
-
-    local count = role == "parent"
-        and hunk.old_count
-      or hunk.new_count
-
-    if line >= start
-      and line <= start + math.max(1, count) - 1
-    then
-      return index
-    end
-  end
-end
-
-local function hunk_index_at_line(session, role, line)
-  if not session.focused_chunks then
-    return revision_hunk_index_at_line(session, role, line)
-  end
-
-  for index, hunk in ipairs(session.hunks or {}) do
-    local focused_change = session.focused_chunks
-      and role == "change"
-      and index == session.active_chunk
-
-    local start
-
-    if focused_change then
-      start = focused_hunk_start(hunk)
-    elseif session.focused_chunks then
-      start = hunk_start(hunk, "parent")
-      local active = session.hunks[session.active_chunk]
-
-      if role == "change"
-        and active
-        and hunk.old_start > active.old_start
-      then
-        start = start + active.new_count - active.old_count
-      end
-    else
-      start = hunk_start(hunk, role)
-    end
-
-    local count
-
-    if focused_change then
-      count = hunk.new_count
-    elseif role == "parent" or index ~= session.active_chunk then
-      count = hunk.old_count
-    else
-      count = hunk.new_count
-    end
-
-    if line >= start
-      and line <= start + math.max(1, count) - 1
-    then
-      return index
-    end
-  end
-end
-
-local function change_lines(hunks, role)
-  local lines = {}
-  local seen = {}
-
-  for _, hunk in ipairs(hunks or {}) do
-    local line = hunk_start(hunk, role or "change")
-
-    if not seen[line] then
-      seen[line] = true
-      lines[#lines + 1] = line
-    end
-  end
-
-  table.sort(lines)
-  return lines
-end
-
-local function focused_change_lines(parent_lines, change_lines_value, hunk)
-  if not hunk then
-    return vim.deepcopy(parent_lines or { "" }), 1
-  end
-
-  parent_lines = parent_lines or { "" }
-  change_lines_value = change_lines_value or { "" }
-  local parent_count = #parent_lines
-
-  if parent_count == 1
-    and parent_lines[1] == ""
-    and hunk.old_start == 0
-    and hunk.old_count == 0
-  then
-    parent_count = 0
-  end
-
-  local before_count = hunk.old_count == 0
-      and hunk.old_start
-    or hunk.old_start - 1
-
-  before_count = math.min(math.max(0, before_count), parent_count)
-  local result = {}
-
-  local function append(source, first, last)
-    for index = math.max(1, first), math.min(#source, last) do
-      result[#result + 1] = source[index]
-    end
-  end
-
-  append(parent_lines, 1, before_count)
-
-  append(
-    change_lines_value,
-    hunk.new_start,
-    hunk.new_start + hunk.new_count - 1
-  )
-
-  append(
-    parent_lines,
-    before_count + hunk.old_count + 1,
-    parent_count
-  )
-
-  return #result > 0 and result or { "" }, math.max(1, before_count + 1)
-end
-
-local function parse_revision_pairs(output)
-  local pairs = {}
-
-  for line in (output or ""):gmatch("[^\r\n]+") do
-    local fields = vim.split(line, "%s+", { trimempty = true })
-
-    if fields[1] and fields[2] then
-      pairs[#pairs + 1] = {
-        commit = fields[1],
-        parent = fields[2],
-      }
-    end
-  end
-
-  return pairs
-end
-
-local function directory(path)
-  local stat = vim.uv.fs_stat(path)
-  return stat and stat.type == "directory"
-end
-
-local function inspection_directory(repository, file)
-  if not file then
-    return repository
-  end
-
-  local parent = vim.fs.dirname(vim.fs.joinpath(repository, file))
-  return directory(parent) and parent or repository
-end
-
-local function forge_repository(url)
-  if type(url) ~= "string" then
-    return nil
-  end
-
-  local forge
-  local owner
-  local repo
-
-  for _, candidate in ipairs({
-    { name = "github", host = "github%.com" },
-    { name = "codeberg", host = "codeberg%.org" },
-  }) do
-    owner, repo = url:match(
-      "^https?://" .. candidate.host .. "/([^/]+)/([^/]+)"
-    )
-
-    if not owner then
-      owner, repo = url:match(
-        "^git@" .. candidate.host .. ":([^/]+)/([^/]+)"
-      )
-    end
-
-    if not owner then
-      owner, repo = url:match(
-        "^ssh://git@" .. candidate.host .. "/([^/]+)/([^/]+)"
-      )
-    end
-
-    if owner then
-      forge = candidate.name
-      break
-    end
-  end
-
-  if not forge or not owner or not repo then
-    return nil
-  end
-
-  repo = repo:gsub("[/?#].*$", ""):gsub("%.git$", "")
-  return forge, (owner .. "/" .. repo):lower()
-end
-
-local function github_repository(url)
-  local forge, repository = forge_repository(url)
-
-  if forge == "github" then
-    return repository
-  end
-end
-
-local function repository_root(path)
-  if type(path) ~= "string" or path == "" then
-    return nil
-  end
-
-  local stat = vim.uv.fs_stat(path)
-
-  if stat and stat.type ~= "directory" then
-    path = vim.fs.dirname(path)
-  end
-
-  if not vim.uv.fs_stat(path) then
-    return nil
-  end
-
-  return vim.fs.root(path, ".git")
-end
-
-local function local_candidates(info, opts)
-  local candidates = {}
-  local seen = {}
-
-  local function add(path, explicit, search_path)
-    local root = repository_root(path)
-
-    if not root then
-      return
-    end
-
-    root = vim.fs.normalize(root)
-
-    local key = vim.uv.os_uname().sysname == "Windows_NT"
-        and root:lower()
-      or root
-
-    if seen[key] then
-      if explicit then
-        seen[key].explicit = true
-      end
-
-      if search_path then
-        seen[key].search_path = true
-      end
-
-      return
-    end
-
-    local candidate = {
-      path = root,
-      explicit = explicit or false,
-      search_path = search_path or false,
-    }
-
-    seen[key] = candidate
-    candidates[#candidates + 1] = candidate
-  end
-
-  local function add_search_path(path)
-    if type(path) ~= "string" or not directory(path) then
-      return
-    end
-
-    add(path, false, true)
-    local children = {}
-
-    local pending = {
-      { path = path, depth = 0 },
-    }
-
-    local next_directory = 1
-
-    while pending[next_directory] do
-      local current = pending[next_directory]
-      next_directory = next_directory + 1
-      local scanner = vim.uv.fs_scandir(current.path)
-
-      while scanner do
-        local name, kind = vim.uv.fs_scandir_next(scanner)
-
-        if not name then
-          break
-        end
-
-        local child = vim.fs.joinpath(current.path, name)
-
-        local child_is_directory = kind == "directory"
-          or kind == "link"
-          or (kind == nil and directory(child))
-
-        if child_is_directory and not name:match("^%.") then
-          local marker = vim.fs.joinpath(child, ".git")
-
-          if vim.uv.fs_stat(marker) then
-            children[#children + 1] = {
-              path = child,
-              depth = current.depth + 1,
-            }
-          elseif current.depth < 1 then
-            pending[#pending + 1] = {
-              path = child,
-              depth = current.depth + 1,
-            }
-          end
-        end
-      end
-    end
-
-    table.sort(children, function(left, right)
-      local left_matches = vim.fs.basename(left.path):lower()
-        == info.repo:lower()
-
-      local right_matches = vim.fs.basename(right.path):lower()
-        == info.repo:lower()
-
-      if left_matches ~= right_matches then
-        return left_matches
-      end
-
-      if left.depth ~= right.depth then
-        return left.depth < right.depth
-      end
-
-      return left.path:lower() < right.path:lower()
-    end)
-
-    for _, child in ipairs(children) do
-      add(child.path, false, true)
-    end
-  end
-
-  local slug = (info.owner .. "/" .. info.repo):lower()
-
-  for name, path in pairs(opts.inspect_repositories or {}) do
-    if type(name) == "string" and name:lower() == slug then
-      add(path, true)
-    end
-  end
-
-  add(vim.fn.getcwd(), false)
-
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_valid(buf) then
-      add(vim.api.nvim_buf_get_name(buf), false)
-    end
-  end
-
-  for tab = 1, vim.fn.tabpagenr("$") do
-    local ok, cwd = pcall(vim.fn.getcwd, -1, tab)
-
-    if ok then
-      add(cwd, false)
-    end
-  end
-
-  for _, path in ipairs(opts.inspect_search_paths or {}) do
-    add_search_path(path)
-  end
-
-  return candidates
-end
-
-local function find_local_repository(info, opts, callback)
-  local candidates = local_candidates(info, opts)
-  local slug = (info.owner .. "/" .. info.repo):lower()
-  local index = 1
-
-  local function matching_remote(remotes)
-    for line in (remotes or ""):gmatch("[^\r\n]+") do
-      local remote, url =
-        line:match("^(%S+)%s+(%S+)%s+%(fetch%)$")
-
-      local forge, repository = forge_repository(url)
-
-      if forge == info.forge and repository == slug then
-        return remote
-      end
-    end
-  end
-
-  local function contains_target(candidate, target_callback)
-    local revisions = {}
-
-    if info.kind == "pull_request" then
-      revisions = { info.base_sha, info.head_sha }
-    else
-      revisions = { info.sha }
-    end
-
-    local revision_index = 1
-
-    local function inspect_revision()
-      local revision = revisions[revision_index]
-      revision_index = revision_index + 1
-
-      if type(revision) ~= "string" or revision == "" then
-        target_callback(false)
-        return
-      end
-
-      run({
-        "git",
-        "-C",
-        candidate.path,
-        "cat-file",
-        "-e",
-        revision .. "^{commit}",
-      }, function(_, revision_err)
-        if revision_err then
-          target_callback(false)
-          return
-        end
-
-        if revision_index <= #revisions then
-          inspect_revision()
-          return
-        end
-
-        target_callback(true)
-      end)
-    end
-
-    inspect_revision()
-  end
-
-  local function inspect_next()
-    local candidate = candidates[index]
-    index = index + 1
-
-    if not candidate then
-      callback()
-      return
-    end
-
-    run({ "git", "-C", candidate.path, "remote", "-v" }, function(remotes)
-      local remote = matching_remote(remotes)
-
-      if remote or candidate.explicit then
-        callback(candidate.path, remote or info.remote_url)
-        return
-      end
-
-      if not candidate.search_path then
-        inspect_next()
-        return
-      end
-
-      contains_target(candidate, function(matches_target)
-        if matches_target then
-          callback(candidate.path, info.remote_url)
-          return
-        end
-
-        inspect_next()
-      end)
-    end)
-  end
-
-  inspect_next()
-end
-
-local function download_destination(info, opts)
-  local source_root = (opts.inspect_search_paths or {})[1]
-
-  if type(source_root) ~= "string" or source_root == "" then
-    return nil, "no default source directory is configured"
-  end
-
-  return vim.fs.joinpath(vim.fs.normalize(source_root), info.repo)
-end
-
-local function offer_repository_download(info, opts, callback)
-  local destination, destination_err = download_destination(info, opts)
-
-  if not destination then
-    callback(nil, destination_err)
-    return
-  end
-
-  if vim.uv.fs_stat(destination) then
-    local root = repository_root(destination)
-    local normalized_destination = vim.fs.normalize(destination)
-    local normalized_root = root and vim.fs.normalize(root) or nil
-
-    if vim.uv.os_uname().sysname == "Windows_NT" then
-      normalized_destination = normalized_destination:lower()
-      normalized_root = normalized_root and normalized_root:lower() or nil
-    end
-
-    if normalized_root == normalized_destination then
-      callback(destination)
-      return
-    end
-
-    callback(
-      nil,
-      "cannot use the existing destination because it is not a Git "
-        .. "repository: "
-        .. destination
-    )
-
-    return
-  end
-
-  local choices = {
-    {
-      download = true,
-      label = "Download repository",
-    },
-    {
-      download = false,
-      label = "Do not download",
-    },
-  }
-
-  vim.ui.select(choices, {
-    prompt = ("No local clone of %s/%s was found. Download it to %s?")
-      :format(info.owner, info.repo, destination),
-    format_item = function(choice)
-      return choice.label
-    end,
-  }, function(choice)
-    if not choice or not choice.download then
-      callback(nil, "repository download was declined")
-      return
-    end
-
-    local source_root = vim.fs.dirname(destination)
-    local made_root = vim.fn.mkdir(source_root, "p")
-
-    if made_root == 0 and not directory(source_root) then
-      callback(nil, "could not create source directory: " .. source_root)
-      return
-    end
-
-    run({
-      "git",
-      "clone",
-      info.remote_url,
-      destination,
-    }, function(_, clone_err)
-      if clone_err then
-        callback(nil, "could not download repository: " .. clone_err)
-        return
-      end
-
-      callback(destination)
-    end)
-  end)
-end
-
-local function ensure_repository(info, opts, callback)
-  find_local_repository(info, opts, function(repository, fetch_source)
-    if repository then
-      callback(repository, nil, fetch_source or info.remote_url)
-      return
-    end
-
-    offer_repository_download(info, opts, function(downloaded, download_err)
-      if not downloaded then
-        callback(nil, download_err)
-        return
-      end
-
-      callback(downloaded, nil, info.remote_url)
-    end)
-  end)
-end
-
-local function resolve_revision(repository, revision, callback)
-  run({
-    "git",
-    "-C",
-    repository,
-    "rev-parse",
-    revision .. "^{commit}",
-  }, callback)
-end
-
-local function resolve_pair(repository, info, callback)
-  if info.kind == "pull_request" then
-    resolve_revision(repository, info.base_sha, function(base, base_err)
-      if base_err then
-        callback(nil, base_err)
-        return
-      end
-
-      resolve_revision(repository, info.head_sha, function(head, head_err)
-        if head_err then
-          callback(nil, head_err)
-          return
-        end
-
-        callback({ commit = head, parent = base })
-      end)
-    end)
-
-    return
-  end
-
-  resolve_revision(repository, info.sha, function(commit, resolve_err)
-    if resolve_err then
-      callback(nil, resolve_err)
-      return
-    end
-
-    run({
-      "git",
-      "-C",
-      repository,
-      "rev-parse",
-      commit .. "^",
-    }, function(parent, parent_err)
-      if parent_err then
-        callback(nil, "this commit does not have an inspectable parent")
-        return
-      end
-
-      callback({ commit = commit, parent = parent })
-    end)
-  end)
-end
-
-local function fetch_pair(repository, fetch_source, info, callback)
-  resolve_pair(repository, info, function(commits)
-    if commits then
-      callback(commits)
-      return
-    end
-
-    local command = {
-      "git",
-      "-C",
-      repository,
-      "fetch",
-      "--filter=blob:none",
-      fetch_source or info.remote_url,
-    }
-
-    if info.kind == "pull_request" then
-      command[#command + 1] = info.base_sha
-
-      command[#command + 1] = info.fetch_ref
-        or ("refs/pull/%d/head"):format(info.number)
-    else
-      command[#command + 1] = info.sha
-    end
-
-    run(command, function(_, err)
-      if err then
-        local target = info.kind == "pull_request"
-            and ("pull request #" .. info.number)
-          or ("commit " .. info.sha)
-
-        callback(nil, "could not fetch " .. target .. ": " .. err)
-        return
-      end
-
-      resolve_pair(repository, info, function(resolved, resolve_err)
-        if resolve_err then
-          callback(nil, "could not resolve commit: " .. resolve_err)
-          return
-        end
-
-        callback(resolved)
-      end)
-    end)
-  end)
-end
-
-local function revision_pairs(repository, info, commits, callback)
-  if info.kind ~= "pull_request" then
-    callback({ commits })
-    return
-  end
-
-  run({
-    "git",
-    "-C",
-    repository,
-    "rev-list",
-    "--reverse",
-    "--topo-order",
-    "--parents",
-    commits.parent .. ".." .. commits.commit,
-  }, function(output, err)
-    if err then
-      callback(nil, "could not list pull request commits: " .. err)
-      return
-    end
-
-    local pairs = parse_revision_pairs(output)
-
-    if #pairs == 0 then
-      callback(nil, "the pull request does not contain inspectable commits")
-      return
-    end
-
-    callback(pairs)
-  end)
-end
+local git = require("oculus.inspect.git")
+local patch = require("oculus.inspect.patch")
 
 local function valid_endpoint(endpoint)
   return endpoint
@@ -2901,7 +1724,7 @@ local function render_focused_chunk(session, chunk_index)
     return
   end
 
-  local lines, start = focused_change_lines(
+  local lines, start = patch.focused_change_lines(
     session.parent_content,
     session.change_content,
     hunk
@@ -3111,7 +1934,7 @@ end
 local function inspection_chunks(group, session)
   return group.kind == "issue"
       and (session.sections or {})
-    or (session.hunks or {})
+    or patch.session_hunks(session)
 end
 
 local function next_inspection_chunk(group, session, current_chunk)
@@ -3203,7 +2026,7 @@ local function chunk_start_for_role(
   change_content
 )
   if role == "parent" then
-    return hunk_start(hunk, "parent")
+    return patch.hunk_start(hunk, "parent")
   end
 
   for offset = 0, math.max(0, hunk.new_count or 0) - 1 do
@@ -3226,7 +2049,7 @@ local function render_chunk_for_role(session, role, chunk_index)
   end
 
   local change_start = render_focused_chunk(session, chunk_index)
-    or focused_hunk_start(hunk)
+    or patch.focused_hunk_start(hunk)
 
   return chunk_start_for_role(
     hunk,
@@ -3426,7 +2249,7 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
       local hunks = session.hunks or {}
       local hunk = hunks[active] or hunks[1]
       if hunk then
-        local start = hunk_start(hunk, "parent")
+        local start = patch.hunk_start(hunk, "parent")
         M._virtual_counter.place_virtual_counter(
           buf,
           start,
@@ -3450,14 +2273,14 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
             or chunk_start_for_role(
               hunk,
               "change",
-              hunk_start(hunk, "change"),
+              patch.hunk_start(hunk, "change"),
               session.change_content
             )
         else
           start = chunk_start_for_role(
             hunk,
             "change",
-            hunk_start(hunk, "change"),
+            patch.hunk_start(hunk, "change"),
             session.change_content
           )
         end
@@ -6493,7 +5316,7 @@ function M._overview_ui.open_worktree_workflow(group, opts)
       return
     end
 
-    run({
+    git.run({
       "git",
       "-C",
       repository,
@@ -6508,7 +5331,7 @@ function M._overview_ui.open_worktree_workflow(group, opts)
         return
       end
 
-      run({
+      git.run({
         "git",
         "-C",
         repository,
@@ -8532,16 +7355,17 @@ local function setup_inspection_comment(group, comment)
   end
 
   local chunk_index =
-    revision_hunk_index_at_line(session, role, comment.line)
+    patch.revision_hunk_index_at_line(session, role, comment.line)
 
   if chunk_index then
-    local hunk = session.hunks[chunk_index]
-    local revision_start = hunk_start(hunk, role)
+    local hunks = patch.session_hunks(session)
+    local hunk = hunks[chunk_index]
+    local revision_start = patch.hunk_start(hunk, role)
     local offset = math.max(0, comment.line - revision_start)
 
     local focused_start =
       render_focused_chunk(session, chunk_index)
-        or focused_hunk_start(hunk)
+        or patch.focused_hunk_start(hunk)
 
     comment.line = focused_start + offset
   end
@@ -8817,6 +7641,9 @@ local function open_tabs(
     }
 
     for index, paths in ipairs(inspections) do
+      local hunks = paths.hunks
+        or (paths.patch and paths.patch ~= "" and parse_hunks(paths.patch) or {})
+
       inspection_sessions[index] = {
         file = paths.change_file or paths.parent_file,
         parent_file = paths.parent_file,
@@ -8826,14 +7653,14 @@ local function open_tabs(
         parent_repository = paths.repository,
         change_repository = paths.repository,
         changes = paths.changes,
-        hunks = paths.hunks,
+        hunks = hunks,
         parent_content = vim.deepcopy(paths.parent_lines),
         change_content = vim.deepcopy(paths.change_lines),
         patch = paths.patch,
         status = paths.status,
-        parent_lines = change_lines(paths.hunks, "parent"),
-        change_lines = change_lines(paths.hunks),
-        active_chunk = paths.hunks[1] and 1 or nil,
+        parent_lines = patch.change_lines(hunks, "parent"),
+        change_lines = patch.change_lines(hunks),
+        active_chunk = hunks[1] and 1 or nil,
         last_role = "parent",
       }
     end
@@ -8997,7 +7824,7 @@ local function read_revision_file(repository, revision, file, missing, callback)
     return
   end
 
-  run_raw({
+  git.run_raw({
     "git",
     "-C",
     repository,
@@ -9020,7 +7847,7 @@ local function read_revision_diff(
   commit_index,
   callback
 )
-  run({
+  git.run({
     "git",
     "-C",
     repository,
@@ -9036,7 +7863,7 @@ local function read_revision_diff(
       return
     end
 
-    local changed_files = parse_changed_files(changes)
+    local changed_files = patch.parse_changed_files(changes)
     local reads = {}
     local tasks = {}
 
@@ -9074,13 +7901,13 @@ local function read_revision_diff(
       end
 
       tasks[#tasks + 1] = function(done)
-        run(diff_command, function(patch, patch_err)
+        git.run(diff_command, function(patch_content, patch_err)
           if patch_err then
             done(nil, "could not read file hunks: " .. patch_err)
             return
           end
 
-          read.patch = patch
+          read.patch = patch_content
           done(true)
         end)
       end
@@ -9126,7 +7953,7 @@ local function read_revision_diff(
       end
     end
 
-    map_concurrently(
+    git.map_concurrently(
       tasks,
       changed_file_read_concurrency,
       function(task, _, done)
@@ -9157,7 +7984,6 @@ local function read_revision_diff(
             change_lines = read.change_lines,
             patch = read.patch,
             changes = changed_files,
-            hunks = parse_hunks(read.patch),
             commit_index = commit_index,
             file_index = file_index,
             file_count = #changed_files,
@@ -9193,7 +8019,7 @@ local function load_commit_overview(repository, info, commit, callback)
     return
   end
 
-  run_raw({
+  git.run_raw({
     "git",
     "-C",
     repository,
@@ -9202,13 +8028,13 @@ local function load_commit_overview(repository, info, commit, callback)
     "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%s%x00%b",
     commit,
   }, function(output)
-    info.commit_details = parse_commit_overview(output)
+    info.commit_details = patch.parse_commit_overview(output)
     callback()
   end)
 end
 
 local function prepare(info, opts, callback)
-  ensure_repository(info, opts, function(
+  git.ensure_repository(info, opts, function(
     repository,
     repository_err,
     fetch_source
@@ -9223,14 +8049,14 @@ local function prepare(info, opts, callback)
       return
     end
 
-    fetch_pair(repository, fetch_source, info, function(commits, commit_err)
+    git.fetch_pair(repository, fetch_source, info, function(commits, commit_err)
       if commit_err then
         callback(nil, commit_err)
         return
       end
 
       load_commit_overview(repository, info, commits.commit, function()
-        revision_pairs(repository, info, commits, function(pairs, pairs_err)
+        git.revision_pairs(repository, info, commits, function(pairs, pairs_err)
           if pairs_err then
             callback(nil, pairs_err)
             return
@@ -9560,7 +8386,7 @@ local function open_issue(
       return
     end
 
-    ensure_repository(info, opts, function(repository, repository_err)
+    git.ensure_repository(info, opts, function(repository, repository_err)
       if not repository then
         done(nil, repository_err or "could not find the issue repository")
         return
@@ -9586,7 +8412,7 @@ M.preload = function(url, opts, context)
     return false
   end
 
-  local info = parse_target_url(url)
+  local info = patch.parse_target_url(url)
 
   if not info then
     return false
@@ -9605,7 +8431,7 @@ M.preload = function(url, opts, context)
         return
       end
 
-      ensure_repository(info, opts or {}, function(repository, repo_err)
+      git.ensure_repository(info, opts or {}, function(repository, repo_err)
         if not repository then
           failed(repo_err)
           return
@@ -9650,7 +8476,7 @@ end
 
 function M.open(url, opts, context, lifecycle, inspection_window_options)
   opts = opts or {}
-  local info = parse_target_url(url)
+  local info = patch.parse_target_url(url)
 
   if not info then
     return nil,
@@ -9794,33 +8620,33 @@ function M.open(url, opts, context, lifecycle, inspection_window_options)
   return true
 end
 
-M._parse_commit_url = parse_commit_url
-M._parse_pull_request_url = parse_pull_request_url
-M._parse_issue_url = parse_issue_url
-M._parse_target_url = parse_target_url
-M._parse_commit_overview = parse_commit_overview
-M.activity_comment = activity_comment
-M.activity_context = activity_context
+M._parse_commit_url = patch.parse_commit_url
+M._parse_pull_request_url = patch.parse_pull_request_url
+M._parse_issue_url = patch.parse_issue_url
+M._parse_target_url = patch.parse_target_url
+M._parse_commit_overview = patch.parse_commit_overview
+M.activity_comment = patch.activity_comment
+M.activity_context = patch.activity_context
 M._apply_pull_request = apply_pull_request
 M._inspection_overview = inspection_overview
 M._sidebar_overview_lines = sidebar_overview_lines
 M._overview_window_config = overview_window_config
-M._first_changed_paths = first_changed_paths
-M._parse_changed_files = parse_changed_files
-M._inspection_directory = inspection_directory
-M._github_repository = github_repository
-M._forge_repository = forge_repository
-M._download_destination = download_destination
-M._offer_repository_download = offer_repository_download
-M._find_local_repository = find_local_repository
-M._parse_hunks = parse_hunks
-M._parse_revision_pairs = parse_revision_pairs
+M._first_changed_paths = patch.first_changed_paths
+M._parse_changed_files = patch.parse_changed_files
+M._inspection_directory = git.inspection_directory
+M._github_repository = git.github_repository
+M._forge_repository = git.forge_repository
+M._download_destination = git.download_destination
+M._offer_repository_download = git.offer_repository_download
+M._find_local_repository = git.find_local_repository
+M._parse_hunks = patch.parse_hunks
+M._parse_revision_pairs = patch.parse_revision_pairs
 M._blob_lines = blob_lines
 M._oil_entry_status = oil_entry_status
 M._entered_oil_subdirectory = entered_oil_subdirectory
 M._first_changed_oil_file_line = first_changed_oil_file_line
-M._change_lines = change_lines
-M._focused_change_lines = focused_change_lines
+M._change_lines = patch.change_lines
+M._focused_change_lines = patch.focused_change_lines
 M._apply_change_signs = apply_change_signs
 M._prevent_window_dimming = prevent_window_dimming
 
@@ -9838,7 +8664,7 @@ M._inspection_statusline_option = inspection_statusline_option
 M._inspection_sidebar_statusline_option =
   inspection_sidebar_statusline_option
 
-M._map_concurrently = map_concurrently
+M._map_concurrently = git.map_concurrently
 M._sort_inspections = sort_inspections
 M._sidebar_row = sidebar_row
 M._inspect_sidebar_width = inspect_sidebar_width

@@ -188,37 +188,87 @@ function M.activity_comment(event)
     return nil
   end
 
-  local comment = event.payload and event.payload.comment
-  if not comment then
+  local comment = event.payload and event.payload.comment or nil
+
+  if type(comment) ~= "table" then
+    return nil
+  end
+
+  local body = type(comment.body) == "string"
+      and vim.trim(comment.body)
+    or ""
+
+  local path = type(comment.path) == "string"
+      and comment.path
+    or nil
+
+  local side = comment.side == "LEFT" and "parent" or "change"
+
+  local line = side == "parent"
+      and (
+        tonumber(comment.original_start_line)
+        or tonumber(comment.original_line)
+      )
+    or (
+      tonumber(comment.start_line)
+      or tonumber(comment.line)
+      or tonumber(comment.original_line)
+    )
+
+  if body == "" or not path or path == "" or not line then
     return nil
   end
 
   return {
-    body = comment.body,
-    path = comment.path,
-    line = comment.line or comment.position,
-    side = comment.side,
-    commit_id = comment.commit_id,
-    html_url = comment.html_url,
-    created_at = comment.created_at,
-    author = comment.user and comment.user.login,
+    body = body,
+    path = path:gsub("\\", "/"),
+    line = math.max(1, line),
+    side = side,
+    commit = side == "parent"
+        and (comment.original_commit_id or comment.commit_id)
+      or comment.commit_id,
   }
 end
 
 function M.activity_context(event)
-  if type(event) ~= "table" then
+  local comment = M.activity_comment(event)
+
+  if comment then
+    return comment
+  end
+
+  if type(event) ~= "table"
+    or (
+      event.type ~= "IssuesEvent"
+      and event.type ~= "IssueCommentEvent"
+    )
+  then
     return nil
   end
 
-  local repo_name = event.repo and event.repo.name
-  local comment = M.activity_comment(event)
+  local payload = event.payload or {}
+  local issue = payload.issue
+
+  if type(issue) ~= "table" or issue.pull_request then
+    return nil
+  end
+
+  local issue_body = type(issue.body) == "string" and issue.body or nil
+
+  local comment_body = type(payload.comment) == "table"
+      and type(payload.comment.body) == "string"
+      and payload.comment.body
+    or nil
 
   return {
-    event = event,
-    repository = repo_name,
-    comment = comment,
-    pull_request = event.payload and event.payload.pull_request,
-    issue = event.payload and event.payload.issue,
+    issue = {
+      number = issue.number,
+      title = issue.title,
+      body = issue_body,
+      comment = comment_body,
+      html_url = issue.html_url,
+      created_at = issue.created_at,
+    },
   }
 end
 
@@ -290,6 +340,24 @@ function M.parse_hunks(patch)
   return hunks
 end
 
+function M.session_hunks(session)
+  if not session then
+    return {}
+  end
+
+  if session.hunks then
+    return session.hunks
+  end
+
+  if session.patch and session.patch ~= "" then
+    session.hunks = M.parse_hunks(session.patch)
+  else
+    session.hunks = {}
+  end
+
+  return session.hunks
+end
+
 function M.hunk_start(hunk, role)
   return math.max(
     1,
@@ -306,7 +374,9 @@ function M.focused_hunk_start(hunk)
 end
 
 function M.revision_hunk_index_at_line(session, role, line)
-  for index, hunk in ipairs(session.hunks or {}) do
+  local hunks = M.session_hunks(session)
+
+  for index, hunk in ipairs(hunks) do
     local start = M.hunk_start(hunk, role)
 
     local count = role == "parent"
@@ -322,11 +392,13 @@ function M.revision_hunk_index_at_line(session, role, line)
 end
 
 function M.hunk_index_at_line(session, role, line)
+  local hunks = M.session_hunks(session)
+
   if not session.focused_chunks then
     return M.revision_hunk_index_at_line(session, role, line)
   end
 
-  for index, hunk in ipairs(session.hunks or {}) do
+  for index, hunk in ipairs(hunks) do
     local focused_change = session.focused_chunks
       and role == "change"
       and index == session.active_chunk
@@ -337,7 +409,7 @@ function M.hunk_index_at_line(session, role, line)
       start = M.focused_hunk_start(hunk)
     elseif session.focused_chunks then
       start = M.hunk_start(hunk, "parent")
-      local active = session.hunks[session.active_chunk]
+      local active = hunks[session.active_chunk]
 
       if role == "change"
         and active
@@ -384,34 +456,63 @@ function M.change_lines(hunks, role)
 end
 
 function M.focused_change_lines(parent_lines, change_lines_value, hunk)
-  local lines = {}
+  if not hunk then
+    return vim.deepcopy(parent_lines or { "" }), 1
+  end
+
+  parent_lines = parent_lines or { "" }
+  change_lines_value = change_lines_value or { "" }
+  local parent_count = #parent_lines
+
+  if parent_count == 1
+    and parent_lines[1] == ""
+    and hunk.old_start == 0
+    and hunk.old_count == 0
+  then
+    parent_count = 0
+  end
+
+  local before_count = hunk.old_count == 0
+      and hunk.old_start
+    or hunk.old_start - 1
+
+  before_count = math.min(math.max(0, before_count), parent_count)
+  local result = {}
 
   local function append(source, first, last)
-    for index = first, last do
-      lines[#lines + 1] = source[index]
+    for index = math.max(1, first), math.min(#source, last) do
+      result[#result + 1] = source[index]
     end
   end
 
-  local before_count = hunk.old_start - 1
-  append(parent_lines, 1, math.min(#parent_lines, before_count))
+  append(parent_lines, 1, before_count)
 
-  local hunk_start_index = hunk.new_start
-  local hunk_end_index = hunk.new_start + hunk.new_count - 1
-  append(change_lines_value, hunk_start_index, math.min(#change_lines_value, hunk_end_index))
+  append(
+    change_lines_value,
+    hunk.new_start,
+    hunk.new_start + hunk.new_count - 1
+  )
 
-  local after_start = hunk.old_start + hunk.old_count
-  append(parent_lines, after_start, #parent_lines)
+  append(
+    parent_lines,
+    before_count + hunk.old_count + 1,
+    parent_count
+  )
 
-  return lines
+  return #result > 0 and result or { "" }, math.max(1, before_count + 1)
 end
 
 function M.parse_revision_pairs(output)
   local pairs = {}
 
   for line in (output or ""):gmatch("[^\r\n]+") do
-    local base, head = line:match("^(%x+)%s+(%x+)")
-    if base and head then
-      pairs[#pairs + 1] = { base = base, head = head }
+    local fields = vim.split(line, "%s+", { trimempty = true })
+
+    if fields[1] and fields[2] then
+      pairs[#pairs + 1] = {
+        commit = fields[1],
+        parent = fields[2],
+      }
     end
   end
 
