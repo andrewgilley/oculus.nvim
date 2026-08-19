@@ -342,6 +342,11 @@ for group, expected in pairs({
   assert(sign_highlight.bg == expected.bg)
 end
 
+local counter_highlight =
+  vim.api.nvim_get_hl(0, { name = "OculusInspectVirtualCounter", link = false })
+
+assert(counter_highlight.fg ~= nil)
+
 do
   local parent_buf = vim.api.nvim_create_buf(false, true)
   local change_buf = vim.api.nvim_create_buf(false, true)
