@@ -3757,6 +3757,7 @@ M._overview_ui = {
     Date = true,
     ["Agent explanation"] = true,
     ["Agent suggestion"] = true,
+    ["Inspection queue"] = true,
   },
 }
 
@@ -4412,8 +4413,101 @@ function M._overview_ui.render(group)
     end
   end
 
+  local function append_inspection_queue()
+    if group.kind ~= "issue" then
+      return
+    end
+
+    local queue = group.queue_info
+    if not queue or (queue.total or 0) <= 1 then
+      return
+    end
+
+    lines[#lines + 1] = ""
+    local heading = ("  Inspection queue (%d of %d)"):format(
+      queue.active_index or 1,
+      queue.total or 1
+    )
+    lines[#lines + 1] = heading
+
+    local function item_title(item, fallback_num)
+      if not item then
+        return "Issue"
+      end
+      if item.title and vim.trim(item.title) ~= "" then
+        return item.title
+      end
+      if item.context and item.context.title and vim.trim(item.context.title) ~= "" then
+        return item.context.title
+      end
+      local num = item.issue_number or item.number or fallback_num
+      if not num and type(item.url) == "string" then
+        num = item.url:match("/issues/(%d+)")
+      end
+      if num then
+        return "Issue #" .. tostring(num)
+      end
+      return item.url or "Issue"
+    end
+
+    local queue_item_extmarks = {}
+
+    for _, item in ipairs(queue.completed or {}) do
+      local start_line = #lines + 1
+      append_sidebar_text(
+        lines,
+        "✓ " .. item_title(item),
+        group.overview_content_width or 28,
+        "    "
+      )
+      queue_item_extmarks[#queue_item_extmarks + 1] = {
+        line = start_line,
+        hl = "DiagnosticOk",
+        col = 4,
+        end_col = 4 + #"✓",
+      }
+    end
+
+    local current_title = item_title(
+      queue.active,
+      group.overview and group.overview.number
+    )
+    local active_start_line = #lines + 1
+    append_sidebar_text(
+      lines,
+      "▶ " .. current_title .. " (current)",
+      group.overview_content_width or 28,
+      "    "
+    )
+    queue_item_extmarks[#queue_item_extmarks + 1] = {
+      line = active_start_line,
+      hl = "OculusInspectAgentModelSelected",
+      col = 4,
+      end_col = 4 + #"▶",
+    }
+
+    for _, item in ipairs(queue.items or {}) do
+      local start_line = #lines + 1
+      append_sidebar_text(
+        lines,
+        item_title(item),
+        group.overview_content_width or 28,
+        "    "
+      )
+      queue_item_extmarks[#queue_item_extmarks + 1] = {
+        line = start_line,
+        hl = "Comment",
+        col = 4,
+        end_col = -1,
+      }
+    end
+
+    group.overview_queue_extmarks = queue_item_extmarks
+  end
+
   append_explanation()
   append_patch_locations()
+  append_inspection_queue()
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -4439,10 +4533,21 @@ function M._overview_ui.render(group)
     if M._overview_ui.section_labels[label]
       or (label and label:match("^Agent explanation"))
       or (label and label:match("^Agent suggestion"))
+      or (label and label:match("^Inspection queue"))
     then
       vim.api.nvim_buf_set_extmark(buf, sidebar_ns, index - 1, 2, {
         end_col = #line,
         hl_group = "OculusInspectOverviewSection",
+        priority = 100,
+      })
+    end
+  end
+
+  for _, mark in ipairs(group.overview_queue_extmarks or {}) do
+    if lines[mark.line] then
+      vim.api.nvim_buf_set_extmark(buf, sidebar_ns, mark.line - 1, mark.col, {
+        end_col = mark.end_col == -1 and #(lines[mark.line] or "") or mark.end_col,
+        hl_group = mark.hl,
         priority = 100,
       })
     end
@@ -7654,6 +7759,8 @@ local function open_tabs(
 
     local inspection_sessions = {
       inspection_lifecycle = loading and loading.lifecycle,
+      queue_info = loading and loading.lifecycle
+        and loading.lifecycle.queue_info,
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
@@ -8321,6 +8428,8 @@ local function open_issue_inspection(
     local group = {
       kind = "issue",
       inspection_lifecycle = loading and loading.lifecycle,
+      queue_info = loading and loading.lifecycle
+        and loading.lifecycle.queue_info,
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,

@@ -145,6 +145,9 @@ M.state = {
   project_issue_feed = nil,
   activity_inspect_queue = {},
   activity_inspect_queue_active = nil,
+  activity_inspect_queue_total = nil,
+  activity_inspect_queue_index = nil,
+  activity_inspect_queue_completed = nil,
   activity_inspect_queue_continuing = false,
   activity_inspect_queue_deferred_group = nil,
   activity_inspect_queue_number_options = nil,
@@ -2248,6 +2251,9 @@ local function set_activity_inspect_queue_scope()
   then
     M.state.activity_inspect_queue = {}
     M.state.activity_inspect_queue_active = nil
+    M.state.activity_inspect_queue_total = nil
+    M.state.activity_inspect_queue_index = nil
+    M.state.activity_inspect_queue_completed = nil
     M.state.activity_inspect_queue_continuing = false
     M.state.activity_inspect_queue_deferred_group = nil
     M.state.activity_inspect_queue_number_options = nil
@@ -4258,9 +4264,18 @@ local function toggle_activity_inspect_queue()
   end
 
   if not removed then
+    local clean_title
+    if type(M.state.lines) == "table" and M.state.lines[title_line] then
+      local raw = M.state.lines[title_line]
+      clean_title = vim.trim(
+        raw:gsub("^%s*%d+:%d+%s*", ""):gsub("^%s*[-•▶✓*]%s*", "")
+      )
+    end
+
     local entry = {
       url = url,
       line_key = line_key,
+      title = clean_title,
       context = type(context) == "table" and vim.deepcopy(context) or nil,
     }
 
@@ -4281,6 +4296,12 @@ end
 local open_next_queued_activity
 
 open_next_queued_activity = function(ui_lifecycle)
+  if M.state.activity_inspect_queue_total == nil then
+    M.state.activity_inspect_queue_total = #M.state.activity_inspect_queue + 1
+    M.state.activity_inspect_queue_index = 0
+    M.state.activity_inspect_queue_completed = {}
+  end
+
   local entry = table.remove(M.state.activity_inspect_queue, 1)
   M.state.activity_inspect_queue_active = entry
   rebuild_activity_inspect_queue_lookup()
@@ -4289,6 +4310,9 @@ open_next_queued_activity = function(ui_lifecycle)
   if not entry then
     M.state.activity_inspect_queue_running = false
     M.state.activity_inspect_queue_number_options = nil
+    M.state.activity_inspect_queue_total = nil
+    M.state.activity_inspect_queue_index = nil
+    M.state.activity_inspect_queue_completed = nil
     local deferred = M.state.activity_inspect_queue_deferred_group
     M.state.activity_inspect_queue_deferred_group = nil
 
@@ -4301,6 +4325,9 @@ open_next_queued_activity = function(ui_lifecycle)
     return true
   end
 
+  M.state.activity_inspect_queue_index =
+    (M.state.activity_inspect_queue_index or 0) + 1
+
   local function continue_queue()
     if M.state.activity_inspect_queue_continuing then
       return false
@@ -4309,6 +4336,11 @@ open_next_queued_activity = function(ui_lifecycle)
     M.state.activity_inspect_queue_continuing = true
 
     if M.state.activity_inspect_queue_active == entry then
+      if type(M.state.activity_inspect_queue_completed) == "table" then
+        M.state.activity_inspect_queue_completed[
+          #M.state.activity_inspect_queue_completed + 1
+        ] = entry
+      end
       M.state.activity_inspect_queue_active = nil
       rebuild_activity_inspect_queue_lookup()
       apply_activity_inspect_queue_highlights()
@@ -4322,8 +4354,22 @@ open_next_queued_activity = function(ui_lifecycle)
     return true
   end
 
+  local queue_info
+  if (M.state.activity_inspect_queue_total or 0) > 1 then
+    queue_info = {
+      active = entry,
+      active_index = M.state.activity_inspect_queue_index or 1,
+      total = M.state.activity_inspect_queue_total or 1,
+      items = vim.deepcopy(M.state.activity_inspect_queue or {}),
+      completed = vim.deepcopy(
+        M.state.activity_inspect_queue_completed or {}
+      ),
+    }
+  end
+
   local lifecycle = {
     overview_on_open = M.state.activity_inspect_queue_deferred_group ~= nil,
+    queue_info = queue_info,
     on_progress = ui_lifecycle and ui_lifecycle.on_progress or nil,
     on_complete = function(message)
       if not message then
@@ -4530,6 +4576,9 @@ local function inspect_current()
 
   if queued_entry then
     M.state.activity_inspect_queue_running = true
+    M.state.activity_inspect_queue_total = nil
+    M.state.activity_inspect_queue_index = nil
+    M.state.activity_inspect_queue_completed = nil
 
     M.state.activity_inspect_queue_number_options =
       M.inspection_window_options()
