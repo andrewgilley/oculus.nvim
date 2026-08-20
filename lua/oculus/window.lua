@@ -145,6 +145,7 @@ M.state = {
   project_issue_feed = nil,
   activity_inspect_queue = {},
   activity_inspect_queue_active = nil,
+  activity_inspect_queue_batch = nil,
   activity_inspect_queue_total = nil,
   activity_inspect_queue_index = nil,
   activity_inspect_queue_completed = nil,
@@ -2251,6 +2252,7 @@ local function set_activity_inspect_queue_scope()
   then
     M.state.activity_inspect_queue = {}
     M.state.activity_inspect_queue_active = nil
+    M.state.activity_inspect_queue_batch = nil
     M.state.activity_inspect_queue_total = nil
     M.state.activity_inspect_queue_index = nil
     M.state.activity_inspect_queue_completed = nil
@@ -4295,9 +4297,63 @@ end
 
 local open_next_queued_activity
 
+local function navigate_inspect_queue(delta, group)
+  local batch = M.state.activity_inspect_queue_batch
+  if not batch or #batch <= 1 then
+    return false
+  end
+
+  local current_idx = M.state.activity_inspect_queue_index or 1
+  local target_idx = current_idx + delta
+
+  if target_idx < 1 or target_idx > #batch then
+    return false
+  end
+
+  local target_entry = batch[target_idx]
+  if not target_entry then
+    return false
+  end
+
+  local completed = {}
+  for i = 1, target_idx - 1 do
+    completed[#completed + 1] = batch[i]
+  end
+  M.state.activity_inspect_queue_completed = completed
+
+  local remaining = {}
+  for i = target_idx, #batch do
+    remaining[#remaining + 1] = batch[i]
+  end
+  M.state.activity_inspect_queue = remaining
+
+  M.state.activity_inspect_queue_index = target_idx - 1
+  M.state.activity_inspect_queue_active = target_entry
+  rebuild_activity_inspect_queue_lookup()
+  apply_activity_inspect_queue_highlights()
+
+  M.state.activity_inspect_queue_continuing = true
+  M.state.activity_inspect_queue_deferred_group = group
+
+  vim.schedule(function()
+    M.state.activity_inspect_queue_continuing = nil
+    if group then
+      require("oculus.inspect")._close_inspection_workflow(group)
+    end
+    open_next_queued_activity(nil)
+  end)
+
+  return true
+end
+
 open_next_queued_activity = function(ui_lifecycle)
   if M.state.activity_inspect_queue_total == nil then
-    M.state.activity_inspect_queue_total = #M.state.activity_inspect_queue + 1
+    local batch = {}
+    for _, item in ipairs(M.state.activity_inspect_queue or {}) do
+      batch[#batch + 1] = item
+    end
+    M.state.activity_inspect_queue_batch = batch
+    M.state.activity_inspect_queue_total = #batch
     M.state.activity_inspect_queue_index = 0
     M.state.activity_inspect_queue_completed = {}
   end
@@ -4310,6 +4366,7 @@ open_next_queued_activity = function(ui_lifecycle)
   if not entry then
     M.state.activity_inspect_queue_running = false
     M.state.activity_inspect_queue_number_options = nil
+    M.state.activity_inspect_queue_batch = nil
     M.state.activity_inspect_queue_total = nil
     M.state.activity_inspect_queue_index = nil
     M.state.activity_inspect_queue_completed = nil
@@ -4370,6 +4427,12 @@ open_next_queued_activity = function(ui_lifecycle)
   local lifecycle = {
     overview_on_open = M.state.activity_inspect_queue_deferred_group ~= nil,
     queue_info = queue_info,
+    on_next_queue_item = function(group)
+      return navigate_inspect_queue(1, group)
+    end,
+    on_previous_queue_item = function(group)
+      return navigate_inspect_queue(-1, group)
+    end,
     on_progress = ui_lifecycle and ui_lifecycle.on_progress or nil,
     on_complete = function(message)
       if not message then
