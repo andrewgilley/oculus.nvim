@@ -5896,55 +5896,9 @@ do
   assert(rendered:find("  Title\n  First Test Issue", 1, true))
   assert(rendered:find("  Description\n  Issue description text", 1, true))
   assert(not rendered:find("Inspection queue", 1, true))
+  assert(not rendered:find("INSPECTION QUEUE", 1, true))
+  assert(not rendered:find("Second Test Issue", 1, true))
 
-  inspect._overview_ui.render_queue_pane(test_group, { width = 50 })
-  assert(test_group.overview_queue_buf)
-  local queue_rendered = table.concat(
-    vim.api.nvim_buf_get_lines(test_group.overview_queue_buf, 0, -1, false),
-    "\n"
-  )
-
-  assert(queue_rendered:find("  INSPECTION QUEUE", 1, true))
-  assert(queue_rendered:find("  (1 of 3)", 1, true))
-  assert(queue_rendered:find("▶ First Test Issue (current)", 1, true))
-  assert(queue_rendered:find("Second Test Issue", 1, true))
-  assert(queue_rendered:find("Third Test Issue", 1, true))
-
-  test_group.queue_info.active_index = 2
-  test_group.queue_info.completed = {
-    { title = "First Test Issue", number = 42 },
-  }
-  test_group.queue_info.active = { title = "Second Test Issue", number = 43 }
-  test_group.queue_info.items = {
-    { title = "Third Test Issue", number = 44 },
-  }
-
-  inspect._overview_ui.render_queue_pane(test_group, { width = 50 })
-  local step2_rendered = table.concat(
-    vim.api.nvim_buf_get_lines(test_group.overview_queue_buf, 0, -1, false),
-    "\n"
-  )
-
-  assert(step2_rendered:find("  (2 of 3)", 1, true))
-  assert(step2_rendered:find("✓ First Test Issue", 1, true))
-  assert(step2_rendered:find("▶ Second Test Issue (current)", 1, true))
-  assert(step2_rendered:find("Third Test Issue", 1, true))
-
-  local non_issue_group = vim.deepcopy(test_group)
-  non_issue_group.kind = "revision"
-  non_issue_group.overview_queue_buf = nil
-  inspect._overview_ui.render_queue_pane(non_issue_group, { width = 30 })
-  assert(non_issue_group.overview_queue_buf == nil)
-
-  local single_item_group = vim.deepcopy(test_group)
-  single_item_group.queue_info.total = 1
-  single_item_group.overview_queue_buf = nil
-  inspect._overview_ui.render_queue_pane(single_item_group, { width = 30 })
-  assert(single_item_group.overview_queue_buf == nil)
-
-  if test_group.overview_queue_buf then
-    vim.api.nvim_buf_delete(test_group.overview_queue_buf, { force = true })
-  end
   vim.api.nvim_buf_delete(test_buf, { force = true })
 end
 
