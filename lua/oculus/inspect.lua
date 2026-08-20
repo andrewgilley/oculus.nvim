@@ -3456,19 +3456,6 @@ local function close_overview_window(group)
     M._overview_ui.close_agent_window(group, false)
   end
 
-  local queue_win = group.overview_queue_win
-  local queue_buf = group.overview_queue_buf
-  group.overview_queue_win = nil
-  group.overview_queue_buf = nil
-
-  if queue_win and vim.api.nvim_win_is_valid(queue_win) then
-    pcall(vim.api.nvim_win_close, queue_win, true)
-  end
-
-  if queue_buf and vim.api.nvim_buf_is_valid(queue_buf) then
-    pcall(vim.api.nvim_buf_delete, queue_buf, { force = true })
-  end
-
   group.overview_win = nil
   group.overview_buf = nil
   restore_overview_cursor(group)
@@ -3771,7 +3758,6 @@ M._overview_ui = {
     Date = true,
     ["Agent explanation"] = true,
     ["Agent suggestion"] = true,
-    ["Inspection queue"] = true,
   },
 }
 
@@ -3985,8 +3971,7 @@ function M._overview_ui.render_footer(group)
   end
 
   local overview_config = vim.api.nvim_win_get_config(overview_win)
-  local width = group.overview_total_width
-    or vim.api.nvim_win_get_width(overview_win)
+  local width = vim.api.nvim_win_get_width(overview_win)
   local height = vim.api.nvim_win_get_height(overview_win)
 
   local config = {
@@ -4028,12 +4013,9 @@ function M._overview_ui.render_footer(group)
       and "v virtual"
     or "s sidebar"
 
-  local has_queue = group.queue_info and (group.queue_info.total or 0) > 1
-  local queue_command = has_queue and "<C-Tab>/<S-Tab> queue   " or ""
-
   local left_commands = issue_patches
-      and ("  b browser   e explain   p path   w worktree   " .. queue_command .. view_command .. "   " .. close_command)
-    or ("  b browser   e explain   " .. queue_command .. view_command .. "   " .. close_command)
+      and ("  b browser   e explain   p path   w worktree   " .. view_command .. "   " .. close_command)
+    or ("  b browser   e explain   " .. view_command .. "   " .. close_command)
 
   local right_commands = "q quit"
 
@@ -4139,164 +4121,6 @@ function M._overview_ui.render_footer(group)
     footer_win,
     group.overview_highlight_source_win
   )
-end
-
-function M._overview_ui.render_queue_pane(group, queue_config)
-  local queue = group.queue_info
-  if not queue or (queue.total or 0) <= 1 or group.kind ~= "issue" then
-    return
-  end
-
-  local width = queue_config and queue_config.width or 26
-  local content_width = math.max(12, width - 4)
-
-  local buf = group.overview_queue_buf
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then
-    buf = vim.api.nvim_create_buf(false, true)
-    group.overview_queue_buf = buf
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = "oculus-inspect-overview-queue"
-    vim.b[buf].oculus_inspect_overview_queue = true
-  end
-
-  local lines = {
-    "  INSPECTION QUEUE",
-    ("  (%d of %d)"):format(queue.active_index or 1, queue.total or 1),
-    "  " .. string.rep("─", math.max(1, width - 4)),
-  }
-
-  local function item_title(item, fallback_num)
-    if not item then
-      return "Issue"
-    end
-    if item.title and vim.trim(item.title) ~= "" then
-      return item.title
-    end
-    if item.context and item.context.title and vim.trim(item.context.title) ~= "" then
-      return item.context.title
-    end
-    local num = item.issue_number or item.number or fallback_num
-    if not num and type(item.url) == "string" then
-      num = item.url:match("/issues/(%d+)")
-    end
-    if num then
-      return "Issue #" .. tostring(num)
-    end
-    return item.url or "Issue"
-  end
-
-  local queue_item_extmarks = {}
-
-  for _, item in ipairs(queue.completed or {}) do
-    lines[#lines + 1] = ""
-    local start_line = #lines + 1
-    append_sidebar_text(
-      lines,
-      "✓ " .. item_title(item),
-      content_width,
-      "  "
-    )
-    queue_item_extmarks[#queue_item_extmarks + 1] = {
-      line = start_line,
-      hl = "DiagnosticOk",
-      col = 2,
-      end_col = 2 + #"✓",
-    }
-  end
-
-  local current_title = item_title(
-    queue.active,
-    group.overview and group.overview.number
-  )
-  lines[#lines + 1] = ""
-  local active_start_line = #lines + 1
-  append_sidebar_text(
-    lines,
-    "▶ " .. current_title .. " (current)",
-    content_width,
-    "  "
-  )
-  queue_item_extmarks[#queue_item_extmarks + 1] = {
-    line = active_start_line,
-    hl = "OculusInspectAgentModelSelected",
-    col = 2,
-    end_col = 2 + #"▶",
-  }
-
-  for _, item in ipairs(queue.items or {}) do
-    lines[#lines + 1] = ""
-    local start_line = #lines + 1
-    append_sidebar_text(
-      lines,
-      item_title(item),
-      content_width,
-      "  "
-    )
-    queue_item_extmarks[#queue_item_extmarks + 1] = {
-      line = start_line,
-      hl = "Comment",
-      col = 2,
-      end_col = -1,
-    }
-  end
-
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-
-  local queue_ns = sidebar_ns
-  vim.api.nvim_buf_clear_namespace(buf, queue_ns, 0, -1)
-
-  vim.api.nvim_buf_set_extmark(buf, queue_ns, 0, 2, {
-    end_col = #lines[1],
-    hl_group = "OculusInspectOverviewSection",
-    priority = 100,
-  })
-  vim.api.nvim_buf_set_extmark(buf, queue_ns, 1, 2, {
-    end_col = #lines[2],
-    hl_group = "Comment",
-    priority = 100,
-  })
-  vim.api.nvim_buf_set_extmark(buf, queue_ns, 2, 2, {
-    end_col = #lines[3],
-    hl_group = "WinSeparator",
-    priority = 100,
-  })
-
-  for _, mark in ipairs(queue_item_extmarks) do
-    if lines[mark.line] then
-      vim.api.nvim_buf_set_extmark(buf, queue_ns, mark.line - 1, mark.col, {
-        end_col = mark.end_col == -1 and #(lines[mark.line] or "") or mark.end_col,
-        hl_group = mark.hl,
-        priority = 100,
-      })
-    end
-  end
-
-  local queue_win = group.overview_queue_win
-  if queue_win and vim.api.nvim_win_is_valid(queue_win) then
-    if queue_config and (queue_config.relative or queue_config.external) then
-      vim.api.nvim_win_set_config(queue_win, queue_config)
-    end
-  elseif queue_config and (queue_config.relative or queue_config.external) then
-    queue_win = vim.api.nvim_open_win(buf, false, queue_config)
-    group.overview_queue_win = queue_win
-  end
-
-  if queue_win and vim.api.nvim_win_is_valid(queue_win) then
-    vim.wo[queue_win].wrap = false
-    vim.wo[queue_win].number = false
-    vim.wo[queue_win].relativenumber = false
-    vim.wo[queue_win].signcolumn = "no"
-    vim.wo[queue_win].cursorline = false
-    if group.overview_win and vim.api.nvim_win_is_valid(group.overview_win) then
-      vim.wo[queue_win].winhighlight = vim.wo[group.overview_win].winhighlight
-    end
-  end
-
-  return buf, queue_win
 end
 
 function M._overview_ui.stop_close_spinner(group)
@@ -5945,34 +5769,8 @@ show_inspection_overview = function(group)
     group.overview
   )
 
-  local has_queue_pane = group.kind == "issue"
-    and group.queue_info
-    and (group.queue_info.total or 0) > 1
-
-  local total_width = config.width
-  group.overview_total_width = total_width
-
-  local queue_config
-  if has_queue_pane then
-    local queue_width = math.max(22, math.min(36, math.floor(total_width * 0.35)))
-    local left_width = math.max(20, total_width - queue_width)
-    config.width = left_width
-    group.overview_content_width = math.max(12, left_width - 4)
-
-    queue_config = {
-      relative = "editor",
-      width = queue_width,
-      height = config.height,
-      row = config.row,
-      col = config.col + left_width,
-      style = "minimal",
-      focusable = false,
-      zindex = config.zindex,
-    }
-  else
-    group.overview_content_width =
-      math.max(12, (config.width or 28) - 4)
-  end
+  group.overview_content_width =
+    math.max(12, (config.width or 28) - 4)
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
@@ -5989,10 +5787,6 @@ show_inspection_overview = function(group)
 
   local win = vim.api.nvim_open_win(buf, true, config)
   group.overview_win = win
-
-  if has_queue_pane then
-    M._overview_ui.render_queue_pane(group, queue_config)
-  end
 
   group.overview_scroll_autocmd = vim.api.nvim_create_autocmd(
     { "WinScrolled", "CursorMoved" },
@@ -6200,45 +5994,6 @@ show_inspection_overview = function(group)
     silent = true,
     desc = "Close Oculus Inspect overview",
   })
-
-  local function map_queue_nav(target_buf)
-    if not target_buf or not vim.api.nvim_buf_is_valid(target_buf) then
-      return
-    end
-
-    vim.keymap.set("n", "<C-Tab>", function()
-      local lifecycle = group.inspection_lifecycle
-      if lifecycle and type(lifecycle.on_next_queue_item) == "function" then
-        lifecycle.on_next_queue_item(group)
-      end
-    end, {
-      buffer = target_buf,
-      nowait = true,
-      silent = true,
-      desc = "Next Oculus inspect queue item",
-    })
-
-    for _, prev_lhs in ipairs({ "<S-Tab>", "<C-S-Tab>" }) do
-      vim.keymap.set("n", prev_lhs, function()
-        local lifecycle = group.inspection_lifecycle
-        if lifecycle and type(lifecycle.on_previous_queue_item) == "function" then
-          lifecycle.on_previous_queue_item(group)
-        end
-      end, {
-        buffer = target_buf,
-        nowait = true,
-        silent = true,
-        desc = "Previous Oculus inspect queue item",
-      })
-    end
-  end
-
-  if has_queue_pane or (group.queue_info and (group.queue_info.total or 0) > 1) then
-    map_queue_nav(buf)
-    if group.overview_queue_buf then
-      map_queue_nav(group.overview_queue_buf)
-    end
-  end
 
   local function map_scroll(lhs, direction, desc)
     vim.keymap.set("n", lhs, function()
