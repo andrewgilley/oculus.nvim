@@ -1303,8 +1303,8 @@ do
   assert(pull_request_overview_text:find("\n  Description\n", 1, true))
   assert(pull_request_overview_text:find("\n  Author\n", 1, true))
   assert(pull_request_overview_text:find("\n  Commits\n", 1, true))
-  assert(pull_request_overview_text:find("Add overview support", 1, true))
-  assert(pull_request_overview_text:find("Tidy overview layout", 1, true))
+  assert(pull_request_overview_text:find('* "Add overview support"', 1, true))
+  assert(pull_request_overview_text:find('* "Tidy overview layout"', 1, true))
   assert(not pull_request_overview_text:find("\n  URL\n", 1, true))
   assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
   assert(pull_request_overview_text:find("\n  Status\n", 1, true))
@@ -5895,10 +5895,20 @@ do
 
   assert(rendered:find("  Title\n  First Test Issue", 1, true))
   assert(rendered:find("  Description\n  Issue description text", 1, true))
-  assert(rendered:find("  Inspection queue (1 of 3)", 1, true))
-  assert(rendered:find("▶ First Test Issue (current)", 1, true))
-  assert(rendered:find("Second Test Issue", 1, true))
-  assert(rendered:find("Third Test Issue", 1, true))
+  assert(not rendered:find("Inspection queue", 1, true))
+
+  inspect._overview_ui.render_queue_pane(test_group, { width = 50 })
+  assert(test_group.overview_queue_buf)
+  local queue_rendered = table.concat(
+    vim.api.nvim_buf_get_lines(test_group.overview_queue_buf, 0, -1, false),
+    "\n"
+  )
+
+  assert(queue_rendered:find("  INSPECTION QUEUE", 1, true))
+  assert(queue_rendered:find("  (1 of 3)", 1, true))
+  assert(queue_rendered:find("▶ First Test Issue (current)", 1, true))
+  assert(queue_rendered:find("Second Test Issue", 1, true))
+  assert(queue_rendered:find("Third Test Issue", 1, true))
 
   test_group.queue_info.active_index = 2
   test_group.queue_info.completed = {
@@ -5909,34 +5919,89 @@ do
     { title = "Third Test Issue", number = 44 },
   }
 
-  inspect._overview_ui.render(test_group)
+  inspect._overview_ui.render_queue_pane(test_group, { width = 50 })
   local step2_rendered = table.concat(
-    vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
+    vim.api.nvim_buf_get_lines(test_group.overview_queue_buf, 0, -1, false),
     "\n"
   )
 
-  assert(step2_rendered:find("  Inspection queue (2 of 3)", 1, true))
+  assert(step2_rendered:find("  (2 of 3)", 1, true))
   assert(step2_rendered:find("✓ First Test Issue", 1, true))
   assert(step2_rendered:find("▶ Second Test Issue (current)", 1, true))
   assert(step2_rendered:find("Third Test Issue", 1, true))
 
   local non_issue_group = vim.deepcopy(test_group)
   non_issue_group.kind = "revision"
-  inspect._overview_ui.render(non_issue_group)
-  local non_issue_rendered = table.concat(
-    vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
-    "\n"
-  )
-  assert(not non_issue_rendered:find("Inspection queue", 1, true))
+  non_issue_group.overview_queue_buf = nil
+  inspect._overview_ui.render_queue_pane(non_issue_group, { width = 30 })
+  assert(non_issue_group.overview_queue_buf == nil)
 
   local single_item_group = vim.deepcopy(test_group)
   single_item_group.queue_info.total = 1
-  inspect._overview_ui.render(single_item_group)
-  local single_item_rendered = table.concat(
-    vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
-    "\n"
-  )
-  assert(not single_item_rendered:find("Inspection queue", 1, true))
+  single_item_group.overview_queue_buf = nil
+  inspect._overview_ui.render_queue_pane(single_item_group, { width = 30 })
+  assert(single_item_group.overview_queue_buf == nil)
 
+  if test_group.overview_queue_buf then
+    vim.api.nvim_buf_delete(test_group.overview_queue_buf, { force = true })
+  end
   vim.api.nvim_buf_delete(test_buf, { force = true })
+end
+
+do
+  local pr_buf = vim.api.nvim_create_buf(false, true)
+  local pr_group = {
+    kind = "pull_request",
+    overview_buf = pr_buf,
+    overview_content_width = 40,
+    overview = {
+      kind = "pull_request",
+      title = "PR Feature Implementation",
+      body = "PR description body",
+      author = "octocat",
+      number = 99,
+      state = "open",
+      created_at = "2026-08-19T12:00:00Z",
+      commits = {
+        { message = "feat: first commit" },
+        { message = "fix: second commit" },
+      },
+    },
+  }
+
+  inspect._overview_ui.render(pr_group)
+  local pr_lines = vim.api.nvim_buf_get_lines(pr_buf, 0, -1, false)
+  local pr_rendered = table.concat(pr_lines, "\n")
+
+  assert(pr_rendered:find("  Commits\n", 1, true))
+  assert(pr_rendered:find('* "feat: first commit"', 1, true))
+  assert(pr_rendered:find('* "fix: second commit"', 1, true))
+
+  local commits_heading_line
+  for line_num, line_str in ipairs(pr_lines) do
+    if line_str == "  Commits" then
+      commits_heading_line = line_num
+      break
+    end
+  end
+  assert(commits_heading_line, "Commits heading line not found")
+
+  local commits_underlined = false
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    pr_buf,
+    -1,
+    0,
+    -1,
+    { details = true }
+  )) do
+    if mark[2] + 1 == commits_heading_line
+      and mark[4].hl_group == "OculusInspectOverviewSection"
+    then
+      commits_underlined = true
+      break
+    end
+  end
+  assert(commits_underlined, "Commits heading was not styled with OculusInspectOverviewSection")
+
+  vim.api.nvim_buf_delete(pr_buf, { force = true })
 end
