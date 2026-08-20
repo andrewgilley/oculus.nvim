@@ -2859,7 +2859,7 @@ local function sidebar_overview_lines(overview, width)
   field("Author", value_or(author, "Unknown"))
 
   if is_pull_request and type(overview.commits) == "table"
-    and #overview.commits > 0
+    and #overview.commits > 1
   then
     lines[#lines + 1] = "  Commits"
 

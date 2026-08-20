@@ -6004,4 +6004,19 @@ do
   assert(commits_underlined, "Commits heading was not styled with OculusInspectOverviewSection")
 
   vim.api.nvim_buf_delete(pr_buf, { force = true })
+
+  local single_commit_buf = vim.api.nvim_create_buf(false, true)
+  local single_commit_group = vim.deepcopy(pr_group)
+  single_commit_group.overview_buf = single_commit_buf
+  single_commit_group.overview.commits = {
+    { message = "feat: only one commit" },
+  }
+  inspect._overview_ui.render(single_commit_group)
+  local single_commit_rendered = table.concat(
+    vim.api.nvim_buf_get_lines(single_commit_buf, 0, -1, false),
+    "\n"
+  )
+  assert(not single_commit_rendered:find("Commits", 1, true))
+  assert(not single_commit_rendered:find("only one commit", 1, true))
+  vim.api.nvim_buf_delete(single_commit_buf, { force = true })
 end
