@@ -5859,3 +5859,84 @@ if integration_root and (integration_sha or integration_url) then
     vim.api.nvim_set_current_win(change_win)
   end
 end
+
+do
+  local test_buf = vim.api.nvim_create_buf(false, true)
+  local test_group = {
+    kind = "issue",
+    overview_buf = test_buf,
+    overview_content_width = 40,
+    overview = {
+      kind = "issue",
+      title = "First Test Issue",
+      body = "Issue description text",
+      author = "octocat",
+      number = 42,
+      state = "open",
+      created_at = "2026-08-19T10:00:00Z",
+    },
+    queue_info = {
+      active = { title = "First Test Issue", number = 42 },
+      active_index = 1,
+      total = 3,
+      items = {
+        { title = "Second Test Issue", number = 43 },
+        { title = "Third Test Issue", number = 44 },
+      },
+      completed = {},
+    },
+  }
+
+  inspect._overview_ui.render(test_group)
+  local rendered = table.concat(
+    vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
+    "\n"
+  )
+
+  assert(rendered:find("  Title\n  First Test Issue", 1, true))
+  assert(rendered:find("  Description\n  Issue description text", 1, true))
+  assert(rendered:find("  Inspection queue (1 of 3)", 1, true))
+  assert(rendered:find("▶ First Test Issue (current)", 1, true))
+  assert(rendered:find("Second Test Issue", 1, true))
+  assert(rendered:find("Third Test Issue", 1, true))
+
+  test_group.queue_info.active_index = 2
+  test_group.queue_info.completed = {
+    { title = "First Test Issue", number = 42 },
+  }
+  test_group.queue_info.active = { title = "Second Test Issue", number = 43 }
+  test_group.queue_info.items = {
+    { title = "Third Test Issue", number = 44 },
+  }
+
+  inspect._overview_ui.render(test_group)
+  local step2_rendered = table.concat(
+    vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
+    "\n"
+  )
+
+  assert(step2_rendered:find("  Inspection queue (2 of 3)", 1, true))
+  assert(step2_rendered:find("✓ First Test Issue", 1, true))
+  assert(step2_rendered:find("▶ Second Test Issue (current)", 1, true))
+  assert(step2_rendered:find("Third Test Issue", 1, true))
+
+  local non_issue_group = vim.deepcopy(test_group)
+  non_issue_group.kind = "revision"
+  inspect._overview_ui.render(non_issue_group)
+  local non_issue_rendered = table.concat(
+    vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
+    "\n"
+  )
+  assert(not non_issue_rendered:find("Inspection queue", 1, true))
+
+  local single_item_group = vim.deepcopy(test_group)
+  single_item_group.queue_info.total = 1
+  inspect._overview_ui.render(single_item_group)
+  local single_item_rendered = table.concat(
+    vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
+    "\n"
+  )
+  assert(not single_item_rendered:find("Inspection queue", 1, true))
+
+  vim.api.nvim_buf_delete(test_buf, { force = true })
+end
