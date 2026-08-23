@@ -567,12 +567,14 @@ local function pull_request_key(event)
   local merged = payload.action == "merged"
     or (payload.action == "closed" and (
       pull_request.merged == true
-      or pull_request.merged_at ~= nil
-      or pull_request.merged_by ~= nil
+      or (type(pull_request.merged_at) == "string" and pull_request.merged_at ~= "")
+      or type(pull_request.merged_by) == "table"
     ))
 
-  local author = pull_request.user or pull_request.author
-  local merger = pull_request.merged_by
+  local author = type(pull_request.user) == "table" and pull_request.user
+    or (type(pull_request.author) == "table" and pull_request.author)
+    or nil
+  local merger = type(pull_request.merged_by) == "table" and pull_request.merged_by or nil
 
   if pull_request.title
     and (not merged or (author and merger))
@@ -614,8 +616,8 @@ function M.apply_pull_request(event, pull_request)
     number = pull_request.number,
     title = pull_request.title,
     html_url = pull_request.html_url,
-    author = pull_request.user and pull_request.user.login,
-    merged_by = pull_request.merged_by and pull_request.merged_by.login,
+    author = type(pull_request.user) == "table" and pull_request.user.login or nil,
+    merged_by = type(pull_request.merged_by) == "table" and pull_request.merged_by.login or nil,
   })
 
   return event
@@ -655,9 +657,12 @@ function M.enrich_pull_requests(events, opts, callback)
               number = pull_request.number or number,
               title = pull_request.title,
               html_url = pull_request.html_url,
-              author = pull_request.user and pull_request.user.login,
-              merged_by = pull_request.merged_by
-                and pull_request.merged_by.login,
+              author = type(pull_request.user) == "table"
+                  and pull_request.user.login
+                or nil,
+              merged_by = type(pull_request.merged_by) == "table"
+                  and pull_request.merged_by.login
+                or nil,
             }
 
             pull_request_cache[key] = details
@@ -785,7 +790,9 @@ function M.pull_request(repo, number, opts, callback)
       number = pull_request.number or number,
       title = pull_request.title,
       body = pull_request.body,
-      author = pull_request.user and pull_request.user.login,
+      author = type(pull_request.user) == "table"
+          and pull_request.user.login
+        or nil,
       state = pull_request.state,
       draft = pull_request.draft,
       merged = pull_request.merged,
@@ -897,7 +904,7 @@ function M.issue(repo, number, opts, callback)
       number = issue.number or number,
       title = issue.title,
       body = issue.body,
-      author = issue.user and issue.user.login,
+      author = type(issue.user) == "table" and issue.user.login or nil,
       state = issue.state,
       html_url = issue.html_url,
       created_at = issue.created_at,
