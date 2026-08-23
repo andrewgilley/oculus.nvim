@@ -2599,4 +2599,31 @@ github.events = original_events
 github.enrich_pull_requests = original_enrich_pull_requests
 github.enrich_pushes = original_enrich_pushes
 github.pull_request_commits = original_pull_request_commits
+
+do
+  local event = {
+    type = "PullRequestEvent",
+    repo = { name = "basecamp/omarchy" },
+    payload = {
+      action = "closed",
+      pull_request = {
+        number = 100,
+        title = "Fix boot issue",
+      },
+    },
+  }
+
+  local enriched = github.apply_pull_request(event, {
+    number = 100,
+    title = "Fix boot issue",
+    html_url = "https://github.com/basecamp/omarchy/pull/100",
+    user = vim.NIL,
+    merged_by = vim.NIL,
+  })
+
+  assert(enriched.payload.pull_request.title == "Fix boot issue")
+  assert(enriched.payload.pull_request.user == nil)
+  assert(enriched.payload.pull_request.merged_by == nil)
+end
+
 assert(state.win == nil)
