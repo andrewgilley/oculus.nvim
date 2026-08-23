@@ -2036,20 +2036,10 @@ end
 local function chunk_start_for_role(
   hunk,
   role,
-  change_start,
-  change_content
+  change_start
 )
   if role == "parent" then
     return patch.hunk_start(hunk, "parent")
-  end
-
-  for offset = 0, math.max(0, hunk.new_count or 0) - 1 do
-    local line = change_content
-      and change_content[(hunk.new_start or 1) + offset]
-
-    if type(line) == "string" and line:find("%S") then
-      return change_start + offset
-    end
   end
 
   return change_start
@@ -2068,8 +2058,7 @@ local function render_chunk_for_role(session, role, chunk_index)
   return chunk_start_for_role(
     hunk,
     role,
-    change_start,
-    session.change_content
+    change_start
   )
 end
 
@@ -2287,15 +2276,13 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
             or chunk_start_for_role(
               hunk,
               "change",
-              patch.hunk_start(hunk, "change"),
-              session.change_content
+              patch.hunk_start(hunk, "change")
             )
         else
           start = chunk_start_for_role(
             hunk,
             "change",
-            patch.hunk_start(hunk, "change"),
-            session.change_content
+            patch.hunk_start(hunk, "change")
           )
         end
         M._virtual_counter.place_virtual_counter(
@@ -7798,15 +7785,13 @@ local function open_tabs(
         move_cursor_to_line_start(parent.win, chunk_start_for_role(
           first_hunk,
           "parent",
-          focused_start,
-          session.change_content
+          focused_start
         ))
 
         move_cursor_to_line_start(change.win, chunk_start_for_role(
           first_hunk,
           "change",
-          focused_start,
-          session.change_content
+          focused_start
         ))
       elseif session.parent_lines[1] then
         move_cursor_to_line_start(parent.win, session.parent_lines[1])
@@ -7827,14 +7812,12 @@ local function open_tabs(
         move_cursor_to_line_start(session.parent.win, chunk_start_for_role(
           first_hunk,
           "parent",
-          session.focused_start,
-          session.change_content
+          session.focused_start
         ))
         move_cursor_to_line_start(session.change.win, chunk_start_for_role(
           first_hunk,
           "change",
-          session.focused_start,
-          session.change_content
+          session.focused_start
         ))
       elseif session.parent_lines and session.parent_lines[1] then
         move_cursor_to_line_start(session.parent.win, session.parent_lines[1])
