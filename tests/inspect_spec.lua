@@ -249,6 +249,40 @@ assert(inspect._chunk_start_for_role(
   8
 ) == 8)
 
+do
+  local test_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, {
+    "line 1",
+    "",
+    "   ",
+    "line 4 content",
+    "",
+    "   ",
+  })
+
+  assert(inspect._first_nonblank_line(test_buf, 1) == 1)
+  assert(inspect._first_nonblank_line(test_buf, 2) == 4)
+  assert(inspect._first_nonblank_line(test_buf, 3) == 4)
+  assert(inspect._first_nonblank_line(test_buf, 4) == 4)
+  assert(inspect._first_nonblank_line(test_buf, 5) == 5)
+  assert(inspect._first_nonblank_line(test_buf, 6) == 6)
+
+  local test_win = vim.api.nvim_open_win(test_buf, true, {
+    relative = "editor",
+    width = 40,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+
+  inspect._position_change_cursor(test_win, 2)
+  local cursor = vim.api.nvim_win_get_cursor(test_win)
+  assert(cursor[1] == 4)
+
+  vim.api.nvim_win_close(test_win, true)
+  vim.api.nvim_buf_delete(test_buf, { force = true })
+end
+
 assert(vim.deep_equal(
   inspect._inspection_endpoints({}, {
     parent = "parent",
