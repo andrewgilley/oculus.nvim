@@ -881,6 +881,8 @@ github.pull_request_commits = function(repo, number, _, callback)
   callback(commits)
 end
 
+local cr_mapping = vim.fn.maparg("<CR>", "n", false, true)
+assert(cr_mapping.desc == "Select Oculus item")
 local select_mapping = vim.fn.maparg("l", "n", false, true)
 deferred_activity_request = true
 select_mapping.callback()
