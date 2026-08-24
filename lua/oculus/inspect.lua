@@ -2887,7 +2887,7 @@ local function sidebar_overview_lines(overview, width)
 
       if type(message) == "string" and vim.trim(message) ~= "" then
         local subject = vim.trim(message):match("^[^\r\n]*")
-        append_sidebar_text(lines, '* "' .. subject .. '"', width, "  ")
+        append_sidebar_text(lines, "• " .. subject, width, "  ")
       end
     end
 

@@ -1335,8 +1335,8 @@ do
   assert(pull_request_overview_text:find("\n  Description\n", 1, true))
   assert(pull_request_overview_text:find("\n  Author\n", 1, true))
   assert(pull_request_overview_text:find("\n  Commits\n", 1, true))
-  assert(pull_request_overview_text:find('* "Add overview support"', 1, true))
-  assert(pull_request_overview_text:find('* "Tidy overview layout"', 1, true))
+  assert(pull_request_overview_text:find("• Add overview support", 1, true))
+  assert(pull_request_overview_text:find("• Tidy overview layout", 1, true))
   assert(not pull_request_overview_text:find("\n  URL\n", 1, true))
   assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
   assert(pull_request_overview_text:find("\n  Status\n", 1, true))
@@ -5960,8 +5960,8 @@ do
   local pr_rendered = table.concat(pr_lines, "\n")
 
   assert(pr_rendered:find("  Commits\n", 1, true))
-  assert(pr_rendered:find('* "feat: first commit"', 1, true))
-  assert(pr_rendered:find('* "fix: second commit"', 1, true))
+  assert(pr_rendered:find("• feat: first commit", 1, true))
+  assert(pr_rendered:find("• fix: second commit", 1, true))
 
   local commits_heading_line
   for line_num, line_str in ipairs(pr_lines) do
