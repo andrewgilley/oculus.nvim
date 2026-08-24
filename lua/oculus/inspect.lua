@@ -3960,29 +3960,7 @@ function M._overview_ui.float_lines(overview, width)
   return lines
 end
 
-M._overview_ui.footer_animation_frames = {
-  { left = "‹", right = "›", hl = "OculusFooterActive" },
-  { left = "«", right = "»", hl = "OculusFooterFlash" },
-  { left = "⟪", right = "⟫", hl = "OculusFooterActive" },
-}
-
-local function is_interactive_ui()
-  return #vim.api.nvim_list_uis() > 0
-end
-
 function M._overview_ui.close_footer(group)
-  if group.overview_footer_timer then
-    pcall(group.overview_footer_timer.stop, group.overview_footer_timer)
-    if not group.overview_footer_timer:is_closing() then
-      pcall(group.overview_footer_timer.close, group.overview_footer_timer)
-    end
-    group.overview_footer_timer = nil
-  end
-
-  group.overview_pending_footer_action = nil
-  group.overview_animated_command = nil
-  group.overview_animation_frame = nil
-
   if M._overview_ui.stop_close_spinner then
     M._overview_ui.stop_close_spinner(group)
   end
@@ -3999,95 +3977,6 @@ function M._overview_ui.close_footer(group)
   if buf and vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_delete(buf, { force = true })
   end
-end
-
-function M._overview_ui.animate_footer_keystroke(group, command_key, action)
-  if not is_interactive_ui() and action then
-    action()
-  end
-
-  if not group or not group.overview_win or not vim.api.nvim_win_is_valid(group.overview_win) then
-    if is_interactive_ui() and action then
-      action()
-    end
-    return
-  end
-
-  if not group.overview_footer_win or not vim.api.nvim_win_is_valid(group.overview_footer_win) then
-    M._overview_ui.render_footer(group)
-  end
-
-  if not group.overview_footer_win or not vim.api.nvim_win_is_valid(group.overview_footer_win) then
-    if is_interactive_ui() and action then
-      action()
-    end
-    return
-  end
-
-  if group.overview_footer_timer then
-    pcall(group.overview_footer_timer.stop, group.overview_footer_timer)
-    if not group.overview_footer_timer:is_closing() then
-      pcall(group.overview_footer_timer.close, group.overview_footer_timer)
-    end
-    group.overview_footer_timer = nil
-    local pending = group.overview_pending_footer_action
-    group.overview_pending_footer_action = nil
-    if pending and is_interactive_ui() then
-      pending()
-    end
-  end
-
-  if is_interactive_ui() then
-    group.overview_pending_footer_action = action
-  end
-
-  local frame = 1
-  group.overview_animated_command = command_key
-  group.overview_animation_frame = frame
-  M._overview_ui.render_footer(group)
-
-  local timer = vim.uv.new_timer()
-  group.overview_footer_timer = timer
-
-  timer:start(100, 100, vim.schedule_wrap(function()
-    if not group or not group.overview_footer_win or not vim.api.nvim_win_is_valid(group.overview_footer_win) then
-      if timer and not timer:is_closing() then
-        timer:stop()
-        timer:close()
-      end
-      local pending = group and group.overview_pending_footer_action
-      if group then
-        group.overview_footer_timer = nil
-        group.overview_animated_command = nil
-        group.overview_animation_frame = nil
-        group.overview_pending_footer_action = nil
-      end
-      if pending and is_interactive_ui() then
-        pending()
-      end
-      return
-    end
-
-    frame = frame + 1
-    if frame <= #M._overview_ui.footer_animation_frames then
-      group.overview_animation_frame = frame
-      M._overview_ui.render_footer(group)
-    else
-      timer:stop()
-      if not timer:is_closing() then
-        timer:close()
-      end
-      group.overview_footer_timer = nil
-      group.overview_animated_command = nil
-      group.overview_animation_frame = nil
-      local pending = group.overview_pending_footer_action
-      group.overview_pending_footer_action = nil
-      M._overview_ui.render_footer(group)
-      if pending and is_interactive_ui() then
-        pending()
-      end
-    end
-  end))
 end
 
 function M._overview_ui.render_footer(group)
@@ -4144,149 +4033,41 @@ function M._overview_ui.render_footer(group)
       and "virtual"
     or "sidebar"
 
-  local left_items = {
-    { key = "b", label = "browser" },
-    { key = "e", label = "explain" },
-  }
+  local left_commands = "  b browser   e explain"
 
   if issue_patches then
-    left_items[#left_items + 1] = { key = "p", label = "path" }
-    left_items[#left_items + 1] = { key = "w", label = "worktree" }
+    left_commands = left_commands .. "   p path   w worktree"
   end
 
-  left_items[#left_items + 1] = { key = view_command_key, label = view_command_label }
-  left_items[#left_items + 1] = { key = "c", label = close_command_label }
+  left_commands = left_commands
+    .. "   "
+    .. view_command_key
+    .. " "
+    .. view_command_label
+    .. "   c "
+    .. close_command_label
 
-  local right_items = {}
+  local right_commands = ""
 
   if #(group.overview_agent_locations or {}) > 0
     and group.overview_agent_mode == "patch_locations"
   then
-    right_items[#right_items + 1] = { key = "<Space>", label = "toggle" }
-    right_items[#right_items + 1] = { key = "<CR>", label = "open paths" }
+    right_commands = "<Space> toggle   <CR> open paths   "
   end
 
-  right_items[#right_items + 1] = { key = "q", label = "quit" }
-
-  local active_key = group.overview_animated_command
-  local active_frame = group.overview_animation_frame
-  local frame_data = active_frame and M._overview_ui.footer_animation_frames[active_frame]
-
-  local function matches_key(item_key)
-    if not active_key then
-      return false
-    end
-    if item_key:lower() == active_key:lower() then
-      return true
-    end
-    if (active_key == " " or active_key:lower() == "space") and item_key == "<Space>" then
-      return true
-    end
-    if (active_key == "\r" or active_key:lower() == "cr") and item_key == "<CR>" then
-      return true
-    end
-    return false
-  end
-
-  local left_parts = {}
-  local left_highlights = {}
-  local current_col = 0
-
-  for i, item in ipairs(left_items) do
-    local is_active = matches_key(item.key) and frame_data
-    local prev_active = (i > 1) and matches_key(left_items[i - 1].key) and frame_data
-    local sep
-    if i == 1 then
-      sep = is_active and " " or "  "
-    else
-      sep = (is_active or prev_active) and "  " or "   "
-    end
-
-    left_parts[#left_parts + 1] = sep
-    current_col = current_col + #sep
-
-    local text
-    if is_active then
-      text = frame_data.left .. item.key .. " " .. item.label .. frame_data.right
-      left_highlights[#left_highlights + 1] = {
-        start_col = current_col,
-        end_col = current_col + #text,
-        hl = frame_data.hl,
-      }
-    else
-      text = item.key .. " " .. item.label
-    end
-
-    left_parts[#left_parts + 1] = text
-    current_col = current_col + #text
-  end
-
-  local left_commands = table.concat(left_parts, "")
-
-  local right_parts = {}
-  local right_highlights = {}
-  local right_len = 0
-
-  for i, item in ipairs(right_items) do
-    local is_active = matches_key(item.key) and frame_data
-    local prev_active = (i > 1) and matches_key(right_items[i - 1].key) and frame_data
-    local sep
-    if i == 1 then
-      sep = ""
-    else
-      sep = (is_active or prev_active) and "  " or "   "
-    end
-
-    local text
-    if is_active then
-      text = frame_data.left .. item.key .. " " .. item.label .. frame_data.right
-    else
-      text = item.key .. " " .. item.label
-    end
-
-    right_parts[#right_parts + 1] = {
-      is_active = is_active,
-      sep = sep,
-      text = text,
-    }
-    right_len = right_len
-      + #sep
-      + (is_active and (vim.fn.strdisplaywidth(item.key .. " " .. item.label) + 2) or vim.fn.strdisplaywidth(text))
-  end
+  right_commands = right_commands .. "q quit"
 
   local left_display_width = vim.fn.strdisplaywidth(left_commands)
+  local right_display_width = vim.fn.strdisplaywidth(right_commands)
   local padding = math.max(
     3,
     width
       - 2
       - left_display_width
-      - right_len
+      - right_display_width
   )
 
-  local padding_str = string.rep(" ", padding)
-  local cur_right_col = #left_commands + #padding_str
-  local right_text_list = {}
-
-  for _, item in ipairs(right_parts) do
-    if item.sep ~= "" then
-      right_text_list[#right_text_list + 1] = item.sep
-      cur_right_col = cur_right_col + #item.sep
-    end
-
-    if item.is_active then
-      right_highlights[#right_highlights + 1] = {
-        start_col = cur_right_col,
-        end_col = cur_right_col + #item.text,
-        hl = frame_data.hl,
-      }
-    end
-
-    right_text_list[#right_text_list + 1] = item.text
-    cur_right_col = cur_right_col + #item.text
-  end
-
-  local right_commands = table.concat(right_text_list, "")
-  local commands = left_commands .. padding_str .. right_commands
+  local commands = left_commands .. string.rep(" ", padding) .. right_commands
 
   local close_spinner_col
   if close_spinner then
@@ -4333,34 +4114,6 @@ function M._overview_ui.render_footer(group)
       priority = 100,
     }
   )
-
-  for _, h in ipairs(left_highlights) do
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      M._overview_ui.footer_ns,
-      1,
-      h.start_col,
-      {
-        end_col = h.end_col,
-        hl_group = h.hl,
-        priority = 105,
-      }
-    )
-  end
-
-  for _, h in ipairs(right_highlights) do
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      M._overview_ui.footer_ns,
-      1,
-      h.start_col,
-      {
-        end_col = h.end_col,
-        hl_group = h.hl,
-        priority = 105,
-      }
-    )
-  end
 
   if close_spinner_col then
     vim.api.nvim_buf_set_extmark(
@@ -6143,9 +5896,7 @@ show_inspection_overview = function(group)
   )
 
   vim.keymap.set("n", "e", function()
-    M._overview_ui.animate_footer_keystroke(group, "e", function()
-      M._overview_ui.open_model_picker(group, "explanation")
-    end)
+    M._overview_ui.open_model_picker(group, "explanation")
   end, {
     buffer = buf,
     nowait = true,
@@ -6155,9 +5906,7 @@ show_inspection_overview = function(group)
 
   if require("oculus.agent").needs_patch_locations(group) then
     vim.keymap.set("n", "w", function()
-      M._overview_ui.animate_footer_keystroke(group, "w", function()
-        M._overview_ui.open_worktree_workflow(group)
-      end)
+      M._overview_ui.open_worktree_workflow(group)
     end, {
       buffer = buf,
       nowait = true,
@@ -6166,13 +5915,11 @@ show_inspection_overview = function(group)
     })
 
     vim.keymap.set("n", "p", function()
-      M._overview_ui.animate_footer_keystroke(group, "p", function()
-        if M._overview_ui.toggle_patch_locations_focus(group) then
-          return
-        end
+      if M._overview_ui.toggle_patch_locations_focus(group) then
+        return
+      end
 
-        M._overview_ui.open_model_picker(group, "patch_locations")
-      end)
+      M._overview_ui.open_model_picker(group, "patch_locations")
     end, {
       buffer = buf,
       nowait = true,
@@ -6191,9 +5938,7 @@ show_inspection_overview = function(group)
   })
 
   vim.keymap.set("n", "b", function()
-    M._overview_ui.animate_footer_keystroke(group, "b", function()
-      M._overview_ui.open_browser(group)
-    end)
+    M._overview_ui.open_browser(group)
   end, {
     buffer = buf,
     nowait = true,
@@ -6202,12 +5947,10 @@ show_inspection_overview = function(group)
   })
 
   vim.keymap.set("n", "v", function()
-    M._overview_ui.animate_footer_keystroke(group, "v", function()
-      group.chunk_view_mode = "virtual"
-      close_inspection_sidebar(group)
-      M._refresh_virtual_counters(group)
-      show_sidebar_files(group)
-    end)
+    group.chunk_view_mode = "virtual"
+    close_inspection_sidebar(group)
+    M._refresh_virtual_counters(group)
+    show_sidebar_files(group)
   end, {
     buffer = buf,
     nowait = true,
@@ -6216,12 +5959,10 @@ show_inspection_overview = function(group)
   })
 
   vim.keymap.set("n", "s", function()
-    M._overview_ui.animate_footer_keystroke(group, "s", function()
-      group.chunk_view_mode = "sidebar"
-      M._clear_virtual_counters(group)
-      open_inspection_sidebar(group)
-      show_sidebar_files(group)
-    end)
+    group.chunk_view_mode = "sidebar"
+    M._clear_virtual_counters(group)
+    open_inspection_sidebar(group)
+    show_sidebar_files(group)
   end, {
     buffer = buf,
     nowait = true,
@@ -6230,22 +5971,20 @@ show_inspection_overview = function(group)
   })
 
   vim.keymap.set("n", "c", function()
-    M._overview_ui.animate_footer_keystroke(group, "c", function()
-      local lifecycle = group.inspection_lifecycle
-      local request_close = lifecycle and lifecycle.on_close_requested
+    local lifecycle = group.inspection_lifecycle
+    local request_close = lifecycle and lifecycle.on_close_requested
 
-      if type(request_close) == "function" then
-        M._overview_ui.start_close_spinner(group)
+    if type(request_close) == "function" then
+      M._overview_ui.start_close_spinner(group)
 
-        if request_close(group) then
-          return
-        end
-
-        M._overview_ui.stop_close_spinner(group)
+      if request_close(group) then
+        return
       end
 
-      M._close_inspection_workflow(group)
-    end)
+      M._overview_ui.stop_close_spinner(group)
+    end
+
+    M._close_inspection_workflow(group)
   end, {
     buffer = buf,
     nowait = true,
@@ -6254,9 +5993,7 @@ show_inspection_overview = function(group)
   })
 
   vim.keymap.set("n", "q", function()
-    M._overview_ui.animate_footer_keystroke(group, "q", function()
-      show_sidebar_files(group)
-    end)
+    show_sidebar_files(group)
   end, {
     buffer = buf,
     nowait = true,
@@ -6341,20 +6078,10 @@ show_inspection_overview = function(group)
   map_scroll("<C-k>", 10, "Scroll Oculus Inspect overview down 10 lines")
 
   vim.keymap.set("n", "<CR>", function()
-    local function execute_cr()
-      if group.overview_agent_mode == "models" then
-        M._overview_ui.select_agent_model(group)
-      else
-        M._overview_ui.open_patch_location(group)
-      end
-    end
-
-    if #(group.overview_agent_locations or {}) > 0
-      and group.overview_agent_mode == "patch_locations"
-    then
-      M._overview_ui.animate_footer_keystroke(group, "<CR>", execute_cr)
+    if group.overview_agent_mode == "models" then
+      M._overview_ui.select_agent_model(group)
     else
-      execute_cr()
+      M._overview_ui.open_patch_location(group)
     end
   end, {
     buffer = buf,
@@ -6364,17 +6091,7 @@ show_inspection_overview = function(group)
   })
 
   vim.keymap.set("n", "<Space>", function()
-    local function execute_space()
-      M._overview_ui.toggle_patch_location(group)
-    end
-
-    if #(group.overview_agent_locations or {}) > 0
-      and group.overview_agent_mode == "patch_locations"
-    then
-      M._overview_ui.animate_footer_keystroke(group, "<Space>", execute_space)
-    else
-      execute_space()
-    end
+    M._overview_ui.toggle_patch_location(group)
   end, {
     buffer = buf,
     nowait = true,
