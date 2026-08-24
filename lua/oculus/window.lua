@@ -298,6 +298,26 @@ local function sync_window_highlights(source_win)
     fg = "#fbd38d",
     bold = true,
   })
+
+  vim.api.nvim_set_hl(window_highlight_ns, "OculusFooterActive", {
+    fg = "#89b4fa",
+    bold = true,
+  })
+
+  vim.api.nvim_set_hl(0, "OculusFooterActive", {
+    fg = "#89b4fa",
+    bold = true,
+  })
+
+  vim.api.nvim_set_hl(window_highlight_ns, "OculusFooterFlash", {
+    fg = "#ffffff",
+    bold = true,
+  })
+
+  vim.api.nvim_set_hl(0, "OculusFooterFlash", {
+    fg = "#ffffff",
+    bold = true,
+  })
 end
 
 local function use_window_highlights(win)
@@ -491,7 +511,24 @@ local function make_buf()
   return buf
 end
 
+local FOOTER_ANIMATION_FRAMES = {
+  { left = "‹", right = "›", space = "", hl = "OculusFooterActive" },
+  { left = "«", right = "»", space = " ", hl = "OculusFooterFlash" },
+  { left = "⟪", right = "⟫", space = " ", hl = "OculusFooterActive" },
+}
+
 local function close_activity_footer()
+  if M.state.activity_footer_timer then
+    pcall(M.state.activity_footer_timer.stop, M.state.activity_footer_timer)
+    if not M.state.activity_footer_timer:is_closing() then
+      pcall(M.state.activity_footer_timer.close, M.state.activity_footer_timer)
+    end
+    M.state.activity_footer_timer = nil
+  end
+
+  M.state.activity_animated_command = nil
+  M.state.activity_animation_frame = nil
+
   if is_valid_win(M.state.footer_win) then
     vim.api.nvim_win_close(M.state.footer_win, true)
   end
@@ -551,18 +588,53 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local activity_commands = "  h inspect   b browser"
+  local activity_items = {
+    { key = "h", label = "inspect" },
+    { key = "b", label = "browser" },
+  }
 
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
-      activity_commands = activity_commands
-        .. "   f filters"
+      activity_items[#activity_items + 1] = { key = "f", label = "filters" }
     else
       if M.state.activity_project then
-        activity_commands = activity_commands .. "   u issues"
+        activity_items[#activity_items + 1] = { key = "u", label = "issues" }
       end
     end
   end
+
+  local active_key = M.state.activity_animated_command
+  local active_frame = M.state.activity_animation_frame
+  local frame_data = active_frame and FOOTER_ANIMATION_FRAMES[active_frame]
+
+  local function render_item(item)
+    if active_key and active_key:lower() == item.key:lower() and frame_data then
+      local text = frame_data.left .. frame_data.space .. item.key .. " " .. item.label .. frame_data.space .. frame_data.right
+      return text, frame_data.hl
+    end
+    return item.key .. " " .. item.label, nil
+  end
+
+  local parts = {}
+  local highlights = {}
+  local current_col = 2
+
+  for i, item in ipairs(activity_items) do
+    local text, hl = render_item(item)
+    local start_col = current_col
+    local end_col = start_col + #text
+    if hl then
+      highlights[#highlights + 1] = {
+        start_col = start_col,
+        end_col = end_col,
+        hl = hl,
+      }
+    end
+    parts[#parts + 1] = text
+    current_col = end_col + (i < #activity_items and 3 or 0)
+  end
+
+  local activity_commands = "  " .. table.concat(parts, "   ")
 
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -575,6 +647,20 @@ local function render_activity_footer()
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, ns, "WinSeparator", 0, 2, -1)
   vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 1, 2, -1)
+
+  for _, h in ipairs(highlights) do
+    vim.api.nvim_buf_set_extmark(
+      buf,
+      ns,
+      1,
+      h.start_col,
+      {
+        end_col = h.end_col,
+        hl_group = h.hl,
+        priority = 105,
+      }
+    )
+  end
 
   if is_valid_win(M.state.footer_win) then
     vim.api.nvim_win_set_config(M.state.footer_win, config)
@@ -594,6 +680,68 @@ local function render_activity_footer()
   vim.wo[M.state.footer_win].number = false
   vim.wo[M.state.footer_win].relativenumber = false
   vim.wo[M.state.footer_win].signcolumn = "no"
+end
+
+local function animate_activity_footer_keystroke(command_key, action)
+  if action then
+    action()
+  end
+
+  if not is_valid_win(M.state.win) then
+    return
+  end
+
+  if not is_valid_win(M.state.footer_win) or not is_valid_buf(M.state.footer_buf) then
+    render_activity_footer()
+  end
+
+  if not is_valid_win(M.state.footer_win) or not is_valid_buf(M.state.footer_buf) then
+    return
+  end
+
+  if M.state.activity_footer_timer then
+    pcall(M.state.activity_footer_timer.stop, M.state.activity_footer_timer)
+    if not M.state.activity_footer_timer:is_closing() then
+      pcall(M.state.activity_footer_timer.close, M.state.activity_footer_timer)
+    end
+    M.state.activity_footer_timer = nil
+  end
+
+  local frame = 1
+  M.state.activity_animated_command = command_key
+  M.state.activity_animation_frame = frame
+  render_activity_footer()
+
+  local timer = vim.uv.new_timer()
+  M.state.activity_footer_timer = timer
+
+  timer:start(25, 25, vim.schedule_wrap(function()
+    if not is_valid_win(M.state.footer_win) or not is_valid_buf(M.state.footer_buf) then
+      if timer and not timer:is_closing() then
+        timer:stop()
+        timer:close()
+      end
+      M.state.activity_footer_timer = nil
+      M.state.activity_animated_command = nil
+      M.state.activity_animation_frame = nil
+      return
+    end
+
+    frame = frame + 1
+    if frame <= #FOOTER_ANIMATION_FRAMES then
+      M.state.activity_animation_frame = frame
+      render_activity_footer()
+    else
+      timer:stop()
+      if not timer:is_closing() then
+        timer:close()
+      end
+      M.state.activity_footer_timer = nil
+      M.state.activity_animated_command = nil
+      M.state.activity_animation_frame = nil
+      render_activity_footer()
+    end
+  end))
 end
 
 local function list_buffer_line_count()
@@ -5025,7 +5173,13 @@ local function map_keys(buf)
   end, "Toggle Oculus item")
 
   map("o", open_current, "Open Oculus contributor profile")
-  map("b", open_activity_in_browser, "Open Oculus activity in browser")
+  map("b", function()
+    if M.state.view == "activity" then
+      animate_activity_footer_keystroke("b", open_activity_in_browser)
+    else
+      open_activity_in_browser()
+    end
+  end, "Open Oculus activity in browser")
 
   map("F", function()
     open_filters(true)
@@ -5046,12 +5200,20 @@ local function map_keys(buf)
   map("p", next_activity_page, "Load past Oculus activity")
 
   map("f", function()
+    local function execute_f()
+      if M.state.view == "activity" and M.state.activity_issue_page then
+        render_issue_filters(M.state.activity_project)
+      elseif M.state.view == "activity" then
+        previous_activity_page()
+      else
+        open_filters(false)
+      end
+    end
+
     if M.state.view == "activity" and M.state.activity_issue_page then
-      render_issue_filters(M.state.activity_project)
-    elseif M.state.view == "activity" then
-      previous_activity_page()
+      animate_activity_footer_keystroke("f", execute_f)
     else
-      open_filters(false)
+      execute_f()
     end
   end, "Move forward or edit Oculus activity categories")
 
@@ -5064,9 +5226,25 @@ local function map_keys(buf)
   end, "Remove selected Oculus item or refresh activity")
 
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
-  map("h", inspect_current, "Inspect Oculus change or issue")
+  map("h", function()
+    if M.state.view == "activity" then
+      animate_activity_footer_keystroke("h", inspect_current)
+    else
+      inspect_current()
+    end
+  end, "Inspect Oculus change or issue")
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
-  map("u", open_project_issue_activity, "Open Oculus project issues")
+  map("u", function()
+    if
+      M.state.view == "activity"
+      and M.state.activity_project
+      and not M.state.activity_commit_page
+    then
+      animate_activity_footer_keystroke("u", open_project_issue_activity)
+    else
+      open_project_issue_activity()
+    end
+  end, "Open Oculus project issues")
 
   map("k", function()
     move_cursor(1)
@@ -5391,5 +5569,8 @@ function M.toggle(opts)
     M.open(opts)
   end
 end
+
+M._footer_animation_frames = FOOTER_ANIMATION_FRAMES
+M._animate_activity_footer_keystroke = animate_activity_footer_keystroke
 
 return M
