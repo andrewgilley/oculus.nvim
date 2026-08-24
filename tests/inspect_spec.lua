@@ -6028,13 +6028,24 @@ do
   assert(group.overview_footer_buf ~= nil)
   assert(group.overview_footer_win ~= nil)
 
+  local function display_col(str, sub)
+    local byte_idx = str:find(sub, 1, true)
+    if not byte_idx then
+      return nil
+    end
+    return vim.fn.strdisplaywidth(str:sub(1, byte_idx - 1))
+  end
+
   local initial_lines = vim.api.nvim_buf_get_lines(
     group.overview_footer_buf,
     0,
     -1,
     false
   )
-  assert(initial_lines[2]:find("b browser", 1, true))
+  local resting_b_col = display_col(initial_lines[2], "b browser")
+  local resting_e_col = display_col(initial_lines[2], "e explain")
+  assert(resting_b_col == 2)
+  assert(resting_e_col == 14)
 
   group.overview_animated_command = "b"
   group.overview_animation_frame = 1
@@ -6046,6 +6057,8 @@ do
     false
   )
   assert(frame1_lines[2]:find("‹b browser›", 1, true))
+  assert(display_col(frame1_lines[2], "b browser") == resting_b_col)
+  assert(display_col(frame1_lines[2], "e explain") == resting_e_col)
 
   local marks = vim.api.nvim_buf_get_extmarks(
     group.overview_footer_buf,
@@ -6071,7 +6084,9 @@ do
     -1,
     false
   )
-  assert(frame2_lines[2]:find("«  b browser  »", 1, true))
+  assert(frame2_lines[2]:find("«b browser»", 1, true))
+  assert(display_col(frame2_lines[2], "b browser") == resting_b_col)
+  assert(display_col(frame2_lines[2], "e explain") == resting_e_col)
 
   group.overview_animation_frame = 3
   inspect._overview_ui.render_footer(group)
@@ -6081,24 +6096,16 @@ do
     -1,
     false
   )
-  assert(frame3_lines[2]:find("⟪    b browser    ⟫", 1, true))
-
-  group.overview_animation_frame = 4
-  inspect._overview_ui.render_footer(group)
-  local frame4_lines = vim.api.nvim_buf_get_lines(
-    group.overview_footer_buf,
-    0,
-    -1,
-    false
-  )
-  assert(frame4_lines[2]:find("⟪      b browser      ⟫", 1, true))
+  assert(frame3_lines[2]:find("⟪b browser⟫", 1, true))
+  assert(display_col(frame3_lines[2], "b browser") == resting_b_col)
+  assert(display_col(frame3_lines[2], "e explain") == resting_e_col)
 
   local action_called = false
   inspect._overview_ui.animate_footer_keystroke(group, "e", function()
     action_called = true
   end)
 
-  vim.wait(300, function()
+  vim.wait(400, function()
     return action_called
   end)
   assert(action_called, "animate_footer_keystroke action was not called")

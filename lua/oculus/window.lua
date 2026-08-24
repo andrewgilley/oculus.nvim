@@ -512,10 +512,9 @@ local function make_buf()
 end
 
 local FOOTER_ANIMATION_FRAMES = {
-  { left = "‹", right = "›", space = "", hl = "OculusFooterActive" },
-  { left = "«", right = "»", space = "  ", hl = "OculusFooterActive" },
-  { left = "⟪", right = "⟫", space = "    ", hl = "OculusFooterFlash" },
-  { left = "⟪", right = "⟫", space = "      ", hl = "OculusFooterFlash" },
+  { left = "‹", right = "›", hl = "OculusFooterActive" },
+  { left = "«", right = "»", hl = "OculusFooterFlash" },
+  { left = "⟪", right = "⟫", hl = "OculusFooterActive" },
 }
 
 local function is_interactive_ui()
@@ -613,34 +612,40 @@ local function render_activity_footer()
   local active_frame = M.state.activity_animation_frame
   local frame_data = active_frame and FOOTER_ANIMATION_FRAMES[active_frame]
 
-  local function render_item(item)
-    if active_key and active_key:lower() == item.key:lower() and frame_data then
-      local text = frame_data.left .. frame_data.space .. item.key .. " " .. item.label .. frame_data.space .. frame_data.right
-      return text, frame_data.hl
-    end
-    return item.key .. " " .. item.label, nil
-  end
-
   local parts = {}
   local highlights = {}
-  local current_col = 2
+  local current_col = 0
 
   for i, item in ipairs(activity_items) do
-    local text, hl = render_item(item)
-    local start_col = current_col
-    local end_col = start_col + #text
-    if hl then
-      highlights[#highlights + 1] = {
-        start_col = start_col,
-        end_col = end_col,
-        hl = hl,
-      }
+    local is_active = (active_key and active_key:lower() == item.key:lower()) and frame_data
+    local prev_active = (i > 1) and (active_key and active_key:lower() == activity_items[i - 1].key:lower()) and frame_data
+    local sep
+    if i == 1 then
+      sep = is_active and " " or "  "
+    else
+      sep = (is_active or prev_active) and "  " or "   "
     end
+
+    parts[#parts + 1] = sep
+    current_col = current_col + #sep
+
+    local text
+    if is_active then
+      text = frame_data.left .. item.key .. " " .. item.label .. frame_data.right
+      highlights[#highlights + 1] = {
+        start_col = current_col,
+        end_col = current_col + #text,
+        hl = frame_data.hl,
+      }
+    else
+      text = item.key .. " " .. item.label
+    end
+
     parts[#parts + 1] = text
-    current_col = end_col + (i < #activity_items and 3 or 0)
+    current_col = current_col + #text
   end
 
-  local activity_commands = "  " .. table.concat(parts, "   ")
+  local activity_commands = table.concat(parts, "")
 
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -736,7 +741,7 @@ local function animate_activity_footer_keystroke(command_key, action)
   local timer = vim.uv.new_timer()
   M.state.activity_footer_timer = timer
 
-  timer:start(50, 50, vim.schedule_wrap(function()
+  timer:start(100, 100, vim.schedule_wrap(function()
     if not is_valid_win(M.state.footer_win) or not is_valid_buf(M.state.footer_buf) then
       if timer and not timer:is_closing() then
         timer:stop()
