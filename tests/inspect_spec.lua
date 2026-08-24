@@ -6006,3 +6006,97 @@ do
   assert(not single_commit_rendered:find("only one commit", 1, true))
   vim.api.nvim_buf_delete(single_commit_buf, { force = true })
 end
+
+do
+  local dummy_buf = vim.api.nvim_create_buf(false, true)
+  local dummy_win = vim.api.nvim_open_win(dummy_buf, false, {
+    relative = "editor",
+    width = 80,
+    height = 20,
+    row = 2,
+    col = 2,
+  })
+
+  local group = {
+    overview_win = dummy_win,
+    overview_buf = dummy_buf,
+    chunk_view_mode = "virtual",
+    overview_agent_locations = {},
+  }
+
+  inspect._overview_ui.render_footer(group)
+  assert(group.overview_footer_buf ~= nil)
+  assert(group.overview_footer_win ~= nil)
+
+  local initial_lines = vim.api.nvim_buf_get_lines(
+    group.overview_footer_buf,
+    0,
+    -1,
+    false
+  )
+  assert(initial_lines[2]:find("b browser", 1, true))
+
+  group.overview_animated_command = "b"
+  group.overview_animation_frame = 1
+  inspect._overview_ui.render_footer(group)
+  local frame1_lines = vim.api.nvim_buf_get_lines(
+    group.overview_footer_buf,
+    0,
+    -1,
+    false
+  )
+  assert(frame1_lines[2]:find("‹b browser›", 1, true))
+
+  local marks = vim.api.nvim_buf_get_extmarks(
+    group.overview_footer_buf,
+    inspect._overview_ui.footer_ns,
+    0,
+    -1,
+    { details = true }
+  )
+  local has_active_hl = false
+  for _, mark in ipairs(marks) do
+    if mark[4].hl_group == "OculusFooterActive" then
+      has_active_hl = true
+      break
+    end
+  end
+  assert(has_active_hl, "Frame 1 did not apply OculusFooterActive highlight")
+
+  group.overview_animation_frame = 2
+  inspect._overview_ui.render_footer(group)
+  local frame2_lines = vim.api.nvim_buf_get_lines(
+    group.overview_footer_buf,
+    0,
+    -1,
+    false
+  )
+  assert(frame2_lines[2]:find("« b browser »", 1, true))
+
+  group.overview_animation_frame = 3
+  inspect._overview_ui.render_footer(group)
+  local frame3_lines = vim.api.nvim_buf_get_lines(
+    group.overview_footer_buf,
+    0,
+    -1,
+    false
+  )
+  assert(frame3_lines[2]:find("⟪ b browser ⟫", 1, true))
+
+  local action_called = false
+  inspect._overview_ui.animate_footer_keystroke(group, "e", function()
+    action_called = true
+  end)
+
+  vim.wait(200, function()
+    return action_called
+  end)
+  assert(action_called, "animate_footer_keystroke action was not called")
+
+  inspect._overview_ui.close_footer(group)
+  assert(group.overview_footer_win == nil)
+  assert(group.overview_footer_buf == nil)
+
+  vim.api.nvim_win_close(dummy_win, true)
+  vim.api.nvim_buf_delete(dummy_buf, { force = true })
+end
