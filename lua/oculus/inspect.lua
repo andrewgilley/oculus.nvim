@@ -3961,10 +3961,9 @@ function M._overview_ui.float_lines(overview, width)
 end
 
 M._overview_ui.footer_animation_frames = {
-  { left = "‹", right = "›", space = "", hl = "OculusFooterActive" },
-  { left = "«", right = "»", space = "  ", hl = "OculusFooterActive" },
-  { left = "⟪", right = "⟫", space = "    ", hl = "OculusFooterFlash" },
-  { left = "⟪", right = "⟫", space = "      ", hl = "OculusFooterFlash" },
+  { left = "‹", right = "›", hl = "OculusFooterActive" },
+  { left = "«", right = "»", hl = "OculusFooterFlash" },
+  { left = "⟪", right = "⟫", hl = "OculusFooterActive" },
 }
 
 local function is_interactive_ui()
@@ -4050,7 +4049,7 @@ function M._overview_ui.animate_footer_keystroke(group, command_key, action)
   local timer = vim.uv.new_timer()
   group.overview_footer_timer = timer
 
-  timer:start(50, 50, vim.schedule_wrap(function()
+  timer:start(100, 100, vim.schedule_wrap(function()
     if not group or not group.overview_footer_win or not vim.api.nvim_win_is_valid(group.overview_footer_win) then
       if timer and not timer:is_closing() then
         timer:stop()
@@ -4189,49 +4188,70 @@ function M._overview_ui.render_footer(group)
     return false
   end
 
-  local function render_item(item)
-    if matches_key(item.key) and frame_data then
-      local text = frame_data.left
-        .. frame_data.space
-        .. item.key
-        .. " "
-        .. item.label
-        .. frame_data.space
-        .. frame_data.right
-      return text, frame_data.hl
-    end
-    return item.key .. " " .. item.label, nil
-  end
-
-  local left_highlights = {}
   local left_parts = {}
-  local current_col = 2
+  local left_highlights = {}
+  local current_col = 0
 
   for i, item in ipairs(left_items) do
-    local text, hl = render_item(item)
-    local start_col = current_col
-    local end_col = start_col + #text
-    if hl then
-      left_highlights[#left_highlights + 1] = {
-        start_col = start_col,
-        end_col = end_col,
-        hl = hl,
-      }
+    local is_active = matches_key(item.key) and frame_data
+    local prev_active = (i > 1) and matches_key(left_items[i - 1].key) and frame_data
+    local sep
+    if i == 1 then
+      sep = is_active and " " or "  "
+    else
+      sep = (is_active or prev_active) and "  " or "   "
     end
+
+    left_parts[#left_parts + 1] = sep
+    current_col = current_col + #sep
+
+    local text
+    if is_active then
+      text = frame_data.left .. item.key .. " " .. item.label .. frame_data.right
+      left_highlights[#left_highlights + 1] = {
+        start_col = current_col,
+        end_col = current_col + #text,
+        hl = frame_data.hl,
+      }
+    else
+      text = item.key .. " " .. item.label
+    end
+
     left_parts[#left_parts + 1] = text
-    current_col = end_col + (i < #left_items and 3 or 0)
+    current_col = current_col + #text
   end
 
-  local left_commands = "  " .. table.concat(left_parts, "   ")
+  local left_commands = table.concat(left_parts, "")
 
-  local right_highlights = {}
   local right_parts = {}
+  local right_highlights = {}
   local right_len = 0
 
   for i, item in ipairs(right_items) do
-    local text, hl = render_item(item)
-    right_parts[#right_parts + 1] = { text = text, hl = hl }
-    right_len = right_len + vim.fn.strdisplaywidth(text) + (i < #right_items and 3 or 0)
+    local is_active = matches_key(item.key) and frame_data
+    local prev_active = (i > 1) and matches_key(right_items[i - 1].key) and frame_data
+    local sep
+    if i == 1 then
+      sep = ""
+    else
+      sep = (is_active or prev_active) and "  " or "   "
+    end
+
+    local text
+    if is_active then
+      text = frame_data.left .. item.key .. " " .. item.label .. frame_data.right
+    else
+      text = item.key .. " " .. item.label
+    end
+
+    right_parts[#right_parts + 1] = {
+      is_active = is_active,
+      sep = sep,
+      text = text,
+    }
+    right_len = right_len
+      + #sep
+      + (is_active and (vim.fn.strdisplaywidth(item.key .. " " .. item.label) + 2) or vim.fn.strdisplaywidth(text))
   end
 
   local left_display_width = vim.fn.strdisplaywidth(left_commands)
@@ -4247,22 +4267,25 @@ function M._overview_ui.render_footer(group)
   local cur_right_col = #left_commands + #padding_str
   local right_text_list = {}
 
-  for i, item in ipairs(right_parts) do
-    local text = item.text
-    local start_col = cur_right_col
-    local end_col = start_col + #text
-    if item.hl then
+  for _, item in ipairs(right_parts) do
+    if item.sep ~= "" then
+      right_text_list[#right_text_list + 1] = item.sep
+      cur_right_col = cur_right_col + #item.sep
+    end
+
+    if item.is_active then
       right_highlights[#right_highlights + 1] = {
-        start_col = start_col,
-        end_col = end_col,
-        hl = item.hl,
+        start_col = cur_right_col,
+        end_col = cur_right_col + #item.text,
+        hl = frame_data.hl,
       }
     end
-    right_text_list[#right_text_list + 1] = text
-    cur_right_col = end_col + (i < #right_parts and 3 or 0)
+
+    right_text_list[#right_text_list + 1] = item.text
+    cur_right_col = cur_right_col + #item.text
   end
 
-  local right_commands = table.concat(right_text_list, "   ")
+  local right_commands = table.concat(right_text_list, "")
   local commands = left_commands .. padding_str .. right_commands
 
   local close_spinner_col

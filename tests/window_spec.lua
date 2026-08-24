@@ -2627,15 +2627,10 @@ do
 end
 
 do
-  assert(#window._footer_animation_frames == 4)
+  assert(#window._footer_animation_frames == 3)
   assert(window._footer_animation_frames[1].left == "‹")
   assert(window._footer_animation_frames[2].left == "«")
   assert(window._footer_animation_frames[3].left == "⟪")
-  assert(window._footer_animation_frames[4].left == "⟪")
-  assert(window._footer_animation_frames[1].space == "")
-  assert(window._footer_animation_frames[2].space == "  ")
-  assert(window._footer_animation_frames[3].space == "    ")
-  assert(window._footer_animation_frames[4].space == "      ")
 
   local dummy_buf = vim.api.nvim_create_buf(false, true)
   local dummy_win = vim.api.nvim_open_win(dummy_buf, false, {
@@ -2665,7 +2660,7 @@ do
   )
   assert(frame1_text:find("‹b browser›", 1, true))
 
-  vim.wait(350, function()
+  vim.wait(400, function()
     return action_called
   end)
   assert(action_called, "animate_activity_footer_keystroke callback was not called")
