@@ -2627,17 +2627,15 @@ do
 end
 
 do
-  assert(#window._footer_animation_frames == 5)
+  assert(#window._footer_animation_frames == 4)
   assert(window._footer_animation_frames[1].left == "‹")
   assert(window._footer_animation_frames[2].left == "«")
   assert(window._footer_animation_frames[3].left == "⟪")
   assert(window._footer_animation_frames[4].left == "⟪")
-  assert(window._footer_animation_frames[5].left == "⟪")
   assert(window._footer_animation_frames[1].space == "")
   assert(window._footer_animation_frames[2].space == "  ")
   assert(window._footer_animation_frames[3].space == "    ")
   assert(window._footer_animation_frames[4].space == "      ")
-  assert(window._footer_animation_frames[5].space == "        ")
 
   local dummy_buf = vim.api.nvim_create_buf(false, true)
   local dummy_win = vim.api.nvim_open_win(dummy_buf, false, {
