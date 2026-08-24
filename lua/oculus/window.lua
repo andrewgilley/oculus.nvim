@@ -513,9 +513,15 @@ end
 
 local FOOTER_ANIMATION_FRAMES = {
   { left = "‹", right = "›", space = "", hl = "OculusFooterActive" },
-  { left = "«", right = "»", space = " ", hl = "OculusFooterFlash" },
-  { left = "⟪", right = "⟫", space = " ", hl = "OculusFooterActive" },
+  { left = "«", right = "»", space = "  ", hl = "OculusFooterActive" },
+  { left = "⟪", right = "⟫", space = "    ", hl = "OculusFooterFlash" },
+  { left = "⟪", right = "⟫", space = "      ", hl = "OculusFooterFlash" },
+  { left = "⟪", right = "⟫", space = "        ", hl = "OculusFooterActive" },
 }
+
+local function is_interactive_ui()
+  return #vim.api.nvim_list_uis() > 0
+end
 
 local function close_activity_footer()
   if M.state.activity_footer_timer then
@@ -526,6 +532,7 @@ local function close_activity_footer()
     M.state.activity_footer_timer = nil
   end
 
+  M.state.activity_pending_footer_action = nil
   M.state.activity_animated_command = nil
   M.state.activity_animation_frame = nil
 
@@ -683,11 +690,14 @@ local function render_activity_footer()
 end
 
 local function animate_activity_footer_keystroke(command_key, action)
-  if action then
+  if not is_interactive_ui() and action then
     action()
   end
 
   if not is_valid_win(M.state.win) then
+    if is_interactive_ui() and action then
+      action()
+    end
     return
   end
 
@@ -696,6 +706,9 @@ local function animate_activity_footer_keystroke(command_key, action)
   end
 
   if not is_valid_win(M.state.footer_win) or not is_valid_buf(M.state.footer_buf) then
+    if is_interactive_ui() and action then
+      action()
+    end
     return
   end
 
@@ -705,6 +718,15 @@ local function animate_activity_footer_keystroke(command_key, action)
       pcall(M.state.activity_footer_timer.close, M.state.activity_footer_timer)
     end
     M.state.activity_footer_timer = nil
+    local pending = M.state.activity_pending_footer_action
+    M.state.activity_pending_footer_action = nil
+    if pending and is_interactive_ui() then
+      pending()
+    end
+  end
+
+  if is_interactive_ui() then
+    M.state.activity_pending_footer_action = action
   end
 
   local frame = 1
@@ -715,15 +737,20 @@ local function animate_activity_footer_keystroke(command_key, action)
   local timer = vim.uv.new_timer()
   M.state.activity_footer_timer = timer
 
-  timer:start(25, 25, vim.schedule_wrap(function()
+  timer:start(50, 50, vim.schedule_wrap(function()
     if not is_valid_win(M.state.footer_win) or not is_valid_buf(M.state.footer_buf) then
       if timer and not timer:is_closing() then
         timer:stop()
         timer:close()
       end
+      local pending = M.state.activity_pending_footer_action
       M.state.activity_footer_timer = nil
       M.state.activity_animated_command = nil
       M.state.activity_animation_frame = nil
+      M.state.activity_pending_footer_action = nil
+      if pending and is_interactive_ui() then
+        pending()
+      end
       return
     end
 
@@ -739,7 +766,12 @@ local function animate_activity_footer_keystroke(command_key, action)
       M.state.activity_footer_timer = nil
       M.state.activity_animated_command = nil
       M.state.activity_animation_frame = nil
+      local pending = M.state.activity_pending_footer_action
+      M.state.activity_pending_footer_action = nil
       render_activity_footer()
+      if pending and is_interactive_ui() then
+        pending()
+      end
     end
   end))
 end
