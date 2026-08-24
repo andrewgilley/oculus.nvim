@@ -3962,9 +3962,15 @@ end
 
 M._overview_ui.footer_animation_frames = {
   { left = "‹", right = "›", space = "", hl = "OculusFooterActive" },
-  { left = "«", right = "»", space = " ", hl = "OculusFooterFlash" },
-  { left = "⟪", right = "⟫", space = " ", hl = "OculusFooterActive" },
+  { left = "«", right = "»", space = "  ", hl = "OculusFooterActive" },
+  { left = "⟪", right = "⟫", space = "    ", hl = "OculusFooterFlash" },
+  { left = "⟪", right = "⟫", space = "      ", hl = "OculusFooterFlash" },
+  { left = "⟪", right = "⟫", space = "        ", hl = "OculusFooterActive" },
 }
+
+local function is_interactive_ui()
+  return #vim.api.nvim_list_uis() > 0
+end
 
 function M._overview_ui.close_footer(group)
   if group.overview_footer_timer then
@@ -3975,6 +3981,7 @@ function M._overview_ui.close_footer(group)
     group.overview_footer_timer = nil
   end
 
+  group.overview_pending_footer_action = nil
   group.overview_animated_command = nil
   group.overview_animation_frame = nil
 
@@ -3997,11 +4004,14 @@ function M._overview_ui.close_footer(group)
 end
 
 function M._overview_ui.animate_footer_keystroke(group, command_key, action)
-  if action then
+  if not is_interactive_ui() and action then
     action()
   end
 
   if not group or not group.overview_win or not vim.api.nvim_win_is_valid(group.overview_win) then
+    if is_interactive_ui() and action then
+      action()
+    end
     return
   end
 
@@ -4010,6 +4020,9 @@ function M._overview_ui.animate_footer_keystroke(group, command_key, action)
   end
 
   if not group.overview_footer_win or not vim.api.nvim_win_is_valid(group.overview_footer_win) then
+    if is_interactive_ui() and action then
+      action()
+    end
     return
   end
 
@@ -4019,6 +4032,15 @@ function M._overview_ui.animate_footer_keystroke(group, command_key, action)
       pcall(group.overview_footer_timer.close, group.overview_footer_timer)
     end
     group.overview_footer_timer = nil
+    local pending = group.overview_pending_footer_action
+    group.overview_pending_footer_action = nil
+    if pending and is_interactive_ui() then
+      pending()
+    end
+  end
+
+  if is_interactive_ui() then
+    group.overview_pending_footer_action = action
   end
 
   local frame = 1
@@ -4029,16 +4051,21 @@ function M._overview_ui.animate_footer_keystroke(group, command_key, action)
   local timer = vim.uv.new_timer()
   group.overview_footer_timer = timer
 
-  timer:start(25, 25, vim.schedule_wrap(function()
+  timer:start(50, 50, vim.schedule_wrap(function()
     if not group or not group.overview_footer_win or not vim.api.nvim_win_is_valid(group.overview_footer_win) then
       if timer and not timer:is_closing() then
         timer:stop()
         timer:close()
       end
+      local pending = group and group.overview_pending_footer_action
       if group then
         group.overview_footer_timer = nil
         group.overview_animated_command = nil
         group.overview_animation_frame = nil
+        group.overview_pending_footer_action = nil
+      end
+      if pending and is_interactive_ui() then
+        pending()
       end
       return
     end
@@ -4055,7 +4082,12 @@ function M._overview_ui.animate_footer_keystroke(group, command_key, action)
       group.overview_footer_timer = nil
       group.overview_animated_command = nil
       group.overview_animation_frame = nil
+      local pending = group.overview_pending_footer_action
+      group.overview_pending_footer_action = nil
       M._overview_ui.render_footer(group)
+      if pending and is_interactive_ui() then
+        pending()
+      end
     end
   end))
 end
