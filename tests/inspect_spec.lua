@@ -6093,22 +6093,12 @@ do
   )
   assert(frame4_lines[2]:find("⟪      b browser      ⟫", 1, true))
 
-  group.overview_animation_frame = 5
-  inspect._overview_ui.render_footer(group)
-  local frame5_lines = vim.api.nvim_buf_get_lines(
-    group.overview_footer_buf,
-    0,
-    -1,
-    false
-  )
-  assert(frame5_lines[2]:find("⟪        b browser        ⟫", 1, true))
-
   local action_called = false
   inspect._overview_ui.animate_footer_keystroke(group, "e", function()
     action_called = true
   end)
 
-  vim.wait(350, function()
+  vim.wait(300, function()
     return action_called
   end)
   assert(action_called, "animate_footer_keystroke action was not called")

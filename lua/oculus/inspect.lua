@@ -3965,7 +3965,6 @@ M._overview_ui.footer_animation_frames = {
   { left = "«", right = "»", space = "  ", hl = "OculusFooterActive" },
   { left = "⟪", right = "⟫", space = "    ", hl = "OculusFooterFlash" },
   { left = "⟪", right = "⟫", space = "      ", hl = "OculusFooterFlash" },
-  { left = "⟪", right = "⟫", space = "        ", hl = "OculusFooterActive" },
 }
 
 local function is_interactive_ui()

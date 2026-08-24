@@ -516,7 +516,6 @@ local FOOTER_ANIMATION_FRAMES = {
   { left = "«", right = "»", space = "  ", hl = "OculusFooterActive" },
   { left = "⟪", right = "⟫", space = "    ", hl = "OculusFooterFlash" },
   { left = "⟪", right = "⟫", space = "      ", hl = "OculusFooterFlash" },
-  { left = "⟪", right = "⟫", space = "        ", hl = "OculusFooterActive" },
 }
 
 local function is_interactive_ui()
