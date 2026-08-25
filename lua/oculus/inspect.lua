@@ -852,7 +852,7 @@ local function decorate_oil_buffer(buf)
   end
 
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    vim.wo[win].signcolumn = "yes:1"
+    vim.wo[win].signcolumn = "yes"
   end
 end
 
@@ -1426,7 +1426,7 @@ local function apply_change_signs(parent_buf, change_buf, hunks, status)
       parent_buf,
       hunk.old_start,
       hunk.old_count,
-      hunk.old_count == 0 and "+" or "-",
+      hunk.old_count == 0 and "＋" or "－",
       hunk.old_count == 0
           and "OculusInspectAdded"
         or "OculusInspectRemoved"
@@ -1436,7 +1436,7 @@ local function apply_change_signs(parent_buf, change_buf, hunks, status)
       change_buf,
       hunk.new_start,
       hunk.new_count,
-      hunk.new_count == 0 and "-" or "+",
+      hunk.new_count == 0 and "－" or "＋",
       hunk.new_count == 0
           and "OculusInspectRemoved"
         or "OculusInspectAdded"
@@ -6368,7 +6368,7 @@ show_sidebar_files = function(group)
       or { session.parent, session.change })
     do
       if valid_endpoint(endpoint) then
-        vim.wo[endpoint.win].signcolumn = "yes:1"
+        vim.wo[endpoint.win].signcolumn = "yes"
       end
     end
   end
@@ -7575,7 +7575,7 @@ vim.api.nvim_create_autocmd("WinEnter", {
 
     if type(vim.b[args.buf].oculus_inspect) == "table" then
       set_change_highlights()
-      vim.wo[current_win].signcolumn = "yes:1"
+      vim.wo[current_win].signcolumn = "yes"
     end
 
     for _, candidate in ipairs(sidebar_groups) do
@@ -7922,7 +7922,7 @@ local function load_tab(
     initial_undolevels = initial_undolevels,
   }
 
-  vim.wo[loaded.win].signcolumn = "yes:1"
+  vim.wo[loaded.win].signcolumn = "yes"
   vim.wo[loaded.win].wrap = false
   return loaded
 end
@@ -7973,7 +7973,7 @@ local function apply_inspection_window_options(win, options)
 
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
-  vim.wo[win].signcolumn = "yes:1"
+  vim.wo[win].signcolumn = "yes"
   prevent_window_dimming(win)
   preserve_cursorline_text_highlighting(win)
 end
@@ -8833,7 +8833,7 @@ local function open_issue_inspection(
     vim.bo[buf].modified = false
     vim.wo[win].wrap = false
     vim.wo[win].linebreak = false
-    vim.wo[win].signcolumn = "yes:1"
+    vim.wo[win].signcolumn = "yes"
     vim.wo[win].statusline = inspection_statusline_option
     apply_inspection_window_options(win, number_options)
     session.issue = endpoint
