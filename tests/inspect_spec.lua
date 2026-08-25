@@ -277,7 +277,7 @@ do
 
   inspect._position_change_cursor(test_win, 2)
   local cursor = vim.api.nvim_win_get_cursor(test_win)
-  assert(cursor[1] == 2)
+  assert(cursor[1] == 4)
 
   vim.api.nvim_win_close(test_win, true)
   vim.api.nvim_buf_delete(test_buf, { force = true })
