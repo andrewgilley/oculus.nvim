@@ -1845,14 +1845,14 @@ local function position_change_cursor(win, line, max_line, normalize, source_vie
     end)
   end
 
-  vim.api.nvim_win_call(win, function()
-    local view = vim.fn.winsaveview()
-    if normalize ~= false or not source_view then
+  if normalize ~= false then
+    vim.api.nvim_win_call(win, function()
+      local view = vim.fn.winsaveview()
       view.leftcol = horizontal.leftcol
       view.skipcol = horizontal.skipcol
-    end
-    vim.fn.winrestview(view)
-  end)
+      vim.fn.winrestview(view)
+    end)
+  end
 
   return true
 end
@@ -1980,18 +1980,18 @@ local function move_cursor_to_line_start(win, line, max_line, normalize, source_
     set_change_cursor(win, line, max_line, normalize, source_view)
   end
 
-  vim.api.nvim_win_call(win, function()
-    vim.cmd("normal! ^")
-    local view = vim.fn.winsaveview()
-    if normalize ~= false or not source_view then
+  if normalize ~= false then
+    vim.api.nvim_win_call(win, function()
+      vim.cmd("normal! ^")
+      local view = vim.fn.winsaveview()
       view.leftcol = horizontal.leftcol
       view.skipcol = horizontal.skipcol
-    end
-    vim.fn.winrestview(view)
-  end)
+      vim.fn.winrestview(view)
+    end)
 
-  if line and normalize ~= false then
-    sync_window(win)
+    if line then
+      sync_window(win)
+    end
   end
 end
 
