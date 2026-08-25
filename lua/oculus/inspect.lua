@@ -2152,6 +2152,7 @@ local function map_file_navigation(endpoint, session, role, group)
     end
 
     refresh_sidebar(group, target.tab)
+    M._refresh_virtual_counters(group, session)
   end
 
   local function map_version(lhs, target_role, description)
@@ -3050,6 +3051,7 @@ local function sidebar_chunk(group, session, role)
 
   if index and index ~= session.active_chunk then
     render_focused_chunk(session, index)
+    M._refresh_virtual_counters(group, session)
   end
 
   return index or session.active_chunk
@@ -7178,6 +7180,8 @@ switch_sidebar_version = function(group, target_role)
     move_cursor_to_line_start(endpoint.win, start)
   end
 
+  refresh_sidebar(group, endpoint.tab)
+  M._refresh_virtual_counters(group, session)
   sidebar_navigating = false
 
   vim.schedule(function()
@@ -7297,7 +7301,7 @@ vim.api.nvim_create_autocmd("TabEnter", {
       end
 
       refresh_sidebar(group, tab)
-      if group.chunk_view_mode == "virtual" then
+      if (group.chunk_view_mode or "virtual") ~= "sidebar" then
         M._refresh_virtual_counters(group)
       end
     end
