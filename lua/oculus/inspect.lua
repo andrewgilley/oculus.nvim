@@ -1477,6 +1477,21 @@ function M._enable_inspection_syntax(buf)
   return vim.bo[buf].syntax ~= ""
 end
 
+local function trigger_inspection_treesitter_context(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  pcall(vim.api.nvim_exec_autocmds, "CursorMoved", {
+    group = "treesitter_context_update",
+    buffer = buf,
+  })
+  pcall(vim.api.nvim_exec_autocmds, "WinScrolled", {
+    group = "treesitter_context_update",
+    buffer = buf,
+  })
+end
+
 local function refresh_buffer_highlighting(buf, force)
   if not vim.api.nvim_buf_is_valid(buf)
     or type(vim.b[buf].oculus_inspect) ~= "table"
@@ -1550,6 +1565,7 @@ local function refresh_buffer_highlighting(buf, force)
               end
 
               vim.cmd("redraw")
+              trigger_inspection_treesitter_context(buf)
             end
           end)
         end
@@ -1772,13 +1788,6 @@ local function render_full_file(session)
 
   refresh_buffer_highlighting(session.change.buf)
   return true
-end
-
-local function trigger_inspection_treesitter_context(buf)
-  pcall(vim.api.nvim_exec_autocmds, "CursorMoved", {
-    group = "treesitter_context_update",
-    buffer = (buf and vim.api.nvim_buf_is_valid(buf)) and buf or nil,
-  })
 end
 
 local function first_nonblank_line(buf, line, max_line)
