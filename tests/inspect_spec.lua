@@ -2027,7 +2027,7 @@ assert(overview_footer_lines[1] == "  " .. string.rep(
   math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
 ))
 
-assert(overview_footer_lines[2]:find("  b browser   e explain   p path   w worktree   s sidebar   c close", 1, true))
+assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   s sidebar   e exit", 1, true))
 assert(overview_footer_lines[2]:sub(-#("q quit")) == "q quit")
 
 assert(issue_overview:find("  Title\n", 1, true))
@@ -2140,14 +2140,14 @@ local function finish_patch_locations()
 end
 
 local agent_explanation_mapping = vim.fn.maparg(
-  "e",
+  "d",
   "n",
   false,
   true
 )
 
 assert(agent_explanation_mapping.desc
-  == "Choose Oculus explanation model")
+  == "Choose Oculus description model")
 
 local overview_config = vim.api.nvim_win_get_config(overview_win)
 agent_explanation_mapping.callback()
@@ -3554,8 +3554,8 @@ local replacement_state = vim.api.nvim_tabpage_get_var(
 
 assert(replacement_state.issue_number == 78)
 assert(vim.b[vim.api.nvim_get_current_buf()].oculus_inspect_overview == true)
-local close_workflow_mapping = vim.fn.maparg("c", "n", false, true)
-assert(close_workflow_mapping.desc == "Close Oculus Inspect workflow")
+local close_workflow_mapping = vim.fn.maparg("e", "n", false, true)
+assert(close_workflow_mapping.desc == "Exit Oculus Inspect workflow")
 close_workflow_mapping.callback()
 assert(vim.g.oculus_test_replacement_close_requested == 1)
 assert(vim.api.nvim_tabpage_is_valid(replacement_tab))
@@ -3567,7 +3567,7 @@ assert((function()
     if vim.b[buf].oculus_inspect_overview_footer then
       local footer = vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1]
 
-      if not footer:find("c close ", 1, true) then
+      if not footer:find("e exit ", 1, true) then
         return false
       end
 

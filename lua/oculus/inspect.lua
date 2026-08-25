@@ -4260,15 +4260,15 @@ function M._overview_ui.render_footer(group)
 
   local issue_patches = require("oculus.agent").needs_patch_locations(group)
 
-  local close_spinner = group.overview_close_spinner_frame
+  local exit_spinner = group.overview_close_spinner_frame
       and M._overview_ui.agent_spinner_frames[
         group.overview_close_spinner_frame
       ]
     or nil
 
-  local close_command_label = close_spinner
-      and ("close " .. close_spinner)
-    or "close"
+  local exit_command_label = exit_spinner
+      and ("exit " .. exit_spinner)
+    or "exit"
 
   local view_command_key = (group.chunk_view_mode == "sidebar")
       and "v"
@@ -4278,7 +4278,7 @@ function M._overview_ui.render_footer(group)
       and "virtual"
     or "sidebar"
 
-  local left_commands = "  b browser   e explain"
+  local left_commands = "  b browser   d describe"
 
   if issue_patches then
     left_commands = left_commands .. "   p path   w worktree"
@@ -4289,8 +4289,8 @@ function M._overview_ui.render_footer(group)
     .. view_command_key
     .. " "
     .. view_command_label
-    .. "   c "
-    .. close_command_label
+    .. "   e "
+    .. exit_command_label
 
   local right_commands = ""
 
@@ -4314,10 +4314,10 @@ function M._overview_ui.render_footer(group)
 
   local commands = left_commands .. string.rep(" ", padding) .. right_commands
 
-  local close_spinner_col
-  if close_spinner then
-    local spinner_start = commands:find(close_spinner, 1, true)
-    close_spinner_col = spinner_start and (spinner_start - 1) or nil
+  local exit_spinner_col
+  if exit_spinner then
+    local spinner_start = commands:find(exit_spinner, 1, true)
+    exit_spinner_col = spinner_start and (spinner_start - 1) or nil
   end
 
   local footer_lines = {
@@ -4360,14 +4360,14 @@ function M._overview_ui.render_footer(group)
     }
   )
 
-  if close_spinner_col then
+  if exit_spinner_col then
     vim.api.nvim_buf_set_extmark(
       buf,
       M._overview_ui.footer_ns,
       1,
-      close_spinner_col,
+      exit_spinner_col,
       {
-        end_col = close_spinner_col + #close_spinner,
+        end_col = exit_spinner_col + #exit_spinner,
         hl_group = "DiagnosticInfo",
         priority = 110,
       }
@@ -6140,13 +6140,13 @@ show_inspection_overview = function(group)
     }
   )
 
-  vim.keymap.set("n", "e", function()
+  vim.keymap.set("n", "d", function()
     M._overview_ui.open_model_picker(group, "explanation")
   end, {
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Choose Oculus explanation model",
+    desc = "Choose Oculus description model",
   })
 
   if require("oculus.agent").needs_patch_locations(group) then
@@ -6215,7 +6215,7 @@ show_inspection_overview = function(group)
     desc = "Switch to Oculus Inspect sidebar mode",
   })
 
-  vim.keymap.set("n", "c", function()
+  vim.keymap.set("n", "e", function()
     local lifecycle = group.inspection_lifecycle
     local request_close = lifecycle and lifecycle.on_close_requested
 
@@ -6234,7 +6234,7 @@ show_inspection_overview = function(group)
     buffer = buf,
     nowait = true,
     silent = true,
-    desc = "Close Oculus Inspect workflow",
+    desc = "Exit Oculus Inspect workflow",
   })
 
   vim.keymap.set("n", "q", function()
