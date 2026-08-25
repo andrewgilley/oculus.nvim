@@ -2936,6 +2936,24 @@ do
 end
 
 do
+  local ts_ctx_group = vim.api.nvim_create_augroup("treesitter_context_update", { clear = true })
+  local triggered_buf = nil
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = ts_ctx_group,
+    callback = function(args)
+      triggered_buf = args.buf
+    end,
+  })
+
+  local test_buf = vim.api.nvim_create_buf(false, true)
+  inspect._trigger_inspection_treesitter_context(test_buf)
+  assert(triggered_buf == test_buf, "expected CursorMoved in treesitter_context_update for test_buf")
+
+  vim.api.nvim_buf_delete(test_buf, { force = true })
+  vim.api.nvim_del_augroup_by_name("treesitter_context_update")
+end
+
+do
   local sess = {
     hunks = {
       { old_start = 20, old_count = 5, new_start = 20, new_count = 10 },
