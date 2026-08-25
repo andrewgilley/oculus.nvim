@@ -4017,6 +4017,7 @@ M._overview_ui = {
     ["Issue number"] = true,
     Status = true,
     Date = true,
+    ["Agent description"] = true,
     ["Agent explanation"] = true,
     ["Agent suggestion"] = true,
   },
@@ -4579,7 +4580,7 @@ function M._overview_ui.render(group)
     end
 
     lines[#lines + 1] = ""
-    local heading = "  Agent explanation"
+    local heading = "  Agent description"
 
     if group.overview_agent_explanation_model
     then
@@ -4715,6 +4716,7 @@ function M._overview_ui.render(group)
     local label = line:match("^  (.-)%s*$")
 
     if M._overview_ui.section_labels[label]
+      or (label and label:match("^Agent description"))
       or (label and label:match("^Agent explanation"))
       or (label and label:match("^Agent suggestion"))
     then
