@@ -1804,7 +1804,8 @@ local function position_change_cursor(win, line)
   end
 
   local buf = vim.api.nvim_win_get_buf(win)
-  line = first_nonblank_line(buf, line)
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  line = math.min(math.max(1, line or 1), line_count)
 
   local horizontal = vim.api.nvim_win_call(win, function()
     local view = vim.fn.winsaveview()
@@ -1860,12 +1861,8 @@ normalize_inspection_view = function(win)
   vim.api.nvim_win_call(win, function()
     local cursor_line = vim.api.nvim_win_get_cursor(win)[1]
     local buf = vim.api.nvim_win_get_buf(win)
-    local target_line = first_nonblank_line(buf, cursor_line)
-
-    if target_line ~= cursor_line then
-      vim.api.nvim_win_set_cursor(win, { target_line, 0 })
-      cursor_line = target_line
-    end
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    cursor_line = math.min(math.max(1, cursor_line), line_count)
 
     if cursor_line < 10 then
       vim.cmd("normal! ^")
@@ -7890,21 +7887,26 @@ local function open_tabs(
         or nil
 
       if session.focused_start and first_hunk then
-        move_cursor_to_line_start(session.parent.win, chunk_start_for_role(
-          first_hunk,
-          "parent",
-          session.focused_start
-        ))
         move_cursor_to_line_start(session.change.win, chunk_start_for_role(
           first_hunk,
           "change",
           session.focused_start
         ))
+        move_cursor_to_line_start(session.parent.win, chunk_start_for_role(
+          first_hunk,
+          "parent",
+          session.focused_start
+        ))
       elseif session.parent_lines and session.parent_lines[1] then
+        if session.change_lines and session.change_lines[1] then
+          move_cursor_to_line_start(session.change.win, session.change_lines[1])
+        else
+          move_cursor_to_line_start(session.change.win)
+        end
         move_cursor_to_line_start(session.parent.win, session.parent_lines[1])
       else
-        move_cursor_to_line_start(session.parent.win)
         move_cursor_to_line_start(session.change.win)
+        move_cursor_to_line_start(session.parent.win)
       end
     end
 
@@ -7924,11 +7926,25 @@ local function open_tabs(
       error("the first inspection tab was not created")
     end
 
+    local first_session = inspection_sessions[1]
+    local first_hunk = first_session
+        and first_session.active_chunk
+        and first_session.hunks
+        and first_session.hunks[first_session.active_chunk]
+      or nil
+    local first_start = first_hunk
+        and chunk_start_for_role(
+          first_hunk,
+          "parent",
+          first_session.focused_start
+        )
+      or (first_session and first_session.parent_lines and first_session.parent_lines[1])
+
     stop_loading(loading)
     require("oculus.window").close()
     vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
-    move_cursor_to_line_start(first.win)
+    move_cursor_to_line_start(first.win, first_start)
     show_inspection_path(first.buf)
     M._enable_inspection_treesitter_context(opts)
 
