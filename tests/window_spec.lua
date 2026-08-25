@@ -2626,4 +2626,28 @@ do
   assert(enriched.payload.pull_request.merged_by == nil)
 end
 
+do
+  local gh = require("oculus.github")
+  local cb = require("oculus.codeberg")
+  assert(type(gh.repository_info) == "function")
+  assert(type(cb.repository_info) == "function")
+
+  local oculus = require("oculus")
+  oculus.setup({
+    persist_projects = false,
+    persist_contributors = false,
+  })
+
+  local neovim_project = nil
+  for _, p in ipairs(oculus.config.projects or {}) do
+    if p.repository == "neovim/neovim" then
+      neovim_project = p
+      break
+    end
+  end
+
+  assert(neovim_project ~= nil)
+  assert(neovim_project.description == "Vim-fork focused on extensibility and usability")
+end
+
 assert(state.win == nil)
