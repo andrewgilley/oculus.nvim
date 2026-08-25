@@ -37,6 +37,9 @@ local ensure_inspection_sidebar_on_tab
 local restore_inspection_sidebar_for_buffer
 local show_inspection_overview
 local show_sidebar_files
+local valid_endpoint
+local map_inspection_line
+local session_and_role_for_win
 
 function M._use_absolute_treesitter_context_numbers()
   local ok, render = pcall(require, "treesitter-context.render")
@@ -235,6 +238,243 @@ function M._refresh_inspection_treesitter_context_highlights()
   render._oculus_refresh_inspection_highlights = true
 end
 
+session_and_role_for_win = function(winid)
+  if not winid or not vim.api.nvim_win_is_valid(winid) then
+    return nil, nil, nil
+  end
+
+  local buf = vim.api.nvim_win_get_buf(winid)
+  local state = vim.b[buf].oculus_inspect
+  if type(state) == "table" and state.session then
+    return state.session, state.role, nil
+  end
+
+  for _, group in ipairs(sidebar_groups) do
+    for _, session in ipairs(group) do
+      if
+        session.change
+        and (session.change.win == winid or session.change.buf == buf)
+      then
+        return session, "change", group
+      elseif
+        session.parent
+        and (session.parent.win == winid or session.parent.buf == buf)
+      then
+        return session, "parent", group
+      elseif
+        session.issue
+        and (session.issue.win == winid or session.issue.buf == buf)
+      then
+        return session, "issue", group
+      end
+    end
+  end
+
+  return nil, nil, nil
+end
+
+local function get_buffer_treesitter_context_ranges(bufnr, top_row)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil, nil
+  end
+
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+  if not ok or not parser then
+    return nil, nil
+  end
+
+  local parse_ok, trees = pcall(parser.parse, parser)
+  if not parse_ok or not trees or not trees[1] then
+    return nil, nil
+  end
+
+  local root = trees[1]:root()
+  if not root then
+    return nil, nil
+  end
+
+  local lang = type(parser.lang) == "function" and parser:lang() or nil
+  if not lang then
+    return nil, nil
+  end
+
+  local get_query = vim.treesitter.query.get or vim.treesitter.query.get_query
+  local ok_q, query = pcall(get_query, lang, "context")
+  if not ok_q or not query then
+    return nil, nil
+  end
+
+  local n = root:named_descendant_for_range(top_row, 0, top_row, 1)
+  if not n then
+    return nil, nil
+  end
+
+  local parents = {}
+  local p = n
+  while p do
+    table.insert(parents, 1, p)
+    p = p:parent()
+  end
+
+  local ranges = {}
+  local lines = {}
+  local seen_starts = {}
+
+  for _, parent in ipairs(parents) do
+    local srow, scol, erow, ecol = parent:range()
+    if srow < top_row then
+      local is_context = false
+      local context_range = { srow, scol, srow + 1, 0 }
+
+      for _, match in query:iter_matches(parent, bufnr, 0, -1, { max_start_depth = 0 }) do
+        for id, nodes in pairs(match) do
+          local node0 = type(nodes) == "table" and nodes[#nodes] or nodes
+          local name = query.captures[id]
+          local msrow, mscol, merow, mecol = node0:range()
+          if name == "context" and parent == node0 then
+            is_context = true
+          elseif name == "context.start" then
+            context_range[1] = msrow
+            context_range[2] = mscol
+          elseif name == "context.final" then
+            context_range[3] = merow
+            context_range[4] = mecol
+          elseif name == "context.end" then
+            context_range[3] = msrow
+            context_range[4] = mscol
+          end
+        end
+      end
+
+      if is_context and not seen_starts[context_range[1]] then
+        seen_starts[context_range[1]] = true
+        local start_r = context_range[1]
+        local end_r = math.max(start_r + 1, context_range[3])
+        local text = vim.api.nvim_buf_get_lines(bufnr, start_r, end_r, false)
+        if #text > 0 then
+          ranges[#ranges + 1] = { start_r, 0, end_r, 0 }
+          for _, l in ipairs(text) do
+            lines[#lines + 1] = l
+          end
+        end
+      end
+    end
+  end
+
+  return ranges, lines
+end
+
+function M._mirror_parent_treesitter_context()
+  local ok, ctx = pcall(require, "treesitter-context.context")
+
+  if
+    not ok
+    or type(ctx) ~= "table"
+    or type(ctx.get) ~= "function"
+    or ctx._oculus_mirrored
+  then
+    return
+  end
+
+  local original_get = ctx.get
+
+  ctx.get = function(winid)
+    winid = winid or vim.api.nvim_get_current_win()
+    if not vim.api.nvim_win_is_valid(winid) then
+      return original_get(winid)
+    end
+
+    local bufnr = vim.api.nvim_win_get_buf(winid)
+    local state = vim.b[bufnr].oculus_inspect
+    if type(state) ~= "table" then
+      return original_get(winid)
+    end
+
+    local session, role = session_and_role_for_win(winid)
+    if not session or role ~= "change" or not valid_endpoint(session.parent) then
+      return original_get(winid)
+    end
+
+    local parent_buf = session.parent.buf
+    if not vim.api.nvim_buf_is_valid(parent_buf) then
+      return original_get(winid)
+    end
+
+    local c_ranges, c_lines = original_get(winid)
+
+    local change_topline = vim.fn.line("w0", winid)
+    local mapped_parent_topline = map_inspection_line(
+      session,
+      "change",
+      "parent",
+      change_topline
+    )
+
+    local p_ranges, p_lines = get_buffer_treesitter_context_ranges(
+      parent_buf,
+      math.max(0, mapped_parent_topline - 1)
+    )
+
+    if
+      (not p_ranges or #p_ranges == 0)
+      and session.parent.win
+      and vim.api.nvim_win_is_valid(session.parent.win)
+    then
+      local ok_p, r_p, l_p = pcall(original_get, session.parent.win)
+      if ok_p and r_p and #r_p > 0 then
+        p_ranges, p_lines = r_p, l_p
+      end
+    end
+
+    if p_ranges and #p_ranges > 0 then
+      local mapped_ranges = {}
+      local mapped_lines = {}
+      local c_line_count = vim.api.nvim_buf_line_count(bufnr)
+
+      for idx, prange in ipairs(p_ranges) do
+        local p_start_row = prange[1]
+        local p_end_row = prange[3]
+        local height = math.max(1, p_end_row - p_start_row)
+
+        local c_start_line = map_inspection_line(
+          session,
+          "parent",
+          "change",
+          p_start_row + 1
+        )
+        local c_start_row =
+          math.max(0, math.min(c_line_count - 1, c_start_line - 1))
+        local c_end_row = math.min(c_line_count, c_start_row + height)
+
+        local c_range = { c_start_row, prange[2], c_end_row, prange[4] }
+        mapped_ranges[#mapped_ranges + 1] = c_range
+
+        local fetched_lines = vim.api.nvim_buf_get_lines(
+          bufnr,
+          c_start_row,
+          c_end_row,
+          false
+        )
+        if #fetched_lines > 0 then
+          for _, fl in ipairs(fetched_lines) do
+            mapped_lines[#mapped_lines + 1] = fl
+          end
+        elseif p_lines and p_lines[idx] then
+          mapped_lines[#mapped_lines + 1] = p_lines[idx]
+        end
+      end
+
+      if #mapped_ranges > 0 then
+        return mapped_ranges, mapped_lines
+      end
+    end
+
+    return c_ranges, c_lines
+  end
+
+  ctx._oculus_mirrored = true
+end
+
 function M._enable_inspection_treesitter_context(opts)
   if opts and opts.inspect_treesitter_context == false then
     return false
@@ -248,6 +488,7 @@ function M._enable_inspection_treesitter_context(opts)
 
   M._use_absolute_treesitter_context_numbers()
   M._refresh_inspection_treesitter_context_highlights()
+  M._mirror_parent_treesitter_context()
 
   local multiwindow = not opts
     or opts.inspect_treesitter_context_multiwindow ~= false
@@ -317,7 +558,7 @@ end
 local git = require("oculus.inspect.git")
 local patch = require("oculus.inspect.patch")
 
-local function valid_endpoint(endpoint)
+valid_endpoint = function(endpoint)
   return endpoint
     and vim.api.nvim_tabpage_is_valid(endpoint.tab)
     and vim.api.nvim_win_is_valid(endpoint.win)
@@ -2150,7 +2391,7 @@ local function chunk_max_line_for_role(hunk, role, start)
   return start + math.max(0, (count or 1) - 1)
 end
 
-local function map_inspection_line(session, source_role, target_role, source_line)
+map_inspection_line = function(session, source_role, target_role, source_line)
   if not source_line or source_line <= 1 then
     return 1
   end
@@ -2342,6 +2583,9 @@ local function map_file_navigation(endpoint, session, role, group)
 
     refresh_sidebar(group, target.tab)
     M._refresh_virtual_counters(group, session)
+    pcall(function()
+      vim.cmd("doautocmd CursorMoved")
+    end)
   end
 
   local function map_version(lhs, target_role, description)
@@ -7402,6 +7646,9 @@ switch_sidebar_version = function(group, target_role)
   refresh_sidebar(group, endpoint.tab)
   M._refresh_virtual_counters(group, session)
   sidebar_navigating = false
+  pcall(function()
+    vim.cmd("doautocmd CursorMoved")
+  end)
 
   vim.schedule(function()
     if valid_endpoint(endpoint) then
@@ -9219,4 +9466,5 @@ M._render_chunk_for_role = render_chunk_for_role
 M._is_foreign_sidebar_window = is_foreign_sidebar_window
 M._inspection_endpoints = inspection_endpoints
 M._comment_float = comment_float
+M._session_and_role_for_win = session_and_role_for_win
 return M
