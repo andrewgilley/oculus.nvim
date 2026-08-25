@@ -4553,7 +4553,7 @@ if integration_root and (integration_sha or integration_url) then
     { details = true }
   )
 
-  assert(vim.wo[parent_win].signcolumn == "yes")
+  assert(vim.wo[parent_win].signcolumn == "yes:1")
 
   local change_marks = vim.api.nvim_buf_get_extmarks(
     change_buf,
@@ -4563,7 +4563,7 @@ if integration_root and (integration_sha or integration_url) then
     {}
   )
 
-  assert(vim.wo[change_win].signcolumn == "yes")
+  assert(vim.wo[change_win].signcolumn == "yes:1")
 
   if change_state.status == "A" then
     assert(#parent_marks == 0)
@@ -4766,7 +4766,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(not vim.api.nvim_buf_is_valid(overview_buf))
     assert(vim.o.guicursor == guicursor)
     assert(vim.api.nvim_get_current_win() == change_win)
-    assert(vim.wo[change_win].signcolumn == "yes")
+    assert(vim.wo[change_win].signcolumn == "yes:1")
 
     for name, expected in pairs({
       OculusInspectAdded = { fg = 0xdcfce7, bg = 0x166534 },
@@ -5938,7 +5938,7 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.trim(oil_marks[1][4].sign_text) == "•")
     assert(oil_marks[1][4].sign_hl_group == "OculusOilChange")
     assert(oil_marks[1][4].virt_text == nil)
-    assert(vim.wo[vim.api.nvim_get_current_win()].signcolumn == "yes")
+    assert(vim.wo[vim.api.nvim_get_current_win()].signcolumn == "yes:1")
 
     local oil_highlight = vim.api.nvim_get_hl(0, {
       name = oil_marks[1][4].sign_hl_group,
