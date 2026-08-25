@@ -260,12 +260,17 @@ do
     "   ",
   })
 
-  assert(inspect._first_nonblank_line(test_buf, 1) == 1)
-  assert(inspect._first_nonblank_line(test_buf, 2) == 4)
-  assert(inspect._first_nonblank_line(test_buf, 3) == 4)
-  assert(inspect._first_nonblank_line(test_buf, 4) == 4)
-  assert(inspect._first_nonblank_line(test_buf, 5) == 5)
-  assert(inspect._first_nonblank_line(test_buf, 6) == 6)
+  assert(inspect._first_nonblank_line(test_buf, 1, 1) == 1)
+  assert(inspect._first_nonblank_line(test_buf, 2, 2) == 2)
+  assert(inspect._first_nonblank_line(test_buf, 2, 3) == 2)
+  assert(inspect._first_nonblank_line(test_buf, 2, 4) == 4)
+  assert(inspect._first_nonblank_line(test_buf, 2, 6) == 4)
+  assert(inspect._first_nonblank_line(test_buf, 3, 3) == 3)
+  assert(inspect._first_nonblank_line(test_buf, 3, 4) == 4)
+  assert(inspect._first_nonblank_line(test_buf, 4, 4) == 4)
+  assert(inspect._first_nonblank_line(test_buf, 5, 5) == 5)
+  assert(inspect._first_nonblank_line(test_buf, 5, 6) == 5)
+  assert(inspect._first_nonblank_line(test_buf, 6, 6) == 6)
 
   local test_win = vim.api.nvim_open_win(test_buf, true, {
     relative = "editor",
@@ -275,9 +280,15 @@ do
     col = 1,
   })
 
-  inspect._position_change_cursor(test_win, 2)
-  local cursor = vim.api.nvim_win_get_cursor(test_win)
-  assert(cursor[1] == 4)
+  -- When only line 2 was changed (and is blank), it must not advance to line 4
+  inspect._position_change_cursor(test_win, 2, 2)
+  local cursor_single = vim.api.nvim_win_get_cursor(test_win)
+  assert(cursor_single[1] == 2)
+
+  -- When lines 2..4 were changed, it advances to first nonblank changed line (line 4)
+  inspect._position_change_cursor(test_win, 2, 4)
+  local cursor_multi = vim.api.nvim_win_get_cursor(test_win)
+  assert(cursor_multi[1] == 4)
 
   vim.api.nvim_win_close(test_win, true)
   vim.api.nvim_buf_delete(test_buf, { force = true })
@@ -2848,8 +2859,11 @@ do
   local start = inspect._render_chunk_for_role
       and inspect._render_chunk_for_role(session, "change", 1)
     or 3
+  local max_line = inspect._chunk_max_line_for_role
+      and inspect._chunk_max_line_for_role(session.hunks[1], "change", start)
+    or start
   inspect._select_endpoint(session.change, session, "change", grp)
-  inspect._move_cursor_to_line_start(c_win, start)
+  inspect._move_cursor_to_line_start(c_win, start, max_line)
   inspect._refresh_virtual_counters(grp, session)
 
   local c_cursor = vim.api.nvim_win_get_cursor(c_win)
@@ -2864,8 +2878,11 @@ do
   local p_start = inspect._render_chunk_for_role
       and inspect._render_chunk_for_role(session, "parent", 1)
     or 3
+  local p_max = inspect._chunk_max_line_for_role
+      and inspect._chunk_max_line_for_role(session.hunks[1], "parent", p_start)
+    or p_start
   inspect._select_endpoint(session.parent, session, "parent", grp)
-  inspect._move_cursor_to_line_start(p_win, p_start)
+  inspect._move_cursor_to_line_start(p_win, p_start, p_max)
   inspect._refresh_virtual_counters(grp, session)
 
   local p_cursor = vim.api.nvim_win_get_cursor(p_win)

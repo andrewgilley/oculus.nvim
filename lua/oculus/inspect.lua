@@ -1774,15 +1774,16 @@ local function render_full_file(session)
   return true
 end
 
-local function first_nonblank_line(buf, line)
+local function first_nonblank_line(buf, line, max_line)
   if not vim.api.nvim_buf_is_valid(buf) then
     return line
   end
 
   local line_count = vim.api.nvim_buf_line_count(buf)
   local target = math.min(math.max(1, line or 1), line_count)
+  local limit = max_line and math.min(math.max(target, max_line), line_count) or target
 
-  for current = target, line_count do
+  for current = target, limit do
     local text = vim.api.nvim_buf_get_lines(
       buf,
       current - 1,
@@ -1798,13 +1799,13 @@ local function first_nonblank_line(buf, line)
   return target
 end
 
-local function position_change_cursor(win, line)
+local function position_change_cursor(win, line, max_line)
   if not vim.api.nvim_win_is_valid(win) then
     return false
   end
 
   local buf = vim.api.nvim_win_get_buf(win)
-  line = first_nonblank_line(buf, line)
+  line = first_nonblank_line(buf, line, max_line)
 
   local horizontal = vim.api.nvim_win_call(win, function()
     local view = vim.fn.winsaveview()
@@ -1828,8 +1829,8 @@ local function position_change_cursor(win, line)
   return true
 end
 
-local function set_change_cursor(win, line)
-  if not position_change_cursor(win, line) then
+local function set_change_cursor(win, line, max_line)
+  if not position_change_cursor(win, line, max_line) then
     return
   end
 
@@ -1860,12 +1861,8 @@ normalize_inspection_view = function(win)
   vim.api.nvim_win_call(win, function()
     local cursor_line = vim.api.nvim_win_get_cursor(win)[1]
     local buf = vim.api.nvim_win_get_buf(win)
-    local target_line = first_nonblank_line(buf, cursor_line)
-
-    if target_line ~= cursor_line then
-      vim.api.nvim_win_set_cursor(win, { target_line, 0 })
-      cursor_line = target_line
-    end
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    cursor_line = math.min(math.max(1, cursor_line), line_count)
 
     if cursor_line < 10 then
       vim.cmd("normal! ^")
@@ -1935,7 +1932,7 @@ local function select_endpoint(endpoint, session, role, group)
   end
 end
 
-local function move_cursor_to_line_start(win, line)
+local function move_cursor_to_line_start(win, line, max_line)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
@@ -1950,7 +1947,7 @@ local function move_cursor_to_line_start(win, line)
   end)
 
   if line then
-    set_change_cursor(win, line)
+    set_change_cursor(win, line, max_line)
   end
 
   vim.api.nvim_win_call(win, function()
@@ -2074,6 +2071,15 @@ local function chunk_start_for_role(
   return change_start
 end
 
+local function chunk_max_line_for_role(hunk, role, start)
+  if not start or not hunk then
+    return start
+  end
+
+  local count = role == "parent" and hunk.old_count or hunk.new_count
+  return start + math.max(0, (count or 1) - 1)
+end
+
 local function render_chunk_for_role(session, role, chunk_index)
   local hunk = session.hunks and session.hunks[chunk_index] or nil
 
@@ -2101,19 +2107,22 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
   end
 
   local chunks = inspection_chunks(group, session)
-  local start
+  local start, max_line
 
   if group.kind == "issue" then
     session.active_chunk = chunk_index
     start = chunks[chunk_index] and chunks[chunk_index].line
+    max_line = start
   else
+    local hunk = session.hunks and session.hunks[chunk_index] or nil
     start = render_chunk_for_role(session, role, chunk_index)
+    max_line = chunk_max_line_for_role(hunk, role, start)
   end
 
   select_endpoint(endpoint, session, role, group)
 
   if start then
-    move_cursor_to_line_start(endpoint.win, start)
+    move_cursor_to_line_start(endpoint.win, start, max_line)
   end
 
   show_inspection_path(endpoint.buf)
@@ -2134,21 +2143,24 @@ local function map_file_navigation(endpoint, session, role, group)
     end
 
     local chunk_index = session.active_chunk or 1
-    local start
+    local start, max_line
     if group.kind == "issue" then
       local section = session.sections and session.sections[chunk_index]
       start = section and section.line
+      max_line = start
     else
+      local hunk = session.hunks and session.hunks[chunk_index] or nil
       start = render_chunk_for_role(session, target_role, chunk_index)
         or (target_role == "parent"
           and session.parent_lines and session.parent_lines[1]
           or session.change_lines and session.change_lines[1])
+      max_line = chunk_max_line_for_role(hunk, target_role, start)
     end
 
     select_endpoint(target, session, target_role, group)
 
     if start then
-      move_cursor_to_line_start(target.win, start)
+      move_cursor_to_line_start(target.win, start, max_line)
     end
 
     refresh_sidebar(group, target.tab)
@@ -6955,21 +6967,26 @@ local function select_sidebar_entry(group, direction, preferred_role)
     vim.api.nvim_set_current_win(endpoint.win)
 
     if entry.chunk_index then
-      local start
+      local hunk = (group.kind ~= "issue" and session.hunks)
+          and session.hunks[entry.chunk_index]
+        or nil
+      local start, max_line
 
       if group.kind == "issue" then
         local section = session.sections[entry.chunk_index]
         start = section and section.line
+        max_line = start
       else
         start = render_chunk_for_role(
           session,
           role,
           entry.chunk_index
         )
+        max_line = chunk_max_line_for_role(hunk, role, start)
       end
 
       if start then
-        move_cursor_to_line_start(endpoint.win, start)
+        move_cursor_to_line_start(endpoint.win, start, max_line)
       end
     else
       if group.kind ~= "issue" then
@@ -7084,9 +7101,10 @@ focus_sidebar_selection = function(group)
 
   if hunk then
     local start = render_chunk_for_role(session, role, chunk_index)
-    move_cursor_to_line_start(endpoint.win, start)
+    local max_line = chunk_max_line_for_role(hunk, role, start)
+    move_cursor_to_line_start(endpoint.win, start, max_line)
   elseif section then
-    move_cursor_to_line_start(endpoint.win, section.line)
+    move_cursor_to_line_start(endpoint.win, section.line, section.line)
   else
     if group.kind ~= "issue" then
       render_full_file(session)
@@ -7165,19 +7183,22 @@ switch_sidebar_version = function(group, target_role)
   move_cursor_to_line_start(sidebar_win)
 
   local chunk_index = entry and entry.chunk_index or session.active_chunk or 1
-  local start
+  local start, max_line
   if group.kind == "issue" then
     local section = session.sections and session.sections[chunk_index]
     start = section and section.line
+    max_line = start
   else
+    local hunk = session.hunks and session.hunks[chunk_index] or nil
     start = render_chunk_for_role(session, target_role, chunk_index)
       or (target_role == "parent"
         and session.parent_lines and session.parent_lines[1]
         or session.change_lines and session.change_lines[1])
+    max_line = chunk_max_line_for_role(hunk, target_role, start)
   end
 
   if start and valid_endpoint(endpoint) then
-    move_cursor_to_line_start(endpoint.win, start)
+    move_cursor_to_line_start(endpoint.win, start, max_line)
   end
 
   refresh_sidebar(group, endpoint.tab)
@@ -7902,19 +7923,49 @@ local function open_tabs(
         or nil
 
       if focused_start and first_hunk then
-        move_cursor_to_line_start(parent.win, chunk_start_for_role(
+        local parent_start = chunk_start_for_role(
           first_hunk,
           "parent",
           focused_start
-        ))
+        )
+        local parent_max = chunk_max_line_for_role(
+          first_hunk,
+          "parent",
+          parent_start
+        )
+        move_cursor_to_line_start(
+          parent.win,
+          parent_start,
+          parent_max
+        )
 
-        move_cursor_to_line_start(change.win, chunk_start_for_role(
+        local change_start = chunk_start_for_role(
           first_hunk,
           "change",
           focused_start
-        ))
+        )
+        local change_max = chunk_max_line_for_role(
+          first_hunk,
+          "change",
+          change_start
+        )
+        move_cursor_to_line_start(
+          change.win,
+          change_start,
+          change_max
+        )
       elseif session.parent_lines[1] then
-        move_cursor_to_line_start(parent.win, session.parent_lines[1])
+        local parent_hunk = session.hunks and session.hunks[1]
+        local parent_max = chunk_max_line_for_role(
+          parent_hunk,
+          "parent",
+          session.parent_lines[1]
+        )
+        move_cursor_to_line_start(
+          parent.win,
+          session.parent_lines[1],
+          parent_max
+        )
       else
         sync_window(parent.win)
       end
@@ -7929,23 +7980,64 @@ local function open_tabs(
         or nil
 
       if session.focused_start and first_hunk then
-        move_cursor_to_line_start(session.change.win, chunk_start_for_role(
+        local change_start = chunk_start_for_role(
           first_hunk,
           "change",
           session.focused_start
-        ))
-        move_cursor_to_line_start(session.parent.win, chunk_start_for_role(
+        )
+        local change_max = chunk_max_line_for_role(
+          first_hunk,
+          "change",
+          change_start
+        )
+        move_cursor_to_line_start(
+          session.change.win,
+          change_start,
+          change_max
+        )
+
+        local parent_start = chunk_start_for_role(
           first_hunk,
           "parent",
           session.focused_start
-        ))
+        )
+        local parent_max = chunk_max_line_for_role(
+          first_hunk,
+          "parent",
+          parent_start
+        )
+        move_cursor_to_line_start(
+          session.parent.win,
+          parent_start,
+          parent_max
+        )
       elseif session.parent_lines and session.parent_lines[1] then
         if session.change_lines and session.change_lines[1] then
-          move_cursor_to_line_start(session.change.win, session.change_lines[1])
+          local change_hunk = session.hunks and session.hunks[1]
+          local change_max = chunk_max_line_for_role(
+            change_hunk,
+            "change",
+            session.change_lines[1]
+          )
+          move_cursor_to_line_start(
+            session.change.win,
+            session.change_lines[1],
+            change_max
+          )
         else
           move_cursor_to_line_start(session.change.win)
         end
-        move_cursor_to_line_start(session.parent.win, session.parent_lines[1])
+        local parent_hunk = session.hunks and session.hunks[1]
+        local parent_max = chunk_max_line_for_role(
+          parent_hunk,
+          "parent",
+          session.parent_lines[1]
+        )
+        move_cursor_to_line_start(
+          session.parent.win,
+          session.parent_lines[1],
+          parent_max
+        )
       else
         move_cursor_to_line_start(session.change.win)
         move_cursor_to_line_start(session.parent.win)
@@ -7981,12 +8073,17 @@ local function open_tabs(
           first_session.focused_start
         )
       or (first_session and first_session.parent_lines and first_session.parent_lines[1])
+    local first_max = chunk_max_line_for_role(
+      first_hunk,
+      "parent",
+      first_start
+    )
 
     stop_loading(loading)
     require("oculus.window").close()
     vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
-    move_cursor_to_line_start(first.win, first_start)
+    move_cursor_to_line_start(first.win, first_start, first_max)
     show_inspection_path(first.buf)
     M._enable_inspection_treesitter_context(opts)
 
@@ -8914,6 +9011,7 @@ M._sidebar_target_role = sidebar_target_role
 M._progressed_chunk_role = progressed_chunk_role
 M._chunk_navigation_role = chunk_navigation_role
 M._chunk_start_for_role = chunk_start_for_role
+M._chunk_max_line_for_role = chunk_max_line_for_role
 M._first_nonblank_line = first_nonblank_line
 M._position_change_cursor = position_change_cursor
 M._move_cursor_to_line_start = move_cursor_to_line_start
