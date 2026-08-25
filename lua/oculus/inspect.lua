@@ -2209,7 +2209,14 @@ end
 
 M._virtual_counter = {}
 
-function M._virtual_counter.place_virtual_counter(buf, line, chunk_index, chunk_count)
+function M._virtual_counter.place_virtual_counter(
+  buf,
+  line,
+  chunk_index,
+  chunk_count,
+  file_index,
+  file_count
+)
   if
     not buf
     or not vim.api.nvim_buf_is_valid(buf)
@@ -2228,10 +2235,22 @@ function M._virtual_counter.place_virtual_counter(buf, line, chunk_index, chunk_
 
   line = math.min(math.max(1, line), line_count)
 
+  local text
+  if file_index and file_count and file_count > 0 then
+    text = ("\t[%d/%d] [%d/%d]"):format(
+      chunk_index,
+      chunk_count,
+      file_index,
+      file_count
+    )
+  else
+    text = ("\t[%d/%d]"):format(chunk_index, chunk_count)
+  end
+
   vim.api.nvim_buf_set_extmark(buf, M._virtual_counter_ns, line - 1, 0, {
     virt_text = {
       {
-        ("\t[%d/%d]"):format(chunk_index, chunk_count),
+        text,
         "OculusInspectVirtualCounter",
       },
     },
@@ -2251,6 +2270,17 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
     return
   end
 
+  local file_count = #group
+  local file_index
+  for index, candidate in ipairs(group) do
+    if candidate == session then
+      file_index = index
+      break
+    end
+  end
+  file_index = file_index or 1
+  file_count = math.max(1, file_count)
+
   local active = math.min(math.max(1, session.active_chunk or 1), file_chunks)
   local is_virtual = (group.chunk_view_mode or "virtual") ~= "sidebar"
 
@@ -2266,7 +2296,9 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
             buf,
             section.line,
             active,
-            file_chunks
+            file_chunks,
+            file_index,
+            file_count
           )
         end
       end
@@ -2286,7 +2318,9 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
           buf,
           start,
           active,
-          file_chunks
+          file_chunks,
+          file_index,
+          file_count
         )
       end
     end
@@ -2318,7 +2352,9 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
           buf,
           start,
           active,
-          file_chunks
+          file_chunks,
+          file_index,
+          file_count
         )
       end
     end
