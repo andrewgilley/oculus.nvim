@@ -2854,6 +2854,9 @@ do
 
   vim.api.nvim_set_current_win(p_win)
   vim.api.nvim_win_set_cursor(p_win, { 1, 0 })
+  local p_initial_view = vim.api.nvim_win_call(p_win, function()
+    return vim.fn.winsaveview()
+  end)
 
   -- Switch to change version
   local start = inspect._render_chunk_for_role
@@ -2863,12 +2866,18 @@ do
       and inspect._chunk_max_line_for_role(session.hunks[1], "change", start)
     or start
   inspect._select_endpoint(session.change, session, "change", grp)
-  inspect._move_cursor_to_line_start(c_win, start, max_line)
+  inspect._move_cursor_to_line_start(c_win, start, max_line, false, p_initial_view)
   inspect._refresh_virtual_counters(grp, session)
 
   local c_cursor = vim.api.nvim_win_get_cursor(c_win)
   -- Line 3 in change is blank, so first nonblank changed line is line 4
   assert(c_cursor[1] == 4, ("expected change cursor on first nonblank line 4, got %d"):format(c_cursor[1]))
+
+  local c_view = vim.api.nvim_win_call(c_win, function()
+    return vim.fn.winsaveview()
+  end)
+  -- Perspective preserved from p_initial_view (lnum 1, topline 1 -> offset 0), so topline should be 4
+  assert(c_view.topline == 4, ("expected change topline to preserve offset, got %d"):format(c_view.topline))
 
   local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#c_marks == 1, "expected virtual counter on change buffer after switching version")
@@ -2882,11 +2891,17 @@ do
       and inspect._chunk_max_line_for_role(session.hunks[1], "parent", p_start)
     or p_start
   inspect._select_endpoint(session.parent, session, "parent", grp)
-  inspect._move_cursor_to_line_start(p_win, p_start, p_max)
+  inspect._move_cursor_to_line_start(p_win, p_start, p_max, false, c_view)
   inspect._refresh_virtual_counters(grp, session)
 
   local p_cursor = vim.api.nvim_win_get_cursor(p_win)
   assert(p_cursor[1] == 3, ("expected parent cursor on line 3, got %d"):format(p_cursor[1]))
+
+  local p_view = vim.api.nvim_win_call(p_win, function()
+    return vim.fn.winsaveview()
+  end)
+  -- c_view had lnum 4, topline 4 -> offset 0, so parent topline should be 3
+  assert(p_view.topline == 3, ("expected parent topline to preserve offset, got %d"):format(p_view.topline))
 
   local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#p_marks == 1, "expected virtual counter on parent buffer after switching version")
