@@ -2778,6 +2778,103 @@ do
   inspect._clear_virtual_counters(test_grp)
   local marks_after = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks_after == 0)
+
+  vim.api.nvim_buf_delete(p_buf, { force = true })
+  vim.api.nvim_buf_delete(c_buf, { force = true })
+  vim.api.nvim_buf_delete(p_buf2, { force = true })
+  vim.api.nvim_buf_delete(c_buf2, { force = true })
+end
+
+do
+  local saved_tab = vim.api.nvim_get_current_tabpage()
+  local saved_win = vim.api.nvim_get_current_win()
+  local parent_lines = {
+    "header line 1",
+    "header line 2",
+    "old line 3",
+    "footer line 4",
+  }
+  local change_lines = {
+    "header line 1",
+    "header line 2",
+    "",
+    "new line 4",
+    "footer line 5",
+  }
+
+  local p_buf = vim.api.nvim_create_buf(false, true)
+  local c_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, parent_lines)
+  vim.api.nvim_buf_set_lines(c_buf, 0, -1, false, change_lines)
+
+  local p_win = vim.api.nvim_open_win(p_buf, true, {
+    relative = "editor",
+    width = 40,
+    height = 20,
+    row = 1,
+    col = 1,
+  })
+  local c_win = vim.api.nvim_open_win(c_buf, false, {
+    relative = "editor",
+    width = 40,
+    height = 20,
+    row = 1,
+    col = 42,
+  })
+
+  local session = {
+    file = "version_test.lua",
+    hunks = {
+      { old_start = 3, old_count = 1, new_start = 3, new_count = 2 },
+    },
+    parent_content = parent_lines,
+    change_content = change_lines,
+    parent_lines = { 3 },
+    change_lines = { 3 },
+    active_chunk = 1,
+    parent = { tab = vim.api.nvim_get_current_tabpage(), win = p_win, buf = p_buf },
+    change = { tab = vim.api.nvim_get_current_tabpage(), win = c_win, buf = c_buf },
+  }
+
+  local grp = {
+    session,
+    chunk_view_mode = "virtual",
+  }
+
+  vim.api.nvim_set_current_win(p_win)
+  vim.api.nvim_win_set_cursor(p_win, { 1, 0 })
+
+  -- Switch to change version
+  local start = inspect._render_chunk_for_role
+      and inspect._render_chunk_for_role(session, "change", 1)
+    or 3
+  inspect._select_endpoint(session.change, session, "change", grp)
+  inspect._move_cursor_to_line_start(c_win, start)
+
+  local c_cursor = vim.api.nvim_win_get_cursor(c_win)
+  -- Line 3 in change is blank, so first nonblank changed line is line 4
+  assert(c_cursor[1] == 4, ("expected change cursor on first nonblank line 4, got %d"):format(c_cursor[1]))
+
+  -- Switch back to parent version
+  local p_start = inspect._render_chunk_for_role
+      and inspect._render_chunk_for_role(session, "parent", 1)
+    or 3
+  inspect._select_endpoint(session.parent, session, "parent", grp)
+  inspect._move_cursor_to_line_start(p_win, p_start)
+
+  local p_cursor = vim.api.nvim_win_get_cursor(p_win)
+  assert(p_cursor[1] == 3, ("expected parent cursor on line 3, got %d"):format(p_cursor[1]))
+
+  vim.api.nvim_win_close(p_win, true)
+  vim.api.nvim_win_close(c_win, true)
+  vim.api.nvim_buf_delete(p_buf, { force = true })
+  vim.api.nvim_buf_delete(c_buf, { force = true })
+  if vim.api.nvim_tabpage_is_valid(saved_tab) then
+    vim.api.nvim_set_current_tabpage(saved_tab)
+  end
+  if vim.api.nvim_win_is_valid(saved_win) then
+    vim.api.nvim_set_current_win(saved_win)
+  end
 end
 
 local issue_main_win

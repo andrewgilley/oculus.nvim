@@ -2129,11 +2129,29 @@ local function map_file_navigation(endpoint, session, role, group)
     end
 
     local target = session[target_role]
+    if not valid_endpoint(target) then
+      return
+    end
+
+    local chunk_index = session.active_chunk or 1
+    local start
+    if group.kind == "issue" then
+      local section = session.sections and session.sections[chunk_index]
+      start = section and section.line
+    else
+      start = render_chunk_for_role(session, target_role, chunk_index)
+        or (target_role == "parent"
+          and session.parent_lines and session.parent_lines[1]
+          or session.change_lines and session.change_lines[1])
+    end
+
     select_endpoint(target, session, target_role, group)
 
-    if valid_endpoint(target) then
-      refresh_sidebar(group, target.tab)
+    if start then
+      move_cursor_to_line_start(target.win, start)
     end
+
+    refresh_sidebar(group, target.tab)
   end
 
   local function map_version(lhs, target_role, description)
@@ -7143,6 +7161,23 @@ switch_sidebar_version = function(group, target_role)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
   move_cursor_to_line_start(sidebar_win)
+
+  local chunk_index = entry and entry.chunk_index or session.active_chunk or 1
+  local start
+  if group.kind == "issue" then
+    local section = session.sections and session.sections[chunk_index]
+    start = section and section.line
+  else
+    start = render_chunk_for_role(session, target_role, chunk_index)
+      or (target_role == "parent"
+        and session.parent_lines and session.parent_lines[1]
+        or session.change_lines and session.change_lines[1])
+  end
+
+  if start and valid_endpoint(endpoint) then
+    move_cursor_to_line_start(endpoint.win, start)
+  end
+
   sidebar_navigating = false
 
   vim.schedule(function()
@@ -8877,6 +8912,9 @@ M._chunk_navigation_role = chunk_navigation_role
 M._chunk_start_for_role = chunk_start_for_role
 M._first_nonblank_line = first_nonblank_line
 M._position_change_cursor = position_change_cursor
+M._move_cursor_to_line_start = move_cursor_to_line_start
+M._select_endpoint = select_endpoint
+M._render_chunk_for_role = render_chunk_for_role
 M._is_foreign_sidebar_window = is_foreign_sidebar_window
 M._inspection_endpoints = inspection_endpoints
 M._comment_float = comment_float
