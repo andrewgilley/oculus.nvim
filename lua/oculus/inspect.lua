@@ -1799,7 +1799,7 @@ local function first_nonblank_line(buf, line, max_line)
   return target
 end
 
-local function position_change_cursor(win, line, max_line)
+local function position_change_cursor(win, line, max_line, normalize, source_view)
   if not vim.api.nvim_win_is_valid(win) then
     return false
   end
@@ -1817,24 +1817,54 @@ local function position_change_cursor(win, line, max_line)
   end)
 
   vim.api.nvim_win_set_cursor(win, { line, 0 })
-  normalize_inspection_view(win)
+
+  if normalize ~= false then
+    normalize_inspection_view(win)
+  else
+    vim.api.nvim_win_call(win, function()
+      local text = vim.api.nvim_buf_get_lines(
+        buf,
+        line - 1,
+        line,
+        false
+      )[1] or ""
+      local col = (text:find("%S") or 1) - 1
+      local view = vim.fn.winsaveview()
+      if source_view and source_view.lnum and source_view.topline then
+        local offset = source_view.lnum - source_view.topline
+        view.topline = math.max(1, line - offset)
+      end
+      view.lnum = line
+      view.col = col
+      view.curswant = col
+      if source_view and source_view.leftcol then
+        view.leftcol = source_view.leftcol
+        view.skipcol = source_view.skipcol or 0
+      end
+      vim.fn.winrestview(view)
+    end)
+  end
 
   vim.api.nvim_win_call(win, function()
     local view = vim.fn.winsaveview()
-    view.leftcol = horizontal.leftcol
-    view.skipcol = horizontal.skipcol
+    if normalize ~= false or not source_view then
+      view.leftcol = horizontal.leftcol
+      view.skipcol = horizontal.skipcol
+    end
     vim.fn.winrestview(view)
   end)
 
   return true
 end
 
-local function set_change_cursor(win, line, max_line)
-  if not position_change_cursor(win, line, max_line) then
+local function set_change_cursor(win, line, max_line, normalize, source_view)
+  if not position_change_cursor(win, line, max_line, normalize, source_view) then
     return
   end
 
-  sync_window(win)
+  if normalize ~= false then
+    sync_window(win)
+  end
 end
 
 local function show_file_top(win)
@@ -1932,7 +1962,7 @@ local function select_endpoint(endpoint, session, role, group)
   end
 end
 
-local function move_cursor_to_line_start(win, line, max_line)
+local function move_cursor_to_line_start(win, line, max_line, normalize, source_view)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
@@ -1947,18 +1977,20 @@ local function move_cursor_to_line_start(win, line, max_line)
   end)
 
   if line then
-    set_change_cursor(win, line, max_line)
+    set_change_cursor(win, line, max_line, normalize, source_view)
   end
 
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! ^")
     local view = vim.fn.winsaveview()
-    view.leftcol = horizontal.leftcol
-    view.skipcol = horizontal.skipcol
+    if normalize ~= false or not source_view then
+      view.leftcol = horizontal.leftcol
+      view.skipcol = horizontal.skipcol
+    end
     vim.fn.winrestview(view)
   end)
 
-  if line then
+  if line and normalize ~= false then
     sync_window(win)
   end
 end
@@ -2142,6 +2174,13 @@ local function map_file_navigation(endpoint, session, role, group)
       return
     end
 
+    local source_win = endpoint.win
+    local source_view = (source_win and vim.api.nvim_win_is_valid(source_win))
+        and vim.api.nvim_win_call(source_win, function()
+          return vim.fn.winsaveview()
+        end)
+      or nil
+
     local chunk_index = session.active_chunk or 1
     local start, max_line
     if group.kind == "issue" then
@@ -2160,7 +2199,7 @@ local function map_file_navigation(endpoint, session, role, group)
     select_endpoint(target, session, target_role, group)
 
     if start then
-      move_cursor_to_line_start(target.win, start, max_line)
+      move_cursor_to_line_start(target.win, start, max_line, false, source_view)
     end
 
     refresh_sidebar(group, target.tab)
@@ -7152,6 +7191,14 @@ switch_sidebar_version = function(group, target_role)
     return
   end
 
+  local source_endpoint = session and session[role] or nil
+  local source_code_win = source_endpoint and source_endpoint.win
+  local source_code_view = (source_code_win and vim.api.nvim_win_is_valid(source_code_win))
+      and vim.api.nvim_win_call(source_code_win, function()
+        return vim.fn.winsaveview()
+      end)
+    or nil
+
   ensure_inspection_sidebar_on_tab(group, endpoint.tab)
   local sidebar_win = group.sidebar_windows[endpoint.tab]
 
@@ -7198,7 +7245,7 @@ switch_sidebar_version = function(group, target_role)
   end
 
   if start and valid_endpoint(endpoint) then
-    move_cursor_to_line_start(endpoint.win, start, max_line)
+    move_cursor_to_line_start(endpoint.win, start, max_line, false, source_code_view)
   end
 
   refresh_sidebar(group, endpoint.tab)
