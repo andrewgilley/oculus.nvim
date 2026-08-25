@@ -2850,10 +2850,15 @@ do
     or 3
   inspect._select_endpoint(session.change, session, "change", grp)
   inspect._move_cursor_to_line_start(c_win, start)
+  inspect._refresh_virtual_counters(grp, session)
 
   local c_cursor = vim.api.nvim_win_get_cursor(c_win)
   -- Line 3 in change is blank, so first nonblank changed line is line 4
   assert(c_cursor[1] == 4, ("expected change cursor on first nonblank line 4, got %d"):format(c_cursor[1]))
+
+  local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
+  assert(#c_marks == 1, "expected virtual counter on change buffer after switching version")
+  assert(c_marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
 
   -- Switch back to parent version
   local p_start = inspect._render_chunk_for_role
@@ -2861,9 +2866,14 @@ do
     or 3
   inspect._select_endpoint(session.parent, session, "parent", grp)
   inspect._move_cursor_to_line_start(p_win, p_start)
+  inspect._refresh_virtual_counters(grp, session)
 
   local p_cursor = vim.api.nvim_win_get_cursor(p_win)
   assert(p_cursor[1] == 3, ("expected parent cursor on line 3, got %d"):format(p_cursor[1]))
+
+  local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
+  assert(#p_marks == 1, "expected virtual counter on parent buffer after switching version")
+  assert(p_marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
 
   vim.api.nvim_win_close(p_win, true)
   vim.api.nvim_win_close(c_win, true)
