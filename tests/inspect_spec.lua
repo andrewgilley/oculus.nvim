@@ -2738,7 +2738,7 @@ do
   inspect._refresh_virtual_counters(test_grp, test_session)
   local marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks == 1)
-  assert(marks[1][4].virt_text[1][1] == "\t[1/1] [1/1]")
+  assert(marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
   assert(marks[1][4].hl_mode == "combine")
 
   local test_session2 = {
@@ -2766,13 +2766,13 @@ do
   inspect._refresh_virtual_counters(multi_grp, test_session2)
   local marks2 = vim.api.nvim_buf_get_extmarks(c_buf2, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks2 == 1)
-  assert(marks2[1][4].virt_text[1][1] == "\t[2/2] [2/2]")
+  assert(marks2[1][4].virt_text[1][1] == "\t[2/2] (2/2)")
   assert(marks2[1][4].hl_mode == "combine")
 
   inspect._refresh_virtual_counters(multi_grp, test_session)
   local marks_file1 = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks_file1 == 1)
-  assert(marks_file1[1][4].virt_text[1][1] == "\t[1/1] [1/2]")
+  assert(marks_file1[1][4].virt_text[1][1] == "\t[1/1] (1/2)")
 
   test_grp.chunk_view_mode = "sidebar"
   inspect._clear_virtual_counters(test_grp)
