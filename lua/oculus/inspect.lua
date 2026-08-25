@@ -1804,8 +1804,7 @@ local function position_change_cursor(win, line)
   end
 
   local buf = vim.api.nvim_win_get_buf(win)
-  local line_count = vim.api.nvim_buf_line_count(buf)
-  line = math.min(math.max(1, line or 1), line_count)
+  line = first_nonblank_line(buf, line)
 
   local horizontal = vim.api.nvim_win_call(win, function()
     local view = vim.fn.winsaveview()
@@ -1861,8 +1860,12 @@ normalize_inspection_view = function(win)
   vim.api.nvim_win_call(win, function()
     local cursor_line = vim.api.nvim_win_get_cursor(win)[1]
     local buf = vim.api.nvim_win_get_buf(win)
-    local line_count = vim.api.nvim_buf_line_count(buf)
-    cursor_line = math.min(math.max(1, cursor_line), line_count)
+    local target_line = first_nonblank_line(buf, cursor_line)
+
+    if target_line ~= cursor_line then
+      vim.api.nvim_win_set_cursor(win, { target_line, 0 })
+      cursor_line = target_line
+    end
 
     if cursor_line < 10 then
       vim.cmd("normal! ^")
