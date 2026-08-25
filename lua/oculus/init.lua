@@ -227,20 +227,35 @@ local function merge_projects(configured, saved)
   local result = vim.deepcopy(configured or {})
   local present = {}
 
-  for _, project in ipairs(result) do
+  for index, project in ipairs(result) do
     local key = project_key(project)
 
     if key then
-      present[key] = true
+      present[key] = index
     end
   end
 
   for _, project in ipairs(saved or {}) do
     local key = project_key(project)
 
-    if key and not present[key] then
-      result[#result + 1] = vim.deepcopy(project)
-      present[key] = true
+    if key then
+      local existing_index = present[key]
+
+      if existing_index then
+        if
+          project.description
+          and project.description ~= ""
+          and (
+            not result[existing_index].description
+            or result[existing_index].description == ""
+          )
+        then
+          result[existing_index].description = project.description
+        end
+      else
+        result[#result + 1] = vim.deepcopy(project)
+        present[key] = #result
+      end
     end
   end
 
@@ -374,6 +389,7 @@ function M.load_project_descriptions(config, callback)
       type(project) == "table"
       and type(project.repository) == "string"
       and project.repository ~= ""
+      and (not project.description or project.description == "")
     then
       local provider = project.provider == "codeberg" and codeberg or github
 
@@ -409,9 +425,7 @@ function M.load_project_descriptions(config, callback)
   end
 
   if pending == 0 and callback then
-    vim.schedule(function()
-      callback(projects)
-    end)
+    callback(projects)
   end
 end
 

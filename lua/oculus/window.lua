@@ -1536,6 +1536,7 @@ function M.load_project_descriptions(opts, callback)
       type(project) == "table"
       and type(project.repository) == "string"
       and project.repository ~= ""
+      and (not project.description or project.description == "")
     then
       local provider = project.provider == "codeberg" and codeberg or github
 
@@ -1584,9 +1585,7 @@ function M.load_project_descriptions(opts, callback)
   end
 
   if pending == 0 and callback then
-    vim.schedule(function()
-      callback(projects)
-    end)
+    callback(projects)
   end
 end
 

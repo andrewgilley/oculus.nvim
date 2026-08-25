@@ -2673,7 +2673,19 @@ do
   end)
 
   assert(loaded_done == true)
+  assert(requested_repo == "custom/test")
   assert(test_config.projects[1].description == "Mocked forge description for custom/test")
+
+  -- Running load_project_descriptions again should NOT call repository_info because it's already set
+  requested_repo = nil
+  loaded_done = false
+  oculus.load_project_descriptions(test_config, function(projects)
+    loaded_done = true
+  end)
+
+  assert(loaded_done == true)
+  assert(requested_repo == nil, "expected no network call when description is already present")
+
   gh.repository_info = original_repo_info
 end
 
