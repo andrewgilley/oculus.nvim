@@ -2648,6 +2648,33 @@ do
 
   assert(neovim_project ~= nil)
   assert(neovim_project.description == "Vim-fork focused on extensibility and usability")
+
+  local original_repo_info = gh.repository_info
+  local requested_repo = nil
+  gh.repository_info = function(repo, opts, cb_fn)
+    requested_repo = repo
+    cb_fn({ description = "Mocked forge description for " .. repo })
+  end
+
+  local test_config = {
+    persist_projects = false,
+    projects = {
+      {
+        name = "Test Custom",
+        repository = "custom/test",
+        provider = "github",
+      },
+    },
+  }
+
+  local loaded_done = false
+  oculus.load_project_descriptions(test_config, function(projects)
+    loaded_done = true
+  end)
+
+  assert(loaded_done == true)
+  assert(test_config.projects[1].description == "Mocked forge description for custom/test")
+  gh.repository_info = original_repo_info
 end
 
 assert(state.win == nil)

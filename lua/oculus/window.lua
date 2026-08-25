@@ -1525,6 +1525,71 @@ local function queue_project_preview(project)
   end
 end
 
+function M.load_project_descriptions(opts, callback)
+  local config = opts or M.state.opts or {}
+  local projects = config.projects or {}
+  local pending = 0
+  local updated_any = false
+
+  for _, project in ipairs(projects) do
+    if
+      type(project) == "table"
+      and type(project.repository) == "string"
+      and project.repository ~= ""
+    then
+      local provider = project.provider == "codeberg" and codeberg or github
+
+      if provider and type(provider.repository_info) == "function" then
+        pending = pending + 1
+
+        provider.repository_info(project.repository, config, function(info)
+          pending = pending - 1
+
+          if
+            info
+            and type(info.description) == "string"
+            and info.description ~= ""
+          then
+            if project.description ~= info.description then
+              project.description = info.description
+              updated_any = true
+
+              if
+                M.state.preview_project
+                and project_key(M.state.preview_project) == project_key(project)
+                and is_valid_win(M.state.win)
+              then
+                local window_width = vim.api.nvim_win_get_width(M.state.win)
+                local left_width = preview_left_width(window_width)
+                local preview_width = math.max(15, window_width - left_width - 5)
+                render_preview_panel(
+                  project_preview_items(project, preview_width)
+                )
+              end
+            end
+          end
+
+          if pending == 0 then
+            if updated_any and config.persist_projects then
+              persist_projects()
+            end
+
+            if callback then
+              callback(projects)
+            end
+          end
+        end)
+      end
+    end
+  end
+
+  if pending == 0 and callback then
+    vim.schedule(function()
+      callback(projects)
+    end)
+  end
+end
+
 local function update_contributor_selection()
   if not is_valid_buf(M.state.buf) then
     return
@@ -5345,6 +5410,8 @@ function M.open(opts)
     render_contributors()
     restore_cursor()
   end
+
+  M.load_project_descriptions(M.state.opts)
 
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
 

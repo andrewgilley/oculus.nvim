@@ -357,6 +357,62 @@ function M.setup(opts)
       end
     end
   end
+
+  M.load_project_descriptions(M.config)
+end
+
+function M.load_project_descriptions(config, callback)
+  config = config or M.config or defaults
+  local projects = config.projects or {}
+  local github = require("oculus.github")
+  local codeberg = require("oculus.codeberg")
+  local pending = 0
+  local updated_any = false
+
+  for _, project in ipairs(projects) do
+    if
+      type(project) == "table"
+      and type(project.repository) == "string"
+      and project.repository ~= ""
+    then
+      local provider = project.provider == "codeberg" and codeberg or github
+
+      if provider and type(provider.repository_info) == "function" then
+        pending = pending + 1
+
+        provider.repository_info(project.repository, config, function(info)
+          pending = pending - 1
+
+          if
+            info
+            and type(info.description) == "string"
+            and info.description ~= ""
+          then
+            if project.description ~= info.description then
+              project.description = info.description
+              updated_any = true
+            end
+          end
+
+          if pending == 0 then
+            if updated_any and config.persist_projects and config.state_file then
+              pcall(require("oculus.storage").save, config.state_file, config)
+            end
+
+            if callback then
+              callback(projects)
+            end
+          end
+        end)
+      end
+    end
+  end
+
+  if pending == 0 and callback then
+    vim.schedule(function()
+      callback(projects)
+    end)
+  end
 end
 
 function M.open()
