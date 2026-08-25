@@ -2865,8 +2865,16 @@ do
   local max_line = inspect._chunk_max_line_for_role
       and inspect._chunk_max_line_for_role(session.hunks[1], "change", start)
     or start
+  local c_topline = inspect._map_inspection_line(
+    session,
+    "parent",
+    "change",
+    p_initial_view.topline
+  )
+  assert(c_topline == 1, ("expected mapped change topline to be 1, got %s"):format(tostring(c_topline)))
+
   inspect._select_endpoint(session.change, session, "change", grp)
-  inspect._move_cursor_to_line_start(c_win, start, max_line, false, p_initial_view)
+  inspect._move_cursor_to_line_start(c_win, start, max_line, false, c_topline, p_initial_view)
   inspect._refresh_virtual_counters(grp, session)
 
   local c_cursor = vim.api.nvim_win_get_cursor(c_win)
@@ -2876,8 +2884,8 @@ do
   local c_view = vim.api.nvim_win_call(c_win, function()
     return vim.fn.winsaveview()
   end)
-  -- Perspective preserved from p_initial_view (lnum 1, topline 1 -> offset 0), so topline should be 4
-  assert(c_view.topline == 4, ("expected change topline to preserve offset, got %d"):format(c_view.topline))
+  -- Unchanged code before change (lines 1..2) maintains topline 1
+  assert(c_view.topline == 1, ("expected change topline to preserve unchanged code position 1, got %d"):format(c_view.topline))
 
   local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#c_marks == 1, "expected virtual counter on change buffer after switching version")
@@ -2890,8 +2898,16 @@ do
   local p_max = inspect._chunk_max_line_for_role
       and inspect._chunk_max_line_for_role(session.hunks[1], "parent", p_start)
     or p_start
+  local p_topline = inspect._map_inspection_line(
+    session,
+    "change",
+    "parent",
+    c_view.topline
+  )
+  assert(p_topline == 1, ("expected mapped parent topline to be 1, got %s"):format(tostring(p_topline)))
+
   inspect._select_endpoint(session.parent, session, "parent", grp)
-  inspect._move_cursor_to_line_start(p_win, p_start, p_max, false, c_view)
+  inspect._move_cursor_to_line_start(p_win, p_start, p_max, false, p_topline, c_view)
   inspect._refresh_virtual_counters(grp, session)
 
   local p_cursor = vim.api.nvim_win_get_cursor(p_win)
@@ -2900,8 +2916,8 @@ do
   local p_view = vim.api.nvim_win_call(p_win, function()
     return vim.fn.winsaveview()
   end)
-  -- c_view had lnum 4, topline 4 -> offset 0, so parent topline should be 3
-  assert(p_view.topline == 3, ("expected parent topline to preserve offset, got %d"):format(p_view.topline))
+  -- Unchanged code before change maintains topline 1
+  assert(p_view.topline == 1, ("expected parent topline to preserve unchanged code position 1, got %d"):format(p_view.topline))
 
   local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#p_marks == 1, "expected virtual counter on parent buffer after switching version")
@@ -2917,6 +2933,35 @@ do
   if vim.api.nvim_win_is_valid(saved_win) then
     vim.api.nvim_set_current_win(saved_win)
   end
+end
+
+do
+  local sess = {
+    hunks = {
+      { old_start = 20, old_count = 5, new_start = 20, new_count = 10 },
+      { old_start = 40, old_count = 2, new_start = 45, new_count = 4 },
+    },
+    focused_chunks = true,
+    focused_start = 20,
+    active_chunk = 1,
+  }
+
+  -- Focused chunk mode: lines before the active hunk are unchanged and map 1:1
+  assert(inspect._map_inspection_line(sess, "parent", "change", 1) == 1)
+  assert(inspect._map_inspection_line(sess, "parent", "change", 15) == 15)
+  assert(inspect._map_inspection_line(sess, "change", "parent", 15) == 15)
+
+  -- Lines inside the active hunk map to the hunk start
+  assert(inspect._map_inspection_line(sess, "parent", "change", 22) == 20)
+  assert(inspect._map_inspection_line(sess, "change", "parent", 25) == 20)
+
+  -- Full file mode: lines before first hunk map 1:1
+  sess.focused_chunks = false
+  assert(inspect._map_inspection_line(sess, "parent", "change", 10) == 10)
+  assert(inspect._map_inspection_line(sess, "change", "parent", 10) == 10)
+  -- Lines between hunk 1 and hunk 2 shift by hunk 1 delta (+5)
+  assert(inspect._map_inspection_line(sess, "parent", "change", 30) == 35)
+  assert(inspect._map_inspection_line(sess, "change", "parent", 35) == 30)
 end
 
 local issue_main_win

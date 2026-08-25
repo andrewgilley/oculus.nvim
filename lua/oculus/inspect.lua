@@ -1799,7 +1799,14 @@ local function first_nonblank_line(buf, line, max_line)
   return target
 end
 
-local function position_change_cursor(win, line, max_line, normalize, source_view)
+local function position_change_cursor(
+  win,
+  line,
+  max_line,
+  normalize,
+  target_topline,
+  source_view
+)
   if not vim.api.nvim_win_is_valid(win) then
     return false
   end
@@ -1830,9 +1837,10 @@ local function position_change_cursor(win, line, max_line, normalize, source_vie
       )[1] or ""
       local col = (text:find("%S") or 1) - 1
       local view = vim.fn.winsaveview()
-      if source_view and source_view.lnum and source_view.topline then
-        local offset = source_view.lnum - source_view.topline
-        view.topline = math.max(1, line - offset)
+      if target_topline then
+        view.topline = math.max(1, target_topline)
+      elseif source_view and source_view.topline then
+        view.topline = math.max(1, source_view.topline)
       end
       view.lnum = line
       view.col = col
@@ -1857,8 +1865,24 @@ local function position_change_cursor(win, line, max_line, normalize, source_vie
   return true
 end
 
-local function set_change_cursor(win, line, max_line, normalize, source_view)
-  if not position_change_cursor(win, line, max_line, normalize, source_view) then
+local function set_change_cursor(
+  win,
+  line,
+  max_line,
+  normalize,
+  target_topline,
+  source_view
+)
+  if
+    not position_change_cursor(
+      win,
+      line,
+      max_line,
+      normalize,
+      target_topline,
+      source_view
+    )
+  then
     return
   end
 
@@ -1962,7 +1986,14 @@ local function select_endpoint(endpoint, session, role, group)
   end
 end
 
-local function move_cursor_to_line_start(win, line, max_line, normalize, source_view)
+local function move_cursor_to_line_start(
+  win,
+  line,
+  max_line,
+  normalize,
+  target_topline,
+  source_view
+)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
@@ -1977,7 +2008,14 @@ local function move_cursor_to_line_start(win, line, max_line, normalize, source_
   end)
 
   if line then
-    set_change_cursor(win, line, max_line, normalize, source_view)
+    set_change_cursor(
+      win,
+      line,
+      max_line,
+      normalize,
+      target_topline,
+      source_view
+    )
   end
 
   if normalize ~= false then
@@ -2112,6 +2150,95 @@ local function chunk_max_line_for_role(hunk, role, start)
   return start + math.max(0, (count or 1) - 1)
 end
 
+local function map_inspection_line(session, source_role, target_role, source_line)
+  if not source_line or source_line <= 1 then
+    return 1
+  end
+
+  if
+    not session
+    or not session.hunks
+    or #session.hunks == 0
+    or source_role == target_role
+  then
+    return source_line
+  end
+
+  if session.focused_chunks ~= false and session.focused_start then
+    local chunk_index = session.active_chunk or 1
+    local hunk = session.hunks[chunk_index]
+    if not hunk then
+      return source_line
+    end
+
+    local parent_start = hunk.old_start == 0 and 1 or hunk.old_start
+    local change_start = session.focused_start
+
+    if source_role == "parent" and target_role == "change" then
+      if source_line < parent_start then
+        return source_line
+      elseif source_line < parent_start + math.max(1, hunk.old_count) then
+        return change_start
+      else
+        local delta = (hunk.new_count or 0) - (hunk.old_count or 0)
+        return math.max(1, source_line + delta)
+      end
+    elseif source_role == "change" and target_role == "parent" then
+      if source_line < change_start then
+        return source_line
+      elseif source_line < change_start + math.max(1, hunk.new_count) then
+        return parent_start
+      else
+        local delta = (hunk.new_count or 0) - (hunk.old_count or 0)
+        return math.max(1, source_line - delta)
+      end
+    end
+    return source_line
+  end
+
+  if source_role == "parent" and target_role == "change" then
+    local delta = 0
+    for _, hunk in ipairs(session.hunks) do
+      local old_start = hunk.old_start == 0 and 1 or hunk.old_start
+      local old_count = hunk.old_count or 0
+      local new_count = hunk.new_count or 0
+      if source_line < old_start then
+        return math.max(1, source_line + delta)
+      elseif source_line < old_start + math.max(1, old_count) then
+        local offset = source_line - old_start
+        return math.max(
+          1,
+          hunk.new_start + math.min(offset, math.max(0, new_count - 1))
+        )
+      else
+        delta = delta + (new_count - old_count)
+      end
+    end
+    return math.max(1, source_line + delta)
+  elseif source_role == "change" and target_role == "parent" then
+    local delta = 0
+    for _, hunk in ipairs(session.hunks) do
+      local new_start = hunk.new_start == 0 and 1 or hunk.new_start
+      local old_count = hunk.old_count or 0
+      local new_count = hunk.new_count or 0
+      if source_line < new_start then
+        return math.max(1, source_line - delta)
+      elseif source_line < new_start + math.max(1, new_count) then
+        local offset = source_line - new_start
+        return math.max(
+          1,
+          hunk.old_start + math.min(offset, math.max(0, old_count - 1))
+        )
+      else
+        delta = delta + (new_count - old_count)
+      end
+    end
+    return math.max(1, source_line - delta)
+  end
+
+  return source_line
+end
+
 local function render_chunk_for_role(session, role, chunk_index)
   local hunk = session.hunks and session.hunks[chunk_index] or nil
 
@@ -2196,10 +2323,21 @@ local function map_file_navigation(endpoint, session, role, group)
       max_line = chunk_max_line_for_role(hunk, target_role, start)
     end
 
+    local target_topline = source_view
+        and map_inspection_line(session, role, target_role, source_view.topline)
+      or nil
+
     select_endpoint(target, session, target_role, group)
 
     if start then
-      move_cursor_to_line_start(target.win, start, max_line, false, source_view)
+      move_cursor_to_line_start(
+        target.win,
+        start,
+        max_line,
+        false,
+        target_topline,
+        source_view
+      )
     end
 
     refresh_sidebar(group, target.tab)
@@ -7244,8 +7382,19 @@ switch_sidebar_version = function(group, target_role)
     max_line = chunk_max_line_for_role(hunk, target_role, start)
   end
 
+  local target_topline = source_code_view
+      and map_inspection_line(session, role, target_role, source_code_view.topline)
+    or nil
+
   if start and valid_endpoint(endpoint) then
-    move_cursor_to_line_start(endpoint.win, start, max_line, false, source_code_view)
+    move_cursor_to_line_start(
+      endpoint.win,
+      start,
+      max_line,
+      false,
+      target_topline,
+      source_code_view
+    )
   end
 
   refresh_sidebar(group, endpoint.tab)
@@ -9059,6 +9208,7 @@ M._progressed_chunk_role = progressed_chunk_role
 M._chunk_navigation_role = chunk_navigation_role
 M._chunk_start_for_role = chunk_start_for_role
 M._chunk_max_line_for_role = chunk_max_line_for_role
+M._map_inspection_line = map_inspection_line
 M._first_nonblank_line = first_nonblank_line
 M._position_change_cursor = position_change_cursor
 M._move_cursor_to_line_start = move_cursor_to_line_start
