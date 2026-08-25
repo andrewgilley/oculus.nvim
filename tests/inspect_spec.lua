@@ -2766,6 +2766,8 @@ do
   }
   local p_buf2 = vim.api.nvim_create_buf(false, true)
   local c_buf2 = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(p_buf2, 0, -1, false, test_session2.parent_content)
+  vim.api.nvim_buf_set_lines(c_buf2, 0, -1, false, test_session2.change_content)
   test_session2.parent = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = p_buf2 }
   test_session2.change = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = c_buf2 }
 
@@ -2794,6 +2796,57 @@ do
   vim.api.nvim_buf_delete(c_buf, { force = true })
   vim.api.nvim_buf_delete(p_buf2, { force = true })
   vim.api.nvim_buf_delete(c_buf2, { force = true })
+end
+
+do
+  local test_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, {
+    "",
+    "    local a = 1",
+    "",
+    "\t\treturn a",
+    "  ",
+    "function bar()",
+    "end",
+    "",
+  })
+
+  -- Test 1: Line 1 is blank, followed by 4-space indented line
+  inspect._virtual_counter.place_virtual_counter(test_buf, 1, 1, 3, 1, 1)
+  local m1 = vim.api.nvim_buf_get_extmarks(test_buf, inspect._virtual_counter_ns, { 0, 0 }, { 0, -1 }, { details = true })
+  assert(#m1 == 1)
+  assert(m1[1][4].virt_text[1][1] == "    [1/3] (1/1)")
+  assert(m1[1][4].virt_text_pos == "overlay")
+
+  -- Test 2: Line 3 is blank, followed by 2-tab indented line
+  inspect._virtual_counter.place_virtual_counter(test_buf, 3, 2, 3, 1, 1)
+  local m2 = vim.api.nvim_buf_get_extmarks(test_buf, inspect._virtual_counter_ns, { 2, 0 }, { 2, -1 }, { details = true })
+  assert(#m2 == 1)
+  assert(m2[1][4].virt_text[1][1] == "\t\t[2/3] (1/1)")
+  assert(m2[1][4].virt_text_pos == "overlay")
+
+  -- Test 3: Line 5 has whitespace, followed by unindented function line
+  inspect._virtual_counter.place_virtual_counter(test_buf, 5, 3, 3, 1, 1)
+  local m3 = vim.api.nvim_buf_get_extmarks(test_buf, inspect._virtual_counter_ns, { 4, 0 }, { 4, -1 }, { details = true })
+  assert(#m3 == 1)
+  assert(m3[1][4].virt_text[1][1] == "[3/3] (1/1)")
+  assert(m3[1][4].virt_text_pos == "overlay")
+
+  -- Test 4: Line 8 is blank at end of file (no following lines)
+  inspect._virtual_counter.place_virtual_counter(test_buf, 8, 1, 1, nil, nil)
+  local m4 = vim.api.nvim_buf_get_extmarks(test_buf, inspect._virtual_counter_ns, { 7, 0 }, { 7, -1 }, { details = true })
+  assert(#m4 == 1)
+  assert(m4[1][4].virt_text[1][1] == "[1/1]")
+  assert(m4[1][4].virt_text_pos == "overlay")
+
+  -- Test 5: Line 2 is nonblank
+  inspect._virtual_counter.place_virtual_counter(test_buf, 2, 1, 1, 1, 2)
+  local m5 = vim.api.nvim_buf_get_extmarks(test_buf, inspect._virtual_counter_ns, { 1, 0 }, { 1, -1 }, { details = true })
+  assert(#m5 == 1)
+  assert(m5[1][4].virt_text[1][1] == "\t[1/1] (1/2)")
+  assert(m5[1][4].virt_text_pos == "eol")
+
+  vim.api.nvim_buf_delete(test_buf, { force = true })
 end
 
 do
@@ -2889,7 +2942,7 @@ do
 
   local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#c_marks == 1, "expected virtual counter on change buffer after switching version")
-  assert(c_marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
+  assert(c_marks[1][4].virt_text[1][1] == "[1/1] (1/1)")
 
   -- Switch back to parent version
   local p_start = inspect._render_chunk_for_role
