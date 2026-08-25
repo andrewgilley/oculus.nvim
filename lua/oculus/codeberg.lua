@@ -1250,6 +1250,50 @@ function M.issue(repo, number, opts, callback)
   end)
 end
 
+local repository_info_cache = {}
+
+function M.repository_info(repository, opts, callback)
+  opts = opts or {}
+  local ttl = opts.cache_ttl or 300
+  local key = repository:lower()
+  local cached = repository_info_cache[key]
+
+  if not opts.force
+    and cached
+    and os.time() - cached.fetched_at < ttl
+  then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.info))
+    end)
+
+    return
+  end
+
+  local url = ("%s/api/v1/repos/%s"):format(base_url, repository)
+
+  request_json(url, opts, function(payload, err)
+    if err or type(payload) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    local info = {
+      description = type(payload.description) == "string"
+          and payload.description
+        or nil,
+      name = payload.name,
+      full_name = payload.full_name,
+    }
+
+    repository_info_cache[key] = {
+      fetched_at = os.time(),
+      info = info,
+    }
+
+    callback(vim.deepcopy(info))
+  end)
+end
+
 function M.clear(username)
   cache[username] = nil
 end

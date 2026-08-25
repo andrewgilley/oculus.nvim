@@ -1459,6 +1459,38 @@ local function queue_preview(contributor)
   render_preview_panel(preview_items(contributor))
 end
 
+local function fetch_project_description(project, callback)
+  if not project or not project.repository then
+    if callback then
+      callback(nil)
+    end
+    return
+  end
+
+  local provider = project.provider == "codeberg" and codeberg or github
+
+  if not provider or type(provider.repository_info) ~= "function" then
+    if callback then
+      callback(nil)
+    end
+    return
+  end
+
+  provider.repository_info(
+    project.repository,
+    M.state.opts or {},
+    function(info)
+      local desc = info
+          and type(info.description) == "string"
+          and info.description
+        or nil
+      if callback then
+        callback(desc)
+      end
+    end
+  )
+end
+
 local function queue_project_preview(project)
   if not project or M.state.view ~= "contributors" then
     return
@@ -1476,6 +1508,21 @@ local function queue_project_preview(project)
   local left_width = preview_left_width(window_width)
   local preview_width = math.max(15, window_width - left_width - 5)
   render_preview_panel(project_preview_items(project, preview_width))
+
+  if not project.description or project.description == "" then
+    fetch_project_description(project, function(desc)
+      if
+        desc
+        and desc ~= ""
+        and M.state.preview_key == key
+        and is_valid_win(M.state.win)
+      then
+        project.description = desc
+        persist_projects()
+        render_preview_panel(project_preview_items(project, preview_width))
+      end
+    end)
+  end
 end
 
 local function update_contributor_selection()
@@ -3886,6 +3933,22 @@ local function add_project(project)
 
   M.state.selected_project = added
   persist_projects()
+
+  if not added.description or added.description == "" then
+    fetch_project_description(added, function(desc)
+      if desc and desc ~= "" then
+        added.description = desc
+        persist_projects()
+        if M.state.preview_project == added and is_valid_win(M.state.win) then
+          local window_width = vim.api.nvim_win_get_width(M.state.win)
+          local left_width = preview_left_width(window_width)
+          local preview_width = math.max(15, window_width - left_width - 5)
+          render_preview_panel(project_preview_items(added, preview_width))
+        end
+      end
+    end)
+  end
+
   return true
 end
 
