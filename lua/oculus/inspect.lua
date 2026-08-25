@@ -1774,6 +1774,13 @@ local function render_full_file(session)
   return true
 end
 
+local function trigger_inspection_treesitter_context(buf)
+  pcall(vim.api.nvim_exec_autocmds, "CursorMoved", {
+    group = "treesitter_context_update",
+    buffer = (buf and vim.api.nvim_buf_is_valid(buf)) and buf or nil,
+  })
+end
+
 local function first_nonblank_line(buf, line, max_line)
   if not vim.api.nvim_buf_is_valid(buf) then
     return line
@@ -1978,6 +1985,7 @@ local function select_endpoint(endpoint, session, role, group)
   vim.schedule(function()
     if valid_endpoint(endpoint) then
       refresh_buffer_highlighting(endpoint.buf, false)
+      trigger_inspection_treesitter_context(endpoint.buf)
     end
   end)
 
@@ -2287,6 +2295,7 @@ local function focus_inspection_chunk(group, session, role, chunk_index)
   show_inspection_path(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
   M._refresh_virtual_counters(group, session)
+  trigger_inspection_treesitter_context(endpoint.buf)
   return endpoint
 end
 
@@ -2342,6 +2351,7 @@ local function map_file_navigation(endpoint, session, role, group)
 
     refresh_sidebar(group, target.tab)
     M._refresh_virtual_counters(group, session)
+    trigger_inspection_treesitter_context(target.buf)
   end
 
   local function map_version(lhs, target_role, description)
@@ -7204,6 +7214,7 @@ local function select_sidebar_entry(group, direction, preferred_role)
     end
 
     M._refresh_virtual_counters(group, session)
+    trigger_inspection_treesitter_context(endpoint.buf)
 
     group.focused_win = nil
     sidebar_navigating = false
@@ -7402,10 +7413,12 @@ switch_sidebar_version = function(group, target_role)
   refresh_sidebar(group, endpoint.tab)
   M._refresh_virtual_counters(group, session)
   sidebar_navigating = false
+  trigger_inspection_treesitter_context(endpoint.buf)
 
   vim.schedule(function()
     if valid_endpoint(endpoint) then
       refresh_buffer_highlighting(endpoint.buf, false)
+      trigger_inspection_treesitter_context(endpoint.buf)
     end
   end)
 end
@@ -9219,4 +9232,5 @@ M._render_chunk_for_role = render_chunk_for_role
 M._is_foreign_sidebar_window = is_foreign_sidebar_window
 M._inspection_endpoints = inspection_endpoints
 M._comment_float = comment_float
+M._trigger_inspection_treesitter_context = trigger_inspection_treesitter_context
 return M
