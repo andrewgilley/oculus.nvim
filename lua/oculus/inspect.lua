@@ -2237,7 +2237,7 @@ function M._virtual_counter.place_virtual_counter(
 
   local text
   if file_index and file_count and file_count > 0 then
-    text = ("\t[%d/%d] [%d/%d]"):format(
+    text = ("\t[%d/%d] (%d/%d)"):format(
       chunk_index,
       chunk_count,
       file_index,
