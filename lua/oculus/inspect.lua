@@ -2443,49 +2443,16 @@ function M._virtual_counter.place_virtual_counter(
 
   line = math.min(math.max(1, line), line_count)
 
-  local line_text = vim.api.nvim_buf_get_lines(
-    buf,
-    line - 1,
-    line,
-    false
-  )[1] or ""
-  local is_blank = not line_text:find("%S")
-
-  local counter_label
+  local text
   if file_index and file_count and file_count > 0 then
-    counter_label = ("[%d/%d] (%d/%d)"):format(
+    text = ("\t[%d/%d] (%d/%d)"):format(
       chunk_index,
       chunk_count,
       file_index,
       file_count
     )
   else
-    counter_label = ("[%d/%d]"):format(chunk_index, chunk_count)
-  end
-
-  local text
-  local pos
-
-  if is_blank then
-    local next_indent = ""
-    for current = line + 1, line_count do
-      local current_text = vim.api.nvim_buf_get_lines(
-        buf,
-        current - 1,
-        current,
-        false
-      )[1]
-      if type(current_text) == "string" and current_text:find("%S") then
-        next_indent = current_text:match("^(%s*)") or ""
-        break
-      end
-    end
-
-    text = next_indent .. counter_label
-    pos = "overlay"
-  else
-    text = "\t" .. counter_label
-    pos = "eol"
+    text = ("\t[%d/%d]"):format(chunk_index, chunk_count)
   end
 
   vim.api.nvim_buf_set_extmark(buf, M._virtual_counter_ns, line - 1, 0, {
@@ -2495,7 +2462,7 @@ function M._virtual_counter.place_virtual_counter(
         "OculusInspectVirtualCounter",
       },
     },
-    virt_text_pos = pos,
+    virt_text_pos = "eol",
     hl_mode = "combine",
     priority = 10,
   })
