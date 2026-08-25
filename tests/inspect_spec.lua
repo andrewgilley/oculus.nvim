@@ -2157,7 +2157,7 @@ local loading_models_text = table.concat(
   "\n"
 )
 
-assert(loading_models_text:find("Agent explanation", 1, true))
+assert(loading_models_text:find("Agent description", 1, true))
 
 assert(not loading_models_text:find(
   "Loading available Codex models",
@@ -2200,13 +2200,13 @@ local model_text = table.concat(
   "\n"
 )
 
-assert(model_text:find("Agent explanation", 1, true))
+assert(model_text:find("Agent description", 1, true))
 assert(model_text:find("GPT 5.6 Test Agent", 1, true))
 assert(model_text:find("gpt-5.6-test-fast", 1, true))
 assert(not model_text:find("  default", 1, true))
 
 assert(model_text:find("\n  Date\n", 1, true)
-  < model_text:find("Agent explanation", 1, true))
+  < model_text:find("Agent description", 1, true))
 
 local model_selection_mark
 
@@ -2261,7 +2261,7 @@ local generating_text = table.concat(
 )
 
 assert(generating_text:find(
-  "Agent explanation (gpt-5.6-test-agent)",
+  "Agent description (gpt-5.6-test-agent)",
   1,
   true
 ))
@@ -2345,7 +2345,7 @@ local explanation_text = table.concat(
 )
 
 assert(explanation_text:find(
-  "Agent explanation (gpt-5.6-test-agent)\n",
+  "Agent description (gpt-5.6-test-agent)\n",
   1,
   true
 ))
@@ -2395,7 +2395,7 @@ local patch_model_text = table.concat(
   "\n"
 )
 
-assert(patch_model_text:find("Agent explanation", 1, true))
+assert(patch_model_text:find("Agent description", 1, true))
 assert(patch_model_text:find("Agent suggestion", 1, true))
 vim.fn.maparg("<CR>", "n", false, true).callback()
 local patch_request = agent_request
@@ -3081,7 +3081,7 @@ local restored_overview_text = table.concat(
 )
 
 assert(restored_overview_text:find(
-  "Agent explanation (gpt-5.6-test-agent)",
+  "Agent description (gpt-5.6-test-agent)",
   1,
   true
 ))
