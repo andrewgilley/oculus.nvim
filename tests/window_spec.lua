@@ -254,6 +254,7 @@ assert(not initial_project_text:find("@mitchellh", 1, true))
 assert(initial_project_text:find("v users", 1, true))
 assert(initial_project_text:find("a add", 1, true))
 assert(initial_project_text:find("r remove", 1, true))
+assert(initial_project_text:find("m move", 1, true))
 
 do
   local first_project_line
@@ -296,7 +297,7 @@ assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
 
 assert(initial_user_lines[initial_window_height]
-  == "  v projects  a add  r remove  ?: help")
+  == "  v projects  a add  r remove  m move  ?: help")
 
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
@@ -1641,7 +1642,7 @@ local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 
 assert(returned_user_lines[returned_window_height]
-  == "  v projects  a add  r remove  ?: help")
+  == "  v projects  a add  r remove  m move  ?: help")
 
 do
   vim.cmd("tabnew")
@@ -2716,6 +2717,83 @@ do
   assert(window._add_contributor({ username = "user_inserted", provider = "github" }, first_user))
   assert(#window.state.contributors == 4)
   assert(window.state.contributors[2].username == "user_inserted")
+end
+
+do
+  window.state.opts = {
+    projects = {
+      { repository = "alpha/repo", provider = "github" },
+      { repository = "beta/repo", provider = "github" },
+      { repository = "gamma/repo", provider = "github" },
+    },
+    persist_projects = false,
+    persist_contributors = false,
+  }
+  window.state.contributors = {
+    { username = "alice", provider = "github" },
+    { username = "bob", provider = "github" },
+    { username = "charlie", provider = "github" },
+  }
+  window.state.view = "contributors"
+  window.state.community_view = "projects"
+  window.state.line_targets = {
+    [7] = { kind = "project", project = window.state.opts.projects[1] },
+    [8] = { kind = "project", project = window.state.opts.projects[2] },
+    [9] = { kind = "project", project = window.state.opts.projects[3] },
+  }
+
+  -- Test moving project: Gamma (index 3) to Alpha (index 1)
+  -- Mock cursor on line 9 (gamma)
+  local dummy_buf = vim.api.nvim_create_buf(false, true)
+  local dummy_win = vim.api.nvim_open_win(dummy_buf, true, {
+    relative = "editor",
+    width = 40,
+    height = 20,
+    row = 1,
+    col = 1,
+  })
+  window.state.buf = dummy_buf
+  window.state.win = dummy_win
+  vim.api.nvim_buf_set_lines(dummy_buf, 0, -1, false, {
+    "1", "2", "3", "4", "5", "6", "  alpha/repo", "  beta/repo", "  gamma/repo"
+  })
+
+  vim.api.nvim_win_set_cursor(dummy_win, { 9, 0 })
+  window._toggle_move_item()
+  assert(window.state.moving_item ~= nil)
+  assert(window.state.moving_item.project.repository == "gamma/repo")
+
+  -- Move cursor to line 7 (alpha) and press m again
+  vim.api.nvim_win_set_cursor(dummy_win, { 7, 0 })
+  window._toggle_move_item()
+  assert(window.state.moving_item == nil)
+  assert(window.state.opts.projects[1].repository == "gamma/repo")
+  assert(window.state.opts.projects[2].repository == "alpha/repo")
+  assert(window.state.opts.projects[3].repository == "beta/repo")
+
+  -- Test moving contributor: Alice (index 1) to Charlie (index 3)
+  window.state.community_view = "users"
+  window.state.line_targets = {
+    [7] = window.state.contributors[1],
+    [8] = window.state.contributors[2],
+    [9] = window.state.contributors[3],
+  }
+  vim.api.nvim_win_set_cursor(dummy_win, { 7, 0 })
+  window._toggle_move_item()
+  assert(window.state.moving_item ~= nil)
+  assert(window.state.moving_item.contributor.username == "alice")
+
+  vim.api.nvim_win_set_cursor(dummy_win, { 9, 0 })
+  window._toggle_move_item()
+  assert(window.state.moving_item == nil)
+  assert(window.state.contributors[1].username == "bob")
+  assert(window.state.contributors[2].username == "charlie")
+  assert(window.state.contributors[3].username == "alice")
+
+  pcall(vim.api.nvim_win_close, dummy_win, true)
+  pcall(vim.api.nvim_buf_delete, dummy_buf, { force = true })
+  window.state.buf = nil
+  window.state.win = nil
 end
 
 assert(state.win == nil)

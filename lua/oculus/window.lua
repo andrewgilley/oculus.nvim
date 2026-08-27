@@ -124,6 +124,7 @@ M.state = {
   community_view = "projects",
   selected_username = nil,
   selected_project = nil,
+  moving_item = nil,
   contributor_offset = 1,
   filter_scope = nil,
   activity_cached = nil,
@@ -292,6 +293,12 @@ local function sync_window_highlights(source_win)
     window_highlight_ns,
     "OculusContributorSelected",
     { fg = "#ffffff" }
+  )
+
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "OculusMoveTarget",
+    { fg = "#ff9e3b", bold = true }
   )
 
   vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityQueued", {
@@ -1624,6 +1631,9 @@ local function update_contributor_selection()
   local visible_text = text:gsub("%s+$", "")
 
   if #visible_text > 2 then
+    local hl_group = M.state.moving_item and "OculusMoveTarget"
+      or "OculusContributorSelected"
+
     vim.api.nvim_buf_set_extmark(
       M.state.buf,
       contributor_selection_ns,
@@ -1632,7 +1642,7 @@ local function update_contributor_selection()
       {
         end_row = line - 1,
         end_col = #visible_text,
-        hl_group = "OculusContributorSelected",
+        hl_group = hl_group,
         hl_mode = "combine",
         priority = 10000,
       }
@@ -1770,8 +1780,8 @@ local function render_contributors()
   local separator_line = #lines
 
   footer(lines, showing_users
-      and "v projects  a add  r remove  ?: help"
-    or "v users  a add  r remove  ?: help")
+      and "v projects  a add  r remove  m move  ?: help"
+    or "v users  a add  r remove  m move  ?: help")
 
   local commands_line = #lines
   set_lines(lines)
@@ -2861,6 +2871,7 @@ local function render_shortcuts()
     { "v", "Switch between project and user lists" },
     { "a", "Add a GitHub or Codeberg project or account" },
     { "r", "Remove the selected project or account" },
+    { "m", "Move the selected project or account" },
     { "f", "Edit filters for the selected user or project" },
     { "F", "Edit global activity filters" },
     { "d", "Reset activity filters to defaults" },
@@ -4197,6 +4208,99 @@ local function remove_current_item()
   render_contributors()
 end
 
+local function toggle_move_item()
+  if M.state.view ~= "contributors" then
+    return
+  end
+
+  local target = target_on_cursor()
+
+  if not M.state.moving_item then
+    if type(target) ~= "table" then
+      return
+    end
+
+    if target.kind == "project" then
+      M.state.moving_item = {
+        kind = "project",
+        project = target.project,
+      }
+    else
+      M.state.moving_item = {
+        kind = "contributor",
+        contributor = target,
+      }
+    end
+
+    update_contributor_selection()
+    return
+  end
+
+  local moving_item = M.state.moving_item
+  M.state.moving_item = nil
+
+  if type(target) ~= "table" then
+    update_contributor_selection()
+    return
+  end
+
+  if moving_item.kind == "project" and target.kind == "project" then
+    local source_key = project_key(moving_item.project)
+    local dest_key = project_key(target.project)
+
+    if source_key and dest_key and source_key ~= dest_key then
+      local source_idx, dest_idx
+
+      for idx, project in ipairs(M.state.opts.projects or {}) do
+        local key = project_key(project)
+
+        if key == source_key then
+          source_idx = idx
+        end
+
+        if key == dest_key then
+          dest_idx = idx
+        end
+      end
+
+      if source_idx and dest_idx then
+        local item = table.remove(M.state.opts.projects, source_idx)
+        table.insert(M.state.opts.projects, dest_idx, item)
+        M.state.selected_project = item
+        persist_projects()
+      end
+    end
+  elseif moving_item.kind == "contributor" and target.kind ~= "project" then
+    local source_key = contributor_key(moving_item.contributor)
+    local dest_key = contributor_key(target)
+
+    if source_key and dest_key and source_key ~= dest_key then
+      local source_idx, dest_idx
+
+      for idx, contributor in ipairs(M.state.contributors or {}) do
+        local key = contributor_key(contributor)
+
+        if key == source_key then
+          source_idx = idx
+        end
+
+        if key == dest_key then
+          dest_idx = idx
+        end
+      end
+
+      if source_idx and dest_idx then
+        local item = table.remove(M.state.contributors, source_idx)
+        table.insert(M.state.contributors, dest_idx, item)
+        M.state.selected_username = item.username
+        persist_contributors()
+      end
+    end
+  end
+
+  render_contributors()
+end
+
 target_on_cursor = function()
   if not is_valid_win(M.state.win) then
     return nil
@@ -5167,6 +5271,8 @@ local function toggle_community_view()
     return
   end
 
+  M.state.moving_item = nil
+
   if M.state.community_view == "users" then
     M.state.community_view = "projects"
     M.state.selected_username = nil
@@ -5191,9 +5297,22 @@ local function map_keys(buf)
 
   map("<C-c>", M.close, "Close Oculus")
   map("q", M.close, "Close Oculus")
-  map("<Esc>", M.close, "Close Oculus")
+  map("<Esc>", function()
+    if M.state.view == "contributors" and M.state.moving_item then
+      M.state.moving_item = nil
+      update_contributor_selection()
+      return
+    end
+
+    M.close()
+  end, "Close Oculus")
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
+  map("m", function()
+    if M.state.view == "contributors" then
+      toggle_move_item()
+    end
+  end, "Move selected Oculus project or user")
 
   map("<CR>", select_current, "Select Oculus item")
 
@@ -5285,6 +5404,7 @@ function M.close()
   local origin_win = M.state.origin_win
   local origin_view = vim.deepcopy(M.state.origin_view)
   M.state.request_id = M.state.request_id + 1
+  M.state.moving_item = nil
   stop_activity_page_loading()
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
 
@@ -5410,6 +5530,11 @@ function M.open(opts)
 
   vim.api.nvim_set_hl(0, "OculusContributorSelected", {
     fg = "#ffffff",
+  })
+
+  vim.api.nvim_set_hl(0, "OculusMoveTarget", {
+    fg = "#ff9e3b",
+    bold = true,
   })
 
   vim.wo[win].winhighlight = table.concat({
@@ -5580,5 +5705,6 @@ end
 
 M._add_project = add_project
 M._add_contributor = add_contributor
+M._toggle_move_item = toggle_move_item
 
 return M
