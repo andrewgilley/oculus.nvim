@@ -3909,7 +3909,7 @@ local function refresh_activity()
   end
 end
 
-local function add_contributor(contributor)
+local function add_contributor(contributor, target_contributor)
   local username = vim.trim(tostring(contributor.username or ""))
     :gsub("^@", "")
 
@@ -3943,7 +3943,30 @@ local function add_contributor(contributor)
     return false
   end
 
-  M.state.contributors[#M.state.contributors + 1] = added
+  local insert_index = nil
+
+  if type(target_contributor) == "number" then
+    insert_index = target_contributor
+  elseif type(target_contributor) == "table" then
+    local target_key = contributor_key(target_contributor)
+
+    for index, existing in ipairs(M.state.contributors) do
+      if contributor_key(existing) == target_key then
+        insert_index = index + 1
+        break
+      end
+    end
+  end
+
+  if
+    insert_index
+    and insert_index >= 1
+    and insert_index <= #M.state.contributors + 1
+  then
+    table.insert(M.state.contributors, insert_index, added)
+  else
+    M.state.contributors[#M.state.contributors + 1] = added
+  end
 
   M.state.opts.removed_contributors = vim.tbl_filter(function(key)
     return type(key) ~= "string"
@@ -3955,7 +3978,7 @@ local function add_contributor(contributor)
   return true
 end
 
-local function add_project(project)
+local function add_project(project, target_project)
   local repository = vim.trim(tostring(project.repository or ""))
     :gsub("^/+", "")
     :gsub("/+$", "")
@@ -3988,7 +4011,31 @@ local function add_project(project)
   end
 
   M.state.opts.projects = M.state.opts.projects or {}
-  M.state.opts.projects[#M.state.opts.projects + 1] = added
+
+  local insert_index = nil
+
+  if type(target_project) == "number" then
+    insert_index = target_project
+  elseif type(target_project) == "table" then
+    local target_key = project_key(target_project)
+
+    for index, existing in ipairs(M.state.opts.projects) do
+      if project_key(existing) == target_key then
+        insert_index = index + 1
+        break
+      end
+    end
+  end
+
+  if
+    insert_index
+    and insert_index >= 1
+    and insert_index <= #M.state.opts.projects + 1
+  then
+    table.insert(M.state.opts.projects, insert_index, added)
+  else
+    M.state.opts.projects[#M.state.opts.projects + 1] = added
+  end
 
   M.state.opts.removed_projects = vim.tbl_filter(function(key)
     return type(key) ~= "string"
@@ -4023,6 +4070,17 @@ local function prompt_add_account()
 
   local adding_project = M.state.community_view == "projects"
   M.state.opening_account_prompt = true
+  local cursor_target = target_on_cursor()
+  local target_project = adding_project
+      and cursor_target
+      and cursor_target.kind == "project"
+      and cursor_target.project
+    or nil
+  local target_contributor = not adding_project
+      and cursor_target
+      and cursor_target.kind ~= "project"
+      and cursor_target
+    or nil
 
   vim.ui.select(
     {
@@ -4056,11 +4114,11 @@ local function prompt_add_account()
                 and add_project({
                   repository = value,
                   provider = choice.provider,
-                })
+                }, target_project)
               or add_contributor({
                 username = value,
                 provider = choice.provider,
-              })
+              }, target_contributor)
           )
 
           if added and is_valid_win(M.state.win) then
@@ -5519,5 +5577,8 @@ function M.toggle(opts)
     M.open(opts)
   end
 end
+
+M._add_project = add_project
+M._add_contributor = add_contributor
 
 return M
