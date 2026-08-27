@@ -2689,4 +2689,33 @@ do
   gh.repository_info = original_repo_info
 end
 
+do
+  window.state.opts = {
+    projects = {
+      { repository = "foo/first", provider = "github" },
+      { repository = "foo/second", provider = "github" },
+      { repository = "foo/third", provider = "github" },
+    },
+    persist_projects = false,
+    persist_contributors = false,
+  }
+  window.state.contributors = {
+    { username = "user1", provider = "github" },
+    { username = "user2", provider = "github" },
+    { username = "user3", provider = "github" },
+  }
+
+  -- Insert project below second project
+  local second_proj = window.state.opts.projects[2]
+  assert(window._add_project({ repository = "foo/inserted", provider = "github" }, second_proj))
+  assert(#window.state.opts.projects == 4)
+  assert(window.state.opts.projects[3].repository == "foo/inserted")
+
+  -- Insert contributor below first contributor
+  local first_user = window.state.contributors[1]
+  assert(window._add_contributor({ username = "user_inserted", provider = "github" }, first_user))
+  assert(#window.state.contributors == 4)
+  assert(window.state.contributors[2].username == "user_inserted")
+end
+
 assert(state.win == nil)
