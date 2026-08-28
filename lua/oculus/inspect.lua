@@ -98,17 +98,21 @@ local function treesitter_context_lines_equal(a, b)
   if a == b then
     return true
   end
+
   if type(a) ~= "table" or type(b) ~= "table" then
     return false
   end
+
   if #a ~= #b then
     return false
   end
+
   for i = 1, #a do
     if a[i] ~= b[i] then
       return false
     end
   end
+
   return true
 end
 
@@ -116,19 +120,24 @@ local function treesitter_context_ranges_equal(a, b)
   if a == b then
     return true
   end
+
   if type(a) ~= "table" or type(b) ~= "table" then
     return false
   end
+
   if #a ~= #b then
     return false
   end
+
   for i = 1, #a do
     local r1 = a[i]
     local r2 = b[i]
+
     if r1 ~= r2 then
       if type(r1) ~= "table" or type(r2) ~= "table" then
         return false
       end
+
       if
         r1[1] ~= r2[1]
         or r1[2] ~= r2[2]
@@ -139,6 +148,7 @@ local function treesitter_context_ranges_equal(a, b)
       end
     end
   end
+
   return true
 end
 
@@ -150,12 +160,14 @@ local function has_valid_context_window(win)
   for _, context_win in ipairs(vim.api.nvim_list_wins()) do
     if vim.api.nvim_win_is_valid(context_win) then
       local config = vim.api.nvim_win_get_config(context_win)
+
       if
         vim.w[context_win].treesitter_context
         and config.relative == "win"
         and config.win == win
       then
         local ctx_buf = vim.api.nvim_win_get_buf(context_win)
+
         if ctx_buf and vim.api.nvim_buf_is_valid(ctx_buf) then
           return true
         end
@@ -239,6 +251,7 @@ function M._refresh_inspection_treesitter_context_highlights()
                     and vim.api.nvim_win_get_buf(win) == source_buf
                   then
                     local current = rendered_treesitter_contexts[win]
+
                     if current and not current.parsed then
                       current.parsed = true
                       original_open(win, ranges, lines, true)
@@ -1398,6 +1411,7 @@ vim.api.nvim_create_autocmd("BufWipeout", {
   group = oil_group,
   callback = function(args)
     oil_contexts[args.buf] = nil
+
     for win, state in pairs(rendered_treesitter_contexts) do
       if state.buf == args.buf then
         rendered_treesitter_contexts[win] = nil
@@ -1594,6 +1608,7 @@ local function trigger_inspection_treesitter_context(buf)
     group = "treesitter_context_update",
     buffer = buf,
   })
+
   pcall(vim.api.nvim_exec_autocmds, "WinScrolled", {
     group = "treesitter_context_update",
     buffer = buf,
@@ -1961,20 +1976,25 @@ local function position_change_cursor(
         line,
         false
       )[1] or ""
+
       local col = (text:find("%S") or 1) - 1
       local view = vim.fn.winsaveview()
+
       if target_topline then
         view.topline = math.max(1, target_topline)
       elseif source_view and source_view.topline then
         view.topline = math.max(1, source_view.topline)
       end
+
       view.lnum = line
       view.col = col
       view.curswant = col
+
       if source_view and source_view.leftcol then
         view.leftcol = source_view.leftcol
         view.skipcol = source_view.skipcol or 0
       end
+
       vim.fn.winrestview(view)
     end)
   end
@@ -2294,6 +2314,7 @@ local function map_inspection_line(session, source_role, target_role, source_lin
   if session.focused_chunks ~= false and session.focused_start then
     local chunk_index = session.active_chunk or 1
     local hunk = session.hunks[chunk_index]
+
     if not hunk then
       return source_line
     end
@@ -2320,19 +2341,23 @@ local function map_inspection_line(session, source_role, target_role, source_lin
         return math.max(1, source_line - delta)
       end
     end
+
     return source_line
   end
 
   if source_role == "parent" and target_role == "change" then
     local delta = 0
+
     for _, hunk in ipairs(session.hunks) do
       local old_start = hunk.old_start == 0 and 1 or hunk.old_start
       local old_count = hunk.old_count or 0
       local new_count = hunk.new_count or 0
+
       if source_line < old_start then
         return math.max(1, source_line + delta)
       elseif source_line < old_start + math.max(1, old_count) then
         local offset = source_line - old_start
+
         return math.max(
           1,
           hunk.new_start + math.min(offset, math.max(0, new_count - 1))
@@ -2341,17 +2366,21 @@ local function map_inspection_line(session, source_role, target_role, source_lin
         delta = delta + (new_count - old_count)
       end
     end
+
     return math.max(1, source_line + delta)
   elseif source_role == "change" and target_role == "parent" then
     local delta = 0
+
     for _, hunk in ipairs(session.hunks) do
       local new_start = hunk.new_start == 0 and 1 or hunk.new_start
       local old_count = hunk.old_count or 0
       local new_count = hunk.new_count or 0
+
       if source_line < new_start then
         return math.max(1, source_line - delta)
       elseif source_line < new_start + math.max(1, new_count) then
         local offset = source_line - new_start
+
         return math.max(
           1,
           hunk.old_start + math.min(offset, math.max(0, old_count - 1))
@@ -2360,6 +2389,7 @@ local function map_inspection_line(session, source_role, target_role, source_lin
         delta = delta + (new_count - old_count)
       end
     end
+
     return math.max(1, source_line - delta)
   end
 
@@ -2425,11 +2455,13 @@ local function map_file_navigation(endpoint, session, role, group)
     end
 
     local target = session[target_role]
+
     if not valid_endpoint(target) then
       return
     end
 
     local source_win = endpoint.win
+
     local source_view = (source_win and vim.api.nvim_win_is_valid(source_win))
         and vim.api.nvim_win_call(source_win, function()
           return vim.fn.winsaveview()
@@ -2438,16 +2470,19 @@ local function map_file_navigation(endpoint, session, role, group)
 
     local chunk_index = session.active_chunk or 1
     local start, max_line
+
     if group.kind == "issue" then
       local section = session.sections and session.sections[chunk_index]
       start = section and section.line
       max_line = start
     else
       local hunk = session.hunks and session.hunks[chunk_index] or nil
+
       start = render_chunk_for_role(session, target_role, chunk_index)
         or (target_role == "parent"
           and session.parent_lines and session.parent_lines[1]
           or session.change_lines and session.change_lines[1])
+
       max_line = chunk_max_line_for_role(hunk, target_role, start)
     end
 
@@ -2567,14 +2602,15 @@ function M._virtual_counter.place_virtual_counter(
   end
 
   local line_count = vim.api.nvim_buf_line_count(buf)
+
   if line_count == 0 then
     return
   end
 
   line = first_nonblank_line(buf, line, max_line)
   line = math.min(math.max(1, line), line_count)
-
   local text
+
   if file_index and file_count and file_count > 0 then
     text = ("\t[%d/%d] (%d/%d)"):format(
       chunk_index,
@@ -2605,21 +2641,23 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
   end
 
   local file_chunks = #inspection_chunks(group, session)
+
   if file_chunks == 0 then
     return
   end
 
   local file_count = #group
   local file_index
+
   for index, candidate in ipairs(group) do
     if candidate == session then
       file_index = index
       break
     end
   end
+
   file_index = file_index or 1
   file_count = math.max(1, file_count)
-
   local active = math.min(math.max(1, session.active_chunk or 1), file_chunks)
   local is_virtual = (group.chunk_view_mode or "virtual") ~= "sidebar"
 
@@ -2627,11 +2665,14 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
     if valid_endpoint(session.issue) then
       local buf = session.issue.buf
       vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
+
       if is_virtual then
         local sections = session.sections or {}
         local section = sections[active] or sections[1]
+
         if section and section.line then
           local line = first_nonblank_line(buf, section.line, section.line)
+
           M._virtual_counter.place_virtual_counter(
             buf,
             line,
@@ -2644,19 +2685,23 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
         end
       end
     end
+
     return
   end
 
   if valid_endpoint(session.parent) then
     local buf = session.parent.buf
     vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
+
     if is_virtual then
       local hunks = session.hunks or {}
       local hunk = hunks[active] or hunks[1]
+
       if hunk then
         local start = patch.hunk_start(hunk, "parent")
         local max_line = chunk_max_line_for_role(hunk, "parent", start)
         local line = first_nonblank_line(buf, start, max_line)
+
         M._virtual_counter.place_virtual_counter(
           buf,
           line,
@@ -2673,11 +2718,14 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
   if valid_endpoint(session.change) then
     local buf = session.change.buf
     vim.api.nvim_buf_clear_namespace(buf, M._virtual_counter_ns, 0, -1)
+
     if is_virtual then
       local hunks = session.hunks or {}
       local hunk = hunks[active] or hunks[1]
+
       if hunk then
         local start
+
         if session.focused_chunks then
           start = session.focused_start
             or chunk_start_for_role(
@@ -2692,8 +2740,10 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
             patch.hunk_start(hunk, "change")
           )
         end
+
         local max_line = chunk_max_line_for_role(hunk, "change", start)
         local line = first_nonblank_line(buf, start, max_line)
+
         M._virtual_counter.place_virtual_counter(
           buf,
           line,
@@ -2730,6 +2780,7 @@ function M._clear_virtual_counters(group)
   for _, session in ipairs(group) do
     for _, role in ipairs({ "issue", "parent", "change" }) do
       local endpoint = session[role]
+
       if valid_endpoint(endpoint) then
         vim.api.nvim_buf_clear_namespace(
           endpoint.buf,
@@ -3767,6 +3818,7 @@ local function toggle_inspection_sidebar(group)
   else
     group.chunk_view_mode = "sidebar"
     M._clear_virtual_counters(group)
+
     open_inspection_sidebar(
       group,
       vim.api.nvim_get_current_tabpage(),
@@ -4441,9 +4493,9 @@ function M._overview_ui.render_footer(group)
   end
 
   right_commands = right_commands .. "q quit"
-
   local left_display_width = vim.fn.strdisplaywidth(left_commands)
   local right_display_width = vim.fn.strdisplaywidth(right_commands)
+
   local padding = math.max(
     3,
     width
@@ -4453,8 +4505,8 @@ function M._overview_ui.render_footer(group)
   )
 
   local commands = left_commands .. string.rep(" ", padding) .. right_commands
-
   local exit_spinner_col
+
   if exit_spinner then
     local spinner_start = commands:find(exit_spinner, 1, true)
     exit_spinner_col = spinner_start and (spinner_start - 1) or nil
@@ -5541,11 +5593,13 @@ function M._overview_ui.open_worktree_workflow(group, opts)
       "Oculus: no repository available for worktree creation",
       vim.log.levels.WARN
     )
+
     return false
   end
 
   local default_branch = ""
   local overview = group.overview or {}
+
   local issue_num = overview.issue_number
     or (group.issue and group.issue.number)
     or (vim.t.oculus_inspect and vim.t.oculus_inspect.issue_number)
@@ -5561,6 +5615,7 @@ function M._overview_ui.open_worktree_workflow(group, opts)
 
     branch_name = vim.trim(branch_name)
     local branch_slug = branch_name:gsub("[^%w%-_.]+", "-")
+
     local worktree_dir = vim.fs.joinpath(
       vim.fs.dirname(repository),
       vim.fs.basename(repository) .. "-" .. branch_slug
@@ -5595,6 +5650,7 @@ function M._overview_ui.open_worktree_workflow(group, opts)
 
           if relative then
             local absolute = vim.fs.joinpath(worktree_dir, relative)
+
             local ok = pcall(
               vim.cmd,
               "tabedit " .. vim.fn.fnameescape(absolute)
@@ -5657,8 +5713,10 @@ function M._overview_ui.open_worktree_workflow(group, opts)
           group.overview_agent_mode = nil
           group.overview_return = nil
           close_overview_window(group)
+
           local patch_group =
             M._overview_ui.prepare_patch_sidebar(group, opened)
+
           group.overview_patch_group = patch_group
           local first = opened[1]
 
@@ -5677,7 +5735,6 @@ function M._overview_ui.open_worktree_workflow(group, opts)
       close_overview_window(group)
       vim.cmd("tabedit")
       vim.cmd("tcd " .. vim.fn.fnameescape(worktree_dir))
-
       local ok, oil = pcall(require, "oil")
 
       if ok and oil and oil.open then
@@ -5690,6 +5747,7 @@ function M._overview_ui.open_worktree_workflow(group, opts)
 
       local function handle_oil_selection()
         local entry
+
         local ok_entry, cur_entry = pcall(function()
           return oil.get_cursor_entry()
         end)
@@ -5707,7 +5765,6 @@ function M._overview_ui.open_worktree_workflow(group, opts)
 
         local file_path = vim.fs.joinpath(current_dir, entry.name)
         local relative = file_path:sub(#worktree_dir + 2):gsub("\\", "/")
-
         vim.cmd("edit " .. vim.fn.fnameescape(file_path))
         vim.cmd("tcd " .. vim.fn.fnameescape(worktree_dir))
         local target_win = vim.api.nvim_get_current_win()
@@ -5730,8 +5787,10 @@ function M._overview_ui.open_worktree_workflow(group, opts)
 
         group.overview_patch_tabs = group.overview_patch_tabs or {}
         group.overview_patch_tabs[#group.overview_patch_tabs + 1] = patch_item
+
         local patch_group =
           M._overview_ui.prepare_patch_sidebar(group, { patch_item })
+
         group.overview_patch_group = patch_group
         return true
       end
@@ -6648,6 +6707,7 @@ local function map_inspection_sidebar_toggle(group)
   if group.kind == "issue" and group.queue_info and (group.queue_info.total or 0) > 1 then
     vim.keymap.set("n", "<C-Tab>", function()
       local lifecycle = group.inspection_lifecycle
+
       if lifecycle and type(lifecycle.on_next_queue_item) == "function" then
         lifecycle.on_next_queue_item(group)
       end
@@ -6661,6 +6721,7 @@ local function map_inspection_sidebar_toggle(group)
     for _, prev_lhs in ipairs({ "<S-Tab>", "<C-S-Tab>" }) do
       vim.keymap.set("n", prev_lhs, function()
         local lifecycle = group.inspection_lifecycle
+
         if lifecycle and type(lifecycle.on_previous_queue_item) == "function" then
           lifecycle.on_previous_queue_item(group)
         end
@@ -7288,6 +7349,7 @@ local function select_sidebar_entry(group, direction, preferred_role)
       local hunk = (group.kind ~= "issue" and session.hunks)
           and session.hunks[entry.chunk_index]
         or nil
+
       local start, max_line
 
       if group.kind == "issue" then
@@ -7300,6 +7362,7 @@ local function select_sidebar_entry(group, direction, preferred_role)
           role,
           entry.chunk_index
         )
+
         max_line = chunk_max_line_for_role(hunk, role, start)
       end
 
@@ -7344,7 +7407,6 @@ local function select_sidebar_entry(group, direction, preferred_role)
 
     M._refresh_virtual_counters(group, session)
     trigger_inspection_treesitter_context(endpoint.buf)
-
     group.focused_win = nil
     sidebar_navigating = false
     return
@@ -7473,6 +7535,7 @@ switch_sidebar_version = function(group, target_role)
 
   local source_endpoint = session and session[role] or nil
   local source_code_win = source_endpoint and source_endpoint.win
+
   local source_code_view = (source_code_win and vim.api.nvim_win_is_valid(source_code_win))
       and vim.api.nvim_win_call(source_code_win, function()
         return vim.fn.winsaveview()
@@ -7508,19 +7571,21 @@ switch_sidebar_version = function(group, target_role)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
   move_cursor_to_line_start(sidebar_win)
-
   local chunk_index = entry and entry.chunk_index or session.active_chunk or 1
   local start, max_line
+
   if group.kind == "issue" then
     local section = session.sections and session.sections[chunk_index]
     start = section and section.line
     max_line = start
   else
     local hunk = session.hunks and session.hunks[chunk_index] or nil
+
     start = render_chunk_for_role(session, target_role, chunk_index)
       or (target_role == "parent"
         and session.parent_lines and session.parent_lines[1]
         or session.change_lines and session.change_lines[1])
+
     max_line = chunk_max_line_for_role(hunk, target_role, start)
   end
 
@@ -7662,6 +7727,7 @@ vim.api.nvim_create_autocmd("TabEnter", {
       end
 
       refresh_sidebar(group, tab)
+
       if (group.chunk_view_mode or "virtual") ~= "sidebar" then
         M._refresh_virtual_counters(group)
       end
@@ -8268,11 +8334,13 @@ local function open_tabs(
           "parent",
           focused_start
         )
+
         local parent_max = chunk_max_line_for_role(
           first_hunk,
           "parent",
           parent_start
         )
+
         move_cursor_to_line_start(
           parent.win,
           parent_start,
@@ -8284,11 +8352,13 @@ local function open_tabs(
           "change",
           focused_start
         )
+
         local change_max = chunk_max_line_for_role(
           first_hunk,
           "change",
           change_start
         )
+
         move_cursor_to_line_start(
           change.win,
           change_start,
@@ -8296,11 +8366,13 @@ local function open_tabs(
         )
       elseif session.parent_lines[1] then
         local parent_hunk = session.hunks and session.hunks[1]
+
         local parent_max = chunk_max_line_for_role(
           parent_hunk,
           "parent",
           session.parent_lines[1]
         )
+
         move_cursor_to_line_start(
           parent.win,
           session.parent_lines[1],
@@ -8325,11 +8397,13 @@ local function open_tabs(
           "change",
           session.focused_start
         )
+
         local change_max = chunk_max_line_for_role(
           first_hunk,
           "change",
           change_start
         )
+
         move_cursor_to_line_start(
           session.change.win,
           change_start,
@@ -8341,11 +8415,13 @@ local function open_tabs(
           "parent",
           session.focused_start
         )
+
         local parent_max = chunk_max_line_for_role(
           first_hunk,
           "parent",
           parent_start
         )
+
         move_cursor_to_line_start(
           session.parent.win,
           parent_start,
@@ -8354,11 +8430,13 @@ local function open_tabs(
       elseif session.parent_lines and session.parent_lines[1] then
         if session.change_lines and session.change_lines[1] then
           local change_hunk = session.hunks and session.hunks[1]
+
           local change_max = chunk_max_line_for_role(
             change_hunk,
             "change",
             session.change_lines[1]
           )
+
           move_cursor_to_line_start(
             session.change.win,
             session.change_lines[1],
@@ -8367,12 +8445,15 @@ local function open_tabs(
         else
           move_cursor_to_line_start(session.change.win)
         end
+
         local parent_hunk = session.hunks and session.hunks[1]
+
         local parent_max = chunk_max_line_for_role(
           parent_hunk,
           "parent",
           session.parent_lines[1]
         )
+
         move_cursor_to_line_start(
           session.parent.win,
           session.parent_lines[1],
@@ -8401,11 +8482,13 @@ local function open_tabs(
     end
 
     local first_session = inspection_sessions[1]
+
     local first_hunk = first_session
         and first_session.active_chunk
         and first_session.hunks
         and first_session.hunks[first_session.active_chunk]
       or nil
+
     local first_start = first_hunk
         and chunk_start_for_role(
           first_hunk,
@@ -8413,6 +8496,7 @@ local function open_tabs(
           first_session.focused_start
         )
       or (first_session and first_session.parent_lines and first_session.parent_lines[1])
+
     local first_max = chunk_max_line_for_role(
       first_hunk,
       "parent",
@@ -8424,14 +8508,17 @@ local function open_tabs(
     vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
     set_change_highlights()
+
     for _, s in ipairs(inspection_sessions) do
       if s.parent and s.parent.buf and vim.api.nvim_buf_is_valid(s.parent.buf) then
         refresh_buffer_highlighting(s.parent.buf, true)
       end
+
       if s.change and s.change.buf and vim.api.nvim_buf_is_valid(s.change.buf) then
         refresh_buffer_highlighting(s.change.buf, true)
       end
     end
+
     if first_session and first_session.active_chunk and first_hunk then
       apply_change_signs(first_session.parent.buf, first_session.change.buf, {
         {
@@ -8449,6 +8536,7 @@ local function open_tabs(
         first_session.status
       )
     end
+
     move_cursor_to_line_start(first.win, first_start, first_max)
     show_inspection_path(first.buf)
     M._refresh_virtual_counters(inspection_sessions, first_session)
@@ -9012,6 +9100,7 @@ local function open_issue_inspection(
     if group.queue_info and (group.queue_info.total or 0) > 1 then
       vim.keymap.set("n", "<C-Tab>", function()
         local lifecycle = group.inspection_lifecycle
+
         if lifecycle and type(lifecycle.on_next_queue_item) == "function" then
           lifecycle.on_next_queue_item(group)
         end
@@ -9025,6 +9114,7 @@ local function open_issue_inspection(
       for _, prev_lhs in ipairs({ "<S-Tab>", "<C-S-Tab>" }) do
         vim.keymap.set("n", prev_lhs, function()
           local lifecycle = group.inspection_lifecycle
+
           if lifecycle and type(lifecycle.on_previous_queue_item) == "function" then
             lifecycle.on_previous_queue_item(group)
           end

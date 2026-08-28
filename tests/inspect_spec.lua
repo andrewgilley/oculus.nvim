@@ -251,6 +251,7 @@ assert(inspect._chunk_start_for_role(
 
 do
   local test_buf = vim.api.nvim_create_buf(false, true)
+
   vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, {
     "line 1",
     "",
@@ -284,12 +285,10 @@ do
   inspect._position_change_cursor(test_win, 2, 2)
   local cursor_single = vim.api.nvim_win_get_cursor(test_win)
   assert(cursor_single[1] == 2)
-
   -- When lines 2..4 were changed, it advances to first nonblank changed line (line 4)
   inspect._position_change_cursor(test_win, 2, 4)
   local cursor_multi = vim.api.nvim_win_get_cursor(test_win)
   assert(cursor_multi[1] == 4)
-
   vim.api.nvim_win_close(test_win, true)
   vim.api.nvim_buf_delete(test_buf, { force = true })
 end
@@ -495,6 +494,7 @@ do
 
   vim.wo[dimming_win].winhighlight = original_winhighlight
 end
+
 do
   local highlight_buf = vim.api.nvim_create_buf(false, true)
 
@@ -773,6 +773,7 @@ do
   vim.treesitter.start = original_start
   vim.api.nvim_buf_delete(highlight_buf, { force = true })
 end
+
 do
   local filetype_buf = vim.api.nvim_create_buf(false, true)
 
@@ -1351,6 +1352,7 @@ do
   assert(not pull_request_overview_text:find("\n  URL\n", 1, true))
   assert(pull_request_overview_text:find("\n  PR number\n", 1, true))
   assert(pull_request_overview_text:find("\n  Status\n", 1, true))
+
   local pull_request_overview_lines =
     inspect._sidebar_overview_lines(pull_request_overview, 28)
 
@@ -1549,6 +1551,7 @@ do
     if cmd == "codex" then
       return ""
     end
+
     return original_exepath(cmd)
   end
 
@@ -2029,7 +2032,6 @@ assert(overview_footer_lines[1] == "  " .. string.rep(
 
 assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   s sidebar   e exit", 1, true))
 assert(overview_footer_lines[2]:sub(-#("q quit")) == "q quit")
-
 assert(issue_overview:find("  Title\n", 1, true))
 
 assert(issue_overview:gsub("%s+", " "):find(
@@ -2646,23 +2648,28 @@ assert(explanation_text:gsub("%s+", " "):find(
 
 assert(vim.api.nvim_win_is_valid(overview_win))
 local issue_overview_buf = vim.api.nvim_win_get_buf(overview_win)
+
 local issue_worktree_mapping = vim.api.nvim_buf_call(issue_overview_buf, function()
   return vim.fn.maparg("w", "n", false, true)
 end)
+
 assert(issue_worktree_mapping.desc == "Create Oculus worktree for patch/fix")
 
 local issue_virtual_mapping = vim.api.nvim_buf_call(issue_overview_buf, function()
   return vim.fn.maparg("v", "n", false, true)
 end)
+
 assert(issue_virtual_mapping.desc == "Switch to Oculus Inspect virtual chunk counter mode")
 
 local issue_sidebar_mapping = vim.api.nvim_buf_call(issue_overview_buf, function()
   return vim.fn.maparg("s", "n", false, true)
 end)
+
 assert(issue_sidebar_mapping.desc == "Switch to Oculus Inspect sidebar mode")
 
 do
   local test_worktree_branch = "oculus-test-worktree-branch"
+
   local test_worktree_dir = vim.fs.joinpath(
     vim.fs.dirname(root),
     vim.fs.basename(root) .. "-" .. test_worktree_branch
@@ -2691,11 +2698,13 @@ do
   }
 
   local tabs_before_wt = #vim.api.nvim_list_tabpages()
+
   local opened_wt = inspect._overview_ui.open_worktree_workflow(dummy_group, {
     branch_name = test_worktree_branch,
   })
 
   assert(opened_wt)
+
   assert(vim.wait(10000, function()
     return vim.uv.fs_stat(test_worktree_dir) ~= nil
       and #vim.api.nvim_list_tabpages() > tabs_before_wt
@@ -2738,7 +2747,6 @@ do
   local c_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, test_session.parent_content)
   vim.api.nvim_buf_set_lines(c_buf, 0, -1, false, test_session.change_content)
-
   test_session.parent = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = p_buf }
   test_session.change = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = c_buf }
 
@@ -2764,6 +2772,7 @@ do
     },
     active_chunk = 2,
   }
+
   local p_buf2 = vim.api.nvim_create_buf(false, true)
   local c_buf2 = vim.api.nvim_create_buf(false, true)
   test_session2.parent = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = p_buf2 }
@@ -2774,22 +2783,20 @@ do
     test_session2,
     chunk_view_mode = "virtual",
   }
+
   inspect._refresh_virtual_counters(multi_grp, test_session2)
   local marks2 = vim.api.nvim_buf_get_extmarks(c_buf2, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks2 == 1)
   assert(marks2[1][4].virt_text[1][1] == "\t[2/2] (2/2)")
   assert(marks2[1][4].hl_mode == "combine")
-
   inspect._refresh_virtual_counters(multi_grp, test_session)
   local marks_file1 = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks_file1 == 1)
   assert(marks_file1[1][4].virt_text[1][1] == "\t[1/1] (1/2)")
-
   test_grp.chunk_view_mode = "sidebar"
   inspect._clear_virtual_counters(test_grp)
   local marks_after = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#marks_after == 0)
-
   vim.api.nvim_buf_delete(p_buf, { force = true })
   vim.api.nvim_buf_delete(c_buf, { force = true })
   vim.api.nvim_buf_delete(p_buf2, { force = true })
@@ -2799,12 +2806,14 @@ end
 do
   local saved_tab = vim.api.nvim_get_current_tabpage()
   local saved_win = vim.api.nvim_get_current_win()
+
   local parent_lines = {
     "header line 1",
     "header line 2",
     "old line 3",
     "footer line 4",
   }
+
   local change_lines = {
     "header line 1",
     "header line 2",
@@ -2825,6 +2834,7 @@ do
     row = 1,
     col = 1,
   })
+
   local c_win = vim.api.nvim_open_win(c_buf, false, {
     relative = "editor",
     width = 40,
@@ -2854,6 +2864,7 @@ do
 
   vim.api.nvim_set_current_win(p_win)
   vim.api.nvim_win_set_cursor(p_win, { 1, 0 })
+
   local p_initial_view = vim.api.nvim_win_call(p_win, function()
     return vim.fn.winsaveview()
   end)
@@ -2862,21 +2873,22 @@ do
   local start = inspect._render_chunk_for_role
       and inspect._render_chunk_for_role(session, "change", 1)
     or 3
+
   local max_line = inspect._chunk_max_line_for_role
       and inspect._chunk_max_line_for_role(session.hunks[1], "change", start)
     or start
+
   local c_topline = inspect._map_inspection_line(
     session,
     "parent",
     "change",
     p_initial_view.topline
   )
-  assert(c_topline == 1, ("expected mapped change topline to be 1, got %s"):format(tostring(c_topline)))
 
+  assert(c_topline == 1, ("expected mapped change topline to be 1, got %s"):format(tostring(c_topline)))
   inspect._select_endpoint(session.change, session, "change", grp)
   inspect._move_cursor_to_line_start(c_win, start, max_line, false, c_topline, p_initial_view)
   inspect._refresh_virtual_counters(grp, session)
-
   local c_cursor = vim.api.nvim_win_get_cursor(c_win)
   -- Line 3 in change is blank, so first nonblank changed line is line 4
   assert(c_cursor[1] == 4, ("expected change cursor on first nonblank line 4, got %d"):format(c_cursor[1]))
@@ -2884,9 +2896,9 @@ do
   local c_view = vim.api.nvim_win_call(c_win, function()
     return vim.fn.winsaveview()
   end)
+
   -- Unchanged code before change (lines 1..2) maintains topline 1
   assert(c_view.topline == 1, ("expected change topline to preserve unchanged code position 1, got %d"):format(c_view.topline))
-
   local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#c_marks == 1, "expected virtual counter on change buffer after switching version")
   assert(c_marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
@@ -2896,42 +2908,44 @@ do
   local p_start = inspect._render_chunk_for_role
       and inspect._render_chunk_for_role(session, "parent", 1)
     or 3
+
   local p_max = inspect._chunk_max_line_for_role
       and inspect._chunk_max_line_for_role(session.hunks[1], "parent", p_start)
     or p_start
+
   local p_topline = inspect._map_inspection_line(
     session,
     "change",
     "parent",
     c_view.topline
   )
-  assert(p_topline == 1, ("expected mapped parent topline to be 1, got %s"):format(tostring(p_topline)))
 
+  assert(p_topline == 1, ("expected mapped parent topline to be 1, got %s"):format(tostring(p_topline)))
   inspect._select_endpoint(session.parent, session, "parent", grp)
   inspect._move_cursor_to_line_start(p_win, p_start, p_max, false, p_topline, c_view)
   inspect._refresh_virtual_counters(grp, session)
-
   local p_cursor = vim.api.nvim_win_get_cursor(p_win)
   assert(p_cursor[1] == 3, ("expected parent cursor on line 3, got %d"):format(p_cursor[1]))
 
   local p_view = vim.api.nvim_win_call(p_win, function()
     return vim.fn.winsaveview()
   end)
+
   -- Unchanged code before change maintains topline 1
   assert(p_view.topline == 1, ("expected parent topline to preserve unchanged code position 1, got %d"):format(p_view.topline))
-
   local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#p_marks == 1, "expected virtual counter on parent buffer after switching version")
   assert(p_marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
   assert(p_marks[1][2] + 1 == 3, ("expected virtual counter on line 3 matching cursor, got %d"):format(p_marks[1][2] + 1))
-
   vim.api.nvim_win_close(p_win, true)
   vim.api.nvim_win_close(c_win, true)
   vim.api.nvim_buf_delete(p_buf, { force = true })
   vim.api.nvim_buf_delete(c_buf, { force = true })
+
   if vim.api.nvim_tabpage_is_valid(saved_tab) then
     vim.api.nvim_set_current_tabpage(saved_tab)
   end
+
   if vim.api.nvim_win_is_valid(saved_win) then
     vim.api.nvim_set_current_win(saved_win)
   end
@@ -2940,6 +2954,7 @@ end
 do
   local ts_ctx_group = vim.api.nvim_create_augroup("treesitter_context_update", { clear = true })
   local triggered_buf = nil
+
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = ts_ctx_group,
     callback = function(args)
@@ -2950,7 +2965,6 @@ do
   local test_buf = vim.api.nvim_create_buf(false, true)
   inspect._trigger_inspection_treesitter_context(test_buf)
   assert(triggered_buf == test_buf, "expected CursorMoved in treesitter_context_update for test_buf")
-
   vim.api.nvim_buf_delete(test_buf, { force = true })
   vim.api.nvim_del_augroup_by_name("treesitter_context_update")
 end
@@ -2970,11 +2984,9 @@ do
   assert(inspect._map_inspection_line(sess, "parent", "change", 1) == 1)
   assert(inspect._map_inspection_line(sess, "parent", "change", 15) == 15)
   assert(inspect._map_inspection_line(sess, "change", "parent", 15) == 15)
-
   -- Lines inside the active hunk map to the hunk start
   assert(inspect._map_inspection_line(sess, "parent", "change", 22) == 20)
   assert(inspect._map_inspection_line(sess, "change", "parent", 25) == 20)
-
   -- Full file mode: lines before first hunk map 1:1
   sess.focused_chunks = false
   assert(inspect._map_inspection_line(sess, "parent", "change", 10) == 10)
@@ -4591,6 +4603,7 @@ if integration_root and (integration_sha or integration_url) then
   else
     assert(#parent_marks > 0)
     local parent_sign = vim.trim(parent_marks[1][4].sign_text)
+
     assert(
       parent_sign == "－"
         or parent_sign == "＋"
@@ -6108,6 +6121,7 @@ end
 
 do
   local test_buf = vim.api.nvim_create_buf(false, true)
+
   local test_group = {
     kind = "issue",
     overview_buf = test_buf,
@@ -6134,6 +6148,7 @@ do
   }
 
   inspect._overview_ui.render(test_group)
+
   local rendered = table.concat(
     vim.api.nvim_buf_get_lines(test_buf, 0, -1, false),
     "\n"
@@ -6144,12 +6159,12 @@ do
   assert(not rendered:find("Inspection queue", 1, true))
   assert(not rendered:find("INSPECTION QUEUE", 1, true))
   assert(not rendered:find("Second Test Issue", 1, true))
-
   vim.api.nvim_buf_delete(test_buf, { force = true })
 end
 
 do
   local pr_buf = vim.api.nvim_create_buf(false, true)
+
   local pr_group = {
     kind = "pull_request",
     overview_buf = pr_buf,
@@ -6172,21 +6187,21 @@ do
   inspect._overview_ui.render(pr_group)
   local pr_lines = vim.api.nvim_buf_get_lines(pr_buf, 0, -1, false)
   local pr_rendered = table.concat(pr_lines, "\n")
-
   assert(pr_rendered:find("  Commits\n", 1, true))
   assert(pr_rendered:find("• feat: first commit", 1, true))
   assert(pr_rendered:find("• fix: second commit", 1, true))
-
   local commits_heading_line
+
   for line_num, line_str in ipairs(pr_lines) do
     if line_str == "  Commits" then
       commits_heading_line = line_num
       break
     end
   end
-  assert(commits_heading_line, "Commits heading line not found")
 
+  assert(commits_heading_line, "Commits heading line not found")
   local commits_underlined = false
+
   for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
     pr_buf,
     -1,
@@ -6201,21 +6216,24 @@ do
       break
     end
   end
+
   assert(commits_underlined, "Commits heading was not styled with OculusInspectOverviewSection")
-
   vim.api.nvim_buf_delete(pr_buf, { force = true })
-
   local single_commit_buf = vim.api.nvim_create_buf(false, true)
   local single_commit_group = vim.deepcopy(pr_group)
   single_commit_group.overview_buf = single_commit_buf
+
   single_commit_group.overview.commits = {
     { message = "feat: only one commit" },
   }
+
   inspect._overview_ui.render(single_commit_group)
+
   local single_commit_rendered = table.concat(
     vim.api.nvim_buf_get_lines(single_commit_buf, 0, -1, false),
     "\n"
   )
+
   assert(not single_commit_rendered:find("Commits", 1, true))
   assert(not single_commit_rendered:find("only one commit", 1, true))
   vim.api.nvim_buf_delete(single_commit_buf, { force = true })
@@ -6223,6 +6241,7 @@ end
 
 do
   local dummy_buf = vim.api.nvim_create_buf(false, true)
+
   local dummy_win = vim.api.nvim_open_win(dummy_buf, false, {
     relative = "editor",
     width = 80,
@@ -6248,12 +6267,11 @@ do
     -1,
     false
   )
-  assert(initial_lines[2]:find("b browser", 1, true))
 
+  assert(initial_lines[2]:find("b browser", 1, true))
   inspect._overview_ui.close_footer(group)
   assert(group.overview_footer_win == nil)
   assert(group.overview_footer_buf == nil)
-
   vim.api.nvim_win_close(dummy_win, true)
   vim.api.nvim_buf_delete(dummy_buf, { force = true })
 end
@@ -6283,33 +6301,31 @@ do
   local removed_hl = vim.api.nvim_get_hl(0, { name = "OculusInspectRemoved", link = false })
   assert(added_hl.fg == 0xdcfce7 and added_hl.bg == 0x166534)
   assert(removed_hl.fg == 0xfee2e2 and removed_hl.bg == 0x991b1b)
-
   inspect._render_chunk_for_role(session, "parent", 1)
-
   local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._change_ns, 0, -1, { details = true })
   local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._change_ns, 0, -1, { details = true })
-
   assert(#p_marks >= 1, "expected change marks on parent buffer")
   assert(#c_marks >= 1, "expected change marks on change buffer")
   assert(p_marks[1][4].sign_hl_group == "OculusInspectRemoved")
   assert(c_marks[1][4].sign_hl_group == "OculusInspectAdded")
-
   vim.api.nvim_buf_delete(p_buf, { force = true })
   vim.api.nvim_buf_delete(c_buf, { force = true })
 end
 
 do
   inspect._enable_inspection_treesitter_context()
-
   local ok, render = pcall(require, "treesitter-context.render")
+
   if ok and type(render) == "table" and type(render.open) == "function" then
     local test_buf = vim.api.nvim_create_buf(false, true)
+
     vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, {
       "function foo(a, b)",
       "  local x = a + b",
       "  return x",
       "end",
     })
+
     vim.b[test_buf].oculus_inspect = { role = "parent" }
 
     local test_win = vim.api.nvim_open_win(test_buf, false, {
@@ -6322,25 +6338,21 @@ do
 
     local ranges1 = { { 0, 0, 1, 0 } }
     local lines1 = { "function foo(a, b)" }
-
     -- Initial render
     render.open(test_win, ranges1, lines1)
     local state1 = inspect._rendered_treesitter_contexts[test_win]
     assert(state1 ~= nil, "expected rendered treesitter context state saved for test_win")
     assert(state1.lines[1] == "function foo(a, b)")
-
     -- Second render with identical content (e.g. switching version where rows match)
     render.open(test_win, ranges1, lines1)
     local state2 = inspect._rendered_treesitter_contexts[test_win]
     assert(state2 == state1, "expected rendered treesitter context to reuse existing cached state without re-allocating")
-
     -- Render with changed context rows (e.g. scrolling to another scope)
     local ranges2 = { { 0, 0, 1, 0 }, { 1, 2, 2, 0 } }
     local lines2 = { "function foo(a, b)", "  local x = a + b" }
     render.open(test_win, ranges2, lines2)
     local state3 = inspect._rendered_treesitter_contexts[test_win]
     assert(#state3.lines == 2, "expected updated context lines on row change")
-
     vim.api.nvim_win_close(test_win, true)
     vim.api.nvim_buf_delete(test_buf, { force = true })
   end

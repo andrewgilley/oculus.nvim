@@ -1471,6 +1471,7 @@ local function fetch_project_description(project, callback)
     if callback then
       callback(nil)
     end
+
     return
   end
 
@@ -1480,6 +1481,7 @@ local function fetch_project_description(project, callback)
     if callback then
       callback(nil)
     end
+
     return
   end
 
@@ -1491,6 +1493,7 @@ local function fetch_project_description(project, callback)
           and type(info.description) == "string"
           and info.description
         or nil
+
       if callback then
         callback(desc)
       end
@@ -1570,6 +1573,7 @@ function M.load_project_descriptions(opts, callback)
                 local window_width = vim.api.nvim_win_get_width(M.state.win)
                 local left_width = preview_left_width(window_width)
                 local preview_width = math.max(15, window_width - left_width - 5)
+
                 render_preview_panel(
                   project_preview_items(project, preview_width)
                 )
@@ -4022,7 +4026,6 @@ local function add_project(project, target_project)
   end
 
   M.state.opts.projects = M.state.opts.projects or {}
-
   local insert_index = nil
 
   if type(target_project) == "number" then
@@ -4061,6 +4064,7 @@ local function add_project(project, target_project)
       if desc and desc ~= "" then
         added.description = desc
         persist_projects()
+
         if M.state.preview_project == added and is_valid_win(M.state.win) then
           local window_width = vim.api.nvim_win_get_width(M.state.win)
           local left_width = preview_left_width(window_width)
@@ -4082,11 +4086,13 @@ local function prompt_add_account()
   local adding_project = M.state.community_view == "projects"
   M.state.opening_account_prompt = true
   local cursor_target = target_on_cursor()
+
   local target_project = adding_project
       and cursor_target
       and cursor_target.kind == "project"
       and cursor_target.project
     or nil
+
   local target_contributor = not adding_project
       and cursor_target
       and cursor_target.kind ~= "project"
@@ -4555,8 +4561,10 @@ local function toggle_activity_inspect_queue()
 
   if not removed then
     local clean_title
+
     if type(M.state.lines) == "table" and M.state.lines[title_line] then
       local raw = M.state.lines[title_line]
+
       clean_title = vim.trim(
         raw:gsub("^%s*%d+:%d+%s*", ""):gsub("^%s*[-•▶✓*]%s*", "")
       )
@@ -4587,6 +4595,7 @@ local open_next_queued_activity
 
 local function navigate_inspect_queue(delta, group)
   local batch = M.state.activity_inspect_queue_batch
+
   if not batch or #batch <= 1 then
     return false
   end
@@ -4599,35 +4608,39 @@ local function navigate_inspect_queue(delta, group)
   end
 
   local target_entry = batch[target_idx]
+
   if not target_entry then
     return false
   end
 
   local completed = {}
+
   for i = 1, target_idx - 1 do
     completed[#completed + 1] = batch[i]
   end
-  M.state.activity_inspect_queue_completed = completed
 
+  M.state.activity_inspect_queue_completed = completed
   local remaining = {}
+
   for i = target_idx, #batch do
     remaining[#remaining + 1] = batch[i]
   end
-  M.state.activity_inspect_queue = remaining
 
+  M.state.activity_inspect_queue = remaining
   M.state.activity_inspect_queue_index = target_idx - 1
   M.state.activity_inspect_queue_active = target_entry
   rebuild_activity_inspect_queue_lookup()
   apply_activity_inspect_queue_highlights()
-
   M.state.activity_inspect_queue_continuing = true
   M.state.activity_inspect_queue_deferred_group = group
 
   vim.schedule(function()
     M.state.activity_inspect_queue_continuing = nil
+
     if group then
       require("oculus.inspect")._close_inspection_workflow(group)
     end
+
     open_next_queued_activity(nil)
   end)
 
@@ -4637,9 +4650,11 @@ end
 open_next_queued_activity = function(ui_lifecycle)
   if M.state.activity_inspect_queue_total == nil then
     local batch = {}
+
     for _, item in ipairs(M.state.activity_inspect_queue or {}) do
       batch[#batch + 1] = item
     end
+
     M.state.activity_inspect_queue_batch = batch
     M.state.activity_inspect_queue_total = #batch
     M.state.activity_inspect_queue_index = 0
@@ -4686,6 +4701,7 @@ open_next_queued_activity = function(ui_lifecycle)
           #M.state.activity_inspect_queue_completed + 1
         ] = entry
       end
+
       M.state.activity_inspect_queue_active = nil
       rebuild_activity_inspect_queue_lookup()
       apply_activity_inspect_queue_highlights()
@@ -4700,6 +4716,7 @@ open_next_queued_activity = function(ui_lifecycle)
   end
 
   local queue_info
+
   if (M.state.activity_inspect_queue_total or 0) > 1 then
     queue_info = {
       active = entry,
@@ -5297,6 +5314,7 @@ local function map_keys(buf)
 
   map("<C-c>", M.close, "Close Oculus")
   map("q", M.close, "Close Oculus")
+
   map("<Esc>", function()
     if M.state.view == "contributors" and M.state.moving_item then
       M.state.moving_item = nil
@@ -5306,8 +5324,10 @@ local function map_keys(buf)
 
     M.close()
   end, "Close Oculus")
+
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
+
   map("m", function()
     if M.state.view == "contributors" then
       toggle_move_item()
@@ -5315,7 +5335,6 @@ local function map_keys(buf)
   end, "Move selected Oculus project or user")
 
   map("<CR>", select_current, "Select Oculus item")
-
   map("l", move_right, "Move right in Oculus")
   map("<Right>", move_right, "Move right in Oculus")
 
@@ -5593,7 +5612,6 @@ function M.open(opts)
   end
 
   M.load_project_descriptions(M.state.opts)
-
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
 
   vim.api.nvim_create_autocmd("VimResized", {
@@ -5705,5 +5723,4 @@ end
 M._add_project = add_project
 M._add_contributor = add_contributor
 M._toggle_move_item = toggle_move_item
-
 return M

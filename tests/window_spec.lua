@@ -1696,7 +1696,6 @@ do
 
   github.repository_events = function(repository, opts, callback)
     assert(repository == "neovim/neovim")
-
     repository_forces[#repository_forces + 1] = opts.force
     repository_per_page = opts.per_page
     repository_pages[#repository_pages + 1] = opts.page
@@ -2632,14 +2631,15 @@ do
   local cb = require("oculus.codeberg")
   assert(type(gh.repository_info) == "function")
   assert(type(cb.repository_info) == "function")
-
   local oculus = require("oculus")
+
   oculus.setup({
     persist_projects = false,
     persist_contributors = false,
   })
 
   local neovim_project = nil
+
   for _, p in ipairs(oculus.config.projects or {}) do
     if p.repository == "neovim/neovim" then
       neovim_project = p
@@ -2649,9 +2649,9 @@ do
 
   assert(neovim_project ~= nil)
   assert(neovim_project.description == "Vim-fork focused on extensibility and usability")
-
   local original_repo_info = gh.repository_info
   local requested_repo = nil
+
   gh.repository_info = function(repo, opts, cb_fn)
     requested_repo = repo
     cb_fn({ description = "Mocked forge description for " .. repo })
@@ -2669,6 +2669,7 @@ do
   }
 
   local loaded_done = false
+
   oculus.load_project_descriptions(test_config, function(projects)
     loaded_done = true
   end)
@@ -2676,17 +2677,16 @@ do
   assert(loaded_done == true)
   assert(requested_repo == "custom/test")
   assert(test_config.projects[1].description == "Mocked forge description for custom/test")
-
   -- Running load_project_descriptions again should NOT call repository_info because it's already set
   requested_repo = nil
   loaded_done = false
+
   oculus.load_project_descriptions(test_config, function(projects)
     loaded_done = true
   end)
 
   assert(loaded_done == true)
   assert(requested_repo == nil, "expected no network call when description is already present")
-
   gh.repository_info = original_repo_info
 end
 
@@ -2700,6 +2700,7 @@ do
     persist_projects = false,
     persist_contributors = false,
   }
+
   window.state.contributors = {
     { username = "user1", provider = "github" },
     { username = "user2", provider = "github" },
@@ -2711,7 +2712,6 @@ do
   assert(window._add_project({ repository = "foo/inserted", provider = "github" }, second_proj))
   assert(#window.state.opts.projects == 4)
   assert(window.state.opts.projects[3].repository == "foo/inserted")
-
   -- Insert contributor below first contributor
   local first_user = window.state.contributors[1]
   assert(window._add_contributor({ username = "user_inserted", provider = "github" }, first_user))
@@ -2729,13 +2729,16 @@ do
     persist_projects = false,
     persist_contributors = false,
   }
+
   window.state.contributors = {
     { username = "alice", provider = "github" },
     { username = "bob", provider = "github" },
     { username = "charlie", provider = "github" },
   }
+
   window.state.view = "contributors"
   window.state.community_view = "projects"
+
   window.state.line_targets = {
     [7] = { kind = "project", project = window.state.opts.projects[1] },
     [8] = { kind = "project", project = window.state.opts.projects[2] },
@@ -2745,6 +2748,7 @@ do
   -- Test moving project: Gamma (index 3) to Alpha (index 1)
   -- Mock cursor on line 9 (gamma)
   local dummy_buf = vim.api.nvim_create_buf(false, true)
+
   local dummy_win = vim.api.nvim_open_win(dummy_buf, true, {
     relative = "editor",
     width = 40,
@@ -2752,8 +2756,10 @@ do
     row = 1,
     col = 1,
   })
+
   window.state.buf = dummy_buf
   window.state.win = dummy_win
+
   vim.api.nvim_buf_set_lines(dummy_buf, 0, -1, false, {
     "1", "2", "3", "4", "5", "6", "  alpha/repo", "  beta/repo", "  gamma/repo"
   })
@@ -2762,11 +2768,9 @@ do
   window._toggle_move_item()
   assert(window.state.moving_item ~= nil)
   assert(window.state.moving_item.project.repository == "gamma/repo")
-
   local move_hl = vim.api.nvim_get_hl(0, { name = "OculusMoveTarget", link = false })
   assert(move_hl.bold ~= true, "expected OculusMoveTarget not to be bold")
   assert(move_hl.fg == 0xff9e3b or move_hl.fg == 16752187, "expected OculusMoveTarget fg to match #ff9e3b")
-
   -- Move cursor to line 7 (alpha) and press m again
   vim.api.nvim_win_set_cursor(dummy_win, { 7, 0 })
   window._toggle_move_item()
@@ -2774,26 +2778,25 @@ do
   assert(window.state.opts.projects[1].repository == "gamma/repo")
   assert(window.state.opts.projects[2].repository == "alpha/repo")
   assert(window.state.opts.projects[3].repository == "beta/repo")
-
   -- Test moving contributor: Alice (index 1) to Charlie (index 3)
   window.state.community_view = "users"
+
   window.state.line_targets = {
     [7] = window.state.contributors[1],
     [8] = window.state.contributors[2],
     [9] = window.state.contributors[3],
   }
+
   vim.api.nvim_win_set_cursor(dummy_win, { 7, 0 })
   window._toggle_move_item()
   assert(window.state.moving_item ~= nil)
   assert(window.state.moving_item.contributor.username == "alice")
-
   vim.api.nvim_win_set_cursor(dummy_win, { 9, 0 })
   window._toggle_move_item()
   assert(window.state.moving_item == nil)
   assert(window.state.contributors[1].username == "bob")
   assert(window.state.contributors[2].username == "charlie")
   assert(window.state.contributors[3].username == "alice")
-
   pcall(vim.api.nvim_win_close, dummy_win, true)
   pcall(vim.api.nvim_buf_delete, dummy_buf, { force = true })
   window.state.buf = nil
