@@ -1764,6 +1764,7 @@ local function render_focused_chunk(session, chunk_index)
   }, session.status)
 
   refresh_buffer_highlighting(session.change.buf)
+  refresh_buffer_highlighting(session.parent.buf)
   return start
 end
 
@@ -1787,6 +1788,7 @@ local function render_full_file(session)
   )
 
   refresh_buffer_highlighting(session.change.buf)
+  refresh_buffer_highlighting(session.parent.buf)
   return true
 end
 
@@ -8313,9 +8315,38 @@ local function open_tabs(
     require("oculus.window").close()
     vim.api.nvim_set_current_tabpage(first.tab)
     vim.api.nvim_set_current_win(first.win)
+    set_change_highlights()
+    for _, s in ipairs(inspection_sessions) do
+      if s.parent and s.parent.buf and vim.api.nvim_buf_is_valid(s.parent.buf) then
+        refresh_buffer_highlighting(s.parent.buf, true)
+      end
+      if s.change and s.change.buf and vim.api.nvim_buf_is_valid(s.change.buf) then
+        refresh_buffer_highlighting(s.change.buf, true)
+      end
+    end
+    if first_session and first_session.active_chunk and first_hunk then
+      apply_change_signs(first_session.parent.buf, first_session.change.buf, {
+        {
+          old_start = first_hunk.old_start,
+          old_count = first_hunk.old_count,
+          new_start = first_session.focused_start or first_start,
+          new_count = first_hunk.new_count,
+        },
+      }, first_session.status)
+    elseif first_session then
+      apply_change_signs(
+        first_session.parent.buf,
+        first_session.change.buf,
+        first_session.hunks or {},
+        first_session.status
+      )
+    end
     move_cursor_to_line_start(first.win, first_start, first_max)
     show_inspection_path(first.buf)
+    M._refresh_virtual_counters(inspection_sessions, first_session)
+    trigger_inspection_treesitter_context(first.buf)
     M._enable_inspection_treesitter_context(opts)
+    vim.cmd("redraw")
 
     if loading
       and loading.lifecycle
@@ -9252,4 +9283,6 @@ M._is_foreign_sidebar_window = is_foreign_sidebar_window
 M._inspection_endpoints = inspection_endpoints
 M._comment_float = comment_float
 M._trigger_inspection_treesitter_context = trigger_inspection_treesitter_context
+M._set_change_highlights = set_change_highlights
+M._change_ns = change_ns
 return M

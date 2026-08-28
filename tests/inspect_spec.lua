@@ -6257,3 +6257,43 @@ do
   vim.api.nvim_win_close(dummy_win, true)
   vim.api.nvim_buf_delete(dummy_buf, { force = true })
 end
+
+do
+  local p_buf = vim.api.nvim_create_buf(false, true)
+  local c_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, { "line 1", "line 2 old", "line 3" })
+  vim.api.nvim_buf_set_lines(c_buf, 0, -1, false, { "line 1", "line 2 new", "line 3" })
+  vim.b[p_buf].oculus_inspect = { role = "parent" }
+  vim.b[c_buf].oculus_inspect = { role = "change" }
+
+  local session = {
+    parent = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = p_buf },
+    change = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = c_buf },
+    parent_content = { "line 1", "line 2 old", "line 3" },
+    change_content = { "line 1", "line 2 new", "line 3" },
+    hunks = {
+      { old_start = 2, old_count = 1, new_start = 2, new_count = 1 },
+    },
+    active_chunk = 1,
+    status = "M",
+  }
+
+  inspect._set_change_highlights()
+  local added_hl = vim.api.nvim_get_hl(0, { name = "OculusInspectAdded", link = false })
+  local removed_hl = vim.api.nvim_get_hl(0, { name = "OculusInspectRemoved", link = false })
+  assert(added_hl.fg == 0xdcfce7 and added_hl.bg == 0x166534)
+  assert(removed_hl.fg == 0xfee2e2 and removed_hl.bg == 0x991b1b)
+
+  inspect._render_chunk_for_role(session, "parent", 1)
+
+  local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._change_ns, 0, -1, { details = true })
+  local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._change_ns, 0, -1, { details = true })
+
+  assert(#p_marks >= 1, "expected change marks on parent buffer")
+  assert(#c_marks >= 1, "expected change marks on change buffer")
+  assert(p_marks[1][4].sign_hl_group == "OculusInspectRemoved")
+  assert(c_marks[1][4].sign_hl_group == "OculusInspectAdded")
+
+  vim.api.nvim_buf_delete(p_buf, { force = true })
+  vim.api.nvim_buf_delete(c_buf, { force = true })
+end
