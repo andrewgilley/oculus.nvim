@@ -298,7 +298,7 @@ local function sync_window_highlights(source_win)
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusMoveTarget",
-    { fg = "#ff9e3b", bold = true }
+    { fg = "#ff9e3b" }
   )
 
   vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityQueued", {
@@ -5534,7 +5534,6 @@ function M.open(opts)
 
   vim.api.nvim_set_hl(0, "OculusMoveTarget", {
     fg = "#ff9e3b",
-    bold = true,
   })
 
   vim.wo[win].winhighlight = table.concat({
