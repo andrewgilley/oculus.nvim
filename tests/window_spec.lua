@@ -2763,6 +2763,10 @@ do
   assert(window.state.moving_item ~= nil)
   assert(window.state.moving_item.project.repository == "gamma/repo")
 
+  local move_hl = vim.api.nvim_get_hl(0, { name = "OculusMoveTarget", link = false })
+  assert(move_hl.bold ~= true, "expected OculusMoveTarget not to be bold")
+  assert(move_hl.fg == 0xff9e3b or move_hl.fg == 16752187, "expected OculusMoveTarget fg to match #ff9e3b")
+
   -- Move cursor to line 7 (alpha) and press m again
   vim.api.nvim_win_set_cursor(dummy_win, { 7, 0 })
   window._toggle_move_item()
