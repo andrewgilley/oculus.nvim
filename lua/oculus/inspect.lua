@@ -4492,7 +4492,7 @@ function M._overview_ui.render_footer(group)
     right_commands = "<Space> toggle   <CR> open paths   "
   end
 
-  right_commands = right_commands .. "q quit"
+  right_commands = right_commands .. "c close"
   local left_display_width = vim.fn.strdisplaywidth(left_commands)
   local right_display_width = vim.fn.strdisplaywidth(right_commands)
 
@@ -6435,6 +6435,15 @@ show_inspection_overview = function(group)
     nowait = true,
     silent = true,
     desc = "Exit Oculus Inspect workflow",
+  })
+
+  vim.keymap.set("n", "c", function()
+    show_sidebar_files(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Close Oculus Inspect overview",
   })
 
   vim.keymap.set("n", "q", function()

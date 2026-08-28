@@ -2031,7 +2031,7 @@ assert(overview_footer_lines[1] == "  " .. string.rep(
 ))
 
 assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   s sidebar   e exit", 1, true))
-assert(overview_footer_lines[2]:sub(-#("q quit")) == "q quit")
+assert(overview_footer_lines[2]:sub(-#("c close")) == "c close")
 assert(issue_overview:find("  Title\n", 1, true))
 
 assert(issue_overview:gsub("%s+", " "):find(
@@ -2451,7 +2451,7 @@ local focused_path_footer = vim.api.nvim_buf_get_lines(
 
 assert(focused_path_footer:find("<Space> toggle", 1, true))
 assert(focused_path_footer:find("<CR> open paths", 1, true))
-assert(focused_path_footer:sub(-#("q quit")) == "q quit")
+assert(focused_path_footer:sub(-#("c close")) == "c close")
 
 assert(explanation_text:find(
   "Agent suggestion (gpt-5.6-test-agent)",
