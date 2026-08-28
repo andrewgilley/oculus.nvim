@@ -2890,6 +2890,7 @@ do
   local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#c_marks == 1, "expected virtual counter on change buffer after switching version")
   assert(c_marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
+  assert(c_marks[1][2] + 1 == 4, ("expected virtual counter on line 4 matching cursor, got %d"):format(c_marks[1][2] + 1))
 
   -- Switch back to parent version
   local p_start = inspect._render_chunk_for_role
@@ -2922,6 +2923,7 @@ do
   local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._virtual_counter_ns, 0, -1, { details = true })
   assert(#p_marks == 1, "expected virtual counter on parent buffer after switching version")
   assert(p_marks[1][4].virt_text[1][1] == "\t[1/1] (1/1)")
+  assert(p_marks[1][2] + 1 == 3, ("expected virtual counter on line 3 matching cursor, got %d"):format(p_marks[1][2] + 1))
 
   vim.api.nvim_win_close(p_win, true)
   vim.api.nvim_win_close(c_win, true)

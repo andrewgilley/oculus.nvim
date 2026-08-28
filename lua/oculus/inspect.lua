@@ -2442,7 +2442,8 @@ function M._virtual_counter.place_virtual_counter(
   chunk_index,
   chunk_count,
   file_index,
-  file_count
+  file_count,
+  max_line
 )
   if
     not buf
@@ -2460,6 +2461,7 @@ function M._virtual_counter.place_virtual_counter(
     return
   end
 
+  line = first_nonblank_line(buf, line, max_line)
   line = math.min(math.max(1, line), line_count)
 
   local text
@@ -2519,13 +2521,15 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
         local sections = session.sections or {}
         local section = sections[active] or sections[1]
         if section and section.line then
+          local line = first_nonblank_line(buf, section.line, section.line)
           M._virtual_counter.place_virtual_counter(
             buf,
-            section.line,
+            line,
             active,
             file_chunks,
             file_index,
-            file_count
+            file_count,
+            section.line
           )
         end
       end
@@ -2541,13 +2545,16 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
       local hunk = hunks[active] or hunks[1]
       if hunk then
         local start = patch.hunk_start(hunk, "parent")
+        local max_line = chunk_max_line_for_role(hunk, "parent", start)
+        local line = first_nonblank_line(buf, start, max_line)
         M._virtual_counter.place_virtual_counter(
           buf,
-          start,
+          line,
           active,
           file_chunks,
           file_index,
-          file_count
+          file_count,
+          max_line
         )
       end
     end
@@ -2575,13 +2582,16 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
             patch.hunk_start(hunk, "change")
           )
         end
+        local max_line = chunk_max_line_for_role(hunk, "change", start)
+        local line = first_nonblank_line(buf, start, max_line)
         M._virtual_counter.place_virtual_counter(
           buf,
-          start,
+          line,
           active,
           file_chunks,
           file_index,
-          file_count
+          file_count,
+          max_line
         )
       end
     end
