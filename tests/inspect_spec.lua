@@ -6297,3 +6297,51 @@ do
   vim.api.nvim_buf_delete(p_buf, { force = true })
   vim.api.nvim_buf_delete(c_buf, { force = true })
 end
+
+do
+  inspect._enable_inspection_treesitter_context()
+
+  local ok, render = pcall(require, "treesitter-context.render")
+  if ok and type(render) == "table" and type(render.open) == "function" then
+    local test_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, {
+      "function foo(a, b)",
+      "  local x = a + b",
+      "  return x",
+      "end",
+    })
+    vim.b[test_buf].oculus_inspect = { role = "parent" }
+
+    local test_win = vim.api.nvim_open_win(test_buf, false, {
+      relative = "editor",
+      width = 80,
+      height = 20,
+      row = 2,
+      col = 2,
+    })
+
+    local ranges1 = { { 0, 0, 1, 0 } }
+    local lines1 = { "function foo(a, b)" }
+
+    -- Initial render
+    render.open(test_win, ranges1, lines1)
+    local state1 = inspect._rendered_treesitter_contexts[test_win]
+    assert(state1 ~= nil, "expected rendered treesitter context state saved for test_win")
+    assert(state1.lines[1] == "function foo(a, b)")
+
+    -- Second render with identical content (e.g. switching version where rows match)
+    render.open(test_win, ranges1, lines1)
+    local state2 = inspect._rendered_treesitter_contexts[test_win]
+    assert(state2 == state1, "expected rendered treesitter context to reuse existing cached state without re-allocating")
+
+    -- Render with changed context rows (e.g. scrolling to another scope)
+    local ranges2 = { { 0, 0, 1, 0 }, { 1, 2, 2, 0 } }
+    local lines2 = { "function foo(a, b)", "  local x = a + b" }
+    render.open(test_win, ranges2, lines2)
+    local state3 = inspect._rendered_treesitter_contexts[test_win]
+    assert(#state3.lines == 2, "expected updated context lines on row change")
+
+    vim.api.nvim_win_close(test_win, true)
+    vim.api.nvim_buf_delete(test_buf, { force = true })
+  end
+end
