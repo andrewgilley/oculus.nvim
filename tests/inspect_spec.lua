@@ -4541,7 +4541,7 @@ if integration_root and (integration_sha or integration_url) then
   ))
 
   assert(inspect._inspection_statusline(change_win):find(
-    "%d+,%d+"
+    "%d+%(%d+%),%d+"
   ))
 
   vim.g.oculus_test_statusline_path = nil
