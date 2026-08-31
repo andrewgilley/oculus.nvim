@@ -7176,10 +7176,12 @@ local function inspection_statusline(win)
     or ""
 
   local cursor = vim.api.nvim_win_get_cursor(win)
+  local line_count = vim.api.nvim_buf_line_count(buf)
 
-  return (" %s%%= %d,%d "):format(
+  return (" %s%%= %d(%d),%d "):format(
     path:gsub("%%", "%%%%"),
     cursor[1],
+    line_count,
     cursor[2] + 1
   )
 end
