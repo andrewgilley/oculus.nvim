@@ -6467,3 +6467,36 @@ do
   vim.api.nvim_buf_delete(p_buf, { force = true })
   vim.api.nvim_buf_delete(c_buf, { force = true })
 end
+
+do
+  inspect._ensure_treesitter_safeguards()
+
+  local range_nil = vim.treesitter.get_range(nil, 0, {})
+  assert(type(range_nil) == "table", "expected table range for nil node")
+
+  local mock_node = { range = nil }
+  local range_table = vim.treesitter.get_range(mock_node, 0, {})
+  assert(type(range_table) == "table", "expected table range for table node without range method")
+
+  local range4 = { 1, 2, 3, 4 }
+  local range_res = vim.treesitter.get_range(range4, 0, {})
+  assert(type(range_res) == "table", "expected table range for range4 array")
+
+  local real_node = {
+    range = function(self, bytes)
+      return 1, 2, 10, 3, 4, 20
+    end,
+  }
+  local wrapped_node = { real_node }
+  local range_wrapped = vim.treesitter.get_range(wrapped_node, 0, {})
+  assert(type(range_wrapped) == "table", "expected table range for wrapped node")
+
+  local text_node = {
+    start = function(self) return 0, 0, 0 end,
+    end_ = function(self) return 0, 4, 4 end,
+    range = function(self) return 0, 0, 0, 4 end,
+  }
+  local wrapped_text_node = { text_node }
+  local text = vim.treesitter.get_node_text(wrapped_text_node, "echo hello")
+  assert(text == "echo", "expected extracted text from wrapped node: " .. tostring(text))
+end

@@ -38,6 +38,121 @@ local restore_inspection_sidebar_for_buffer
 local show_inspection_overview
 local show_sidebar_files
 
+local function ensure_treesitter_safeguards()
+  if
+    vim.treesitter
+    and type(vim.treesitter.get_range) == "function"
+    and not vim.treesitter._oculus_safe_get_range
+  then
+    local orig_get_range = vim.treesitter.get_range
+
+    vim.treesitter.get_range = function(node, source, metadata)
+      if type(node) == "table" and type(node.range) ~= "function" then
+        if
+          (type(node[1]) == "userdata" or type(node[1]) == "table")
+          and type(node[1].range) == "function"
+        then
+          return vim.treesitter.get_range(node[1], source, metadata)
+        elseif type(node[1]) == "number" and #node >= 4 then
+          if #node >= 6 then
+            return node
+          end
+
+          if
+            source
+            and vim.treesitter._range
+            and vim.treesitter._range.add_bytes
+          then
+            local ok, r = pcall(vim.treesitter._range.add_bytes, source, node)
+
+            if ok and r then
+              return r
+            end
+          end
+
+          return node
+        end
+
+        return { 0, 0, 0, 0, 0, 0 }
+      end
+
+      if not node or type(node.range) ~= "function" then
+        return { 0, 0, 0, 0, 0, 0 }
+      end
+
+      local ok, res = pcall(orig_get_range, node, source, metadata)
+
+      if ok and res then
+        return res
+      end
+
+      return { 0, 0, 0, 0, 0, 0 }
+    end
+
+    vim.treesitter._oculus_safe_get_range = true
+  end
+
+  if
+    vim.treesitter
+    and type(vim.treesitter.get_node_text) == "function"
+    and not vim.treesitter._oculus_safe_get_node_text
+  then
+    local orig_get_node_text = vim.treesitter.get_node_text
+
+    vim.treesitter.get_node_text = function(node, source, opts)
+      if type(node) == "table" and type(node.start) ~= "function" then
+        if
+          (type(node[1]) == "userdata" or type(node[1]) == "table")
+          and type(node[1].start) == "function"
+        then
+          return vim.treesitter.get_node_text(node[1], source, opts)
+        end
+
+        return ""
+      end
+
+      if not node or type(node.start) ~= "function" then
+        return ""
+      end
+
+      local ok, res = pcall(orig_get_node_text, node, source, opts)
+
+      if ok and type(res) == "string" then
+        return res
+      end
+
+      return ""
+    end
+
+    vim.treesitter._oculus_safe_get_node_text = true
+  end
+
+  local ok_ctx, ctx = pcall(require, "treesitter-context.context")
+
+  if
+    ok_ctx
+    and type(ctx) == "table"
+    and type(ctx.get) == "function"
+    and not ctx._oculus_safe_get
+  then
+    local orig_get = ctx.get
+
+    ctx.get = function(winid)
+      local ok, ranges, lines = pcall(orig_get, winid)
+
+      if ok then
+        return ranges, lines
+      end
+
+      return nil, nil
+    end
+
+    ctx._oculus_safe_get = true
+  end
+end
+
+ensure_treesitter_safeguards()
+
 function M._use_absolute_treesitter_context_numbers()
   local ok, render = pcall(require, "treesitter-context.render")
 
@@ -354,6 +469,8 @@ function M._enable_inspection_treesitter_context(opts)
   if opts and opts.inspect_treesitter_context == false then
     return false
   end
+
+  ensure_treesitter_safeguards()
 
   local ok, context = pcall(require, "treesitter-context")
 
@@ -8342,6 +8459,7 @@ local function open_tabs(
   local previous_lazyredraw = vim.o.lazyredraw
   inspection_tabs_loading = true
   vim.o.lazyredraw = true
+  ensure_treesitter_safeguards()
 
   local function restore_staging_window()
     if vim.api.nvim_tabpage_is_valid(staging_tab) then
@@ -9633,4 +9751,5 @@ M._set_change_highlights = set_change_highlights
 M._change_ns = change_ns
 M._rendered_treesitter_contexts = rendered_treesitter_contexts
 M._sidebar_chunk = sidebar_chunk
+M._ensure_treesitter_safeguards = ensure_treesitter_safeguards
 return M
