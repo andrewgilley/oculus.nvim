@@ -6357,3 +6357,63 @@ do
     vim.api.nvim_buf_delete(test_buf, { force = true })
   end
 end
+
+do
+  local reliquary_applied_buffers = {}
+
+  package.loaded["reliquary"] = {
+    apply = function(buf)
+      table.insert(reliquary_applied_buffers, buf)
+    end,
+  }
+
+  local p_buf = vim.api.nvim_create_buf(false, true)
+  local c_buf = vim.api.nvim_create_buf(false, true)
+  local p_lines = { "#!/usr/bin/env bash", "echo 'old service'", "exit 0" }
+  local c_lines = { "#!/usr/bin/env bash", "echo 'new service'", "exit 0" }
+  vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, p_lines)
+  -- Focused chunk only has the changed line, no shebang
+  vim.api.nvim_buf_set_lines(c_buf, 0, -1, false, { "echo 'new service'" })
+
+  local session = {
+    file = "bin/run-service",
+    parent_file = "bin/run-service",
+    change_file = "bin/run-service",
+    parent_content = p_lines,
+    change_content = c_lines,
+    status = "M",
+    parent = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = p_buf },
+    change = { tab = vim.api.nvim_get_current_tabpage(), win = vim.api.nvim_get_current_win(), buf = c_buf },
+  }
+
+  vim.b[p_buf].oculus_inspect = {
+    role = "parent",
+    file = "bin/run-service",
+    source_path = "bin/run-service",
+    pair_index = 1,
+    session = session,
+  }
+
+  vim.b[c_buf].oculus_inspect = {
+    role = "change",
+    file = "bin/run-service",
+    source_path = "bin/run-service",
+    pair_index = 1,
+    session = session,
+  }
+
+  local p_ft = inspect._apply_inspection_filetype(p_buf, false)
+  assert(p_ft == "sh" or p_ft == "bash", "expected parent buffer to be recognized as shell script: " .. tostring(p_ft))
+  assert(vim.bo[p_buf].filetype == p_ft)
+  -- Now test apply_inspection_filetype on change_buf (which only has chunk line 'echo new service')
+  local c_ft = inspect._apply_inspection_filetype(c_buf, false)
+  assert(c_ft == "sh" or c_ft == "bash", "expected change buffer to inherit shell filetype from session/parent: " .. tostring(c_ft))
+  assert(vim.bo[c_buf].filetype == c_ft)
+  assert(vim.tbl_contains(reliquary_applied_buffers, c_buf), "expected reliquary.apply to be called on change buffer")
+  inspect._synchronize_inspection_highlighting(p_buf, c_buf)
+  assert(vim.bo[p_buf].filetype == vim.bo[c_buf].filetype)
+  assert(vim.bo[c_buf].filetype ~= "", "expected change buffer filetype not to be empty")
+  vim.api.nvim_buf_delete(p_buf, { force = true })
+  vim.api.nvim_buf_delete(c_buf, { force = true })
+  package.loaded["reliquary"] = nil
+end

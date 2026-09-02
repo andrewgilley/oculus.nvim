@@ -1730,6 +1730,17 @@ function M._synchronize_inspection_highlighting(parent_buf, change_buf)
     return nil
   end
 
+  local parent_ft = vim.bo[parent_buf].filetype
+  local change_ft = vim.bo[change_buf].filetype
+
+  if parent_ft ~= "" and change_ft == "" then
+    vim.bo[change_buf].filetype = parent_ft
+    apply_inspection_filetype(change_buf, false)
+  elseif change_ft ~= "" and parent_ft == "" then
+    vim.bo[parent_buf].filetype = change_ft
+    apply_inspection_filetype(parent_buf, false)
+  end
+
   local buffers = { parent_buf, change_buf }
 
   if vim.bo[parent_buf].filetype ~= vim.bo[change_buf].filetype then
@@ -1795,18 +1806,98 @@ local function apply_inspection_filetype(buf, force_refresh)
       and state.source_path
     or state.file
 
-  if type(filename) ~= "string" or filename == "" then
-    return
+  local filetype = nil
+
+  if type(filename) == "string" and filename ~= "" then
+    local ok, match = pcall(vim.filetype.match, {
+      buf = buf,
+      filename = filename,
+    })
+
+    if ok and type(match) == "string" and match ~= "" then
+      filetype = match
+    end
   end
 
-  local ok, filetype = pcall(vim.filetype.match, {
-    buf = buf,
-    filename = filename,
-  })
+  if not filetype then
+    local alt_filename = state.change_file or state.parent_file or state.file
 
-  if not ok or type(filetype) ~= "string" or filetype == "" then
-    return
+    if type(alt_filename) == "string" and alt_filename ~= "" then
+      local ok, match = pcall(vim.filetype.match, {
+        buf = buf,
+        filename = alt_filename,
+      })
+
+      if ok and type(match) == "string" and match ~= "" then
+        filetype = match
+      end
+    end
   end
+
+  if not filetype and type(state.filetype) == "string" and state.filetype ~= "" then
+    filetype = state.filetype
+  end
+
+  local session = state.session
+
+  if not session and state.pair_index then
+    for _, group in ipairs(sidebar_groups or {}) do
+      if group[state.pair_index] then
+        session = group[state.pair_index]
+        break
+      end
+    end
+  end
+
+  if not filetype and session then
+    if type(session.filetype) == "string" and session.filetype ~= "" then
+      filetype = session.filetype
+    elseif session.parent
+      and session.parent.buf
+      and vim.api.nvim_buf_is_valid(session.parent.buf)
+      and vim.bo[session.parent.buf].filetype ~= ""
+    then
+      filetype = vim.bo[session.parent.buf].filetype
+    elseif session.change
+      and session.change.buf
+      and vim.api.nvim_buf_is_valid(session.change.buf)
+      and vim.bo[session.change.buf].filetype ~= ""
+    then
+      filetype = vim.bo[session.change.buf].filetype
+    elseif session.parent_content then
+      local ok, match = pcall(vim.filetype.match, {
+        filename = filename or state.file,
+        contents = session.parent_content,
+      })
+
+      if ok and type(match) == "string" and match ~= "" then
+        filetype = match
+      end
+    elseif session.change_content then
+      local ok, match = pcall(vim.filetype.match, {
+        filename = filename or state.file,
+        contents = session.change_content,
+      })
+
+      if ok and type(match) == "string" and match ~= "" then
+        filetype = match
+      end
+    end
+
+    if filetype then
+      session.filetype = filetype
+    end
+  end
+
+  if not filetype or filetype == "" then
+    if vim.bo[buf].filetype ~= "" then
+      filetype = vim.bo[buf].filetype
+    else
+      return
+    end
+  end
+
+  state.filetype = filetype
 
   if vim.bo[buf].filetype ~= filetype then
     vim.b[buf].oculus_inspect_highlighting_changedtick = nil
@@ -2120,9 +2211,11 @@ local function select_endpoint(endpoint, session, role, group)
   vim.api.nvim_set_current_win(endpoint.win)
   show_inspection_path(endpoint.buf)
   sidebar_navigating = false
+  apply_inspection_filetype(endpoint.buf, false)
 
   vim.schedule(function()
     if valid_endpoint(endpoint) then
+      apply_inspection_filetype(endpoint.buf, false)
       refresh_buffer_highlighting(endpoint.buf, false)
       trigger_inspection_treesitter_context(endpoint.buf)
     end
@@ -8095,9 +8188,44 @@ local function load_tab(
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = true
   vim.bo[buf].readonly = false
-  local filetype = file and vim.filetype.match({ filename = file }) or nil
+  local filetype = inspection.filetype
+
+  if not filetype and file then
+    local ok, match = pcall(vim.filetype.match, {
+      buf = buf,
+      filename = file,
+      contents = lines,
+    })
+
+    if ok and type(match) == "string" and match ~= "" then
+      filetype = match
+    end
+  end
+
+  if not filetype and inspection.parent_lines then
+    local ok, match = pcall(vim.filetype.match, {
+      filename = file or inspection.parent_file,
+      contents = inspection.parent_lines,
+    })
+
+    if ok and type(match) == "string" and match ~= "" then
+      filetype = match
+    end
+  end
+
+  if not filetype and inspection.change_lines then
+    local ok, match = pcall(vim.filetype.match, {
+      filename = file or inspection.change_file,
+      contents = inspection.change_lines,
+    })
+
+    if ok and type(match) == "string" and match ~= "" then
+      filetype = match
+    end
+  end
 
   if filetype then
+    inspection.filetype = filetype
     vim.bo[buf].filetype = filetype
   end
 
@@ -8118,6 +8246,7 @@ local function load_tab(
     repository = path,
     directory = working_directory,
     source_path = file and vim.fs.joinpath(path, file) or nil,
+    filetype = filetype,
     loading = false,
     pair_index = pair_index,
     commit_index = inspection.commit_index,
@@ -8131,6 +8260,7 @@ local function load_tab(
 
   vim.t.oculus_inspect = state
   vim.b[buf].oculus_inspect = vim.deepcopy(state)
+  apply_inspection_filetype(buf, false)
   show_inspection_path(buf)
   refresh_buffer_highlighting(buf, false)
 
@@ -8256,6 +8386,7 @@ local function open_tabs(
 
       inspection_sessions[index] = {
         file = paths.change_file or paths.parent_file,
+        filetype = paths.filetype,
         parent_file = paths.parent_file,
         change_file = paths.change_file,
         parent_commit = paths.parent,
@@ -8309,6 +8440,12 @@ local function open_tabs(
       next_session = next_session + 1
       session.parent = parent
       session.change = change
+
+      session.filetype = session.filetype
+        or (parent and parent.buf and vim.bo[parent.buf].filetype ~= "" and vim.bo[parent.buf].filetype)
+        or (change and change.buf and vim.bo[change.buf].filetype ~= "" and vim.bo[change.buf].filetype)
+        or nil
+
       sessions[next_session] = session
 
       local focused_start = session.active_chunk
