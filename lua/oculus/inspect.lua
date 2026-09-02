@@ -3519,7 +3519,7 @@ local function sidebar_chunk(group, session, role)
     return issue_section_at_line(session, line)
   end
 
-  local index = hunk_index_at_line(session, role, line)
+  local index = patch.hunk_index_at_line(session, role, line)
 
   if index and index ~= session.active_chunk then
     render_focused_chunk(session, index)
@@ -9632,4 +9632,5 @@ M._trigger_inspection_treesitter_context = trigger_inspection_treesitter_context
 M._set_change_highlights = set_change_highlights
 M._change_ns = change_ns
 M._rendered_treesitter_contexts = rendered_treesitter_contexts
+M._sidebar_chunk = sidebar_chunk
 return M

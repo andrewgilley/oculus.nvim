@@ -6417,3 +6417,53 @@ do
   vim.api.nvim_buf_delete(c_buf, { force = true })
   package.loaded["reliquary"] = nil
 end
+
+do
+  local p_buf = vim.api.nvim_create_buf(false, true)
+  local c_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, { "line 1", "line 2 old", "line 3" })
+  vim.api.nvim_buf_set_lines(c_buf, 0, -1, false, { "line 1", "line 2 new", "line 3" })
+
+  local p_win = vim.api.nvim_open_win(p_buf, false, {
+    relative = "editor",
+    width = 80,
+    height = 20,
+    row = 2,
+    col = 2,
+  })
+
+  local c_win = vim.api.nvim_open_win(c_buf, false, {
+    relative = "editor",
+    width = 80,
+    height = 20,
+    row = 2,
+    col = 2,
+  })
+
+  vim.api.nvim_win_set_cursor(p_win, { 2, 0 })
+  vim.api.nvim_win_set_cursor(c_win, { 2, 0 })
+
+  local session = {
+    hunks = {
+      { old_start = 2, old_count = 1, new_start = 2, new_count = 1 },
+    },
+    parent = { tab = vim.api.nvim_get_current_tabpage(), win = p_win, buf = p_buf },
+    change = { tab = vim.api.nvim_get_current_tabpage(), win = c_win, buf = c_buf },
+    active_chunk = 1,
+    status = "M",
+  }
+
+  local group = {
+    kind = "commit",
+    [1] = session,
+  }
+
+  local parent_chunk = inspect._sidebar_chunk(group, session, "parent")
+  assert(parent_chunk == 1, "expected sidebar_chunk to return hunk index 1 for parent: " .. tostring(parent_chunk))
+  local change_chunk = inspect._sidebar_chunk(group, session, "change")
+  assert(change_chunk == 1, "expected sidebar_chunk to return hunk index 1 for change: " .. tostring(change_chunk))
+  vim.api.nvim_win_close(p_win, true)
+  vim.api.nvim_win_close(c_win, true)
+  vim.api.nvim_buf_delete(p_buf, { force = true })
+  vim.api.nvim_buf_delete(c_buf, { force = true })
+end
