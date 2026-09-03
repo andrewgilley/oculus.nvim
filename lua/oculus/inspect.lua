@@ -2148,6 +2148,47 @@ local function first_nonblank_line(buf, line, max_line)
   return target
 end
 
+local function apply_view_horizontal(view, source_view, text_len, default_col)
+  default_col = default_col or 0
+  text_len = text_len or 0
+
+  if
+    source_view
+    and (source_view.leftcol or source_view.skipcol or source_view.col)
+  then
+    local target_leftcol = source_view.leftcol or 0
+    local target_skipcol = source_view.skipcol or 0
+    view.leftcol = target_leftcol
+    view.skipcol = target_skipcol
+
+    if target_leftcol > 0 then
+      if text_len > target_leftcol then
+        local desired_col = source_view.col or target_leftcol
+        view.col = math.max(
+          target_leftcol,
+          math.min(desired_col, text_len - 1)
+        )
+        view.curswant = source_view.curswant or view.col
+        view.coladd = 0
+      else
+        view.col = text_len
+        view.coladd = (target_leftcol - text_len)
+          + (source_view.coladd or 0)
+        view.curswant = source_view.curswant or target_leftcol
+      end
+    else
+      local desired_col = source_view.col or default_col
+      view.col = math.min(desired_col, math.max(0, text_len - 1))
+      view.curswant = source_view.curswant or view.col
+      view.coladd = source_view.coladd or 0
+    end
+  else
+    view.col = default_col
+    view.curswant = default_col
+    view.coladd = 0
+  end
+end
+
 local function position_change_cursor(
   win,
   line,
@@ -2163,14 +2204,25 @@ local function position_change_cursor(
   local buf = vim.api.nvim_win_get_buf(win)
   line = first_nonblank_line(buf, line, max_line)
 
-  local horizontal = vim.api.nvim_win_call(win, function()
-    local view = vim.fn.winsaveview()
+  local horizontal = {
+    leftcol = source_view and source_view.leftcol,
+    skipcol = source_view and source_view.skipcol,
+    col = source_view and source_view.col,
+    coladd = source_view and source_view.coladd,
+    curswant = source_view and source_view.curswant,
+  }
 
-    return {
-      leftcol = view.leftcol,
-      skipcol = view.skipcol,
-    }
-  end)
+  if horizontal.leftcol == nil and horizontal.skipcol == nil then
+    local current_view = vim.api.nvim_win_call(win, function()
+      return vim.fn.winsaveview()
+    end)
+
+    horizontal.leftcol = current_view.leftcol
+    horizontal.skipcol = current_view.skipcol
+    horizontal.col = current_view.col
+    horizontal.coladd = current_view.coladd
+    horizontal.curswant = current_view.curswant
+  end
 
   vim.api.nvim_win_set_cursor(win, { line, 0 })
 
@@ -2185,7 +2237,7 @@ local function position_change_cursor(
         false
       )[1] or ""
 
-      local col = (text:find("%S") or 1) - 1
+      local default_col = (text:find("%S") or 1) - 1
       local view = vim.fn.winsaveview()
 
       if target_topline then
@@ -2195,23 +2247,22 @@ local function position_change_cursor(
       end
 
       view.lnum = line
-      view.col = col
-      view.curswant = col
-
-      if source_view and source_view.leftcol then
-        view.leftcol = source_view.leftcol
-        view.skipcol = source_view.skipcol or 0
-      end
-
+      apply_view_horizontal(view, source_view, #text, default_col)
       vim.fn.winrestview(view)
     end)
   end
 
   if normalize ~= false then
     vim.api.nvim_win_call(win, function()
+      local text = vim.api.nvim_buf_get_lines(
+        buf,
+        line - 1,
+        line,
+        false
+      )[1] or ""
+      local default_col = (text:find("%S") or 1) - 1
       local view = vim.fn.winsaveview()
-      view.leftcol = horizontal.leftcol
-      view.skipcol = horizontal.skipcol
+      apply_view_horizontal(view, horizontal, #text, default_col)
       vim.fn.winrestview(view)
     end)
   end
@@ -2355,14 +2406,25 @@ local function move_cursor_to_line_start(
     return
   end
 
-  local horizontal = vim.api.nvim_win_call(win, function()
-    local view = vim.fn.winsaveview()
+  local horizontal = {
+    leftcol = source_view and source_view.leftcol,
+    skipcol = source_view and source_view.skipcol,
+    col = source_view and source_view.col,
+    coladd = source_view and source_view.coladd,
+    curswant = source_view and source_view.curswant,
+  }
 
-    return {
-      leftcol = view.leftcol,
-      skipcol = view.skipcol,
-    }
-  end)
+  if horizontal.leftcol == nil and horizontal.skipcol == nil then
+    local current_view = vim.api.nvim_win_call(win, function()
+      return vim.fn.winsaveview()
+    end)
+
+    horizontal.leftcol = current_view.leftcol
+    horizontal.skipcol = current_view.skipcol
+    horizontal.col = current_view.col
+    horizontal.coladd = current_view.coladd
+    horizontal.curswant = current_view.curswant
+  end
 
   if line then
     set_change_cursor(
@@ -2377,10 +2439,17 @@ local function move_cursor_to_line_start(
 
   if normalize ~= false then
     vim.api.nvim_win_call(win, function()
-      vim.cmd("normal! ^")
+      local buf = vim.api.nvim_win_get_buf(win)
+      local current_line = vim.api.nvim_win_get_cursor(win)[1]
+      local text = vim.api.nvim_buf_get_lines(
+        buf,
+        current_line - 1,
+        current_line,
+        false
+      )[1] or ""
+      local default_col = (text:find("%S") or 1) - 1
       local view = vim.fn.winsaveview()
-      view.leftcol = horizontal.leftcol
-      view.skipcol = horizontal.skipcol
+      apply_view_horizontal(view, horizontal, #text, default_col)
       vim.fn.winrestview(view)
     end)
 
@@ -2676,7 +2745,20 @@ local function map_file_navigation(endpoint, session, role, group)
         and vim.api.nvim_win_call(source_win, function()
           return vim.fn.winsaveview()
         end)
+      or session.horizontal_scroll
       or nil
+
+    if source_view then
+      session.horizontal_scroll = {
+        leftcol = source_view.leftcol,
+        skipcol = source_view.skipcol,
+        col = source_view.col,
+        coladd = source_view.coladd,
+        curswant = source_view.curswant,
+        topline = source_view.topline,
+        lnum = source_view.lnum,
+      }
+    end
 
     local chunk_index = session.active_chunk or 1
     local start, max_line
@@ -2688,12 +2770,15 @@ local function map_file_navigation(endpoint, session, role, group)
     else
       local hunk = session.hunks and session.hunks[chunk_index] or nil
 
-      start = render_chunk_for_role(session, target_role, chunk_index)
-        or (target_role == "parent"
-          and session.parent_lines and session.parent_lines[1]
-          or session.change_lines and session.change_lines[1])
+      local raw_start = render_chunk_for_role(session, target_role, chunk_index)
 
-      max_line = chunk_max_line_for_role(hunk, target_role, start)
+      if type(raw_start) == "number" then
+        start = raw_start
+      else
+        start = 1
+      end
+
+      max_line = chunk_max_line_for_role(hunk, target_role, start) or start
     end
 
     local target_topline = source_view
@@ -2711,6 +2796,32 @@ local function map_file_navigation(endpoint, session, role, group)
         target_topline,
         source_view
       )
+    elseif source_view and vim.api.nvim_win_is_valid(target.win) then
+      vim.api.nvim_win_call(target.win, function()
+        local buf = target.buf
+        local line = math.min(
+          source_view.lnum or 1,
+          math.max(1, vim.api.nvim_buf_line_count(buf))
+        )
+        local text = vim.api.nvim_buf_get_lines(
+          buf,
+          line - 1,
+          line,
+          false
+        )[1] or ""
+        local default_col = (text:find("%S") or 1) - 1
+        local view = vim.fn.winsaveview()
+
+        if target_topline then
+          view.topline = math.max(1, target_topline)
+        elseif source_view.topline then
+          view.topline = math.max(1, source_view.topline)
+        end
+
+        view.lnum = line
+        apply_view_horizontal(view, source_view, #text, default_col)
+        vim.fn.winrestview(view)
+      end)
     end
 
     refresh_sidebar(group, target.tab)
@@ -7899,11 +8010,32 @@ vim.api.nvim_create_autocmd("TabLeave", {
       local index, role = sidebar_active_item(group, tab)
 
       if index then
+        local current_win = vim.api.nvim_get_current_win()
+        local current_view = (current_win and vim.api.nvim_win_is_valid(current_win))
+            and vim.api.nvim_win_call(current_win, function()
+              return vim.fn.winsaveview()
+            end)
+          or nil
+
         M._tab_navigation_source = {
           group = group,
           index = index,
           role = role,
+          view = current_view,
         }
+
+        local session = group[index]
+        if session and current_view then
+          session.horizontal_scroll = {
+            leftcol = current_view.leftcol,
+            skipcol = current_view.skipcol,
+            col = current_view.col,
+            coladd = current_view.coladd,
+            curswant = current_view.curswant,
+            topline = current_view.topline,
+            lnum = current_view.lnum,
+          }
+        end
 
         return
       end
@@ -7945,6 +8077,32 @@ vim.api.nvim_create_autocmd("TabEnter", {
         M._enable_inspection_treesitter_context(
           group.persistence_config or {}
         )
+
+        local index, role = sidebar_active_item(group, tab)
+
+        if
+          source
+          and source.group == group
+          and source.index == index
+          and source.role ~= role
+          and source.view
+          and vim.api.nvim_win_is_valid(endpoint.win)
+        then
+          vim.api.nvim_win_call(endpoint.win, function()
+            local buf = endpoint.buf
+            local current_line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+            local text = vim.api.nvim_buf_get_lines(
+              buf,
+              current_line - 1,
+              current_line,
+              false
+            )[1] or ""
+            local default_col = (text:find("%S") or 1) - 1
+            local view = vim.fn.winsaveview()
+            apply_view_horizontal(view, source.view, #text, default_col)
+            vim.fn.winrestview(view)
+          end)
+        end
       end
 
       refresh_sidebar(group, tab)
@@ -9752,4 +9910,5 @@ M._change_ns = change_ns
 M._rendered_treesitter_contexts = rendered_treesitter_contexts
 M._sidebar_chunk = sidebar_chunk
 M._ensure_treesitter_safeguards = ensure_treesitter_safeguards
+M._apply_view_horizontal = apply_view_horizontal
 return M
