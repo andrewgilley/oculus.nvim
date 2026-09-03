@@ -536,8 +536,6 @@ local function sidebar_win_config(opts)
     style = "minimal",
     focusable = false,
     border = opts.border or "rounded",
-    title = " Commands ",
-    title_pos = "center",
   }
 end
 
@@ -2074,10 +2072,11 @@ local function render_contributors()
   )
 
   local window_height = vim.api.nvim_win_get_height(M.state.win)
+  local footer_space = is_sidebar_visible() and 0 or 4
 
   list_limit = math.min(
     list_limit,
-    math.max(1, window_height - 7 - #project_lines - 4)
+    math.max(1, window_height - 7 - #project_lines - footer_space)
   )
 
   local max_offset = math.max(1, #contributors - list_limit + 1)
@@ -2111,20 +2110,26 @@ local function render_contributors()
     lines[#lines + 1] = "  a add account"
   end
 
-  while #lines < window_height - 2 do
-    lines[#lines + 1] = ""
-  end
-
-  lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-  local separator_line = #lines
+  local separator_line = nil
   local commands_line = nil
 
   if not is_sidebar_visible() then
+    while #lines < window_height - 2 do
+      lines[#lines + 1] = ""
+    end
+
+    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
+    separator_line = #lines
+
     footer(lines, showing_users
         and "v projects  a add  r remove  m move  ?: help"
       or "v users  a add  r remove  m move  ?: help")
 
     commands_line = #lines
+  else
+    while #lines < window_height do
+      lines[#lines + 1] = ""
+    end
   end
 
   set_lines(lines)
@@ -2151,7 +2156,9 @@ local function render_contributors()
     )
   end
 
-  highlight(separator_line, 2, -1, "WinSeparator")
+  if separator_line then
+    highlight(separator_line, 2, -1, "WinSeparator")
+  end
 
   if commands_line then
     highlight(commands_line, 2, -1, "Comment")
@@ -2704,14 +2711,17 @@ local function render_error(message)
     or {
       "",
       "  USER",
-      "  @" .. M.state.contributor.username,
+      "  @" .. (M.state.contributor and M.state.contributor.username or ""),
       "",
       "  Could not load activity",
       "  " .. message,
     }
 
-  local nav = navigation.resolve(M.state.opts)
-  footer(lines, ("? shortcuts   %s/← back   q close"):format(nav.left))
+  if not is_sidebar_visible() then
+    local nav = navigation.resolve(M.state.opts)
+    footer(lines, ("? shortcuts   %s/← back   q close"):format(nav.left))
+  end
+
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -6242,4 +6252,5 @@ M._render_sidebar = render_sidebar
 M._toggle_sidebar = toggle_sidebar
 M._close_sidebar = close_sidebar
 M._navigation = navigation
+M._render_error = render_error
 return M

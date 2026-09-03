@@ -2846,6 +2846,7 @@ do
   -- Verify sidebar window config
   local side_cfg = vim.api.nvim_win_get_config(window_mod.state.sidebar_win)
   assert(side_cfg.focusable == false, "expected sidebar window to be non-focusable")
+  assert(side_cfg.title == nil, "expected sidebar window to have no title")
   assert(side_cfg.relative == "editor")
   assert(side_cfg.width == 26)
   local main_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
@@ -2863,20 +2864,22 @@ do
   assert(side_text:find("Sidebar", 1, true))
   assert(side_text:find("H", 1, true))
   assert(side_text:find("Inspect ID", 1, true))
-  -- Verify main window buffer does NOT contain bottom footer command line
+  -- Verify main window buffer does NOT contain bottom footer command line or separator line
   local main_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local main_text = table.concat(main_lines, "\n")
   assert(not main_text:find("v users  a add", 1, true))
+  assert(not main_text:find("─", 1, true), "expected no separator line when sidebar is visible")
   local prev_main_width = main_cfg.width
   -- Test 4: Toggle sidebar off via toggle function
   window_mod._toggle_sidebar()
   assert(window_mod.state.sidebar_win == nil, "expected sidebar_win to be nil after toggle")
   local widened_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
   assert(widened_cfg.width > prev_main_width, "expected main window to widen when sidebar is hidden")
-  -- Verify main window now shows footer commands
+  -- Verify main window now shows footer commands and separator line
   local footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local footer_text = table.concat(footer_lines, "\n")
   assert(footer_text:find("v users  a add", 1, true))
+  assert(footer_text:find("─", 1, true), "expected separator line when sidebar is hidden")
   -- Test 5: Toggle sidebar back on
   window_mod._toggle_sidebar()
   assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win))
@@ -2890,14 +2893,27 @@ do
   assert(window_mod.state.sidebar_win == nil, "expected sidebar to toggle off via s mapping")
   s_map.callback()
   assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to toggle on via s mapping")
-  -- Test 7: Resize event handling
+  -- Test 7: Verify render_error omits footer when sidebar is visible and includes it when hidden
+  window_mod._render_error("test error")
+  local err_lines_visible = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local err_text_visible = table.concat(err_lines_visible, "\n")
+  assert(err_text_visible:find("Could not load activity", 1, true))
+  assert(not err_text_visible:find("shortcuts", 1, true), "expected no shortcuts footer in error view when sidebar is visible")
+  window_mod._toggle_sidebar()
+  window_mod._render_error("test error")
+  local err_lines_hidden = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local err_text_hidden = table.concat(err_lines_hidden, "\n")
+  assert(err_text_hidden:find("Could not load activity", 1, true))
+  assert(err_text_hidden:find("shortcuts", 1, true), "expected shortcuts footer in error view when sidebar is hidden")
+  window_mod._toggle_sidebar()
+  -- Test 8: VimResized handles sidebar visibility dynamically
   vim.o.columns = 80
   vim.api.nvim_exec_autocmds("VimResized", { buffer = window_mod.state.buf })
   assert(window_mod.state.sidebar_win == nil, "expected sidebar to close when columns drop below 100 on VimResized")
   vim.o.columns = 120
   vim.api.nvim_exec_autocmds("VimResized", { buffer = window_mod.state.buf })
   assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to reopen on VimResized when columns >= 100")
-  -- Test 8: Close window cleans up both floats
+  -- Test 9: Close window cleans up both floats
   window_mod.close()
   assert(window_mod.state.win == nil)
   assert(window_mod.state.buf == nil)
