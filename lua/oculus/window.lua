@@ -118,6 +118,7 @@ M.state = {
   add_dialog_win = nil,
   add_input_buf = nil,
   add_input_win = nil,
+  closing_add_dialog = false,
   view = "contributors",
   contributor = nil,
   activity_scope = nil,
@@ -4350,8 +4351,25 @@ local function refresh_activity()
 end
 
 local function add_contributor(contributor, target_contributor)
-  local username = vim.trim(tostring(contributor.username or ""))
+  local raw_user = vim.trim(tostring(contributor.username or ""))
+  local detected_provider = nil
+
+  if raw_user:match("codeberg%.org") then
+    detected_provider = "codeberg"
+  elseif raw_user:match("github%.com") then
+    detected_provider = "github"
+  end
+
+  local cleaned = raw_user
+    :gsub("^https?://[^/]+/", "")
+    :gsub("^git@[^:]+:", "")
+    :gsub("^ssh://[^/]+/", "")
+    :gsub("^github%.com/", "")
+    :gsub("^codeberg%.org/", "")
     :gsub("^@", "")
+    :gsub("/+$", "")
+
+  local username = cleaned:match("^([%w][%w%._%-]*)") or cleaned
 
   if
     username == ""
@@ -4367,7 +4385,8 @@ local function add_contributor(contributor, target_contributor)
 
   local added = vim.deepcopy(contributor)
   added.username = username
-  added.provider = added.provider == "codeberg" and "codeberg" or "github"
+  local prov = detected_provider or added.provider
+  added.provider = prov == "codeberg" and "codeberg" or "github"
   added.name = added.name or username
   added.description = nil
 
@@ -4419,10 +4438,27 @@ local function add_contributor(contributor, target_contributor)
 end
 
 local function add_project(project, target_project)
-  local repository = vim.trim(tostring(project.repository or ""))
+  local raw_repo = vim.trim(tostring(project.repository or ""))
+  local detected_provider = nil
+
+  if raw_repo:match("codeberg%.org") then
+    detected_provider = "codeberg"
+  elseif raw_repo:match("github%.com") then
+    detected_provider = "github"
+  end
+
+  local cleaned = raw_repo
+    :gsub("^https?://[^/]+/", "")
+    :gsub("^git@[^:]+:", "")
+    :gsub("^ssh://[^/]+/", "")
+    :gsub("^github%.com/", "")
+    :gsub("^codeberg%.org/", "")
     :gsub("^/+", "")
     :gsub("/+$", "")
     :gsub("%.git$", "")
+
+  local owner, repo_name = cleaned:match("^([%w%._%-]+)/([%w%._%-]+)")
+  local repository = (owner and repo_name) and (owner .. "/" .. repo_name) or cleaned
 
   if not repository:match("^[%w%._%-]+/[%w%._%-]+$") then
     vim.notify(
@@ -4435,7 +4471,8 @@ local function add_project(project, target_project)
 
   local added = vim.deepcopy(project)
   added.repository = repository
-  added.provider = added.provider == "codeberg" and "codeberg" or "github"
+  local prov = detected_provider or added.provider
+  added.provider = prov == "codeberg" and "codeberg" or "github"
   added.name = added.name or repository:match("([^/]+)$")
 
   if has_project(M.state.opts.projects, added) then
@@ -4506,6 +4543,9 @@ end
 local add_dialog_ns = vim.api.nvim_create_namespace("oculus_add_dialog")
 
 local function close_add_dialog()
+  M.state.closing_add_dialog = true
+  vim.cmd("stopinsert")
+
   if is_valid_win(M.state.add_input_win) then
     vim.api.nvim_win_close(M.state.add_input_win, true)
   end
@@ -4513,6 +4553,9 @@ local function close_add_dialog()
   if is_valid_buf(M.state.add_input_buf) then
     vim.api.nvim_buf_delete(M.state.add_input_buf, { force = true })
   end
+
+  M.state.add_input_win = nil
+  M.state.add_input_buf = nil
 
   if is_valid_win(M.state.add_dialog_win) then
     vim.api.nvim_win_close(M.state.add_dialog_win, true)
@@ -4522,8 +4565,6 @@ local function close_add_dialog()
     vim.api.nvim_buf_delete(M.state.add_dialog_buf, { force = true })
   end
 
-  M.state.add_input_win = nil
-  M.state.add_input_buf = nil
   M.state.add_dialog_win = nil
   M.state.add_dialog_buf = nil
 
@@ -4534,6 +4575,10 @@ local function close_add_dialog()
   if is_valid_win(M.state.win) and is_sidebar_visible() then
     render_sidebar()
   end
+
+  vim.schedule(function()
+    M.state.closing_add_dialog = false
+  end)
 end
 
 local function update_add_dialog_lines(adding_project, provider)
@@ -4650,11 +4695,11 @@ local function open_add_dialog()
   vim.bo[i_buf].modifiable = true
   M.state.add_input_buf = i_buf
 
-  local i_win = vim.api.nvim_open_win(i_buf, true, {
+  local i_win = vim.api.nvim_open_win(i_buf, false, {
     relative = "win",
-    win = d_win,
-    row = input_row,
-    col = input_col,
+    win = M.state.win,
+    row = dialog_row + input_row,
+    col = dialog_col + input_col,
     width = input_width,
     height = 1,
     border = "rounded",
@@ -4664,6 +4709,7 @@ local function open_add_dialog()
   })
 
   M.state.add_input_win = i_win
+  vim.api.nvim_set_current_win(i_win)
   use_window_highlights(i_win)
   vim.wo[i_win].winhighlight = "Normal:OculusNormal,NormalFloat:OculusNormal,FloatBorder:Identifier"
   vim.wo[i_win].wrap = false
@@ -4708,20 +4754,41 @@ local function open_add_dialog()
     end
   end
 
+  local function on_insert_esc()
+    local lines = is_valid_buf(i_buf) and vim.api.nvim_buf_get_lines(i_buf, 0, 1, false) or {}
+    local raw_val = lines[1] or ""
+
+    if vim.trim(raw_val) == "" then
+      close_add_dialog()
+    else
+      vim.cmd("stopinsert")
+    end
+  end
+
   local function cancel()
     close_add_dialog()
   end
 
   local map_opts = { buffer = i_buf, nowait = true, silent = true }
   vim.keymap.set({ "i", "n" }, "<CR>", submit, map_opts)
-  vim.keymap.set({ "i", "n" }, "<Esc>", cancel, map_opts)
-  vim.keymap.set({ "i", "n" }, "<C-c>", cancel, map_opts)
+  vim.keymap.set({ "i", "n" }, "<kEnter>", submit, map_opts)
+  vim.keymap.set("i", "<Esc>", on_insert_esc, map_opts)
+  vim.keymap.set("n", "<Esc>", cancel, map_opts)
   vim.keymap.set("n", "q", cancel, map_opts)
+  vim.keymap.set({ "i", "n" }, "<C-c>", cancel, map_opts)
   vim.keymap.set({ "i", "n" }, "<Tab>", toggle_provider, map_opts)
   vim.keymap.set({ "i", "n" }, "<S-Tab>", toggle_provider, map_opts)
   vim.keymap.set({ "i", "n" }, "<Up>", toggle_provider, map_opts)
   vim.keymap.set({ "i", "n" }, "<Down>", toggle_provider, map_opts)
+  vim.keymap.set({ "i", "n" }, "<C-p>", toggle_provider, map_opts)
+  vim.keymap.set({ "i", "n" }, "<C-n>", toggle_provider, map_opts)
   vim.cmd("startinsert!")
+
+  vim.schedule(function()
+    if is_valid_win(i_win) then
+      vim.cmd("startinsert!")
+    end
+  end)
 
   if is_sidebar_visible() then
     render_sidebar()
@@ -6403,6 +6470,8 @@ function M.open(opts)
         or entered == M.state.footer_win
         or entered == M.state.add_dialog_win
         or entered == M.state.add_input_win
+        or is_add_dialog_open()
+        or M.state.closing_add_dialog
       then
         if entered == M.state.win then
           update_activity_cursorline()
