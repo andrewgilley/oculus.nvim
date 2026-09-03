@@ -128,21 +128,10 @@ local project_start_lines = table.concat(
 assert(project_start_lines:find("PROJECTS", 1, true))
 assert(not project_start_lines:find("No users added.", 1, true))
 assert(project_start_lines:find("v users", 1, true))
-local original_select = vim.ui.select
-local original_input = vim.ui.input
-
-vim.ui.select = function(items, _, callback)
-  callback(items[1])
-end
-
-vim.ui.input = function(_, callback)
-  callback("example/new-project")
-end
-
 local add_mapping = vim.fn.maparg("a", "n", false, true)
 add_mapping.callback()
-vim.ui.select = original_select
-vim.ui.input = original_input
+vim.api.nvim_buf_set_lines(state.add_input_buf, 0, -1, false, { "example/new-project" })
+vim.fn.maparg("<CR>", "n", false, true).callback()
 assert(#state.opts.projects == 1)
 assert(state.opts.projects[1].repository == "example/new-project")
 assert(state.opts.projects[1].provider == "github")
@@ -176,18 +165,10 @@ local empty_lines = table.concat(
 assert(empty_lines:find("No users added.", 1, true))
 assert(empty_lines:find("a add account", 1, true))
 assert(vim.fn.maparg("g", "n", false, true).desc == nil)
-
-vim.ui.select = function(items, _, callback)
-  callback(items[2])
-end
-
-vim.ui.input = function(_, callback)
-  callback("@custom-codeberg")
-end
-
 add_mapping.callback()
-vim.ui.select = original_select
-vim.ui.input = original_input
+vim.fn.maparg("<Tab>", "n", false, true).callback()
+vim.api.nvim_buf_set_lines(state.add_input_buf, 0, -1, false, { "@custom-codeberg" })
+vim.fn.maparg("<CR>", "n", false, true).callback()
 assert(#state.contributors == 1)
 assert(state.contributors[1].username == "custom-codeberg")
 assert(state.contributors[1].provider == "codeberg")
@@ -204,31 +185,14 @@ oculus.setup({
 })
 
 window.open(oculus.config)
-
-vim.ui.select = function(items, _, callback)
-  callback(items[2])
-end
-
-vim.ui.input = function(_, callback)
-  callback("example/persisted-project")
-end
-
 vim.fn.maparg("a", "n", false, true).callback()
-vim.ui.select = original_select
-vim.ui.input = original_input
+vim.fn.maparg("<Tab>", "n", false, true).callback()
+vim.api.nvim_buf_set_lines(window.state.add_input_buf, 0, -1, false, { "example/persisted-project" })
+vim.fn.maparg("<CR>", "n", false, true).callback()
 vim.fn.maparg("v", "n", false, true).callback()
-
-vim.ui.select = function(items, _, callback)
-  callback(items[1])
-end
-
-vim.ui.input = function(_, callback)
-  callback("@remember-me")
-end
-
 vim.fn.maparg("a", "n", false, true).callback()
-vim.ui.select = original_select
-vim.ui.input = original_input
+vim.api.nvim_buf_set_lines(window.state.add_input_buf, 0, -1, false, { "@remember-me" })
+vim.fn.maparg("<CR>", "n", false, true).callback()
 assert(#window.state.contributors == 1)
 assert(window.state.contributors[1].username == "remember-me")
 window.close()

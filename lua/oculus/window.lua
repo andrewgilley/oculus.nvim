@@ -114,6 +114,10 @@ M.state = {
   sidebar_buf = nil,
   sidebar_win = nil,
   sidebar_visible = nil,
+  add_dialog_buf = nil,
+  add_dialog_win = nil,
+  add_input_buf = nil,
+  add_input_win = nil,
   view = "contributors",
   contributor = nil,
   activity_scope = nil,
@@ -187,6 +191,10 @@ end
 
 local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
+end
+
+local function is_add_dialog_open()
+  return is_valid_win(M.state.add_dialog_win)
 end
 
 local function window_highlight_name(win, group)
@@ -562,6 +570,24 @@ local function make_sidebar_buf()
 end
 
 local function sidebar_sections_for_view(view)
+  if is_add_dialog_open() then
+    return {
+      {
+        title = "ACTIONS",
+        items = {
+          { "<CR>", "Submit" },
+          { "<Tab>", "Platform" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "<Esc>", "Cancel" },
+        },
+      },
+    }
+  end
+
   local nav = navigation.resolve(M.state.opts)
   local nav_down = nav.down .. " / ↓"
   local nav_up = nav.up .. " / ↑"
@@ -4477,13 +4503,89 @@ local function add_project(project, target_project)
   return true
 end
 
-local function prompt_add_account()
-  if M.state.view ~= "contributors" then
+local add_dialog_ns = vim.api.nvim_create_namespace("oculus_add_dialog")
+
+local function close_add_dialog()
+  if is_valid_win(M.state.add_input_win) then
+    vim.api.nvim_win_close(M.state.add_input_win, true)
+  end
+
+  if is_valid_buf(M.state.add_input_buf) then
+    vim.api.nvim_buf_delete(M.state.add_input_buf, { force = true })
+  end
+
+  if is_valid_win(M.state.add_dialog_win) then
+    vim.api.nvim_win_close(M.state.add_dialog_win, true)
+  end
+
+  if is_valid_buf(M.state.add_dialog_buf) then
+    vim.api.nvim_buf_delete(M.state.add_dialog_buf, { force = true })
+  end
+
+  M.state.add_input_win = nil
+  M.state.add_input_buf = nil
+  M.state.add_dialog_win = nil
+  M.state.add_dialog_buf = nil
+
+  if is_valid_win(M.state.win) then
+    vim.api.nvim_set_current_win(M.state.win)
+  end
+
+  if is_valid_win(M.state.win) and is_sidebar_visible() then
+    render_sidebar()
+  end
+end
+
+local function update_add_dialog_lines(adding_project, provider)
+  if not is_valid_buf(M.state.add_dialog_buf) then
     return
   end
 
+  local buf = M.state.add_dialog_buf
+  local gh_icon = provider == "github" and "●" or "○"
+  local cb_icon = provider == "codeberg" and "●" or "○"
+
+  local field_label = adding_project and "Repository (owner/repo):"
+    or "User handle (@username):"
+
+  local lines = {
+    "",
+    ("  Platform:  %s GitHub   %s Codeberg   (Tab)"):format(gh_icon, cb_icon),
+    "",
+    "  " .. field_label,
+    "",
+    "",
+    "",
+    "",
+    "  <Enter> submit   <Tab> platform   <Esc> cancel",
+  }
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, add_dialog_ns, 0, -1)
+  local platform_label_end = 12
+  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Title", 1, 2, platform_label_end)
+  local gh_hl = provider == "github" and "DiagnosticOk" or "Comment"
+  local gh_start = platform_label_end + 1
+  local gh_end = gh_start + #gh_icon + 1 + #"GitHub"
+  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, gh_hl, 1, gh_start, gh_end)
+  local cb_hl = provider == "codeberg" and "DiagnosticOk" or "Comment"
+  local cb_start = gh_end + 3
+  local cb_end = cb_start + #cb_icon + 1 + #"Codeberg"
+  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, cb_hl, 1, cb_start, cb_end)
+  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 1, cb_end + 1, -1)
+  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Identifier", 3, 2, -1)
+  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 8, 2, -1)
+end
+
+local function open_add_dialog()
+  if M.state.view ~= "contributors" or not is_valid_win(M.state.win) then
+    return
+  end
+
+  close_add_dialog()
   local adding_project = M.state.community_view == "projects"
-  M.state.opening_account_prompt = true
   local cursor_target = target_on_cursor()
 
   local target_project = adding_project
@@ -4498,54 +4600,135 @@ local function prompt_add_account()
       and cursor_target
     or nil
 
-  vim.ui.select(
-    {
-      { provider = "github", label = "GitHub" },
-      { provider = "codeberg", label = "Codeberg" },
-    },
-    {
-      prompt = adding_project
-          and "Add project from:"
-        or "Add account from:",
-      format_item = function(item)
-        return item.label
-      end,
-    },
-    function(choice)
-      if not choice then
-        M.state.opening_account_prompt = false
-        return
-      end
+  local parent_width = vim.api.nvim_win_get_width(M.state.win)
+  local parent_height = vim.api.nvim_win_get_height(M.state.win)
+  local dialog_width = math.min(50, math.max(34, parent_width - 4))
+  local dialog_height = 9
+  local dialog_row = math.max(0, math.floor((parent_height - dialog_height) / 2))
+  local dialog_col = math.max(0, math.floor((parent_width - dialog_width) / 2))
+  local input_width = math.max(10, dialog_width - 6)
+  local input_col = 2
+  local input_row = 4
+  local d_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[d_buf].buftype = "nofile"
+  vim.bo[d_buf].bufhidden = "wipe"
+  vim.bo[d_buf].swapfile = false
+  vim.bo[d_buf].filetype = "oculus-add-dialog"
+  M.state.add_dialog_buf = d_buf
+  local title = adding_project and " Add Project " or " Add User "
 
-      vim.ui.input(
-        {
-          prompt = choice.label
-              .. (adding_project and " repository: " or " handle: @"),
-        },
-        function(value)
-          M.state.opening_account_prompt = false
+  local d_win = vim.api.nvim_open_win(d_buf, false, {
+    relative = "win",
+    win = M.state.win,
+    row = dialog_row,
+    col = dialog_col,
+    width = dialog_width,
+    height = dialog_height,
+    border = "rounded",
+    title = title,
+    title_pos = "center",
+    style = "minimal",
+    focusable = false,
+    zindex = 70,
+  })
 
-          local added = value and (
-            adding_project
-                and add_project({
-                  repository = value,
-                  provider = choice.provider,
-                }, target_project)
-              or add_contributor({
-                username = value,
-                provider = choice.provider,
-              }, target_contributor)
-          )
+  M.state.add_dialog_win = d_win
+  use_window_highlights(d_win)
+  vim.wo[d_win].winhighlight = "Normal:OculusNormal,NormalFloat:OculusNormal,FloatBorder:WinSeparator"
+  vim.wo[d_win].wrap = false
+  vim.wo[d_win].cursorline = false
+  vim.wo[d_win].number = false
+  vim.wo[d_win].relativenumber = false
+  vim.wo[d_win].signcolumn = "no"
+  local provider = "github"
+  update_add_dialog_lines(adding_project, provider)
+  local i_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[i_buf].buftype = "nofile"
+  vim.bo[i_buf].bufhidden = "wipe"
+  vim.bo[i_buf].swapfile = false
+  vim.bo[i_buf].filetype = "oculus-add-input"
+  vim.bo[i_buf].modifiable = true
+  M.state.add_input_buf = i_buf
 
-          if added and is_valid_win(M.state.win) then
-            vim.api.nvim_set_current_win(M.state.win)
-            render_contributors()
-          end
-        end
-      )
+  local i_win = vim.api.nvim_open_win(i_buf, true, {
+    relative = "win",
+    win = d_win,
+    row = input_row,
+    col = input_col,
+    width = input_width,
+    height = 1,
+    border = "rounded",
+    style = "minimal",
+    focusable = true,
+    zindex = 75,
+  })
+
+  M.state.add_input_win = i_win
+  use_window_highlights(i_win)
+  vim.wo[i_win].winhighlight = "Normal:OculusNormal,NormalFloat:OculusNormal,FloatBorder:Identifier"
+  vim.wo[i_win].wrap = false
+  vim.wo[i_win].cursorline = false
+  vim.wo[i_win].number = false
+  vim.wo[i_win].relativenumber = false
+  vim.wo[i_win].signcolumn = "no"
+
+  local function submit()
+    local lines = is_valid_buf(i_buf) and vim.api.nvim_buf_get_lines(i_buf, 0, 1, false) or {}
+    local raw_val = lines[1] or ""
+    local val = vim.trim(raw_val)
+    local chosen_provider = provider
+    close_add_dialog()
+
+    if val == "" then
+      return
     end
-  )
+
+    local added = adding_project
+        and add_project({
+          repository = val,
+          provider = chosen_provider,
+        }, target_project)
+      or add_contributor({
+        username = val,
+        provider = chosen_provider,
+      }, target_contributor)
+
+    if added and is_valid_win(M.state.win) then
+      vim.api.nvim_set_current_win(M.state.win)
+      render_contributors()
+    end
+  end
+
+  local function toggle_provider()
+    provider = provider == "github" and "codeberg" or "github"
+    update_add_dialog_lines(adding_project, provider)
+
+    if vim.fn.mode():sub(1, 1) == "i" then
+      vim.cmd("startinsert!")
+    end
+  end
+
+  local function cancel()
+    close_add_dialog()
+  end
+
+  local map_opts = { buffer = i_buf, nowait = true, silent = true }
+  vim.keymap.set({ "i", "n" }, "<CR>", submit, map_opts)
+  vim.keymap.set({ "i", "n" }, "<Esc>", cancel, map_opts)
+  vim.keymap.set({ "i", "n" }, "<C-c>", cancel, map_opts)
+  vim.keymap.set("n", "q", cancel, map_opts)
+  vim.keymap.set({ "i", "n" }, "<Tab>", toggle_provider, map_opts)
+  vim.keymap.set({ "i", "n" }, "<S-Tab>", toggle_provider, map_opts)
+  vim.keymap.set({ "i", "n" }, "<Up>", toggle_provider, map_opts)
+  vim.keymap.set({ "i", "n" }, "<Down>", toggle_provider, map_opts)
+  vim.cmd("startinsert!")
+
+  if is_sidebar_visible() then
+    render_sidebar()
+  end
 end
+
+local prompt_add_account = open_add_dialog
 
 local function remember_removed(option, key)
   local removed = M.state.opts[option] or {}
@@ -5940,6 +6123,7 @@ function M.close()
   end
 
   close_activity_footer()
+  close_add_dialog()
   close_sidebar()
 
   if is_valid_win(M.state.win) then
@@ -6125,6 +6309,10 @@ function M.open(opts)
     buffer = buf,
     callback = function()
       if is_valid_win(M.state.win) then
+        if is_valid_win(M.state.add_dialog_win) then
+          close_add_dialog()
+        end
+
         vim.api.nvim_win_set_config(M.state.win, make_win_config(M.state.opts))
 
         if is_sidebar_visible() then
@@ -6213,6 +6401,8 @@ function M.open(opts)
       if entered == M.state.win
         or entered == M.state.sidebar_win
         or entered == M.state.footer_win
+        or entered == M.state.add_dialog_win
+        or entered == M.state.add_input_win
       then
         if entered == M.state.win then
           update_activity_cursorline()
@@ -6253,4 +6443,8 @@ M._toggle_sidebar = toggle_sidebar
 M._close_sidebar = close_sidebar
 M._navigation = navigation
 M._render_error = render_error
+M._open_add_dialog = open_add_dialog
+M._close_add_dialog = close_add_dialog
+M._is_add_dialog_open = is_add_dialog_open
+M._prompt_add_account = open_add_dialog
 return M
