@@ -3129,6 +3129,63 @@ do
   assert(window_mod.state.win == nil)
   assert(window_mod.state.add_dialog_win == nil)
   assert(window_mod.state.add_input_win == nil)
+
+  -- Test 8: Reopen Oculus and verify dialog does not prematurely close on event loop tick
+  window_mod.open({
+    sidebar = true,
+    contributors = { { username = "alice", provider = "github" } },
+    projects = { { repository = "org/repo1", provider = "github" } },
+  })
+
+  a_map = vim.fn.maparg("a", "n", false, true)
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open(), "expected add dialog to open")
+  vim.wait(100, function() return false end)
+  assert(window_mod._is_add_dialog_open(), "expected add dialog to remain open after event loop ticks")
+  assert(window_mod.state.win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.win), "expected main window to remain open")
+  -- Test 9: Insert-mode Esc behavior
+  local i_esc_map = vim.fn.maparg("<Esc>", "i", false, true)
+  assert(i_esc_map ~= nil and type(i_esc_map.callback) == "function", "expected insert mode <Esc> mapping")
+  vim.api.nvim_buf_set_lines(window_mod.state.add_input_buf, 0, -1, false, { "some text" })
+  i_esc_map.callback()
+  assert(window_mod._is_add_dialog_open(), "expected dialog to stay open when insert-mode Esc is pressed with text")
+  vim.api.nvim_buf_set_lines(window_mod.state.add_input_buf, 0, -1, false, { "" })
+  i_esc_map.callback()
+  assert(not window_mod._is_add_dialog_open(), "expected dialog to close when insert-mode Esc is pressed on empty buffer")
+  -- Test 10: Submit full GitHub URL and verify sanitization
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open())
+  vim.api.nvim_buf_set_lines(window_mod.state.add_input_buf, 0, -1, false, { "https://github.com/tested-org/tested-repo.git" })
+  cr_map = vim.fn.maparg("<CR>", "n", false, true)
+  cr_map.callback()
+  assert(not window_mod._is_add_dialog_open())
+  assert(window_mod.state.selected_project ~= nil)
+  assert(window_mod.state.selected_project.repository == "tested-org/tested-repo")
+  assert(window_mod.state.selected_project.provider == "github")
+  -- Test 11: Submit Codeberg URL and verify provider auto-detection
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open())
+  vim.api.nvim_buf_set_lines(window_mod.state.add_input_buf, 0, -1, false, { "https://codeberg.org/tested-cb/cb-repo" })
+  cr_map = vim.fn.maparg("<CR>", "n", false, true)
+  cr_map.callback()
+  assert(not window_mod._is_add_dialog_open())
+  assert(window_mod.state.selected_project ~= nil)
+  assert(window_mod.state.selected_project.repository == "tested-cb/cb-repo")
+  assert(window_mod.state.selected_project.provider == "codeberg")
+  -- Test 12: Switch to users and submit GitHub user URL
+  v_map = vim.fn.maparg("v", "n", false, true)
+  v_map.callback()
+  assert(window_mod.state.community_view == "users")
+  a_map = vim.fn.maparg("a", "n", false, true)
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open())
+  vim.api.nvim_buf_set_lines(window_mod.state.add_input_buf, 0, -1, false, { "https://github.com/charlie_dev" })
+  cr_map = vim.fn.maparg("<CR>", "n", false, true)
+  cr_map.callback()
+  assert(not window_mod._is_add_dialog_open())
+  assert(window_mod.state.selected_username == "charlie_dev")
+  window_mod.close()
+  assert(window_mod.state.win == nil)
   vim.o.columns = prev_cols
   vim.o.lines = prev_lines
 end
