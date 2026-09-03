@@ -3028,3 +3028,107 @@ do
   vim.o.columns = prev_cols
   vim.o.lines = prev_lines
 end
+
+do
+  local window_mod = require("oculus.window")
+  local prev_cols = vim.o.columns
+  local prev_lines = vim.o.lines
+  vim.o.columns = 120
+  vim.o.lines = 40
+
+  window_mod.open({
+    sidebar = true,
+    contributors = { { username = "alice", provider = "github" } },
+    projects = { { repository = "org/repo1", provider = "github" } },
+  })
+
+  -- Test 1: Open add dialog from projects list
+  local a_map = vim.fn.maparg("a", "n", false, true)
+  assert(a_map ~= nil and type(a_map.callback) == "function", "expected 'a' mapping callback")
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open(), "expected add dialog to be open")
+  assert(window_mod.state.add_dialog_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.add_dialog_win))
+  assert(window_mod.state.add_input_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.add_input_win))
+  -- Verify dialog config and title
+  local d_cfg = vim.api.nvim_win_get_config(window_mod.state.add_dialog_win)
+  assert(d_cfg.title[1][1]:find("Add Project", 1, true), "expected Add Project title")
+  -- Verify dialog content
+  local d_lines = vim.api.nvim_buf_get_lines(window_mod.state.add_dialog_buf, 0, -1, false)
+  local d_text = table.concat(d_lines, "\n")
+  assert(d_text:find("Platform:  ● GitHub   ○ Codeberg", 1, true))
+  assert(d_text:find("Repository (owner/repo):", 1, true))
+  assert(d_text:find("<Enter> submit   <Tab> platform   <Esc> cancel", 1, true))
+  -- Verify sidebar displays add dialog commands
+  assert(window_mod.state.sidebar_buf ~= nil)
+  local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)
+  local side_text = table.concat(side_lines, "\n")
+  assert(side_text:find("Submit", 1, true))
+  assert(side_text:find("Platform", 1, true))
+  assert(side_text:find("Cancel", 1, true))
+  -- Test 2: Toggle platform via Tab
+  local tab_map = vim.fn.maparg("<Tab>", "n", false, true)
+  assert(tab_map ~= nil and type(tab_map.callback) == "function", "expected <Tab> mapping on input buffer")
+  tab_map.callback()
+  d_lines = vim.api.nvim_buf_get_lines(window_mod.state.add_dialog_buf, 0, -1, false)
+  d_text = table.concat(d_lines, "\n")
+  assert(d_text:find("Platform:  ○ GitHub   ● Codeberg", 1, true), "expected Codeberg selected after Tab")
+  tab_map.callback()
+  d_lines = vim.api.nvim_buf_get_lines(window_mod.state.add_dialog_buf, 0, -1, false)
+  d_text = table.concat(d_lines, "\n")
+  assert(d_text:find("Platform:  ● GitHub   ○ Codeberg", 1, true), "expected GitHub selected after second Tab")
+  -- Test 3: Submit valid project
+  vim.api.nvim_buf_set_lines(window_mod.state.add_input_buf, 0, -1, false, { "org/repo-added" })
+  local cr_map = vim.fn.maparg("<CR>", "n", false, true)
+  assert(cr_map ~= nil and type(cr_map.callback) == "function", "expected <CR> mapping on input buffer")
+  cr_map.callback()
+  assert(not window_mod._is_add_dialog_open(), "expected add dialog to close after submit")
+  assert(window_mod.state.selected_project ~= nil)
+  assert(window_mod.state.selected_project.repository == "org/repo-added")
+  -- Verify main window buffer contains added project
+  local main_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local main_text = table.concat(main_lines, "\n")
+  assert(main_text:find("org/repo-added", 1, true), "expected added project in main window")
+  -- Test 4: Open add dialog from users list
+  local v_map = vim.fn.maparg("v", "n", false, true)
+  v_map.callback()
+  assert(window_mod.state.community_view == "users")
+  a_map = vim.fn.maparg("a", "n", false, true)
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open())
+  d_cfg = vim.api.nvim_win_get_config(window_mod.state.add_dialog_win)
+  assert(d_cfg.title[1][1]:find("Add User", 1, true), "expected Add User title")
+  d_lines = vim.api.nvim_buf_get_lines(window_mod.state.add_dialog_buf, 0, -1, false)
+  d_text = table.concat(d_lines, "\n")
+  assert(d_text:find("User handle (@username):", 1, true))
+  -- Submit user with @ prefix
+  vim.api.nvim_buf_set_lines(window_mod.state.add_input_buf, 0, -1, false, { "@bob_user" })
+  cr_map = vim.fn.maparg("<CR>", "n", false, true)
+  cr_map.callback()
+  assert(not window_mod._is_add_dialog_open())
+  assert(window_mod.state.selected_username == "bob_user")
+  -- Test 5: Cancel via Esc
+  a_map = vim.fn.maparg("a", "n", false, true)
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open())
+  local esc_map = vim.fn.maparg("<Esc>", "n", false, true)
+  assert(esc_map ~= nil and type(esc_map.callback) == "function")
+  esc_map.callback()
+  assert(not window_mod._is_add_dialog_open(), "expected add dialog to close on Esc")
+  -- Test 6: Empty submit does not add item
+  local prev_count = #window_mod.state.contributors
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open())
+  cr_map = vim.fn.maparg("<CR>", "n", false, true)
+  cr_map.callback()
+  assert(not window_mod._is_add_dialog_open())
+  assert(#window_mod.state.contributors == prev_count)
+  -- Test 7: Closing Oculus closes active dialog floats
+  a_map.callback()
+  assert(window_mod._is_add_dialog_open())
+  window_mod.close()
+  assert(window_mod.state.win == nil)
+  assert(window_mod.state.add_dialog_win == nil)
+  assert(window_mod.state.add_input_win == nil)
+  vim.o.columns = prev_cols
+  vim.o.lines = prev_lines
+end
