@@ -309,6 +309,7 @@ local function ensure_context_window_leftcol(win)
       then
         vim.api.nvim_win_call(context_win, function()
           local v = vim.fn.winsaveview()
+
           if v.leftcol ~= 0 then
             vim.fn.winrestview({ leftcol = 0 })
           end
@@ -477,6 +478,7 @@ function M._refresh_inspection_treesitter_context_highlights()
 
           vim.api.nvim_win_call(context_win, function()
             local v = vim.fn.winsaveview()
+
             if v.leftcol ~= 0 then
               vim.fn.winrestview({ leftcol = 0 })
             end
@@ -503,7 +505,6 @@ function M._enable_inspection_treesitter_context(opts)
   end
 
   ensure_treesitter_safeguards()
-
   local ok, context = pcall(require, "treesitter-context")
 
   if not ok or type(context) ~= "table" then
@@ -580,6 +581,7 @@ end
 
 local git = require("oculus.inspect.git")
 local patch = require("oculus.inspect.patch")
+local target = require("oculus.inspect.target")
 
 local function valid_endpoint(endpoint)
   return endpoint
@@ -2202,16 +2204,20 @@ local function apply_view_horizontal(view, source_view, text_len, default_col)
     if target_leftcol > 0 then
       if text_len > target_leftcol then
         local desired_col = source_view.col or target_leftcol
+
         view.col = math.max(
           target_leftcol,
           math.min(desired_col, text_len - 1)
         )
+
         view.curswant = source_view.curswant or view.col
         view.coladd = 0
       else
         view.col = text_len
+
         view.coladd = (target_leftcol - text_len)
           + (source_view.coladd or 0)
+
         view.curswant = source_view.curswant or target_leftcol
       end
     else
@@ -2298,6 +2304,7 @@ local function position_change_cursor(
         line,
         false
       )[1] or ""
+
       local default_col = (text:find("%S") or 1) - 1
       local view = vim.fn.winsaveview()
       apply_view_horizontal(view, horizontal, #text, default_col)
@@ -2306,7 +2313,6 @@ local function position_change_cursor(
   end
 
   ensure_context_window_leftcol(win)
-
   return true
 end
 
@@ -2481,12 +2487,14 @@ local function move_cursor_to_line_start(
     vim.api.nvim_win_call(win, function()
       local buf = vim.api.nvim_win_get_buf(win)
       local current_line = vim.api.nvim_win_get_cursor(win)[1]
+
       local text = vim.api.nvim_buf_get_lines(
         buf,
         current_line - 1,
         current_line,
         false
       )[1] or ""
+
       local default_col = (text:find("%S") or 1) - 1
       local view = vim.fn.winsaveview()
       apply_view_horizontal(view, horizontal, #text, default_col)
@@ -2648,6 +2656,7 @@ local function map_inspection_line(session, source_role, target_role, source_lin
         return source_line
       elseif source_line < parent_start + math.max(1, hunk.old_count) then
         local offset = source_line - parent_start
+
         return math.min(
           change_start + offset,
           change_start + math.max(0, (hunk.new_count or 1) - 1)
@@ -2661,6 +2670,7 @@ local function map_inspection_line(session, source_role, target_role, source_lin
         return source_line
       elseif source_line < change_start + math.max(1, hunk.new_count) then
         local offset = source_line - change_start
+
         return math.min(
           parent_start + offset,
           parent_start + math.max(0, (hunk.old_count or 1) - 1)
@@ -2819,7 +2829,6 @@ local function map_file_navigation(endpoint, session, role, group)
       max_line = start
     else
       local hunk = session.hunks and session.hunks[chunk_index] or nil
-
       local raw_start = render_chunk_for_role(session, target_role, chunk_index)
 
       if type(raw_start) == "number" then
@@ -2836,8 +2845,8 @@ local function map_file_navigation(endpoint, session, role, group)
       or nil
 
     select_endpoint(target, session, target_role, group)
-
     local target_line = start
+
     if source_view and source_view.lnum then
       local mapped_lnum = map_inspection_line(
         session,
@@ -2845,6 +2854,7 @@ local function map_file_navigation(endpoint, session, role, group)
         target_role,
         source_view.lnum
       )
+
       if mapped_lnum and mapped_lnum >= 1 then
         target_line = mapped_lnum
       end
@@ -2862,16 +2872,19 @@ local function map_file_navigation(endpoint, session, role, group)
     elseif source_view and vim.api.nvim_win_is_valid(target.win) then
       vim.api.nvim_win_call(target.win, function()
         local buf = target.buf
+
         local line = math.min(
           source_view.lnum or 1,
           math.max(1, vim.api.nvim_buf_line_count(buf))
         )
+
         local text = vim.api.nvim_buf_get_lines(
           buf,
           line - 1,
           line,
           false
         )[1] or ""
+
         local default_col = (text:find("%S") or 1) - 1
         local view = vim.fn.winsaveview()
 
@@ -8075,6 +8088,7 @@ vim.api.nvim_create_autocmd("TabLeave", {
 
       if index then
         local current_win = vim.api.nvim_get_current_win()
+
         local current_view = (current_win and vim.api.nvim_win_is_valid(current_win))
             and vim.api.nvim_win_call(current_win, function()
               return vim.fn.winsaveview()
@@ -8089,6 +8103,7 @@ vim.api.nvim_create_autocmd("TabLeave", {
         }
 
         local session = group[index]
+
         if session and current_view then
           session.horizontal_scroll = {
             leftcol = current_view.leftcol,
@@ -8155,12 +8170,14 @@ vim.api.nvim_create_autocmd("TabEnter", {
           vim.api.nvim_win_call(endpoint.win, function()
             local buf = endpoint.buf
             local current_line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+
             local text = vim.api.nvim_buf_get_lines(
               buf,
               current_line - 1,
               current_line,
               false
             )[1] or ""
+
             local default_col = (text:find("%S") or 1) - 1
             local view = vim.fn.winsaveview()
             apply_view_horizontal(view, source.view, #text, default_col)
@@ -9764,7 +9781,7 @@ end
 
 function M.open(url, opts, context, lifecycle, inspection_window_options)
   opts = opts or {}
-  local info = patch.parse_target_url(url)
+  local info = type(url) == "table" and url or patch.parse_target_url(url)
 
   if not info then
     return nil,
@@ -9908,6 +9925,10 @@ function M.open(url, opts, context, lifecycle, inspection_window_options)
   return true
 end
 
+M.inspect_by_id = target.inspect_by_id
+M._parse_target = target.parse
+M._resolve_repository = target.resolve_repository
+M._resolve_target_url = target.resolve_target_url
 M._parse_commit_url = patch.parse_commit_url
 M._parse_pull_request_url = patch.parse_pull_request_url
 M._parse_issue_url = patch.parse_issue_url

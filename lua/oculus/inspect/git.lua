@@ -199,6 +199,65 @@ function M.repository_root(path)
   return vim.fs.root(path, ".git")
 end
 
+function M.detect_repository(path, callback)
+  local root = M.repository_root(path or vim.fn.getcwd())
+
+  if not root then
+    local buf_name = vim.api.nvim_buf_get_name(0)
+
+    if buf_name ~= "" then
+      root = M.repository_root(buf_name)
+    end
+  end
+
+  if not root then
+    callback(nil)
+    return
+  end
+
+  M.run({ "git", "-C", root, "remote", "-v" }, function(output)
+    if not output or output == "" then
+      callback(nil)
+      return
+    end
+
+    local first_match = nil
+
+    for line in output:gmatch("[^\r\n]+") do
+      local remote_name, url = line:match("^(%S+)%s+(%S+)%s+%(fetch%)$")
+
+      if url then
+        local forge, repository = M.forge_repository(url)
+
+        if forge and repository then
+          local owner, repo = repository:match("^([^/]+)/([^/]+)$")
+
+          if owner and repo then
+            local info = {
+              forge = forge,
+              owner = owner,
+              repo = repo,
+              repository = repository,
+              root = root,
+            }
+
+            if remote_name == "origin" then
+              callback(info)
+              return
+            end
+
+            if not first_match then
+              first_match = info
+            end
+          end
+        end
+      end
+    end
+
+    callback(first_match)
+  end)
+end
+
 function M.local_candidates(info, opts)
   local candidates = {}
   local seen = {}
