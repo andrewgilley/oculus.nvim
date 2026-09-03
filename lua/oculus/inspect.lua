@@ -6923,11 +6923,12 @@ show_inspection_overview = function(group)
     })
   end
 
-  map_scroll("k", 1, "Scroll Oculus Inspect overview down")
+  local nav = require("oculus.navigation").resolve(group.navigation)
+  map_scroll(nav.down, 1, "Scroll Oculus Inspect overview down")
   map_scroll("<Down>", 1, "Scroll Oculus Inspect overview down")
-  map_scroll("i", -1, "Scroll Oculus Inspect overview up")
+  map_scroll(nav.up, -1, "Scroll Oculus Inspect overview up")
   map_scroll("<Up>", -1, "Scroll Oculus Inspect overview up")
-  map_scroll("<C-k>", 10, "Scroll Oculus Inspect overview down 10 lines")
+  map_scroll("<C-" .. nav.down .. ">", 10, "Scroll Oculus Inspect overview down 10 lines")
 
   vim.keymap.set("n", "<CR>", function()
     if group.overview_agent_mode == "models" then
@@ -8724,6 +8725,7 @@ local function open_tabs(
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
+      navigation = opts.navigation or opts.navigation_keys,
       old_version = opts.inspect_old_version,
       new_version = opts.inspect_new_version,
       next_chunk = opts.inspect_next_chunk,
@@ -9542,6 +9544,7 @@ local function open_issue_inspection(
       sidebar_toggle = opts.inspect_sidebar_toggle,
       sidebar_width_proportion = opts.inspect_sidebar_width,
       overview_toggle = opts.inspect_overview_toggle,
+      navigation = opts.navigation or opts.navigation_keys,
       old_version = opts.inspect_old_version,
       new_version = opts.inspect_new_version,
       next_chunk = opts.inspect_next_chunk,

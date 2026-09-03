@@ -4,6 +4,7 @@ local browser = require("oculus.browser")
 local github = require("oculus.github")
 local inspect = require("oculus.inspect")
 local codeberg = require("oculus.codeberg")
+local navigation = require("oculus.navigation")
 
 local function activity_provider(contributor)
   if contributor and contributor.provider == "codeberg" then
@@ -563,6 +564,12 @@ local function make_sidebar_buf()
 end
 
 local function sidebar_sections_for_view(view)
+  local nav = navigation.resolve(M.state.opts)
+  local nav_down = nav.down .. " / ↓"
+  local nav_up = nav.up .. " / ↑"
+  local nav_left = nav.left .. " / ←"
+  local nav_right = nav.right .. " / ↵"
+
   if view == "contributors" then
     local showing_users = M.state.community_view == "users"
 
@@ -570,9 +577,9 @@ local function sidebar_sections_for_view(view)
       {
         title = "NAVIGATION",
         items = {
-          { "k / ↓", "Down" },
-          { "i / ↑", "Up" },
-          { "l / ↵", "Select" },
+          { nav_down, "Down" },
+          { nav_up, "Up" },
+          { nav_right, "Select" },
         },
       },
       {
@@ -580,7 +587,7 @@ local function sidebar_sections_for_view(view)
         items = {
           { "v", showing_users and "Projects" or "Users" },
           { "a", "Add" },
-          { "H", "Inspect ID" },
+          { nav.inspect_id, "Inspect ID" },
           { "r", "Remove" },
           { "m", "Move" },
           { "f", "Filters" },
@@ -599,8 +606,8 @@ local function sidebar_sections_for_view(view)
     }
   elseif view == "activity" then
     local actions = {
-      { "h", "Inspect" },
-      { "H", "Inspect ID" },
+      { nav.inspect, "Inspect" },
+      { nav.inspect_id, "Inspect ID" },
       { "Tab", "Queue" },
       { "b", "Browser" },
     }
@@ -620,9 +627,9 @@ local function sidebar_sections_for_view(view)
       {
         title = "NAVIGATION",
         items = {
-          { "k / ↓", "Down" },
-          { "i / ↑", "Up" },
-          { "j / ←", "Back" },
+          { nav_down, "Down" },
+          { nav_up, "Up" },
+          { nav_left, "Back" },
         },
       },
       {
@@ -643,9 +650,9 @@ local function sidebar_sections_for_view(view)
       {
         title = "NAVIGATION",
         items = {
-          { "k / ↓", "Down" },
-          { "i / ↑", "Up" },
-          { "j / ←", "Back" },
+          { nav_down, "Down" },
+          { nav_up, "Up" },
+          { nav_left, "Back" },
         },
       },
       {
@@ -671,9 +678,9 @@ local function sidebar_sections_for_view(view)
       {
         title = "NAVIGATION",
         items = {
-          { "k / ↓", "Down" },
-          { "i / ↑", "Up" },
-          { "j / ←", "Back" },
+          { nav_down, "Down" },
+          { nav_up, "Up" },
+          { nav_left, "Back" },
         },
       },
       {
@@ -697,7 +704,7 @@ local function sidebar_sections_for_view(view)
     {
       title = "NAVIGATION",
       items = {
-        { "j / ←", "Back" },
+        { nav_left, "Back" },
         { "?", "Back" },
       },
     },
@@ -885,7 +892,8 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local activity_commands = "  h inspect   b browser"
+  local nav = navigation.resolve(M.state.opts)
+  local activity_commands = ("  %s inspect   b browser"):format(nav.inspect)
 
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
@@ -2390,9 +2398,10 @@ local function render_filters(scope, selected_type)
   local commands_line = nil
 
   if not is_sidebar_visible() then
+    local nav = navigation.resolve(M.state.opts)
     lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
     separator_line = #lines
-    footer(lines, "? shortcuts   j/← back   q close")
+    footer(lines, ("? shortcuts   %s/← back   q close"):format(nav.left))
     commands_line = #lines
   end
 
@@ -2701,7 +2710,8 @@ local function render_error(message)
       "  " .. message,
     }
 
-  footer(lines, "? shortcuts   j/← back   q close")
+  local nav = navigation.resolve(M.state.opts)
+  footer(lines, ("? shortcuts   %s/← back   q close"):format(nav.left))
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -3227,17 +3237,19 @@ local function render_shortcuts()
     end
   end
 
+  local nav = navigation.resolve(M.state.opts)
+
   section("NAVIGATION", {
-    { "<Up>", "Select the previous item" },
-    { "k / <Down>", "Select the next item" },
-    { "l / <Right> / <CR>", "Select the current item" },
-    { "j / <Left>", "Return to the previous page" },
+    { nav.up .. " / <Up>", "Select the previous item" },
+    { nav.down .. " / <Down>", "Select the next item" },
+    { nav.right .. " / <Right> / <CR>", "Select the current item" },
+    { nav.left .. " / <Left>", "Return to the previous page" },
   })
 
   section("STARTUP LISTS", {
     { "v", "Switch between project and user lists" },
     { "a", "Add a GitHub or Codeberg project or account" },
-    { "H", "Inspect an issue, PR, or commit by ID" },
+    { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
     { "r", "Remove the selected project or account" },
     { "m", "Move the selected project or account" },
     { "f", "Edit filters for the selected user or project" },
@@ -3247,14 +3259,14 @@ local function render_shortcuts()
   })
 
   section("ACTIVITY", {
-    { "h", "Inspect the selected change or issue" },
-    { "H", "Inspect an issue, PR, or commit by ID" },
+    { nav.inspect, "Inspect the selected change or issue" },
+    { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
     { "Tab", "Queue activity for sequential inspection" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Open a project's issue activity" },
     { "r", "Refresh the current activity page" },
     { "p", "Load the next eight older activity items" },
-    { "l / <Right>", "Open the next older activity page" },
+    { nav.right .. " / <Right>", "Open the next older activity page" },
     { "f", "Move forward, or filter a project issue page" },
   })
 
@@ -3274,7 +3286,7 @@ local function render_shortcuts()
 
   if not is_sidebar_visible() then
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "  ? or j/← back   q close"
+    lines[#lines + 1] = ("  ? or %s/← back   q close"):format(nav.left)
     commands_line = #lines
   end
 
@@ -5770,6 +5782,8 @@ local function toggle_community_view()
 end
 
 local function map_keys(buf)
+  local nav = navigation.resolve(M.state.opts)
+
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, {
       buffer = buf,
@@ -5803,7 +5817,7 @@ local function map_keys(buf)
   end, "Move selected Oculus project or user")
 
   map("<CR>", select_current, "Select Oculus item")
-  map("l", move_right, "Move right in Oculus")
+  map(nav.right, move_right, "Move right in Oculus")
   map("<Right>", move_right, "Move right in Oculus")
 
   map("<Space>", function()
@@ -5854,20 +5868,30 @@ local function map_keys(buf)
   end, "Remove selected Oculus item or refresh activity")
 
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
-  map("h", inspect_current, "Inspect Oculus change or issue")
-  map("H", prompt_inspect_by_id, "Inspect issue, PR, or commit by ID")
+  map(nav.inspect, inspect_current, "Inspect Oculus change or issue")
+  map(nav.inspect_id, prompt_inspect_by_id, "Inspect issue, PR, or commit by ID")
+
+  if nav.inspect_id ~= "H"
+    and nav.left ~= "H"
+    and nav.up ~= "H"
+    and nav.down ~= "H"
+    and nav.right ~= "H"
+  then
+    map("H", prompt_inspect_by_id, "Inspect issue, PR, or commit by ID")
+  end
+
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
   map("u", open_project_issue_activity, "Open Oculus project issues")
 
-  map("k", function()
+  map(nav.down, function()
     move_cursor(1)
   end, "Move down in Oculus")
 
-  map("i", function()
+  map(nav.up, function()
     move_cursor(-1)
   end, "Move up in Oculus")
 
-  map("j", move_left, "Move left in Oculus")
+  map(nav.left, move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
 
   map("<Down>", function()
@@ -6217,4 +6241,5 @@ M._is_sidebar_visible = is_sidebar_visible
 M._render_sidebar = render_sidebar
 M._toggle_sidebar = toggle_sidebar
 M._close_sidebar = close_sidebar
+M._navigation = navigation
 return M
