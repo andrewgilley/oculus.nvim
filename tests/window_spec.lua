@@ -2804,3 +2804,105 @@ do
 end
 
 assert(state.win == nil)
+
+do
+  local prev_cols = vim.o.columns
+  local prev_lines = vim.o.lines
+  vim.o.columns = 80
+  vim.o.lines = 30
+  local window_mod = require("oculus.window")
+  -- Test 1: is_sidebar_visible returns false when columns < 100
+  window_mod.state.opts = { sidebar = true }
+  window_mod.state.sidebar_visible = nil
+  assert(window_mod._is_sidebar_visible() == false, "expected false when columns < 100")
+  -- Test 2: is_sidebar_visible with columns >= 100
+  vim.o.columns = 120
+  assert(window_mod._is_sidebar_visible() == true, "expected true when columns >= 100 and sidebar=true")
+  window_mod.state.opts = { sidebar = false }
+  assert(window_mod._is_sidebar_visible() == false, "expected false when opts.sidebar = false")
+  -- Explicit toggle overrides opts.sidebar
+  window_mod.state.sidebar_visible = true
+  assert(window_mod._is_sidebar_visible() == true, "expected true when state.sidebar_visible is true")
+  window_mod.state.sidebar_visible = false
+  assert(window_mod._is_sidebar_visible() == false, "expected false when state.sidebar_visible is false")
+  -- Test 3: Opening window with sidebar enabled on wide screen
+  window_mod.state.sidebar_visible = nil
+
+  window_mod.open({
+    sidebar = true,
+    sidebar_width = 26,
+    projects = {
+      {
+        name = "TestProject",
+        repository = "test/repo",
+      },
+    },
+    contributors = {},
+  })
+
+  assert(window_mod.state.win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.win))
+  assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win))
+  assert(window_mod.state.sidebar_buf ~= nil and vim.api.nvim_buf_is_valid(window_mod.state.sidebar_buf))
+  -- Verify sidebar window config
+  local side_cfg = vim.api.nvim_win_get_config(window_mod.state.sidebar_win)
+  assert(side_cfg.focusable == false, "expected sidebar window to be non-focusable")
+  assert(side_cfg.relative == "editor")
+  assert(side_cfg.width == 26)
+  local main_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
+  local expected_side_col = main_cfg.col + main_cfg.width + 2
+  assert(side_cfg.col == expected_side_col, ("expected side col %s, got %s"):format(expected_side_col, side_cfg.col))
+  assert(side_cfg.row == main_cfg.row)
+  assert(side_cfg.height == main_cfg.height)
+  -- Verify sidebar content
+  local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)
+  local side_text = table.concat(side_lines, "\n")
+  assert(side_text:find("NAVIGATION", 1, true))
+  assert(side_text:find("ACTIONS", 1, true))
+  assert(side_text:find("GENERAL", 1, true))
+  assert(side_text:find("s", 1, true))
+  assert(side_text:find("Sidebar", 1, true))
+  assert(side_text:find("H", 1, true))
+  assert(side_text:find("Inspect ID", 1, true))
+  -- Verify main window buffer does NOT contain bottom footer command line
+  local main_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local main_text = table.concat(main_lines, "\n")
+  assert(not main_text:find("v users  a add", 1, true))
+  local prev_main_width = main_cfg.width
+  -- Test 4: Toggle sidebar off via toggle function
+  window_mod._toggle_sidebar()
+  assert(window_mod.state.sidebar_win == nil, "expected sidebar_win to be nil after toggle")
+  local widened_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
+  assert(widened_cfg.width > prev_main_width, "expected main window to widen when sidebar is hidden")
+  -- Verify main window now shows footer commands
+  local footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local footer_text = table.concat(footer_lines, "\n")
+  assert(footer_text:find("v users  a add", 1, true))
+  -- Test 5: Toggle sidebar back on
+  window_mod._toggle_sidebar()
+  assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win))
+  local narrowed_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
+  assert(narrowed_cfg.width == prev_main_width, "expected main window width to return to narrowed state")
+  -- Test 6: Verify 's' mapping exists on buffer and toggles sidebar
+  local s_map = vim.fn.maparg("s", "n", false, true)
+  assert(s_map ~= nil and type(s_map.callback) == "function", "expected 's' keymap callback")
+  assert(s_map.desc == "Toggle Oculus command sidebar")
+  s_map.callback()
+  assert(window_mod.state.sidebar_win == nil, "expected sidebar to toggle off via s mapping")
+  s_map.callback()
+  assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to toggle on via s mapping")
+  -- Test 7: Resize event handling
+  vim.o.columns = 80
+  vim.api.nvim_exec_autocmds("VimResized", { buffer = window_mod.state.buf })
+  assert(window_mod.state.sidebar_win == nil, "expected sidebar to close when columns drop below 100 on VimResized")
+  vim.o.columns = 120
+  vim.api.nvim_exec_autocmds("VimResized", { buffer = window_mod.state.buf })
+  assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to reopen on VimResized when columns >= 100")
+  -- Test 8: Close window cleans up both floats
+  window_mod.close()
+  assert(window_mod.state.win == nil)
+  assert(window_mod.state.buf == nil)
+  assert(window_mod.state.sidebar_win == nil)
+  assert(window_mod.state.sidebar_buf == nil)
+  vim.o.columns = prev_cols
+  vim.o.lines = prev_lines
+end
