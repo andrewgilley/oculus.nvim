@@ -50,6 +50,10 @@ local window_highlight_ns = vim.api.nvim_create_namespace(
   "oculus_window_highlights"
 )
 
+local sidebar_ns = vim.api.nvim_create_namespace(
+  "oculus_window_sidebar"
+)
+
 local window_highlight_groups = {
   "Normal",
   "NormalFloat",
@@ -106,6 +110,9 @@ M.state = {
   win = nil,
   footer_buf = nil,
   footer_win = nil,
+  sidebar_buf = nil,
+  sidebar_win = nil,
+  sidebar_visible = nil,
   view = "contributors",
   contributor = nil,
   activity_scope = nil,
@@ -469,17 +476,36 @@ local function dimension(value, total, fallback, minimum)
   return math.min(math.max(minimum, math.floor(result)), math.max(1, total - 4))
 end
 
+local function is_sidebar_visible()
+  if vim.o.columns < 100 then
+    return false
+  end
+
+  if M.state.sidebar_visible ~= nil then
+    return M.state.sidebar_visible
+  end
+
+  local opts = M.state.opts or {}
+  return opts.sidebar ~= false
+end
+
 local function make_win_config(opts)
-  local width = dimension(opts.width, vim.o.columns, 0.89, 54)
+  opts = opts or {}
+  local total_width = dimension(opts.width, vim.o.columns, 0.89, 54)
   local height = dimension(opts.height, vim.o.lines, 0.80, 16)
   local row = math.max(0, math.min(opts.row or 1, vim.o.lines - height - 2))
+  local show_sidebar = is_sidebar_visible()
+  local sidebar_width = show_sidebar and (opts.sidebar_width or 26) or 0
+  local gap = show_sidebar and 2 or 0
+  local width = total_width - sidebar_width - gap
+  local col = math.floor((vim.o.columns - total_width) / 2)
 
   return {
     relative = "editor",
     width = width,
     height = height,
     row = row,
-    col = math.floor((vim.o.columns - width) / 2),
+    col = col,
     style = "minimal",
     border = opts.border or "rounded",
   }
@@ -487,6 +513,302 @@ end
 
 function M.window_config(opts)
   return make_win_config(opts or {})
+end
+
+local function sidebar_win_config(opts)
+  opts = opts or {}
+  local total_width = dimension(opts.width, vim.o.columns, 0.89, 54)
+  local height = dimension(opts.height, vim.o.lines, 0.80, 16)
+  local row = math.max(0, math.min(opts.row or 1, vim.o.lines - height - 2))
+  local sidebar_width = opts.sidebar_width or 26
+  local gap = 2
+  local main_width = total_width - sidebar_width - gap
+  local main_col = math.floor((vim.o.columns - total_width) / 2)
+  local col = main_col + main_width + gap
+
+  return {
+    relative = "editor",
+    width = sidebar_width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    focusable = false,
+    border = opts.border or "rounded",
+    title = " Commands ",
+    title_pos = "center",
+  }
+end
+
+local function close_sidebar()
+  if is_valid_win(M.state.sidebar_win) then
+    vim.api.nvim_win_close(M.state.sidebar_win, true)
+  end
+
+  if is_valid_buf(M.state.sidebar_buf) then
+    vim.api.nvim_buf_delete(M.state.sidebar_buf, { force = true })
+  end
+
+  M.state.sidebar_win = nil
+  M.state.sidebar_buf = nil
+end
+
+local function make_sidebar_buf()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "oculus-sidebar"
+  return buf
+end
+
+local function sidebar_sections_for_view(view)
+  if view == "contributors" then
+    local showing_users = M.state.community_view == "users"
+
+    return {
+      {
+        title = "NAVIGATION",
+        items = {
+          { "k / ↓", "Down" },
+          { "i / ↑", "Up" },
+          { "l / ↵", "Select" },
+        },
+      },
+      {
+        title = "ACTIONS",
+        items = {
+          { "v", showing_users and "Projects" or "Users" },
+          { "a", "Add" },
+          { "H", "Inspect ID" },
+          { "r", "Remove" },
+          { "m", "Move" },
+          { "f", "Filters" },
+          { "d", "Defaults" },
+          { "o", "Profile" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "s", "Sidebar" },
+          { "?", "Help" },
+          { "q", "Close" },
+        },
+      },
+    }
+  elseif view == "activity" then
+    local actions = {
+      { "h", "Inspect" },
+      { "H", "Inspect ID" },
+      { "Tab", "Queue" },
+      { "b", "Browser" },
+    }
+
+    if not M.state.activity_commit_page then
+      if M.state.activity_issue_page then
+        actions[#actions + 1] = { "f", "Filters" }
+      elseif M.state.activity_project then
+        actions[#actions + 1] = { "u", "Issues" }
+      end
+    end
+
+    actions[#actions + 1] = { "r", "Refresh" }
+    actions[#actions + 1] = { "p", "Older" }
+
+    return {
+      {
+        title = "NAVIGATION",
+        items = {
+          { "k / ↓", "Down" },
+          { "i / ↑", "Up" },
+          { "j / ←", "Back" },
+        },
+      },
+      {
+        title = "INSPECT",
+        items = actions,
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "s", "Sidebar" },
+          { "?", "Help" },
+          { "q", "Close" },
+        },
+      },
+    }
+  elseif view == "filters" then
+    return {
+      {
+        title = "NAVIGATION",
+        items = {
+          { "k / ↓", "Down" },
+          { "i / ↑", "Up" },
+          { "j / ←", "Back" },
+        },
+      },
+      {
+        title = "ACTIONS",
+        items = {
+          { "Space", "Toggle" },
+          { "a", "All on" },
+          { "n", "All off" },
+          { "d", "Defaults" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "s", "Sidebar" },
+          { "?", "Help" },
+          { "q", "Close" },
+        },
+      },
+    }
+  elseif view == "issue_filters" then
+    return {
+      {
+        title = "NAVIGATION",
+        items = {
+          { "k / ↓", "Down" },
+          { "i / ↑", "Up" },
+          { "j / ←", "Back" },
+        },
+      },
+      {
+        title = "ACTIONS",
+        items = {
+          { "Space", "Select" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "s", "Sidebar" },
+          { "?", "Help" },
+          { "q", "Close" },
+        },
+      },
+    }
+  end
+
+  return {
+    {
+      title = "NAVIGATION",
+      items = {
+        { "j / ←", "Back" },
+        { "?", "Back" },
+      },
+    },
+    {
+      title = "GENERAL",
+      items = {
+        { "s", "Sidebar" },
+        { "q", "Close" },
+      },
+    },
+  }
+end
+
+local function render_sidebar()
+  if not is_sidebar_visible() then
+    close_sidebar()
+    return
+  end
+
+  if not is_valid_win(M.state.win) then
+    return
+  end
+
+  local config = sidebar_win_config(M.state.opts)
+  local buf = M.state.sidebar_buf
+
+  if not is_valid_buf(buf) then
+    buf = make_sidebar_buf()
+    M.state.sidebar_buf = buf
+  end
+
+  local sections = sidebar_sections_for_view(M.state.view)
+  local lines = {}
+  local highlights = {}
+  lines[#lines + 1] = ""
+
+  for s_idx, section in ipairs(sections) do
+    if s_idx > 1 then
+      lines[#lines + 1] = ""
+    end
+
+    lines[#lines + 1] = "  " .. section.title
+
+    highlights[#highlights + 1] = {
+      line = #lines,
+      col_start = 2,
+      col_end = -1,
+      hl = "Title",
+    }
+
+    for _, item in ipairs(section.items) do
+      local key = item[1]
+      local desc = item[2]
+      local key_width = vim.fn.strdisplaywidth(key)
+      local pad = math.max(1, 9 - key_width)
+      lines[#lines + 1] = "  " .. key .. string.rep(" ", pad) .. desc
+
+      highlights[#highlights + 1] = {
+        line = #lines,
+        col_start = 2,
+        col_end = 2 + #key,
+        hl = "Identifier",
+      }
+
+      highlights[#highlights + 1] = {
+        line = #lines,
+        col_start = 2 + #key + pad,
+        col_end = -1,
+        hl = "Comment",
+      }
+    end
+  end
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, sidebar_ns, 0, -1)
+
+  for _, h in ipairs(highlights) do
+    vim.api.nvim_buf_add_highlight(
+      buf,
+      sidebar_ns,
+      h.hl,
+      h.line - 1,
+      h.col_start,
+      h.col_end
+    )
+  end
+
+  if is_valid_win(M.state.sidebar_win) then
+    vim.api.nvim_win_set_config(M.state.sidebar_win, config)
+  else
+    M.state.sidebar_win = vim.api.nvim_open_win(buf, false, config)
+  end
+
+  local sw = M.state.sidebar_win
+  vim.wo[sw].wrap = false
+  vim.wo[sw].cursorline = false
+  vim.wo[sw].number = false
+  vim.wo[sw].relativenumber = false
+  vim.wo[sw].signcolumn = "no"
+  vim.wo[sw].winfixbuf = true
+
+  vim.wo[sw].winhighlight = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+    "FloatBorder:OculusBorder",
+    "FloatTitle:OculusBorder",
+  }, ",")
+
+  use_window_highlights(sw)
 end
 
 local function make_buf()
@@ -544,6 +866,11 @@ local function footer_win_config()
 end
 
 local function render_activity_footer()
+  if is_sidebar_visible() then
+    close_activity_footer()
+    return
+  end
+
   local config = footer_win_config()
 
   if not config then
@@ -1782,12 +2109,16 @@ local function render_contributors()
 
   lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
   local separator_line = #lines
+  local commands_line = nil
 
-  footer(lines, showing_users
-      and "v projects  a add  r remove  m move  ?: help"
-    or "v users  a add  r remove  m move  ?: help")
+  if not is_sidebar_visible() then
+    footer(lines, showing_users
+        and "v projects  a add  r remove  m move  ?: help"
+      or "v users  a add  r remove  m move  ?: help")
 
-  local commands_line = #lines
+    commands_line = #lines
+  end
+
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
   highlight(2, 2, -1, "Title")
@@ -1813,7 +2144,11 @@ local function render_contributors()
   end
 
   highlight(separator_line, 2, -1, "WinSeparator")
-  highlight(commands_line, 2, -1, "Comment")
+
+  if commands_line then
+    highlight(commands_line, 2, -1, "Comment")
+  end
+
   local selected_line
 
   for line, target in pairs(M.state.line_targets) do
@@ -1878,6 +2213,8 @@ local function render_contributors()
       })
     end
   end
+
+  render_sidebar()
 end
 
 local function filter_type_set(scope)
@@ -2049,8 +2386,16 @@ local function render_filters(scope, selected_type)
   end
 
   local width = vim.api.nvim_win_get_width(M.state.win)
-  lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-  footer(lines, "? shortcuts   j/← back   q close")
+  local separator_line = nil
+  local commands_line = nil
+
+  if not is_sidebar_visible() then
+    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
+    separator_line = #lines
+    footer(lines, "? shortcuts   j/← back   q close")
+    commands_line = #lines
+  end
+
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -2069,8 +2414,15 @@ local function render_filters(scope, selected_type)
     highlight(line, 36, -1, "Comment")
   end
 
-  highlight(#lines - 1, 2, -1, "WinSeparator")
-  highlight(#lines, 2, -1, "Comment")
+  if separator_line then
+    highlight(separator_line, 2, -1, "WinSeparator")
+  end
+
+  if commands_line then
+    highlight(commands_line, 2, -1, "Comment")
+  end
+
+  render_sidebar()
   vim.api.nvim_win_set_cursor(M.state.win, { selected_line or 6, 0 })
 end
 
@@ -2229,7 +2581,13 @@ local function render_issue_filters(project, selected_dimension)
     lines[#lines + 1] = ""
   end
 
-  footer(lines, "<Space> select   q close")
+  local commands_line = nil
+
+  if not is_sidebar_visible() then
+    footer(lines, "<Space> select   q close")
+    commands_line = #lines
+  end
+
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
 
@@ -2252,7 +2610,11 @@ local function render_issue_filters(project, selected_dimension)
     highlight(line, 7, -1, "Function")
   end
 
-  highlight(#lines, 0, -1, "Comment")
+  if commands_line then
+    highlight(commands_line, 0, -1, "Comment")
+  end
+
+  render_sidebar()
   vim.api.nvim_win_set_cursor(M.state.win, { selected_line or 6, 0 })
 end
 
@@ -2648,6 +3010,7 @@ local function render_activity(events, cached, notice, opts)
     M.state.activity_cursor_min_line = 2
   end
 
+  render_sidebar()
   update_activity_cursorline()
 end
 
@@ -2902,12 +3265,19 @@ local function render_shortcuts()
   })
 
   section("GENERAL", {
+    { "s", "Toggle command sidebar" },
     { "?", "Open or close this shortcut page" },
     { "q / <Esc> / <C-c>", "Close Oculus" },
   })
 
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = "  ? or j/← back   q close"
+  local commands_line = nil
+
+  if not is_sidebar_visible() then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "  ? or j/← back   q close"
+    commands_line = #lines
+  end
+
   set_lines(lines)
   vim.wo[M.state.win].cursorline = false
 
@@ -2916,7 +3286,12 @@ local function render_shortcuts()
   end
 
   highlight(3, 2, -1, "Comment")
-  highlight(#lines, 2, -1, "Comment")
+
+  if commands_line then
+    highlight(commands_line, 2, -1, "Comment")
+  end
+
+  render_sidebar()
   vim.api.nvim_win_set_cursor(M.state.win, { 2, 0 })
 end
 
@@ -5003,6 +5378,64 @@ local function prompt_inspect_by_id()
   end)
 end
 
+local function toggle_sidebar()
+  if not is_valid_win(M.state.win) then
+    return
+  end
+
+  if vim.o.columns < 100 then
+    vim.notify(
+      "Oculus: Window width too narrow for command sidebar (< 100 columns)",
+      vim.log.levels.WARN
+    )
+
+    return
+  end
+
+  if is_sidebar_visible() then
+    M.state.sidebar_visible = false
+    close_sidebar()
+  else
+    M.state.sidebar_visible = true
+  end
+
+  vim.api.nvim_win_set_config(M.state.win, make_win_config(M.state.opts))
+
+  if M.state.view == "contributors" then
+    render_contributors()
+  elseif M.state.view == "activity" then
+    local cursor = is_valid_win(M.state.win)
+        and vim.api.nvim_win_get_cursor(M.state.win)
+      or nil
+
+    if M.state.events then
+      render_activity(
+        M.state.events,
+        M.state.activity_cached,
+        M.state.activity_notice,
+        {
+          commit_page = M.state.activity_commit_page,
+          issue_page = M.state.activity_issue_page,
+        }
+      )
+    else
+      render_activity_footer()
+      render_sidebar()
+      update_activity_cursorline()
+    end
+
+    if cursor and is_valid_win(M.state.win) then
+      pcall(vim.api.nvim_win_set_cursor, M.state.win, cursor)
+    end
+  elseif M.state.view == "filters" then
+    render_filters(M.state.filter_scope)
+  elseif M.state.view == "issue_filters" and M.state.activity_project then
+    render_issue_filters(M.state.activity_project)
+  elseif M.state.view == "shortcuts" then
+    render_shortcuts()
+  end
+end
+
 local function move_cursor(direction)
   if
     M.state.view ~= "contributors"
@@ -5360,6 +5793,7 @@ local function map_keys(buf)
   end, "Close Oculus")
 
   map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
+  map("s", toggle_sidebar, "Toggle Oculus command sidebar")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
 
   map("m", function()
@@ -5472,6 +5906,7 @@ function M.close()
   end
 
   close_activity_footer()
+  close_sidebar()
 
   if is_valid_win(M.state.win) then
     M.state.restore_cursor = vim.api.nvim_win_get_cursor(M.state.win)
@@ -5489,6 +5924,8 @@ function M.close()
 
   M.state.buf = nil
   M.state.win = nil
+  M.state.sidebar_buf = nil
+  M.state.sidebar_win = nil
   M.state.line_targets = {}
   M.state.inspect_targets = {}
   M.state.activity_title_lines = {}
@@ -5656,11 +6093,23 @@ function M.open(opts)
       if is_valid_win(M.state.win) then
         vim.api.nvim_win_set_config(M.state.win, make_win_config(M.state.opts))
 
+        if is_sidebar_visible() then
+          render_sidebar()
+        else
+          close_sidebar()
+        end
+
         if M.state.view == "contributors" then
           render_contributors()
         elseif M.state.view == "activity" then
           render_activity_footer()
           update_activity_cursorline()
+        elseif M.state.view == "filters" then
+          render_filters(M.state.filter_scope)
+        elseif M.state.view == "issue_filters" and M.state.activity_project then
+          render_issue_filters(M.state.activity_project)
+        elseif M.state.view == "shortcuts" then
+          render_shortcuts()
         end
       end
     end,
@@ -5727,8 +6176,14 @@ function M.open(opts)
         return
       end
 
-      if entered == M.state.win then
-        update_activity_cursorline()
+      if entered == M.state.win
+        or entered == M.state.sidebar_win
+        or entered == M.state.footer_win
+      then
+        if entered == M.state.win then
+          update_activity_cursorline()
+        end
+
         return
       end
 
@@ -5758,4 +6213,8 @@ end
 M._add_project = add_project
 M._add_contributor = add_contributor
 M._toggle_move_item = toggle_move_item
+M._is_sidebar_visible = is_sidebar_visible
+M._render_sidebar = render_sidebar
+M._toggle_sidebar = toggle_sidebar
+M._close_sidebar = close_sidebar
 return M

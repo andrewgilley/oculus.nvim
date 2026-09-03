@@ -31,6 +31,8 @@ local defaults = {
     "assigned_issue",
   },
   project_issue_filters = {},
+  sidebar = true,
+  sidebar_width = 26,
   projects = {
     {
       name = "Neovim",
