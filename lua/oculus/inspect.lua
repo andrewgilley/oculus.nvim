@@ -293,6 +293,31 @@ local function has_valid_context_window(win)
   return false
 end
 
+local function ensure_context_window_leftcol(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+
+  for _, context_win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_is_valid(context_win) then
+      local config = vim.api.nvim_win_get_config(context_win)
+
+      if
+        vim.w[context_win].treesitter_context
+        and config.relative == "win"
+        and config.win == win
+      then
+        vim.api.nvim_win_call(context_win, function()
+          local v = vim.fn.winsaveview()
+          if v.leftcol ~= 0 then
+            vim.fn.winrestview({ leftcol = 0 })
+          end
+        end)
+      end
+    end
+  end
+end
+
 function M._refresh_inspection_treesitter_context_highlights()
   local ok, render = pcall(require, "treesitter-context.render")
 
@@ -449,6 +474,13 @@ function M._refresh_inspection_treesitter_context_highlights()
               )
             end
           end
+
+          vim.api.nvim_win_call(context_win, function()
+            local v = vim.fn.winsaveview()
+            if v.leftcol ~= 0 then
+              vim.fn.winrestview({ leftcol = 0 })
+            end
+          end)
 
           break
         end
@@ -1730,6 +1762,12 @@ local function trigger_inspection_treesitter_context(buf)
     group = "treesitter_context_update",
     buffer = buf,
   })
+
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+      ensure_context_window_leftcol(win)
+    end
+  end
 end
 
 local function refresh_buffer_highlighting(buf, force)
@@ -2267,6 +2305,8 @@ local function position_change_cursor(
     end)
   end
 
+  ensure_context_window_leftcol(win)
+
   return true
 end
 
@@ -2457,6 +2497,8 @@ local function move_cursor_to_line_start(
       sync_window(win)
     end
   end
+
+  ensure_context_window_leftcol(win)
 end
 
 local function inspection_chunks(group, session)
@@ -2605,7 +2647,11 @@ local function map_inspection_line(session, source_role, target_role, source_lin
       if source_line < parent_start then
         return source_line
       elseif source_line < parent_start + math.max(1, hunk.old_count) then
-        return change_start
+        local offset = source_line - parent_start
+        return math.min(
+          change_start + offset,
+          change_start + math.max(0, (hunk.new_count or 1) - 1)
+        )
       else
         local delta = (hunk.new_count or 0) - (hunk.old_count or 0)
         return math.max(1, source_line + delta)
@@ -2614,7 +2660,11 @@ local function map_inspection_line(session, source_role, target_role, source_lin
       if source_line < change_start then
         return source_line
       elseif source_line < change_start + math.max(1, hunk.new_count) then
-        return parent_start
+        local offset = source_line - change_start
+        return math.min(
+          parent_start + offset,
+          parent_start + math.max(0, (hunk.old_count or 1) - 1)
+        )
       else
         local delta = (hunk.new_count or 0) - (hunk.old_count or 0)
         return math.max(1, source_line - delta)
@@ -2787,10 +2837,23 @@ local function map_file_navigation(endpoint, session, role, group)
 
     select_endpoint(target, session, target_role, group)
 
-    if start then
+    local target_line = start
+    if source_view and source_view.lnum then
+      local mapped_lnum = map_inspection_line(
+        session,
+        role,
+        target_role,
+        source_view.lnum
+      )
+      if mapped_lnum and mapped_lnum >= 1 then
+        target_line = mapped_lnum
+      end
+    end
+
+    if target_line then
       move_cursor_to_line_start(
         target.win,
-        start,
+        target_line,
         max_line,
         false,
         target_topline,
@@ -2827,6 +2890,7 @@ local function map_file_navigation(endpoint, session, role, group)
     refresh_sidebar(group, target.tab)
     M._refresh_virtual_counters(group, session)
     trigger_inspection_treesitter_context(target.buf)
+    ensure_context_window_leftcol(target.win)
   end
 
   local function map_version(lhs, target_role, description)
@@ -8101,8 +8165,12 @@ vim.api.nvim_create_autocmd("TabEnter", {
             local view = vim.fn.winsaveview()
             apply_view_horizontal(view, source.view, #text, default_col)
             vim.fn.winrestview(view)
+            ensure_context_window_leftcol(endpoint.win)
           end)
         end
+
+        trigger_inspection_treesitter_context(endpoint.buf)
+        ensure_context_window_leftcol(endpoint.win)
       end
 
       refresh_sidebar(group, tab)
@@ -9911,4 +9979,5 @@ M._rendered_treesitter_contexts = rendered_treesitter_contexts
 M._sidebar_chunk = sidebar_chunk
 M._ensure_treesitter_safeguards = ensure_treesitter_safeguards
 M._apply_view_horizontal = apply_view_horizontal
+M._ensure_context_window_leftcol = ensure_context_window_leftcol
 return M

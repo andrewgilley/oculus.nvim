@@ -6552,4 +6552,82 @@ do
 
   vim.api.nvim_win_close(win, true)
   vim.api.nvim_buf_delete(buf, { force = true })
+
+  -- Test 4: ensure_context_window_leftcol resets context window leftcol to 0
+  local code_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, {
+    "local function my_outer_function()",
+    "  local x = 1",
+  })
+  local code_win = vim.api.nvim_open_win(code_buf, true, {
+    relative = "editor",
+    width = 80,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  vim.wo[code_win].wrap = false
+
+  local ctx_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(ctx_buf, 0, -1, false, { "local function my_outer_function()" })
+  local ctx_win = vim.api.nvim_open_win(ctx_buf, false, {
+    win = code_win,
+    relative = "win",
+    width = 60,
+    height = 1,
+    row = 0,
+    col = 0,
+  })
+  vim.w[ctx_win].treesitter_context = true
+  vim.wo[ctx_win].wrap = false
+
+  -- Simulate treesitter-context or horizontal scroll setting leftcol = 40 on context window
+  vim.api.nvim_win_call(ctx_win, function()
+    vim.fn.winrestview({ leftcol = 40 })
+  end)
+  local ctx_view_before = vim.api.nvim_win_call(ctx_win, vim.fn.winsaveview)
+  assert(ctx_view_before.leftcol == 40, "expected ctx_win leftcol to be 40 before fix")
+
+  inspect._ensure_context_window_leftcol(code_win)
+  local ctx_view_after = vim.api.nvim_win_call(ctx_win, vim.fn.winsaveview)
+  assert(ctx_view_after.leftcol == 0, "expected ctx_win leftcol to be reset to 0, got: " .. tostring(ctx_view_after.leftcol))
+
+  -- Test 5: move_cursor_to_line_start keeps context window leftcol at 0 on extended horizontal scroll view
+  vim.api.nvim_win_call(ctx_win, function()
+    vim.fn.winrestview({ leftcol = 40 })
+  end)
+  inspect._move_cursor_to_line_start(code_win, 1, 2, false, 1, source_view)
+  local ctx_view_after_move = vim.api.nvim_win_call(ctx_win, vim.fn.winsaveview)
+  assert(ctx_view_after_move.leftcol == 0, "expected ctx_win leftcol to remain 0 after move_cursor_to_line_start, got: " .. tostring(ctx_view_after_move.leftcol))
+
+  -- Test 6: map_inspection_line preserves line offset within focused hunk
+  local session = {
+    focused_chunks = true,
+    focused_start = 10,
+    active_chunk = 1,
+    hunks = {
+      {
+        old_start = 20,
+        old_count = 5,
+        new_start = 10,
+        new_count = 5,
+      },
+    },
+  }
+  -- parent to change
+  local mapped1 = inspect._map_inspection_line(session, "parent", "change", 20)
+  assert(mapped1 == 10, "expected mapped topline 10, got: " .. tostring(mapped1))
+  local mapped2 = inspect._map_inspection_line(session, "parent", "change", 23)
+  assert(mapped2 == 13, "expected mapped cursor line 13, got: " .. tostring(mapped2))
+  -- change to parent
+  local mapped3 = inspect._map_inspection_line(session, "change", "parent", 10)
+  assert(mapped3 == 20, "expected mapped topline 20, got: " .. tostring(mapped3))
+  local mapped4 = inspect._map_inspection_line(session, "change", "parent", 13)
+  assert(mapped4 == 23, "expected mapped cursor line 23, got: " .. tostring(mapped4))
+
+  vim.api.nvim_win_close(ctx_win, true)
+  vim.api.nvim_win_close(code_win, true)
+  vim.api.nvim_buf_delete(ctx_buf, { force = true })
+  vim.api.nvim_buf_delete(code_buf, { force = true })
 end
+
