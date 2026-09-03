@@ -33,6 +33,7 @@ local defaults = {
   project_issue_filters = {},
   sidebar = true,
   sidebar_width = 26,
+  navigation = "ijkl",
   projects = {
     {
       name = "Neovim",

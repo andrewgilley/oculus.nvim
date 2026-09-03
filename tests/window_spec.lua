@@ -2906,3 +2906,109 @@ do
   vim.o.columns = prev_cols
   vim.o.lines = prev_lines
 end
+
+do
+  local nav_mod = require("oculus.navigation")
+  local window_mod = require("oculus.window")
+  -- Test 1: Navigation resolution
+  local default_nav = nav_mod.resolve()
+  assert(default_nav.style == "ijkl")
+  assert(default_nav.up == "i")
+  assert(default_nav.down == "k")
+  assert(default_nav.left == "j")
+  assert(default_nav.right == "l")
+  assert(default_nav.inspect == "h")
+  assert(default_nav.inspect_id == "H")
+  local hjkl_nav = nav_mod.resolve("hjkl")
+  assert(hjkl_nav.style == "hjkl")
+  assert(hjkl_nav.up == "k")
+  assert(hjkl_nav.down == "j")
+  assert(hjkl_nav.left == "h")
+  assert(hjkl_nav.right == "l")
+  assert(hjkl_nav.inspect == "i")
+  assert(hjkl_nav.inspect_id == "I")
+  local hjkl_upper = nav_mod.resolve({ navigation_keys = "HJKL" })
+  assert(hjkl_upper.style == "hjkl")
+  assert(hjkl_upper.up == "k")
+  assert(hjkl_upper.down == "j")
+  assert(hjkl_upper.left == "h")
+
+  local custom_nav = nav_mod.resolve({
+    navigation = {
+      up = "w",
+      down = "s",
+      left = "a",
+      right = "d",
+      inspect = "e",
+      inspect_id = "E",
+    },
+  })
+
+  assert(custom_nav.style == "custom")
+  assert(custom_nav.up == "w")
+  assert(custom_nav.down == "s")
+  assert(custom_nav.left == "a")
+  assert(custom_nav.right == "d")
+  assert(custom_nav.inspect == "e")
+  assert(custom_nav.inspect_id == "E")
+  -- Test 2: Window with hjkl navigation
+  local prev_cols = vim.o.columns
+  local prev_lines = vim.o.lines
+  vim.o.columns = 120
+  vim.o.lines = 30
+
+  window_mod.open({
+    navigation = "hjkl",
+    sidebar = true,
+    projects = {
+      {
+        name = "RepoOne",
+        repository = "one/test",
+      },
+      {
+        name = "RepoTwo",
+        repository = "two/test",
+      },
+    },
+    contributors = {},
+  })
+
+  assert(window_mod.state.win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.win))
+  local buf = window_mod.state.buf
+  -- Verify keymaps
+  local k_map = vim.fn.maparg("k", "n", false, true)
+  assert(k_map.desc == "Move up in Oculus", "expected k to be Move up in Oculus with hjkl")
+  local j_map = vim.fn.maparg("j", "n", false, true)
+  assert(j_map.desc == "Move down in Oculus", "expected j to be Move down in Oculus with hjkl")
+  local h_map = vim.fn.maparg("h", "n", false, true)
+  assert(h_map.desc == "Move left in Oculus", "expected h to be Move left in Oculus with hjkl")
+  local l_map = vim.fn.maparg("l", "n", false, true)
+  assert(l_map.desc == "Move right in Oculus", "expected l to be Move right in Oculus with hjkl")
+  local i_map = vim.fn.maparg("i", "n", false, true)
+  assert(i_map.desc == "Inspect Oculus change or issue", "expected i to be inspect in hjkl")
+  local cap_i_map = vim.fn.maparg("I", "n", false, true)
+  assert(cap_i_map.desc == "Inspect issue, PR, or commit by ID", "expected I to be inspect ID in hjkl")
+  local cap_h_map = vim.fn.maparg("H", "n", false, true)
+  assert(cap_h_map.desc == "Inspect issue, PR, or commit by ID", "expected H alias to also work for inspect ID")
+  -- Verify sidebar displays hjkl navigation keys
+  assert(window_mod.state.sidebar_buf ~= nil and vim.api.nvim_buf_is_valid(window_mod.state.sidebar_buf))
+  local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)
+  local side_text = table.concat(side_lines, "\n")
+  assert(side_text:find("j / ↓", 1, true), "expected sidebar to display j / ↓ for down")
+  assert(side_text:find("k / ↑", 1, true), "expected sidebar to display k / ↑ for up")
+  assert(side_text:find("l / ↵", 1, true), "expected sidebar to display l / ↵ for select")
+  -- Verify moving cursor down with j_map and up with k_map
+  local initial_line = vim.api.nvim_win_get_cursor(window_mod.state.win)[1]
+  j_map.callback()
+  local after_down_line = vim.api.nvim_win_get_cursor(window_mod.state.win)[1]
+  assert(after_down_line > initial_line, "expected j to move cursor down")
+  k_map.callback()
+  local after_up_line = vim.api.nvim_win_get_cursor(window_mod.state.win)[1]
+  assert(after_up_line == initial_line, "expected k to move cursor up")
+  -- Clean up
+  window_mod.close()
+  assert(window_mod.state.win == nil)
+  assert(window_mod.state.sidebar_win == nil)
+  vim.o.columns = prev_cols
+  vim.o.lines = prev_lines
+end
