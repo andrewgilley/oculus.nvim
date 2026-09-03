@@ -6500,3 +6500,56 @@ do
   local text = vim.treesitter.get_node_text(wrapped_text_node, "echo hello")
   assert(text == "echo", "expected extracted text from wrapped node: " .. tostring(text))
 end
+
+do
+  -- Test 1: apply_view_horizontal preserves leftcol and cursor column
+  local view1 = { lnum = 1, col = 0, curswant = 0, leftcol = 0, skipcol = 0 }
+  local src1 = { lnum = 1, col = 45, curswant = 45, leftcol = 30, skipcol = 0 }
+  inspect._apply_view_horizontal(view1, src1, 100, 4)
+  assert(view1.leftcol == 30, "expected leftcol 30, got: " .. tostring(view1.leftcol))
+  assert(view1.col == 45, "expected col 45, got: " .. tostring(view1.col))
+  assert(view1.curswant == 45, "expected curswant 45, got: " .. tostring(view1.curswant))
+
+  -- Test 2: apply_view_horizontal on short line uses coladd
+  local view2 = { lnum = 1, col = 0, curswant = 0, leftcol = 0, skipcol = 0 }
+  inspect._apply_view_horizontal(view2, src1, 10, 2)
+  assert(view2.leftcol == 30, "expected leftcol 30 on short line, got: " .. tostring(view2.leftcol))
+  assert(view2.col == 10, "expected col 10 on short line, got: " .. tostring(view2.col))
+  assert(view2.coladd == 20, "expected coladd 20 on short line, got: " .. tostring(view2.coladd))
+
+  -- Test 3: move_cursor_to_line_start preserves horizontal scroll in real Neovim window
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    "    " .. string.rep("parent_code_", 10),
+    "    " .. string.rep("change_code_", 10),
+  })
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = 80,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  vim.wo[win].wrap = false
+
+  local source_view = {
+    lnum = 1,
+    col = 40,
+    curswant = 40,
+    leftcol = 35,
+    skipcol = 0,
+    topline = 1,
+  }
+
+  inspect._move_cursor_to_line_start(win, 1, 2, false, 1, source_view)
+  vim.cmd("redraw")
+  local saved_view = vim.api.nvim_win_call(win, function()
+    return vim.fn.winsaveview()
+  end)
+
+  assert(saved_view.leftcol == 35, "expected leftcol to remain 35, got: " .. tostring(saved_view.leftcol))
+  assert(saved_view.col == 40, "expected col to remain 40, got: " .. tostring(saved_view.col))
+
+  vim.api.nvim_win_close(win, true)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end
