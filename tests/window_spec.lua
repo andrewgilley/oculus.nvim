@@ -3049,9 +3049,10 @@ do
   assert(window_mod._is_add_dialog_open(), "expected add dialog to be open")
   assert(window_mod.state.add_dialog_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.add_dialog_win))
   assert(window_mod.state.add_input_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.add_input_win))
-  -- Verify dialog config and title
+  -- Verify dialog config, position in top-left corner, and absence of title
   local d_cfg = vim.api.nvim_win_get_config(window_mod.state.add_dialog_win)
-  assert(d_cfg.title[1][1]:find("Add Project", 1, true), "expected Add Project title")
+  assert(d_cfg.title == nil or #d_cfg.title == 0 or d_cfg.title[1][1] == "", "expected no title text on add dialog")
+  assert(d_cfg.row == 1 and d_cfg.col == 2, "expected add dialog in top left corner")
   -- Verify dialog content
   local d_lines = vim.api.nvim_buf_get_lines(window_mod.state.add_dialog_buf, 0, -1, false)
   local d_text = table.concat(d_lines, "\n")
@@ -3096,7 +3097,8 @@ do
   a_map.callback()
   assert(window_mod._is_add_dialog_open())
   d_cfg = vim.api.nvim_win_get_config(window_mod.state.add_dialog_win)
-  assert(d_cfg.title[1][1]:find("Add User", 1, true), "expected Add User title")
+  assert(d_cfg.title == nil or #d_cfg.title == 0 or d_cfg.title[1][1] == "", "expected no title text on add dialog")
+  assert(d_cfg.row == 1 and d_cfg.col == 2, "expected add dialog in top left corner")
   d_lines = vim.api.nvim_buf_get_lines(window_mod.state.add_dialog_buf, 0, -1, false)
   d_text = table.concat(d_lines, "\n")
   assert(d_text:find("User handle (@username):", 1, true))

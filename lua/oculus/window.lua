@@ -4647,10 +4647,10 @@ local function open_add_dialog()
 
   local parent_width = vim.api.nvim_win_get_width(M.state.win)
   local parent_height = vim.api.nvim_win_get_height(M.state.win)
-  local dialog_width = math.min(50, math.max(34, parent_width - 4))
+  local dialog_width = math.min(50, math.max(34, parent_width - 6))
   local dialog_height = 9
-  local dialog_row = math.max(0, math.floor((parent_height - dialog_height) / 2))
-  local dialog_col = math.max(0, math.floor((parent_width - dialog_width) / 2))
+  local dialog_row = math.min(1, math.max(0, parent_height - dialog_height - 1))
+  local dialog_col = math.min(2, math.max(0, parent_width - dialog_width - 1))
   local input_width = math.max(10, dialog_width - 6)
   local input_col = 2
   local input_row = 4
@@ -4660,7 +4660,6 @@ local function open_add_dialog()
   vim.bo[d_buf].swapfile = false
   vim.bo[d_buf].filetype = "oculus-add-dialog"
   M.state.add_dialog_buf = d_buf
-  local title = adding_project and " Add Project " or " Add User "
 
   local d_win = vim.api.nvim_open_win(d_buf, false, {
     relative = "win",
@@ -4670,8 +4669,6 @@ local function open_add_dialog()
     width = dialog_width,
     height = dialog_height,
     border = "rounded",
-    title = title,
-    title_pos = "center",
     style = "minimal",
     focusable = false,
     zindex = 70,
