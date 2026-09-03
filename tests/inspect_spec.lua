@@ -2984,9 +2984,9 @@ do
   assert(inspect._map_inspection_line(sess, "parent", "change", 1) == 1)
   assert(inspect._map_inspection_line(sess, "parent", "change", 15) == 15)
   assert(inspect._map_inspection_line(sess, "change", "parent", 15) == 15)
-  -- Lines inside the active hunk map to the hunk start
-  assert(inspect._map_inspection_line(sess, "parent", "change", 22) == 20)
-  assert(inspect._map_inspection_line(sess, "change", "parent", 25) == 20)
+  -- Lines inside the active hunk preserve their line offset (clamped to hunk range)
+  assert(inspect._map_inspection_line(sess, "parent", "change", 22) == 22)
+  assert(inspect._map_inspection_line(sess, "change", "parent", 25) == 24)
   -- Full file mode: lines before first hunk map 1:1
   sess.focused_chunks = false
   assert(inspect._map_inspection_line(sess, "parent", "change", 10) == 10)
@@ -6470,14 +6470,11 @@ end
 
 do
   inspect._ensure_treesitter_safeguards()
-
   local range_nil = vim.treesitter.get_range(nil, 0, {})
   assert(type(range_nil) == "table", "expected table range for nil node")
-
   local mock_node = { range = nil }
   local range_table = vim.treesitter.get_range(mock_node, 0, {})
   assert(type(range_table) == "table", "expected table range for table node without range method")
-
   local range4 = { 1, 2, 3, 4 }
   local range_res = vim.treesitter.get_range(range4, 0, {})
   assert(type(range_res) == "table", "expected table range for range4 array")
@@ -6487,6 +6484,7 @@ do
       return 1, 2, 10, 3, 4, 20
     end,
   }
+
   local wrapped_node = { real_node }
   local range_wrapped = vim.treesitter.get_range(wrapped_node, 0, {})
   assert(type(range_wrapped) == "table", "expected table range for wrapped node")
@@ -6496,6 +6494,7 @@ do
     end_ = function(self) return 0, 4, 4 end,
     range = function(self) return 0, 0, 0, 4 end,
   }
+
   local wrapped_text_node = { text_node }
   local text = vim.treesitter.get_node_text(wrapped_text_node, "echo hello")
   assert(text == "echo", "expected extracted text from wrapped node: " .. tostring(text))
@@ -6509,20 +6508,20 @@ do
   assert(view1.leftcol == 30, "expected leftcol 30, got: " .. tostring(view1.leftcol))
   assert(view1.col == 45, "expected col 45, got: " .. tostring(view1.col))
   assert(view1.curswant == 45, "expected curswant 45, got: " .. tostring(view1.curswant))
-
   -- Test 2: apply_view_horizontal on short line uses coladd
   local view2 = { lnum = 1, col = 0, curswant = 0, leftcol = 0, skipcol = 0 }
   inspect._apply_view_horizontal(view2, src1, 10, 2)
   assert(view2.leftcol == 30, "expected leftcol 30 on short line, got: " .. tostring(view2.leftcol))
   assert(view2.col == 10, "expected col 10 on short line, got: " .. tostring(view2.col))
   assert(view2.coladd == 20, "expected coladd 20 on short line, got: " .. tostring(view2.coladd))
-
   -- Test 3: move_cursor_to_line_start preserves horizontal scroll in real Neovim window
   local buf = vim.api.nvim_create_buf(false, true)
+
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
     "    " .. string.rep("parent_code_", 10),
     "    " .. string.rep("change_code_", 10),
   })
+
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     width = 80,
@@ -6530,6 +6529,7 @@ do
     row = 1,
     col = 1,
   })
+
   vim.wo[win].wrap = false
 
   local source_view = {
@@ -6543,22 +6543,23 @@ do
 
   inspect._move_cursor_to_line_start(win, 1, 2, false, 1, source_view)
   vim.cmd("redraw")
+
   local saved_view = vim.api.nvim_win_call(win, function()
     return vim.fn.winsaveview()
   end)
 
   assert(saved_view.leftcol == 35, "expected leftcol to remain 35, got: " .. tostring(saved_view.leftcol))
   assert(saved_view.col == 40, "expected col to remain 40, got: " .. tostring(saved_view.col))
-
   vim.api.nvim_win_close(win, true)
   vim.api.nvim_buf_delete(buf, { force = true })
-
   -- Test 4: ensure_context_window_leftcol resets context window leftcol to 0
   local code_buf = vim.api.nvim_create_buf(false, true)
+
   vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, {
     "local function my_outer_function()",
     "  local x = 1",
   })
+
   local code_win = vim.api.nvim_open_win(code_buf, true, {
     relative = "editor",
     width = 80,
@@ -6566,10 +6567,11 @@ do
     row = 1,
     col = 1,
   })
-  vim.wo[code_win].wrap = false
 
+  vim.wo[code_win].wrap = false
   local ctx_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(ctx_buf, 0, -1, false, { "local function my_outer_function()" })
+
   local ctx_win = vim.api.nvim_open_win(ctx_buf, false, {
     win = code_win,
     relative = "win",
@@ -6578,6 +6580,7 @@ do
     row = 0,
     col = 0,
   })
+
   vim.w[ctx_win].treesitter_context = true
   vim.wo[ctx_win].wrap = false
 
@@ -6585,9 +6588,9 @@ do
   vim.api.nvim_win_call(ctx_win, function()
     vim.fn.winrestview({ leftcol = 40 })
   end)
+
   local ctx_view_before = vim.api.nvim_win_call(ctx_win, vim.fn.winsaveview)
   assert(ctx_view_before.leftcol == 40, "expected ctx_win leftcol to be 40 before fix")
-
   inspect._ensure_context_window_leftcol(code_win)
   local ctx_view_after = vim.api.nvim_win_call(ctx_win, vim.fn.winsaveview)
   assert(ctx_view_after.leftcol == 0, "expected ctx_win leftcol to be reset to 0, got: " .. tostring(ctx_view_after.leftcol))
@@ -6596,6 +6599,7 @@ do
   vim.api.nvim_win_call(ctx_win, function()
     vim.fn.winrestview({ leftcol = 40 })
   end)
+
   inspect._move_cursor_to_line_start(code_win, 1, 2, false, 1, source_view)
   local ctx_view_after_move = vim.api.nvim_win_call(ctx_win, vim.fn.winsaveview)
   assert(ctx_view_after_move.leftcol == 0, "expected ctx_win leftcol to remain 0 after move_cursor_to_line_start, got: " .. tostring(ctx_view_after_move.leftcol))
@@ -6614,6 +6618,7 @@ do
       },
     },
   }
+
   -- parent to change
   local mapped1 = inspect._map_inspection_line(session, "parent", "change", 20)
   assert(mapped1 == 10, "expected mapped topline 10, got: " .. tostring(mapped1))
@@ -6624,10 +6629,164 @@ do
   assert(mapped3 == 20, "expected mapped topline 20, got: " .. tostring(mapped3))
   local mapped4 = inspect._map_inspection_line(session, "change", "parent", 13)
   assert(mapped4 == 23, "expected mapped cursor line 23, got: " .. tostring(mapped4))
-
   vim.api.nvim_win_close(ctx_win, true)
   vim.api.nvim_win_close(code_win, true)
   vim.api.nvim_buf_delete(ctx_buf, { force = true })
   vim.api.nvim_buf_delete(code_buf, { force = true })
 end
 
+do
+  local target_mod = require("oculus.inspect.target")
+
+  local projects = {
+    { name = "Ghostty", repository = "ghostty-org/ghostty", provider = "github" },
+    { name = "Zig", repository = "ziglang/zig", provider = "codeberg" },
+  }
+
+  -- 1. Target parser tests
+  local p1 = target_mod.parse("123", projects)
+  assert(p1 and p1.id == 123 and p1.kind == nil and p1.owner == nil, "expected bare numeric id 123")
+  local p2 = target_mod.parse("#456", projects)
+  assert(p2 and p2.id == 456 and p2.kind == nil, "expected #456 to parse as id 456")
+  local p3 = target_mod.parse("pr 789", projects)
+  assert(p3 and p3.id == 789 and p3.kind == "pull_request", "expected pr 789 to be pull_request")
+  local p4 = target_mod.parse("issue #101", projects)
+  assert(p4 and p4.id == 101 and p4.kind == "issue", "expected issue #101 to be issue")
+  local p5 = target_mod.parse("c846775", projects)
+  assert(p5 and p5.id == "c846775" and p5.kind == "commit", "expected hex hash to parse as commit")
+  local p6 = target_mod.parse("commit c846775", projects)
+  assert(p6 and p6.id == "c846775" and p6.kind == "commit", "expected commit prefix to parse as commit")
+  local p7 = target_mod.parse("neovim/neovim#123", projects)
+  assert(p7 and p7.owner == "neovim" and p7.repo == "neovim" and p7.id == 123, "expected owner/repo slug")
+  local p8 = target_mod.parse("neovim/neovim pr 123", projects)
+  assert(p8 and p8.owner == "neovim" and p8.repo == "neovim" and p8.id == 123 and p8.kind == "pull_request", "expected owner/repo with pr kind")
+  local p9 = target_mod.parse("neovim/neovim/pull/123", projects)
+  assert(p9 and p9.owner == "neovim" and p9.repo == "neovim" and p9.id == 123 and p9.kind == "pull_request", "expected path pull style")
+  local p10 = target_mod.parse("neovim/neovim/issues/123", projects)
+  assert(p10 and p10.owner == "neovim" and p10.repo == "neovim" and p10.id == 123 and p10.kind == "issue", "expected path issue style")
+  local p11 = target_mod.parse("neovim/neovim@c846775", projects)
+  assert(p11 and p11.owner == "neovim" and p11.repo == "neovim" and p11.id == "c846775" and p11.kind == "commit", "expected commit @ syntax")
+  local p12 = target_mod.parse("Ghostty#42", projects)
+  assert(p12 and p12.owner == "ghostty-org" and p12.repo == "ghostty" and p12.forge == "github" and p12.id == 42, "expected project name matching")
+  local p13 = target_mod.parse("Zig 99", projects)
+  assert(p13 and p13.owner == "ziglang" and p13.repo == "zig" and p13.forge == "codeberg" and p13.id == 99, "expected codeberg project matching")
+  local p14 = target_mod.parse("https://github.com/folke/lazy.nvim/pull/500", projects)
+  assert(p14 and p14.url == "https://github.com/folke/lazy.nvim/pull/500" and p14.kind == "pull_request" and p14.id == 500, "expected full URL parsing")
+  -- 2. Repository resolution tests
+  local repo_resolved
+
+  target_mod.resolve_repository({ owner = "folke", repo = "lazy.nvim" }, {}, {}, function(info)
+    repo_resolved = info
+  end)
+
+  assert(repo_resolved and repo_resolved.owner == "folke" and repo_resolved.repo == "lazy.nvim" and repo_resolved.forge == "github")
+  local context_resolved
+
+  target_mod.resolve_repository({ id = 123 }, { project = { repository = "ghostty-org/ghostty", provider = "github" } }, {}, function(info)
+    context_resolved = info
+  end)
+
+  assert(context_resolved and context_resolved.owner == "ghostty-org" and context_resolved.repo == "ghostty")
+  -- 3. URL resolution tests
+  local url_resolved, kind_resolved
+
+  target_mod.resolve_target_url(
+    { id = 42, kind = "pull_request" },
+    { forge = "github", owner = "neovim", repo = "neovim" },
+    {},
+    function(url, kind)
+      url_resolved = url
+      kind_resolved = kind
+    end
+  )
+
+  assert(url_resolved == "https://github.com/neovim/neovim/pull/42" and kind_resolved == "pull_request")
+
+  target_mod.resolve_target_url(
+    { id = 42, kind = "pull_request" },
+    { forge = "codeberg", owner = "ziglang", repo = "zig" },
+    {},
+    function(url, kind)
+      url_resolved = url
+      kind_resolved = kind
+    end
+  )
+
+  assert(url_resolved == "https://codeberg.org/ziglang/zig/pulls/42" and kind_resolved == "pull_request")
+
+  target_mod.resolve_target_url(
+    { id = 99, kind = "issue" },
+    { forge = "github", owner = "neovim", repo = "neovim" },
+    {},
+    function(url, kind)
+      url_resolved = url
+      kind_resolved = kind
+    end
+  )
+
+  assert(url_resolved == "https://github.com/neovim/neovim/issues/99" and kind_resolved == "issue")
+
+  target_mod.resolve_target_url(
+    { id = "c846775", kind = "commit" },
+    { forge = "github", owner = "neovim", repo = "neovim" },
+    {},
+    function(url, kind)
+      url_resolved = url
+      kind_resolved = kind
+    end
+  )
+
+  assert(url_resolved == "https://github.com/neovim/neovim/commit/c846775" and kind_resolved == "commit")
+  -- 4. Auto-detection probe test (mock provider)
+  local mock_github = require("oculus.github")
+  local original_pr = mock_github.pull_request
+  local original_issue = mock_github.issue
+
+  -- Case A: PR probe succeeds
+  mock_github.pull_request = function(repo, number, opts, callback)
+    callback({ number = number, html_url = "https://github.com/" .. repo .. "/pull/" .. number })
+  end
+
+  local auto_pr_url, auto_pr_kind
+
+  target_mod.resolve_target_url(
+    { id = 300, kind = nil },
+    { forge = "github", owner = "neovim", repo = "neovim" },
+    {},
+    function(url, kind)
+      auto_pr_url = url
+      auto_pr_kind = kind
+    end
+  )
+
+  assert(auto_pr_url == "https://github.com/neovim/neovim/pull/300" and auto_pr_kind == "pull_request")
+
+  -- Case B: PR probe fails, issue probe succeeds
+  mock_github.pull_request = function(repo, number, opts, callback)
+    callback(nil, "Not found")
+  end
+
+  mock_github.issue = function(repo, number, opts, callback)
+    callback({ number = number, html_url = "https://github.com/" .. repo .. "/issues/" .. number })
+  end
+
+  local auto_issue_url, auto_issue_kind
+
+  target_mod.resolve_target_url(
+    { id = 400, kind = nil },
+    { forge = "github", owner = "neovim", repo = "neovim" },
+    {},
+    function(url, kind)
+      auto_issue_url = url
+      auto_issue_kind = kind
+    end
+  )
+
+  assert(auto_issue_url == "https://github.com/neovim/neovim/issues/400" and auto_issue_kind == "issue")
+  -- Restore original functions
+  mock_github.pull_request = original_pr
+  mock_github.issue = original_issue
+  -- 5. API export tests
+  assert(type(inspect.inspect_by_id) == "function", "inspect.inspect_by_id should be exported")
+  assert(type(oculus.inspect) == "function", "oculus.inspect should be exported")
+end

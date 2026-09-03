@@ -2874,6 +2874,7 @@ local function render_shortcuts()
   section("STARTUP LISTS", {
     { "v", "Switch between project and user lists" },
     { "a", "Add a GitHub or Codeberg project or account" },
+    { "H", "Inspect an issue, PR, or commit by ID" },
     { "r", "Remove the selected project or account" },
     { "m", "Move the selected project or account" },
     { "f", "Edit filters for the selected user or project" },
@@ -2884,6 +2885,7 @@ local function render_shortcuts()
 
   section("ACTIVITY", {
     { "h", "Inspect the selected change or issue" },
+    { "H", "Inspect an issue, PR, or commit by ID" },
     { "Tab", "Queue activity for sequential inspection" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Open a project's issue activity" },
@@ -4969,6 +4971,38 @@ local function inspect_current()
   end
 end
 
+local function prompt_inspect_by_id()
+  local project = M.state.activity_project
+
+  if not project and M.state.view == "contributors" then
+    local target = target_on_cursor()
+
+    if type(target) == "table" and target.kind == "project" then
+      project = target
+    end
+  end
+
+  local repo_hint = project and (project.name or project.repository)
+
+  local prompt = repo_hint
+      and ("Inspect in " .. repo_hint .. " (PR #, issue #, commit, or target): ")
+    or "Inspect (PR #, issue #, commit, or target): "
+
+  vim.ui.input({ prompt = prompt }, function(input)
+    if not input or vim.trim(input) == "" then
+      return
+    end
+
+    local context = {
+      project = project,
+      repository = project and project.repository or nil,
+      provider = project and project.provider or nil,
+    }
+
+    require("oculus").inspect(input, M.state.opts, context)
+  end)
+end
+
 local function move_cursor(direction)
   if
     M.state.view ~= "contributors"
@@ -5387,6 +5421,7 @@ local function map_keys(buf)
 
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map("h", inspect_current, "Inspect Oculus change or issue")
+  map("H", prompt_inspect_by_id, "Inspect issue, PR, or commit by ID")
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
   map("u", open_project_issue_activity, "Open Oculus project issues")
 
