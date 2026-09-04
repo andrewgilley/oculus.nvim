@@ -205,6 +205,8 @@ fn test_impact_analyzer() {
             confidence: 1.0,
             provenance: oculus_engine::models::Provenance {
                 source_type: "ast".to_string(),
+                repository_state: Some("HEAD".to_string()),
+                confidence: 1.0,
                 citations: vec![],
                 details: "direct call".to_string(),
             },
@@ -216,6 +218,8 @@ fn test_impact_analyzer() {
             confidence: 1.0,
             provenance: oculus_engine::models::Provenance {
                 source_type: "ast".to_string(),
+                repository_state: Some("HEAD".to_string()),
+                confidence: 1.0,
                 citations: vec![],
                 details: "direct test call".to_string(),
             },
@@ -239,6 +243,8 @@ fn test_investigator_current_repo() {
     assert!(!bundle.metadata.engine_version.is_empty());
     assert!(!bundle.co_changes.is_empty());
     assert!(!bundle.invariants.is_empty());
+    assert!(!bundle.relationships.is_empty(), "expected relationships with provenance to be populated");
+    assert!(bundle.relationships.iter().all(|r| !r.provenance.source_type.is_empty() && r.confidence > 0.0));
 }
 
 #[test]

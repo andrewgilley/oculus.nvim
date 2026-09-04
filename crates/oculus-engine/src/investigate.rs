@@ -10,7 +10,7 @@ use crate::impact::ImpactAnalyzer;
 use crate::mapper::GitSemanticMapper;
 use crate::models::{
     BundleMetadata, EntityHistory, ForgeArtifact, InvariantCheck, InvestigateFactBundle,
-    SemanticEntity,
+    Provenance, RelationKind, Relationship, SemanticEntity,
 };
 use crate::parser::AstParser;
 
@@ -165,7 +165,102 @@ impl Investigator {
             });
         }
 
-        // 8. Assemble fact bundle
+        // 8. Assemble unified Evidence Graph relationships with mandatory provenance
+        let mut relationships: Vec<Relationship> = Vec::new();
+
+        // 8a. Forge Traceability Links -> Relationship
+        if let Some(ref artifact) = forge_artifact {
+            for link in &traceability_links {
+                relationships.push(Relationship {
+                    source_id: format!("{}:{}", artifact.kind, artifact.id),
+                    target_id: link.target_entity.id.clone(),
+                    kind: RelationKind::References,
+                    confidence: link.confidence,
+                    provenance: Provenance {
+                        source_type: "forge".to_string(),
+                        repository_state: Some(format!("{}:{}", artifact.kind, artifact.id)),
+                        confidence: link.confidence,
+                        citations: link.evidence.clone(),
+                        details: link.match_reason.clone(),
+                    },
+                });
+            }
+        }
+
+        // 8b. Git Diff modifications -> Relationship
+        for entity in &modified_entities {
+            relationships.push(Relationship {
+                source_id: target_oid.to_string(),
+                target_id: entity.id.clone(),
+                kind: RelationKind::ModifiedBy,
+                confidence: 1.0,
+                provenance: Provenance {
+                    source_type: "git_diff".to_string(),
+                    repository_state: Some(target_oid.to_string()),
+                    confidence: 1.0,
+                    citations: vec![format!("{}:{}-{}", entity.file_path, entity.start_line, entity.end_line)],
+                    details: format!("Git diff hunk intersects AST node of {} ({:?})", entity.name, entity.kind),
+                },
+            });
+        }
+
+        // 8c. Callers & Tests -> Relationship
+        if let Some(ref imp) = impact {
+            for caller in &imp.direct_callers {
+                for target_e in &modified_entities {
+                    relationships.push(Relationship {
+                        source_id: caller.id.clone(),
+                        target_id: target_e.id.clone(),
+                        kind: RelationKind::Calls,
+                        confidence: 0.95,
+                        provenance: Provenance {
+                            source_type: "ast".to_string(),
+                            repository_state: head_oid.as_deref().map(|s| s.to_string()),
+                            confidence: 0.95,
+                            citations: vec![format!("{}:{}", caller.file_path, caller.start_line)],
+                            details: format!("Caller `{}` in `{}` calls `{}`", caller.name, caller.file_path, target_e.name),
+                        },
+                    });
+                }
+            }
+
+            for test in &imp.affected_tests {
+                for target_e in &modified_entities {
+                    relationships.push(Relationship {
+                        source_id: test.id.clone(),
+                        target_id: target_e.id.clone(),
+                        kind: RelationKind::TestedBy,
+                        confidence: 0.90,
+                        provenance: Provenance {
+                            source_type: "test_association".to_string(),
+                            repository_state: head_oid.as_deref().map(|s| s.to_string()),
+                            confidence: 0.90,
+                            citations: vec![format!("{}:{}", test.file_path, test.start_line)],
+                            details: format!("Test entity `{}` in `{}` exercises `{}`", test.name, test.file_path, target_e.name),
+                        },
+                    });
+                }
+            }
+        }
+
+        // 8d. Co-Changes -> Relationship
+        for co in &co_changes {
+            relationships.push(Relationship {
+                source_id: co.entity_a.clone(),
+                target_id: co.entity_b.clone(),
+                kind: RelationKind::CoChangesWith,
+                confidence: co.confidence,
+                provenance: Provenance {
+                    source_type: "git_history".to_string(),
+                    repository_state: head_oid.as_deref().map(|s| s.to_string()),
+                    confidence: co.confidence,
+                    citations: co.sample_commits.iter().map(|c| format!("commit:{}", c)).collect(),
+                    details: format!("Statistical co-change (Jaccard: {:.2}) across {} commits", co.confidence, co.co_change_count),
+                },
+            });
+        }
+
+        // 9. Assemble fact bundle
         Ok(InvestigateFactBundle {
             metadata: BundleMetadata {
                 repository_root: repo_path.to_string_lossy().replace('\\', "/"),
@@ -175,7 +270,7 @@ impl Investigator {
                 engine_version: env!("CARGO_PKG_VERSION").to_string(),
             },
             entities: modified_entities,
-            relationships: Vec::new(),
+            relationships,
             impact,
             co_changes,
             entity_histories,
