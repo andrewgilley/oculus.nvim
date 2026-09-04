@@ -194,6 +194,8 @@ impl AstParser {
                         confidence: 0.95,
                         provenance: Provenance {
                             source_type: "ast".to_string(),
+                            repository_state: git_oid.map(|s| s.to_string()),
+                            confidence: 0.95,
                             citations: vec![format!("{}:{}", file_path, start_pos.row + 1)],
                             details: format!("Direct call to {} at line {}", callee_text, start_pos.row + 1),
                         },

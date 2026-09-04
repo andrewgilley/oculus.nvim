@@ -137,6 +137,41 @@ do
   assert(event_bundle ~= nil, "expected event bundle")
   assert(event_bundle.forge_artifact ~= nil and event_bundle.forge_artifact.id == "99")
   assert(#event_bundle.traceability_links > 0, "expected traceability links from event")
+  -- Test 9: Mandatory relationship provenance & split UI explorer
+  assert(type(forge_bundle.relationships) == "table", "expected relationships table")
+  assert(#forge_bundle.relationships > 0, "expected relationships with provenance")
+
+  for _, rel in ipairs(forge_bundle.relationships) do
+    assert(type(rel.provenance) == "table", "expected provenance on relationship")
+    assert(type(rel.provenance.source_type) == "string", "expected provenance source_type")
+    assert(type(rel.confidence) == "number" and rel.confidence > 0, "expected confidence score")
+  end
+
+  window.open(forge_bundle, { width = 120, height = 40 })
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected tree win")
+  assert(window.state.ledger_win ~= nil and vim.api.nvim_win_is_valid(window.state.ledger_win), "expected ledger win in split layout")
+  assert(window.state.ledger_buf ~= nil and vim.api.nvim_buf_is_valid(window.state.ledger_buf), "expected ledger buf")
+  local ledger_lines = vim.api.nvim_buf_get_lines(window.state.ledger_buf, 0, -1, false)
+  local ledger_text = table.concat(ledger_lines, "\n")
+  assert(ledger_text:find("DETERMINISTIC PROVENANCE LEDGER", 1, true), "expected ledger header")
+  -- Move cursor to a line that has a traceability link or entity and verify ledger updates
+  local target_line = nil
+
+  for l, prov in pairs(window.state.line_provenance) do
+    if prov.kind == "traceability_link" or prov.kind == "entity" then
+      target_line = l
+      break
+    end
+  end
+
+  if target_line then
+    vim.api.nvim_win_set_cursor(window.state.win, { target_line, 0 })
+    vim.cmd("doautocmd CursorMoved")
+    local updated_ledger = table.concat(vim.api.nvim_buf_get_lines(window.state.ledger_buf, 0, -1, false), "\n")
+    assert(updated_ledger:find("PROVENANCE", 1, true) or updated_ledger:find("CONFIDENCE", 1, true), "expected provenance details in ledger")
+  end
+
   window.close()
+  assert(window.state.win == nil and window.state.ledger_win == nil, "expected both windows closed")
   print("ALL INVESTIGATE TESTS PASSED!")
 end

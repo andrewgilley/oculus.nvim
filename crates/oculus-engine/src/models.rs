@@ -33,17 +33,23 @@ pub struct SemanticEntity {
 #[serde(rename_all = "snake_case")]
 pub enum RelationKind {
     Calls,
+    CalledBy,
     Defines,
     Imports,
     Implements,
     References,
     CoChangesWith,
     TestedBy,
+    ModifiedBy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provenance {
     pub source_type: String,
+    #[serde(default)]
+    pub repository_state: Option<String>,
+    #[serde(default)]
+    pub confidence: f64,
     pub citations: Vec<String>,
     pub details: String,
 }
