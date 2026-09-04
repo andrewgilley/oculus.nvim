@@ -1696,8 +1696,8 @@ do
     { kind = "commit" }
   )
 
-  assert(commit_config.width == main_config.width - 5)
-  assert(commit_config.height == main_config.height - 5)
+  assert(commit_config.width == main_config.width)
+  assert(commit_config.height == main_config.height)
   assert(commit_config.col == main_config.col)
   assert(commit_config.row == main_config.row)
   assert(commit_config.footer == nil)
@@ -1708,8 +1708,8 @@ do
     { kind = "pull_request" }
   )
 
-  assert(pull_request_config.width == main_config.width - 5)
-  assert(pull_request_config.height == main_config.height - 5)
+  assert(pull_request_config.width == main_config.width)
+  assert(pull_request_config.height == main_config.height)
   assert(pull_request_config.col == main_config.col)
   assert(pull_request_config.row == main_config.row)
   assert(pull_request_config.footer == nil)
@@ -4775,7 +4775,7 @@ if integration_root and (integration_sha or integration_url) then
 
     vim.api.nvim_win_set_height(
       overview_win,
-      require("oculus.window").window_config({}).height - 5
+      require("oculus.window").window_config({}).height
     )
 
     for _ = 1, vim.api.nvim_buf_line_count(overview_buf) do
@@ -5193,10 +5193,10 @@ if integration_root and (integration_sha or integration_url) then
       require("oculus.window").window_config({})
 
     assert(overview_saved.config.width
-      == main_overview_config.width - 5)
+      == main_overview_config.width)
 
     assert(overview_saved.config.height
-      == main_overview_config.height - 5)
+      == main_overview_config.height)
 
     assert(overview_saved.config.row
       == main_overview_config.row)
