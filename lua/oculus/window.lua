@@ -203,7 +203,8 @@ local function is_add_dialog_open()
 end
 
 local function is_inspect_input_open()
-  return is_valid_win(M.state.inspect_input_win)
+  return M.state.inspect_input_active == true
+    or is_valid_win(M.state.inspect_input_win)
 end
 
 local function window_highlight_name(win, group)
@@ -968,6 +969,20 @@ local function footer_commands_text()
   return activity_commands
 end
 
+local inspect_input_default_title = "item ID#: "
+
+local function get_inspect_input_title()
+  local title = (M.state.opts and type(M.state.opts.inspect_input_title) == "string")
+      and M.state.opts.inspect_input_title
+    or inspect_input_default_title
+
+  if not title:match("%s$") then
+    title = title .. " "
+  end
+
+  return title
+end
+
 local function render_activity_footer(force)
   if is_sidebar_visible() and not force and not is_inspect_input_open() then
     close_activity_footer()
@@ -989,10 +1004,21 @@ local function render_activity_footer(force)
 
   local width = config.width
   local activity_commands = footer_commands_text()
+  local footer_line = activity_commands
+  local title_start = nil
+  local title_end = nil
+
+  if is_inspect_input_open() then
+    local tab_space = 4
+    local title_str = get_inspect_input_title()
+    title_start = #footer_line + tab_space
+    footer_line = footer_line .. string.rep(" ", tab_space) .. title_str
+    title_end = #footer_line
+  end
 
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
-    activity_commands,
+    footer_line,
   }
 
   vim.bo[buf].modifiable = true
@@ -1000,7 +1026,12 @@ local function render_activity_footer(force)
   vim.bo[buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, ns, "WinSeparator", 0, 2, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 1, 2, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 1, 2, #activity_commands)
+
+  if title_start and title_end then
+    local trimmed_len = #vim.trim(get_inspect_input_title())
+    vim.api.nvim_buf_add_highlight(buf, ns, "Title", 1, title_start, title_start + trimmed_len)
+  end
 
   if is_valid_win(M.state.footer_win) then
     vim.api.nvim_win_set_config(M.state.footer_win, config)
@@ -4644,6 +4675,7 @@ end
 
 local function close_inspect_input()
   M.state.closing_inspect_input = true
+  M.state.inspect_input_active = nil
   vim.cmd("stopinsert")
 
   if is_valid_win(M.state.inspect_input_win) then
@@ -5847,6 +5879,7 @@ local function open_inspect_input()
 
   close_add_dialog()
   close_inspect_input()
+  M.state.inspect_input_active = true
   render_activity_footer(true)
   local project = M.state.activity_project
 
@@ -5861,7 +5894,9 @@ local function open_inspect_input()
   local commands = footer_commands_text()
   local last_cmd_end = #commands
   local tab_space = 4
-  local input_col = last_cmd_end + tab_space
+  local title = get_inspect_input_title()
+  local title_col = last_cmd_end + tab_space
+  local input_col = title_col + #title
   local parent_win
   local input_row
 
@@ -5875,11 +5910,11 @@ local function open_inspect_input()
 
   local parent_width = vim.api.nvim_win_get_width(parent_win)
 
-  if input_col + 10 > parent_width then
-    input_col = math.max(0, parent_width - 12)
+  if input_col + 6 > parent_width then
+    input_col = math.max(0, parent_width - 8)
   end
 
-  local input_width = math.max(10, parent_width - input_col - 2)
+  local input_width = math.max(4, parent_width - input_col - 2)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -6853,4 +6888,5 @@ M._close_inspect_input = close_inspect_input
 M._is_inspect_input_open = is_inspect_input_open
 M._prompt_inspect_by_id = prompt_inspect_by_id
 M._footer_commands_text = footer_commands_text
+M._inspect_input_title = get_inspect_input_title
 return M
