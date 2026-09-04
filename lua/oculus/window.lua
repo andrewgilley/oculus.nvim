@@ -118,6 +118,7 @@ M.state = {
   add_dialog_win = nil,
   add_input_buf = nil,
   add_input_win = nil,
+  add_dialog_step = nil,
   closing_add_dialog = false,
   view = "contributors",
   contributor = nil,
@@ -572,21 +573,44 @@ end
 
 local function sidebar_sections_for_view(view)
   if is_add_dialog_open() then
-    return {
-      {
-        title = "ACTIONS",
-        items = {
-          { "<CR>", "Submit" },
-          { "<Tab>", "Platform" },
+    if M.state.add_dialog_step == "input" then
+      return {
+        {
+          title = "ACTIONS",
+          items = {
+            { "<CR>", "Submit" },
+          },
         },
-      },
-      {
-        title = "GENERAL",
-        items = {
-          { "<Esc>", "Cancel" },
+        {
+          title = "GENERAL",
+          items = {
+            { "<Esc>", "Back" },
+            { "q", "Cancel" },
+          },
         },
-      },
-    }
+      }
+    else
+      local nav = navigation.resolve(M.state.opts)
+      local nav_down = nav.down .. " / ↓"
+      local nav_up = nav.up .. " / ↑"
+
+      return {
+        {
+          title = "ACTIONS",
+          items = {
+            { "<CR>", "Select" },
+            { nav_down, "Next" },
+            { nav_up, "Previous" },
+          },
+        },
+        {
+          title = "GENERAL",
+          items = {
+            { "<Esc>", "Cancel" },
+          },
+        },
+      }
+    end
   end
 
   local nav = navigation.resolve(M.state.opts)
@@ -4567,6 +4591,7 @@ local function close_add_dialog()
 
   M.state.add_dialog_win = nil
   M.state.add_dialog_buf = nil
+  M.state.add_dialog_step = nil
 
   if is_valid_win(M.state.win) then
     vim.api.nvim_set_current_win(M.state.win)
@@ -4581,47 +4606,79 @@ local function close_add_dialog()
   end)
 end
 
-local function update_add_dialog_lines(adding_project, provider)
+local function update_add_dialog_lines(adding_project, provider, step)
   if not is_valid_buf(M.state.add_dialog_buf) then
     return
   end
 
+  step = step or M.state.add_dialog_step or "dropdown"
   local buf = M.state.add_dialog_buf
-  local gh_icon = provider == "github" and "●" or "○"
-  local cb_icon = provider == "codeberg" and "●" or "○"
-
-  local field_label = adding_project and "Repository (owner/repo):"
-    or "User handle (@username):"
-
-  local lines = {
-    "",
-    ("  Platform:  %s GitHub   %s Codeberg   (Tab)"):format(gh_icon, cb_icon),
-    "",
-    "  " .. field_label,
-    "",
-    "",
-    "",
-    "",
-    "  <Enter> submit   <Tab> platform   <Esc> cancel",
-  }
-
   vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-  vim.api.nvim_buf_clear_namespace(buf, add_dialog_ns, 0, -1)
-  local platform_label_end = 12
-  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Title", 1, 2, platform_label_end)
-  local gh_hl = provider == "github" and "DiagnosticOk" or "Comment"
-  local gh_start = platform_label_end + 1
-  local gh_end = gh_start + #gh_icon + 1 + #"GitHub"
-  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, gh_hl, 1, gh_start, gh_end)
-  local cb_hl = provider == "codeberg" and "DiagnosticOk" or "Comment"
-  local cb_start = gh_end + 3
-  local cb_end = cb_start + #cb_icon + 1 + #"Codeberg"
-  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, cb_hl, 1, cb_start, cb_end)
-  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 1, cb_end + 1, -1)
-  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Identifier", 3, 2, -1)
-  vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 8, 2, -1)
+
+  if step == "dropdown" then
+    local gh_selected = provider == "github"
+    local cb_selected = provider == "codeberg"
+    local gh_prefix = gh_selected and "  ▸ ● " or "    ○ "
+    local cb_prefix = cb_selected and "  ▸ ● " or "    ○ "
+
+    local lines = {
+      "",
+      "  Platform ▾",
+      "",
+      gh_prefix .. "GitHub",
+      cb_prefix .. "Codeberg",
+      "",
+      "",
+      "",
+      "  <Enter> select   <j/k> navigate   <Esc> cancel",
+    }
+
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    vim.api.nvim_buf_clear_namespace(buf, add_dialog_ns, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Title", 1, 2, 10)
+    vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Special", 1, 11, 14)
+
+    if gh_selected then
+      vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Special", 3, 2, 5)
+      vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "DiagnosticOk", 3, 6, -1)
+    else
+      vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 3, 0, -1)
+    end
+
+    if cb_selected then
+      vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Special", 4, 2, 5)
+      vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "DiagnosticOk", 4, 6, -1)
+    else
+      vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 4, 0, -1)
+    end
+
+    vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 8, 2, -1)
+  else
+    local field_label = adding_project and "Repository (owner/repo):"
+      or "User handle (@username):"
+    local prov_label = provider == "codeberg" and "Codeberg" or "GitHub"
+
+    local lines = {
+      "",
+      "  Platform:  " .. prov_label,
+      "",
+      "  " .. field_label,
+      "",
+      "",
+      "",
+      "",
+      "  <Enter> submit   <Esc> back",
+    }
+
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    vim.api.nvim_buf_clear_namespace(buf, add_dialog_ns, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 1, 2, 11)
+    vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "DiagnosticOk", 1, 13, -1)
+    vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Identifier", 3, 2, -1)
+    vim.api.nvim_buf_add_highlight(buf, add_dialog_ns, "Comment", 8, 2, -1)
+  end
 end
 
 local function open_add_dialog()
@@ -4670,7 +4727,7 @@ local function open_add_dialog()
     height = dialog_height,
     border = "rounded",
     style = "minimal",
-    focusable = false,
+    focusable = true,
     zindex = 70,
   })
 
@@ -4682,110 +4739,201 @@ local function open_add_dialog()
   vim.wo[d_win].number = false
   vim.wo[d_win].relativenumber = false
   vim.wo[d_win].signcolumn = "no"
+
   local provider = "github"
-  update_add_dialog_lines(adding_project, provider)
-  local i_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[i_buf].buftype = "nofile"
-  vim.bo[i_buf].bufhidden = "wipe"
-  vim.bo[i_buf].swapfile = false
-  vim.bo[i_buf].filetype = "oculus-add-input"
-  vim.bo[i_buf].modifiable = true
-  M.state.add_input_buf = i_buf
+  M.state.add_dialog_step = "dropdown"
+  update_add_dialog_lines(adding_project, provider, "dropdown")
+  vim.api.nvim_set_current_win(d_win)
 
-  local i_win = vim.api.nvim_open_win(i_buf, false, {
-    relative = "win",
-    win = M.state.win,
-    row = dialog_row + input_row,
-    col = dialog_col + input_col,
-    width = input_width,
-    height = 1,
-    border = "rounded",
-    style = "minimal",
-    focusable = true,
-    zindex = 75,
-  })
+  local platforms = { "github", "codeberg" }
+  local go_to_input
+  local go_to_dropdown
 
-  M.state.add_input_win = i_win
-  vim.api.nvim_set_current_win(i_win)
-  use_window_highlights(i_win)
-  vim.wo[i_win].winhighlight = "Normal:OculusNormal,NormalFloat:OculusNormal,FloatBorder:Identifier"
-  vim.wo[i_win].wrap = false
-  vim.wo[i_win].cursorline = false
-  vim.wo[i_win].number = false
-  vim.wo[i_win].relativenumber = false
-  vim.wo[i_win].signcolumn = "no"
-
-  local function submit()
-    local lines = is_valid_buf(i_buf) and vim.api.nvim_buf_get_lines(i_buf, 0, 1, false) or {}
-    local raw_val = lines[1] or ""
-    local val = vim.trim(raw_val)
-    local chosen_provider = provider
-    close_add_dialog()
-
-    if val == "" then
-      return
-    end
-
-    local added = adding_project
-        and add_project({
-          repository = val,
-          provider = chosen_provider,
-        }, target_project)
-      or add_contributor({
-        username = val,
-        provider = chosen_provider,
-      }, target_contributor)
-
-    if added and is_valid_win(M.state.win) then
-      vim.api.nvim_set_current_win(M.state.win)
-      render_contributors()
-    end
+  local function select_provider(new_provider)
+    provider = new_provider
+    update_add_dialog_lines(adding_project, provider, "dropdown")
   end
 
-  local function toggle_provider()
-    provider = provider == "github" and "codeberg" or "github"
-    update_add_dialog_lines(adding_project, provider)
-
-    if vim.fn.mode():sub(1, 1) == "i" then
-      vim.cmd("startinsert!")
+  local function next_provider()
+    local idx = 1
+    for i, p in ipairs(platforms) do
+      if p == provider then
+        idx = i
+        break
+      end
     end
+    idx = (idx % #platforms) + 1
+    select_provider(platforms[idx])
   end
 
-  local function on_insert_esc()
-    local lines = is_valid_buf(i_buf) and vim.api.nvim_buf_get_lines(i_buf, 0, 1, false) or {}
-    local raw_val = lines[1] or ""
-
-    if vim.trim(raw_val) == "" then
-      close_add_dialog()
-    else
-      vim.cmd("stopinsert")
+  local function prev_provider()
+    local idx = 1
+    for i, p in ipairs(platforms) do
+      if p == provider then
+        idx = i
+        break
+      end
     end
+    idx = idx - 1
+    if idx < 1 then
+      idx = #platforms
+    end
+    select_provider(platforms[idx])
   end
 
   local function cancel()
     close_add_dialog()
   end
 
-  local map_opts = { buffer = i_buf, nowait = true, silent = true }
-  vim.keymap.set({ "i", "n" }, "<CR>", submit, map_opts)
-  vim.keymap.set({ "i", "n" }, "<kEnter>", submit, map_opts)
-  vim.keymap.set("i", "<Esc>", on_insert_esc, map_opts)
-  vim.keymap.set("n", "<Esc>", cancel, map_opts)
-  vim.keymap.set("n", "q", cancel, map_opts)
-  vim.keymap.set({ "i", "n" }, "<C-c>", cancel, map_opts)
-  vim.keymap.set({ "i", "n" }, "<Tab>", toggle_provider, map_opts)
-  vim.keymap.set({ "i", "n" }, "<S-Tab>", toggle_provider, map_opts)
-  vim.keymap.set({ "i", "n" }, "<Up>", toggle_provider, map_opts)
-  vim.keymap.set({ "i", "n" }, "<Down>", toggle_provider, map_opts)
-  vim.keymap.set({ "i", "n" }, "<C-p>", toggle_provider, map_opts)
-  vim.keymap.set({ "i", "n" }, "<C-n>", toggle_provider, map_opts)
-  vim.cmd("startinsert!")
+  local d_map_opts = { buffer = d_buf, nowait = true, silent = true }
+  local nav = navigation.resolve(M.state.opts)
+  vim.keymap.set("n", "<CR>", function()
+    go_to_input()
+  end, d_map_opts)
+  vim.keymap.set("n", "<kEnter>", function()
+    go_to_input()
+  end, d_map_opts)
+  vim.keymap.set("n", "<Space>", function()
+    go_to_input()
+  end, d_map_opts)
+  vim.keymap.set("n", "<Esc>", cancel, d_map_opts)
+  vim.keymap.set("n", "q", cancel, d_map_opts)
+  vim.keymap.set("n", "<C-c>", cancel, d_map_opts)
+  vim.keymap.set("n", "<Down>", next_provider, d_map_opts)
+  vim.keymap.set("n", "<Up>", prev_provider, d_map_opts)
+  vim.keymap.set("n", nav.down, next_provider, d_map_opts)
+  vim.keymap.set("n", nav.up, prev_provider, d_map_opts)
+  vim.keymap.set("n", "j", next_provider, d_map_opts)
+  vim.keymap.set("n", "k", prev_provider, d_map_opts)
+  vim.keymap.set("n", "<Tab>", next_provider, d_map_opts)
+  vim.keymap.set("n", "<S-Tab>", prev_provider, d_map_opts)
+  vim.keymap.set("n", "<C-n>", next_provider, d_map_opts)
+  vim.keymap.set("n", "<C-p>", prev_provider, d_map_opts)
+  vim.keymap.set("n", "1", function() select_provider("github") end, d_map_opts)
+  vim.keymap.set("n", "g", function() select_provider("github") end, d_map_opts)
+  vim.keymap.set("n", "G", function() select_provider("github") end, d_map_opts)
+  vim.keymap.set("n", "2", function() select_provider("codeberg") end, d_map_opts)
+  vim.keymap.set("n", "c", function() select_provider("codeberg") end, d_map_opts)
+  vim.keymap.set("n", "C", function() select_provider("codeberg") end, d_map_opts)
 
-  vim.schedule(function()
-    if is_valid_win(i_win) then
-      vim.cmd("startinsert!")
+  go_to_input = function()
+    M.state.add_dialog_step = "input"
+    update_add_dialog_lines(adding_project, provider, "input")
+
+    local i_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[i_buf].buftype = "nofile"
+    vim.bo[i_buf].bufhidden = "wipe"
+    vim.bo[i_buf].swapfile = false
+    vim.bo[i_buf].filetype = "oculus-add-input"
+    vim.bo[i_buf].modifiable = true
+    M.state.add_input_buf = i_buf
+
+    local i_win = vim.api.nvim_open_win(i_buf, false, {
+      relative = "win",
+      win = M.state.win,
+      row = dialog_row + input_row,
+      col = dialog_col + input_col,
+      width = input_width,
+      height = 1,
+      border = "rounded",
+      style = "minimal",
+      focusable = true,
+      zindex = 75,
+    })
+
+    M.state.add_input_win = i_win
+    vim.api.nvim_set_current_win(i_win)
+    use_window_highlights(i_win)
+    vim.wo[i_win].winhighlight = "Normal:OculusNormal,NormalFloat:OculusNormal,FloatBorder:Identifier"
+    vim.wo[i_win].wrap = false
+    vim.wo[i_win].cursorline = false
+    vim.wo[i_win].number = false
+    vim.wo[i_win].relativenumber = false
+    vim.wo[i_win].signcolumn = "no"
+
+    local function submit()
+      local lines = is_valid_buf(i_buf) and vim.api.nvim_buf_get_lines(i_buf, 0, 1, false) or {}
+      local raw_val = lines[1] or ""
+      local val = vim.trim(raw_val)
+      local chosen_provider = provider
+      close_add_dialog()
+
+      if val == "" then
+        return
+      end
+
+      local added = adding_project
+          and add_project({
+            repository = val,
+            provider = chosen_provider,
+          }, target_project)
+        or add_contributor({
+          username = val,
+          provider = chosen_provider,
+        }, target_contributor)
+
+      if added and is_valid_win(M.state.win) then
+        vim.api.nvim_set_current_win(M.state.win)
+        render_contributors()
+      end
     end
-  end)
+
+    local function on_insert_esc()
+      local lines = is_valid_buf(i_buf) and vim.api.nvim_buf_get_lines(i_buf, 0, 1, false) or {}
+      local raw_val = lines[1] or ""
+
+      if vim.trim(raw_val) == "" then
+        go_to_dropdown()
+      else
+        vim.cmd("stopinsert")
+      end
+    end
+
+    local i_map_opts = { buffer = i_buf, nowait = true, silent = true }
+    vim.keymap.set({ "i", "n" }, "<CR>", submit, i_map_opts)
+    vim.keymap.set({ "i", "n" }, "<kEnter>", submit, i_map_opts)
+    vim.keymap.set("i", "<Esc>", on_insert_esc, i_map_opts)
+    vim.keymap.set("n", "<Esc>", go_to_dropdown, i_map_opts)
+    vim.keymap.set("n", "q", cancel, i_map_opts)
+    vim.keymap.set({ "i", "n" }, "<C-c>", cancel, i_map_opts)
+
+    vim.cmd("startinsert!")
+    vim.schedule(function()
+      if is_valid_win(i_win) then
+        vim.cmd("startinsert!")
+      end
+    end)
+
+    if is_sidebar_visible() then
+      render_sidebar()
+    end
+  end
+
+  go_to_dropdown = function()
+    M.state.add_dialog_step = "dropdown"
+    vim.cmd("stopinsert")
+
+    if is_valid_win(M.state.add_input_win) then
+      vim.api.nvim_win_close(M.state.add_input_win, true)
+    end
+
+    if is_valid_buf(M.state.add_input_buf) then
+      vim.api.nvim_buf_delete(M.state.add_input_buf, { force = true })
+    end
+
+    M.state.add_input_win = nil
+    M.state.add_input_buf = nil
+
+    update_add_dialog_lines(adding_project, provider, "dropdown")
+
+    if is_valid_win(d_win) then
+      vim.api.nvim_set_current_win(d_win)
+    end
+
+    if is_sidebar_visible() then
+      render_sidebar()
+    end
+  end
 
   if is_sidebar_visible() then
     render_sidebar()
