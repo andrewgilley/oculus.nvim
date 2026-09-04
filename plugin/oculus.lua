@@ -48,3 +48,11 @@ end, {
     return matches
   end,
 })
+
+vim.api.nvim_create_user_command("OculusInvestigate", function(opts)
+  local target = opts.args ~= "" and opts.args or nil
+  require("oculus").investigate(target)
+end, {
+  nargs = "?",
+  desc = "Investigate an issue, pull request, commit, or project architecture",
+})
