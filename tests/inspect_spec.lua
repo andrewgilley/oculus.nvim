@@ -1696,10 +1696,10 @@ do
     { kind = "commit" }
   )
 
-  assert(commit_config.width == main_config.width - 9)
-  assert(commit_config.height == main_config.height - 3)
-  assert(commit_config.col == main_config.col + 4)
-  assert(commit_config.row == main_config.row + 2)
+  assert(commit_config.width == main_config.width - 5)
+  assert(commit_config.height == main_config.height - 5)
+  assert(commit_config.col == main_config.col)
+  assert(commit_config.row == main_config.row)
   assert(commit_config.footer == nil)
   assert(commit_config.footer_pos == nil)
 
@@ -1708,10 +1708,10 @@ do
     { kind = "pull_request" }
   )
 
-  assert(pull_request_config.width == main_config.width - 9)
-  assert(pull_request_config.height == main_config.height - 3)
-  assert(pull_request_config.col == main_config.col + 4)
-  assert(pull_request_config.row == main_config.row + 2)
+  assert(pull_request_config.width == main_config.width - 5)
+  assert(pull_request_config.height == main_config.height - 5)
+  assert(pull_request_config.col == main_config.col)
+  assert(pull_request_config.row == main_config.row)
   assert(pull_request_config.footer == nil)
   assert(pull_request_config.footer_pos == nil)
 end
@@ -4775,7 +4775,7 @@ if integration_root and (integration_sha or integration_url) then
 
     vim.api.nvim_win_set_height(
       overview_win,
-      require("oculus.window").window_config({}).height - 3
+      require("oculus.window").window_config({}).height - 5
     )
 
     for _ = 1, vim.api.nvim_buf_line_count(overview_buf) do
@@ -5193,16 +5193,16 @@ if integration_root and (integration_sha or integration_url) then
       require("oculus.window").window_config({})
 
     assert(overview_saved.config.width
-      == main_overview_config.width - 9)
+      == main_overview_config.width - 5)
 
     assert(overview_saved.config.height
-      == main_overview_config.height - 3)
+      == main_overview_config.height - 5)
 
     assert(overview_saved.config.row
-      == main_overview_config.row + 2)
+      == main_overview_config.row)
 
     assert(overview_saved.config.col
-      == main_overview_config.col + 4)
+      == main_overview_config.col)
   end
 
   assert(overview_saved.config.title == nil
