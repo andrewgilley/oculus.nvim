@@ -245,6 +245,9 @@ fn test_investigator_current_repo() {
     assert!(!bundle.invariants.is_empty());
     assert!(!bundle.relationships.is_empty(), "expected relationships with provenance to be populated");
     assert!(bundle.relationships.iter().all(|r| !r.provenance.source_type.is_empty() && r.confidence > 0.0));
+    assert!(bundle.dynamics.is_some(), "expected architectural dynamics in bundle");
+    assert!(bundle.invariants.iter().any(|i| i.invariant_name == "boundary_integrity"));
+    assert!(bundle.invariants.iter().any(|i| i.invariant_name == "subsystem_stability"));
 }
 
 #[test]
@@ -288,4 +291,63 @@ fn test_forge_traceability_linking() {
     assert_eq!(links[0].target_entity.name, "parse_tokens");
     assert!(links[0].confidence >= 0.90);
     assert!(!links[0].evidence.is_empty());
+}
+
+#[test]
+fn test_architectural_dynamics_analyzer() {
+    let _db = Database::in_memory().unwrap();
+    let entity_a = SemanticEntity {
+        id: "crates/oculus-engine/src/parser.rs:10:parse".to_string(),
+        kind: EntityKind::Function,
+        name: "parse".to_string(),
+        qualified_name: "crates/oculus-engine/src/parser.rs::parse".to_string(),
+        file_path: "crates/oculus-engine/src/parser.rs".to_string(),
+        start_line: 10,
+        end_line: 20,
+        start_col: 1,
+        end_col: 1,
+        git_oid: None,
+    };
+    let entity_b = SemanticEntity {
+        id: "lua/oculus/window.lua:50:open".to_string(),
+        kind: EntityKind::Function,
+        name: "open".to_string(),
+        qualified_name: "lua/oculus/window.lua::open".to_string(),
+        file_path: "lua/oculus/window.lua".to_string(),
+        start_line: 50,
+        end_line: 80,
+        start_col: 1,
+        end_col: 1,
+        git_oid: None,
+    };
+
+    let sub_a = oculus_engine::dynamics::ArchitecturalDynamicsAnalyzer::resolve_subsystem(&entity_a.file_path);
+    let sub_b = oculus_engine::dynamics::ArchitecturalDynamicsAnalyzer::resolve_subsystem(&entity_b.file_path);
+    assert_eq!(sub_a, "oculus-engine::parser");
+    assert_eq!(sub_b, "oculus::window");
+
+    let crossings = oculus_engine::dynamics::ArchitecturalDynamicsAnalyzer::detect_boundary_crossings(
+        &[entity_a.clone(), entity_b.clone()],
+        None,
+    );
+    assert_eq!(crossings.len(), 1);
+    assert_eq!(crossings[0].boundary_kind, "multi_subsystem_modification");
+
+    let history_a = oculus_engine::models::EntityHistory {
+        entity_id: entity_a.id.clone(),
+        qualified_name: entity_a.qualified_name.clone(),
+        introduction_commit: Some("c1".to_string()),
+        total_commits: 6,
+        authors: vec!["solo_dev".to_string()],
+        last_modified: None,
+    };
+
+    let instabilities = oculus_engine::dynamics::ArchitecturalDynamicsAnalyzer::detect_subsystem_instabilities(
+        &[entity_a.clone()],
+        None,
+        &[history_a],
+        &[],
+    );
+    assert!(!instabilities.is_empty());
+    assert!(instabilities.iter().any(|i| i.risk_category == "single_maintainer_bottleneck" || i.risk_category == "high_churn_untested"));
 }

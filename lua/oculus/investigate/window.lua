@@ -356,6 +356,70 @@ function M.render(buf, bundle)
     add_line("", nil)
   end
 
+  -- 7. Architectural Dynamics (Boundary Crossings, Subsystem Instability, Historical Precedents)
+  local dynamics = bundle.dynamics
+
+  if dynamics then
+    local crossings = dynamics.boundary_crossings or {}
+
+    if #crossings > 0 then
+      add_line(string.format("  ▾ ARCHITECTURAL BOUNDARY CROSSINGS (%d)", #crossings), "Special", nil, { kind = "overview" })
+
+      for _, bc in ipairs(crossings) do
+        local risk_tag = string.format("[%s RISK]", (bc.risk_level or "low"):upper())
+        local hl = (bc.risk_level == "high") and "DiagnosticError" or ((bc.risk_level == "medium") and "DiagnosticWarn" or "DiagnosticInfo")
+        local line_text = string.format("    ├─ %s %s ➔ %s (%s ➔ %s)", risk_tag, bc.source_subsystem, bc.target_subsystem, bc.source_entity, bc.target_entity)
+
+        add_line(line_text, hl, nil, {
+          kind = "boundary_crossing",
+          crossing = bc,
+        })
+      end
+
+      add_line("", nil)
+    end
+
+    local instabilities = dynamics.subsystem_instabilities or {}
+
+    if #instabilities > 0 then
+      add_line(string.format("  ▾ SUBSYSTEM INSTABILITY & RISK ALERTS (%d)", #instabilities), "Special", nil, { kind = "overview" })
+
+      for _, inst in ipairs(instabilities) do
+        local hl = (inst.risk_category == "HIGH_CHURN_UNTESTED" or inst.risk_category == "COUPLING_HUB") and "DiagnosticError"
+          or (inst.risk_category == "SINGLE_MAINTAINER_BOTTLENECK" and "DiagnosticWarn" or "DiagnosticOk")
+
+        local maintainer = inst.primary_maintainer and (" · @" .. inst.primary_maintainer) or ""
+        local line_text = string.format("    ├─ [%s] %s (instability: %.2f%s)", inst.risk_category, inst.subsystem, inst.instability_score, maintainer)
+
+        add_line(line_text, hl, nil, {
+          kind = "subsystem_instability",
+          instability = inst,
+        })
+      end
+
+      add_line("", nil)
+    end
+
+    local precedents = dynamics.historical_precedents or {}
+
+    if #precedents > 0 then
+      add_line(string.format("  ▾ HISTORICAL PRECEDENTS (%d similar changes)", #precedents), "Special", nil, { kind = "overview" })
+
+      for _, p in ipairs(precedents) do
+        local short_oid = p.commit_oid:sub(1, 7)
+        local author_str = p.author ~= "" and (" by " .. p.author) or ""
+        local line_text = string.format("    ├─ commit:%s%s · \"%s\"", short_oid, author_str, p.message)
+
+        add_line(line_text, "Comment", nil, {
+          kind = "historical_precedent",
+          precedent = p,
+        })
+      end
+
+      add_line("", nil)
+    end
+  end
+
   M.state.line_targets = line_targets
   M.state.line_provenance = line_provenance
   vim.bo[buf].modifiable = true
@@ -551,6 +615,97 @@ function M.render_ledger(buf, item)
         add_line("    " .. lines_body[i], "Comment")
       end
     end
+  elseif item.kind == "boundary_crossing" then
+    local bc = item.crossing or {}
+    local hl = (bc.risk_level == "high") and "DiagnosticError" or ((bc.risk_level == "medium") and "DiagnosticWarn" or "DiagnosticInfo")
+    add_line("  NODE: Architectural Boundary Crossing", "Special")
+    add_line(string.format("  RISK LEVEL: [%s RISK] ARCHITECTURAL ISOLATION", (bc.risk_level or "low"):upper()), hl)
+    add_line("", nil)
+    add_line("  BOUNDARY TRANSITION:", "Normal")
+    add_line(string.format("    Source Subsystem: %s", bc.source_subsystem or "unknown"), "Identifier")
+    add_line(string.format("    Target Subsystem: %s", bc.target_subsystem or "unknown"), "Identifier")
+    add_line(string.format("    Source Symbol:    %s", bc.source_entity or ""), "Comment")
+    add_line(string.format("    Target Symbol:    %s", bc.target_entity or ""), "Comment")
+    add_line("    Relation:         CROSSES_BOUNDARY", "Special")
+    add_line("", nil)
+    add_line("  ANALYSIS & DIAGNOSTICS:", "Normal")
+    add_line("    Source:     Subsystem Boundary & Dependency Analyzer", "Comment")
+    add_line(string.format("    Diagnosis:  %s", bc.reason or "Cross-subsystem call detected"), "Comment")
+    add_line("", nil)
+    add_line("  ARCHITECTURAL GUIDANCE:", "Special")
+
+    if bc.risk_level == "high" then
+      add_line("    • High risk: Core engine / platform integrity affected.", "DiagnosticError")
+      add_line("    • Ensure changes pass interface contracts and integration tests.", "Comment")
+    elseif bc.risk_level == "medium" then
+      add_line("    • Medium risk: Subsystem boundary leak.", "DiagnosticWarn")
+      add_line("    • Consider introducing an abstraction or decoupled event channel.", "Comment")
+    else
+      add_line("    • Standard cross-module dependency; verify test coverage.", "DiagnosticOk")
+    end
+  elseif item.kind == "subsystem_instability" then
+    local inst = item.instability or {}
+
+    local hl = (inst.risk_category == "HIGH_CHURN_UNTESTED" or inst.risk_category == "COUPLING_HUB") and "DiagnosticError"
+      or (inst.risk_category == "SINGLE_MAINTAINER_BOTTLENECK" and "DiagnosticWarn" or "DiagnosticOk")
+
+    add_line("  NODE: Subsystem Instability Metric", "Special")
+    add_line(string.format("  RISK CATEGORY: [%s]", inst.risk_category or "UNKNOWN"), hl)
+    add_line("", nil)
+    add_line("  SUBSYSTEM SPECIFICATION:", "Normal")
+    add_line(string.format("    Subsystem:         %s", inst.subsystem or "root"), "Identifier")
+    add_line(string.format("    Instability Score: %.2f (0.0=stable, 1.0=volatile)", inst.instability_score or 0), "Special")
+    add_line(string.format("    Relative Churn:    %.2f", inst.churn_rate or 0), "Comment")
+    add_line(string.format("    Test Coverage:     %.1f%%", (inst.test_coverage_ratio or 0) * 100), "Comment")
+    add_line(string.format("    Bus Factor:        %d active contributor(s)", inst.bus_factor or 1), "Comment")
+
+    if inst.primary_maintainer then
+      add_line(string.format("    Primary Maintainer: @%s", inst.primary_maintainer), "Comment")
+    end
+
+    add_line("", nil)
+    add_line("  DIAGNOSTIC RECOMMENDATION:", "Special")
+
+    if inst.risk_category == "HIGH_CHURN_UNTESTED" then
+      add_line("    • CRITICAL: Rapidly changing subsystem with zero/low test coverage.", "DiagnosticError")
+      add_line("    • Add unit and regression tests before landing cross-cutting modifications.", "Comment")
+    elseif inst.risk_category == "SINGLE_MAINTAINER_BOTTLENECK" then
+      add_line("    • WARNING: Single maintainer dependency (low bus factor).", "DiagnosticWarn")
+      add_line("    • Request review from code owner to avoid knowledge siloing.", "Comment")
+    elseif inst.risk_category == "COUPLING_HUB" then
+      add_line("    • ATTENTION: Highly coupled central hub. Edits impact multiple dependents.", "DiagnosticWarn")
+      add_line("    • Verify callers and downstream contracts carefully.", "Comment")
+    else
+      add_line("    • Subsystem metrics within normal operating parameters.", "DiagnosticOk")
+    end
+  elseif item.kind == "historical_precedent" then
+    local p = item.precedent or {}
+    local pct = math.floor((p.similarity_score or 0) * 100)
+    add_line("  NODE: Historical Precedent", "Special")
+    add_line(string.format("  SIMILARITY: [%d%% OVERLAP] HISTORICAL CHANGE GRAPH", pct), "DiagnosticOk")
+    add_line("", nil)
+    add_line("  COMMIT SPECIFICATION:", "Normal")
+    add_line(string.format("    Commit:  %s", p.commit_oid or ""), "Identifier")
+    add_line(string.format("    Author:  %s", p.author or "Unknown"), "Comment")
+    add_line(string.format("    Date:    %s", p.date or ""), "Comment")
+    add_line(string.format("    Message: %s", p.message or ""), "Special")
+    add_line("", nil)
+    local files = p.shared_files or {}
+
+    if #files > 0 then
+      add_line(string.format("  SHARED FILES (%d):", #files), "Normal")
+
+      for _, f in ipairs(files) do
+        add_line(string.format("    • %s", f), "Comment")
+      end
+
+      add_line("", nil)
+    end
+
+    if p.outcome_summary then
+      add_line("  OUTCOME & PRECEDENT ANALYSIS:", "Special")
+      add_line(string.format("    %s", p.outcome_summary), "Comment")
+    end
   else -- overview
     local meta = (M.state.bundle and M.state.bundle.metadata) or {}
     local repo_root = meta.repository_root or vim.fn.getcwd()
@@ -570,10 +725,17 @@ function M.render_ledger(buf, item)
     local rels_count = #(bundle.relationships or {})
     local invs_count = #(bundle.invariants or {})
     local trace_count = #(bundle.traceability_links or {})
+    local dynamics = bundle.dynamics or {}
+    local crossings_count = #(dynamics.boundary_crossings or {})
+    local alerts_count = #(dynamics.subsystem_instabilities or {})
+    local precs_count = #(dynamics.historical_precedents or {})
     add_line("  EVIDENCE GRAPH INVENTORY:", "Normal")
     add_line(string.format("    • Modified Entities:     %d", entities_count), "DiagnosticInfo")
     add_line(string.format("    • Relationships w/ Prov: %d", rels_count), "DiagnosticInfo")
     add_line(string.format("    • Traceability Matches:  %d", trace_count), "DiagnosticInfo")
+    add_line(string.format("    • Boundary Crossings:    %d", crossings_count), "DiagnosticInfo")
+    add_line(string.format("    • Subsystem Risk Alerts: %d", alerts_count), "DiagnosticInfo")
+    add_line(string.format("    • Historical Precedents: %d", precs_count), "DiagnosticInfo")
     add_line(string.format("    • Invariant Assertions:  %d", invs_count), "DiagnosticOk")
     add_line("", nil)
     add_line("  GROUND TRUTH PRINCIPLES:", "Special")

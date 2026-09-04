@@ -402,4 +402,50 @@ impl Database {
         }
         Ok(results)
     }
+
+    pub fn get_commits_touching_files(
+        &self,
+        files: &[String],
+        exclude_oid: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<GitCommitRecord>> {
+        let mut results = Vec::new();
+        let mut stmt = self.conn.prepare(
+            "SELECT oid, parent_oids, author, timestamp, message, changed_files
+             FROM git_commits
+             ORDER BY timestamp DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let parents_str: String = row.get(1)?;
+            let files_str: String = row.get(5)?;
+            Ok(GitCommitRecord {
+                oid: row.get(0)?,
+                parent_oids: serde_json::from_str(&parents_str).unwrap_or_default(),
+                author: row.get(2)?,
+                timestamp: row.get(3)?,
+                message: row.get(4)?,
+                changed_files: serde_json::from_str(&files_str).unwrap_or_default(),
+            })
+        })?;
+
+        for r in rows {
+            let commit = r?;
+            if let Some(ex) = exclude_oid {
+                if commit.oid == ex {
+                    continue;
+                }
+            }
+            let touches = files.iter().any(|f| {
+                commit.changed_files.contains(f)
+                    || commit.changed_files.iter().any(|cf| cf.ends_with(f) || f.ends_with(cf))
+            });
+            if touches {
+                results.push(commit);
+                if results.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(results)
+    }
 }
