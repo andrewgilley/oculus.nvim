@@ -3081,14 +3081,19 @@ do
   assert(window_mod._is_inspect_input_open(), "expected inspect input to be open")
   assert(window_mod.state.inspect_input_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.inspect_input_win))
   assert(window_mod.state.inspect_input_buf ~= nil and vim.api.nvim_buf_is_valid(window_mod.state.inspect_input_buf))
-  -- Verify position: inside footer, one tab space from the last command
+  -- Verify position: inside footer, preceded by title one tab space from the last command
   local cfg = vim.api.nvim_win_get_config(window_mod.state.inspect_input_win)
   assert(cfg.relative == "win", "expected inspect input to be relative to win")
   local expected_parent = window_mod.state.footer_win or window_mod.state.win
   assert(cfg.win == expected_parent, "expected inspect input inside footer or main window")
   local commands = window_mod._footer_commands_text()
-  assert(cfg.col == #commands + 4, "expected inspect input one tab space from last command")
+  local title = window_mod._inspect_input_title()
+  assert(title:find("item ID#:", 1, true), "expected title to contain 'item ID#:'")
+  assert(cfg.col == #commands + 4 + #title, "expected inspect input placed after preceding title")
   assert(cfg.height == 1, "expected inspect input height 1")
+  -- Verify footer line contains preceding title
+  local footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.footer_buf, 0, -1, false)
+  assert(footer_lines[2]:find("item ID#:", 1, true), "expected preceding title in footer buffer")
   -- Verify sidebar shows inspect commands
   assert(window_mod.state.sidebar_buf ~= nil)
   local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)
@@ -3105,6 +3110,12 @@ do
   vim.api.nvim_buf_set_lines(window_mod.state.inspect_input_buf, 0, -1, false, { "" })
   i_esc.callback()
   assert(not window_mod._is_inspect_input_open(), "expected inspect input to close on empty insert-mode Esc")
+
+  if window_mod.state.footer_buf and vim.api.nvim_buf_is_valid(window_mod.state.footer_buf) then
+    local closed_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.footer_buf, 0, -1, false)
+    assert(not closed_footer_lines[2]:find("item ID#:", 1, true), "expected title removed after close")
+  end
+
   assert(vim.api.nvim_get_current_win() == window_mod.state.win, "expected focus restored to oculus window")
   -- Test 3: Submit via <CR>
   window_mod._open_inspect_input()
