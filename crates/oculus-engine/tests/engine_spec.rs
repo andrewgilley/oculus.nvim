@@ -234,9 +234,52 @@ fn test_impact_analyzer() {
 
 #[test]
 fn test_investigator_current_repo() {
-    let bundle = Investigator::run_investigation(".", None, None, None).expect("investigation failed");
+    let bundle = Investigator::run_investigation(".", None, None, None, None).expect("investigation failed");
     assert!(!bundle.metadata.repository_root.is_empty());
     assert!(!bundle.metadata.engine_version.is_empty());
     assert!(!bundle.co_changes.is_empty());
     assert!(!bundle.invariants.is_empty());
+}
+
+#[test]
+fn test_forge_traceability_linking() {
+    let mut db = Database::in_memory().unwrap();
+    let entity = SemanticEntity {
+        id: "src/parser.rs:50:parse_tokens".to_string(),
+        kind: EntityKind::Function,
+        name: "parse_tokens".to_string(),
+        qualified_name: "src/parser.rs::parse_tokens".to_string(),
+        file_path: "src/parser.rs".to_string(),
+        start_line: 50,
+        end_line: 80,
+        start_col: 1,
+        end_col: 2,
+        git_oid: None,
+    };
+    db.insert_entities(&[entity]).unwrap();
+
+    let artifact = oculus_engine::models::ForgeArtifact {
+        forge: "github".to_string(),
+        kind: "issue".to_string(),
+        id: "42".to_string(),
+        title: Some("Crash when calling `parse_tokens` with empty input".to_string()),
+        body: Some("Encountered unexpected panic in parser.rs while processing empty string".to_string()),
+        author: Some("developer".to_string()),
+        state: Some("open".to_string()),
+        url: Some("https://github.com/org/repo/issues/42".to_string()),
+        labels: vec!["bug".to_string()],
+        comments: vec![
+            oculus_engine::models::ForgeComment {
+                author: "maintainer".to_string(),
+                body: "Reproduced in `parse_tokens`. Line 60 lacks an empty check.".to_string(),
+                created_at: None,
+            },
+        ],
+    };
+
+    let links = oculus_engine::forge::ForgeTraceabilityLinker::link_artifact_to_code(&db, &artifact);
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].target_entity.name, "parse_tokens");
+    assert!(links[0].confidence >= 0.90);
+    assert!(!links[0].evidence.is_empty());
 }

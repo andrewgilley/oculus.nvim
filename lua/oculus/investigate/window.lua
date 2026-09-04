@@ -130,6 +130,51 @@ function M.render(buf, bundle)
     add_line("", nil)
   end
 
+  -- Forge Artifact & Context
+  local forge_art = bundle.forge_artifact
+
+  if type(forge_art) == "table" and type(forge_art.id) == "string" then
+    local kind_label = forge_art.kind == "pull_request" and "Pull Request" or (forge_art.kind:sub(1, 1):upper() .. forge_art.kind:sub(2))
+    local title_str = type(forge_art.title) == "string" and forge_art.title or "Untitled"
+    local author_str = type(forge_art.author) == "string" and (" by @" .. forge_art.author) or ""
+    local state_badge = type(forge_art.state) == "string" and string.format("[%s]", forge_art.state:upper()) or ""
+    add_line(string.format("  FORGE CONTEXT: %s #%s %s%s", kind_label, forge_art.id, state_badge, author_str), "Title")
+    add_line(string.format("    Title: \"%s\"", title_str), "Normal")
+
+    if type(forge_art.url) == "string" and forge_art.url ~= "" then
+      add_line(string.format("    URL:   %s", forge_art.url), "Comment")
+    end
+
+    add_line("", nil)
+  end
+
+  -- Traceability Links (Issue/PR <-> Code Surface)
+  local trace_links = bundle.traceability_links or {}
+
+  if #trace_links > 0 then
+    add_line(string.format("  FORGE-TO-CODE TRACEABILITY LINKS (%d candidates)", #trace_links), "Special")
+
+    for _, link in ipairs(trace_links) do
+      local pct = math.floor((link.confidence or 0.8) * 100)
+      local target_e = link.target_entity or {}
+      local badge = string.format("[%d%% MATCH]", pct)
+      local line_idx = add_line(string.format("    %s %s (%s:%d)", badge, target_e.qualified_name or target_e.name or "unknown", target_e.file_path or "", target_e.start_line or 1), "DiagnosticInfo")
+      line_targets[line_idx] = { file = target_e.file_path, line = target_e.start_line }
+
+      if type(link.match_reason) == "string" and link.match_reason ~= "" then
+        add_line(string.format("      Reason:   %s", link.match_reason), "Comment")
+      end
+
+      local ev_list = link.evidence or {}
+
+      for _, ev in ipairs(ev_list) do
+        add_line(string.format("      Evidence: • %s", ev), "Comment")
+      end
+    end
+
+    add_line("", nil)
+  end
+
   -- Affected Entities
   local entities = bundle.entities or {}
   add_line(string.format("  AFFECTED SEMANTIC ENTITIES (%d)", #entities), "Special")

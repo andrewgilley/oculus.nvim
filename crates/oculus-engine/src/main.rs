@@ -30,6 +30,7 @@ fn main() {
     let mut target: Option<String> = None;
     let mut target_kind: Option<String> = None;
     let mut db_path: Option<PathBuf> = None;
+    let mut forge_artifact: Option<oculus_engine::models::ForgeArtifact> = None;
 
     let mut i = 2;
     while i < args.len() {
@@ -70,6 +71,42 @@ fn main() {
                     exit(1);
                 }
             }
+            "--forge-data" => {
+                if i + 1 < args.len() {
+                    match serde_json::from_str::<oculus_engine::models::ForgeArtifact>(&args[i + 1]) {
+                        Ok(fa) => forge_artifact = Some(fa),
+                        Err(e) => {
+                            eprintln!("Invalid --forge-data JSON: {}", e);
+                            exit(1);
+                        }
+                    }
+                    i += 2;
+                } else {
+                    eprintln!("Missing argument for --forge-data");
+                    exit(1);
+                }
+            }
+            "--forge-file" => {
+                if i + 1 < args.len() {
+                    match std::fs::read_to_string(&args[i + 1]) {
+                        Ok(content) => match serde_json::from_str::<oculus_engine::models::ForgeArtifact>(&content) {
+                            Ok(fa) => forge_artifact = Some(fa),
+                            Err(e) => {
+                                eprintln!("Invalid forge file JSON: {}", e);
+                                exit(1);
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Could not read --forge-file: {}", e);
+                            exit(1);
+                        }
+                    }
+                    i += 2;
+                } else {
+                    eprintln!("Missing argument for --forge-file");
+                    exit(1);
+                }
+            }
             _ => {
                 eprintln!("Unknown option: {}", args[i]);
                 print_usage();
@@ -87,6 +124,7 @@ fn main() {
         target.as_deref(),
         target_kind.as_deref(),
         db_path.as_deref(),
+        forge_artifact,
     ) {
         Ok(bundle) => {
             match serde_json::to_string_pretty(&bundle) {

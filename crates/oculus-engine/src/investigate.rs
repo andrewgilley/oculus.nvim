@@ -4,11 +4,13 @@ use chrono::Utc;
 
 use crate::coupling::ChangeCouplingMiner;
 use crate::db::Database;
+use crate::forge::ForgeTraceabilityLinker;
 use crate::git::GitReader;
 use crate::impact::ImpactAnalyzer;
 use crate::mapper::GitSemanticMapper;
 use crate::models::{
-    BundleMetadata, EntityHistory, InvariantCheck, InvestigateFactBundle, SemanticEntity,
+    BundleMetadata, EntityHistory, ForgeArtifact, InvariantCheck, InvestigateFactBundle,
+    SemanticEntity,
 };
 use crate::parser::AstParser;
 
@@ -20,6 +22,7 @@ impl Investigator {
         target: Option<&str>,
         target_kind: Option<&str>,
         db_path: Option<&Path>,
+        forge_artifact: Option<ForgeArtifact>,
     ) -> Result<InvestigateFactBundle, Box<dyn std::error::Error>> {
         let resolved_repo = GitReader::find_repo_root(repo_root.as_ref())
             .unwrap_or_else(|| repo_root.as_ref().to_path_buf());
@@ -56,24 +59,40 @@ impl Investigator {
         let _ = db.insert_co_changes(&co_changes);
 
         // 3. Resolve target diff hunks (specific commit, uncommitted working tree, or default HEAD)
-        let hunks = match target {
-            Some(commit_or_ref) if !commit_or_ref.is_empty() && commit_or_ref != "HEAD" => {
-                GitReader::commit_diff_hunks(repo_path, commit_or_ref)
+        let is_issue_target = target_kind == Some("issue")
+            || target.map(|t| t.starts_with("http") || t.starts_with('#') || t.contains("/issues/")).unwrap_or(false);
+
+        let hunks = if is_issue_target {
+            let uncommitted = GitReader::uncommitted_diff_hunks(repo_path);
+            if !uncommitted.is_empty() {
+                uncommitted
+            } else {
+                Vec::new()
             }
-            _ => {
-                let uncommitted = GitReader::uncommitted_diff_hunks(repo_path);
-                if !uncommitted.is_empty() {
-                    uncommitted
-                } else if let Some(ref head) = head_oid {
-                    GitReader::commit_diff_hunks(repo_path, head)
-                } else {
-                    Vec::new()
+        } else {
+            match target {
+                Some(commit_or_ref) if !commit_or_ref.is_empty() && commit_or_ref != "HEAD" => {
+                    GitReader::commit_diff_hunks(repo_path, commit_or_ref)
+                }
+                _ => {
+                    let uncommitted = GitReader::uncommitted_diff_hunks(repo_path);
+                    if !uncommitted.is_empty() {
+                        uncommitted
+                    } else if let Some(ref head) = head_oid {
+                        GitReader::commit_diff_hunks(repo_path, head)
+                    } else {
+                        Vec::new()
+                    }
                 }
             }
         };
 
         // 4. Map diff hunks to semantic entities
-        let target_oid = target.unwrap_or(head_oid.as_deref().unwrap_or("HEAD"));
+        let target_oid = if is_issue_target {
+            head_oid.as_deref().unwrap_or("HEAD")
+        } else {
+            target.unwrap_or(head_oid.as_deref().unwrap_or("HEAD"))
+        };
         let mapped_changes = GitSemanticMapper::map_diff_to_entities(&db, target_oid, &hunks);
 
         let mut modified_entities: Vec<SemanticEntity> = Vec::new();
@@ -89,14 +108,32 @@ impl Investigator {
             }
         }
 
-        // 5. Calculate structural impact (propagation surface)
+        // 5. Traceability linking with Forge Artifact if provided
+        let mut traceability_links = Vec::new();
+        if let Some(ref artifact) = forge_artifact {
+            traceability_links = ForgeTraceabilityLinker::link_artifact_to_code(&db, artifact);
+            // If no direct Git diff entities were found (e.g. an unpatched Issue),
+            // candidate implementation entities are seeded from traceability links
+            if modified_entities.is_empty() {
+                for link in &traceability_links {
+                    if link.confidence >= 0.80 && !modified_entities.iter().any(|e| e.id == link.target_entity.id) {
+                        if let Ok(history) = db.get_entity_history(&link.target_entity.id) {
+                            entity_histories.push(history);
+                        }
+                        modified_entities.push(link.target_entity.clone());
+                    }
+                }
+            }
+        }
+
+        // 6. Calculate structural impact (propagation surface)
         let impact = if !modified_entities.is_empty() {
             Some(ImpactAnalyzer::calculate_impact(&db, &modified_entities))
         } else {
             None
         };
 
-        // 6. Invariant checks
+        // 7. Invariant checks
         let mut invariants = Vec::new();
         invariants.push(InvariantCheck {
             invariant_name: "entity_resolution".to_string(),
@@ -115,7 +152,20 @@ impl Investigator {
             },
         });
 
-        // 7. Assemble fact bundle
+        if let Some(ref artifact) = forge_artifact {
+            invariants.push(InvariantCheck {
+                invariant_name: "forge_traceability".to_string(),
+                passed: !traceability_links.is_empty(),
+                details: format!(
+                    "Linked {} implementation entities to forge artifact {}:{}",
+                    traceability_links.len(),
+                    artifact.kind,
+                    artifact.id
+                ),
+            });
+        }
+
+        // 8. Assemble fact bundle
         Ok(InvestigateFactBundle {
             metadata: BundleMetadata {
                 repository_root: repo_path.to_string_lossy().replace('\\', "/"),
@@ -130,6 +180,8 @@ impl Investigator {
             co_changes,
             entity_histories,
             invariants,
+            forge_artifact,
+            traceability_links,
         })
     }
 

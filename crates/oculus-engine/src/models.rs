@@ -113,6 +113,36 @@ pub struct InvariantCheck {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForgeComment {
+    pub author: String,
+    pub body: String,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForgeArtifact {
+    pub forge: String,
+    pub kind: String,
+    pub id: String,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub author: Option<String>,
+    pub state: Option<String>,
+    pub url: Option<String>,
+    pub labels: Vec<String>,
+    pub comments: Vec<ForgeComment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraceabilityLink {
+    pub forge_item: String,
+    pub target_entity: SemanticEntity,
+    pub confidence: f64,
+    pub match_reason: String,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleMetadata {
     pub repository_root: String,
     pub target: Option<String>,
@@ -130,4 +160,6 @@ pub struct InvestigateFactBundle {
     pub co_changes: Vec<CoChangeRelationship>,
     pub entity_histories: Vec<EntityHistory>,
     pub invariants: Vec<InvariantCheck>,
+    pub forge_artifact: Option<ForgeArtifact>,
+    pub traceability_links: Vec<TraceabilityLink>,
 }

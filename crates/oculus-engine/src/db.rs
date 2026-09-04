@@ -220,6 +220,36 @@ impl Database {
         Ok(result)
     }
 
+    pub fn get_all_entities(&self) -> Result<Vec<SemanticEntity>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, name, qualified_name, file_path, start_line, end_line, start_col, end_col, git_oid
+             FROM entities ORDER BY file_path ASC, start_line ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let kind_str: String = row.get(1)?;
+            let kind: EntityKind = serde_json::from_str(&format!("\"{}\"", kind_str))
+                .unwrap_or(EntityKind::Function);
+            Ok(SemanticEntity {
+                id: row.get(0)?,
+                kind,
+                name: row.get(2)?,
+                qualified_name: row.get(3)?,
+                file_path: row.get(4)?,
+                start_line: row.get::<_, i64>(5)? as usize,
+                end_line: row.get::<_, i64>(6)? as usize,
+                start_col: row.get::<_, i64>(7)? as usize,
+                end_col: row.get::<_, i64>(8)? as usize,
+                git_oid: row.get(9)?,
+            })
+        })?;
+
+        let mut result = Vec::new();
+        for r in rows {
+            result.push(r?);
+        }
+        Ok(result)
+    }
+
     pub fn get_entity_at_line(&self, file_path: &str, line: usize) -> Result<Option<SemanticEntity>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, name, qualified_name, file_path, start_line, end_line, start_col, end_col, git_oid

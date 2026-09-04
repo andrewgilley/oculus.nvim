@@ -2933,6 +2933,7 @@ local function render_activity(events, cached, notice, opts)
   M.state.activity_title_lines = {}
   M.state.activity_queue_line_keys = {}
   M.state.activity_expansion_targets = {}
+  M.state.activity_events = {}
   M.state.activity_scroll_limit_line = nil
   local width = vim.api.nvim_win_get_width(M.state.win)
   local activity_page_number = M.state.activity_page or 1
@@ -3072,6 +3073,7 @@ local function render_activity(events, cached, notice, opts)
           end
 
           M.state.inspect_targets[#lines] = inspect_context
+          M.state.activity_events[#lines] = event
           M.state.activity_title_lines[#lines] = event_line
 
           M.state.activity_queue_line_keys[#lines] = queue_key
@@ -3095,6 +3097,7 @@ local function render_activity(events, cached, notice, opts)
 
     M.state.line_targets[event_line] = item.url
     M.state.inspect_targets[event_line] = inspect_context
+    M.state.activity_events[event_line] = event
 
     if event_index < #events then
       lines[#lines + 1] = pad_cell("", item_width)
@@ -5885,11 +5888,22 @@ end
 
 local function investigate_current()
   local target = target_on_cursor()
+  local line = is_valid_win(M.state.win) and vim.api.nvim_win_get_cursor(M.state.win)[1] or nil
+  local source_line = line and (M.state.activity_title_lines[line] or line) or nil
+  local inspect_target = source_line and (M.state.inspect_targets[source_line] or M.state.inspect_targets[line])
+
+  local event = source_line and (
+    (M.state.activity_events and (M.state.activity_events[source_line] or M.state.activity_events[line]))
+    or M.state.activity_expansion_targets[source_line]
+    or M.state.activity_expansion_targets[line]
+  )
 
   local context = {
     project = M.state.activity_project,
     repository = M.state.activity_project and M.state.activity_project.repository,
     cwd = vim.fn.getcwd(),
+    target_context = inspect_target,
+    event = event,
   }
 
   require("oculus").investigate(target, M.state.opts, context)
