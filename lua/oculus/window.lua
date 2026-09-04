@@ -586,6 +586,7 @@ local function sidebar_sections_for_view(view)
         title = "ACTIONS",
         items = {
           { "<CR>", "Inspect" },
+          { "↑ / ↓", "History" },
         },
       },
       {
@@ -5872,6 +5873,98 @@ local function inspect_current()
   end
 end
 
+local function active_list_key()
+  if M.state.view == "activity" then
+    if M.state.activity_project then
+      local repo = M.state.activity_project.repository
+        or M.state.activity_project.name
+        or "project"
+
+      if M.state.activity_issue_page then
+        return "issues:" .. repo
+      elseif M.state.activity_commit_page then
+        return "commits:" .. repo
+      else
+        return "activity:" .. repo
+      end
+    elseif M.state.contributor then
+      local user = M.state.contributor.username or "user"
+      return "user:" .. user
+    end
+
+    return "activity"
+  elseif M.state.view == "contributors" then
+    if M.state.community_view == "users" then
+      return "community:users"
+    end
+
+    local target = target_on_cursor()
+
+    if type(target) == "table" and target.kind == "project" then
+      local proj = target.project or target
+      local repo = proj.repository or proj.name
+
+      if repo then
+        return "project:" .. repo
+      end
+    end
+
+    return "community:projects"
+  elseif M.state.view == "issue_filters" and M.state.activity_project then
+    local repo = M.state.activity_project.repository
+      or M.state.activity_project.name
+      or "project"
+    return "issue_filters:" .. repo
+  elseif M.state.view == "filters" then
+    return "filters:" .. (M.state.filter_scope or "global")
+  end
+
+  return M.state.view or "default"
+end
+
+local function get_search_history(list_key)
+  M.state.search_history = M.state.search_history
+    or (M.state.opts and M.state.opts.search_history)
+    or {}
+
+  local entries = M.state.search_history[list_key]
+
+  if entries and #entries > 0 then
+    return vim.deepcopy(entries)
+  end
+
+  return {}
+end
+
+local function add_search_history(list_key, val)
+  if not list_key or not val or val == "" then
+    return
+  end
+
+  M.state.search_history = M.state.search_history
+    or (M.state.opts and M.state.opts.search_history)
+    or {}
+
+  local entries = M.state.search_history[list_key] or {}
+
+  for i = #entries, 1, -1 do
+    if entries[i] == val then
+      table.remove(entries, i)
+    end
+  end
+
+  table.insert(entries, val)
+  M.state.search_history[list_key] = entries
+
+  if M.state.opts then
+    M.state.opts.search_history = M.state.search_history
+
+    if M.state.opts.state_file and M.state.opts.state_file ~= "" then
+      pcall(require("oculus.storage").save, M.state.opts.state_file, M.state.opts)
+    end
+  end
+end
+
 local function open_inspect_input()
   if not is_valid_win(M.state.win) then
     return
@@ -5887,9 +5980,14 @@ local function open_inspect_input()
     local target = target_on_cursor()
 
     if type(target) == "table" and target.kind == "project" then
-      project = target
+      project = target.project or target
     end
   end
+
+  local list_key = active_list_key()
+  local history_entries = get_search_history(list_key)
+  local history_index = nil
+  local current_draft = ""
 
   local commands = footer_commands_text()
   local last_cmd_end = #commands
@@ -5949,6 +6047,57 @@ local function open_inspect_input()
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
 
+  local function set_input_text(text)
+    if not is_valid_buf(buf) then
+      return
+    end
+
+    local mode_info = vim.api.nvim_get_mode()
+    local was_insert = mode_info.mode:sub(1, 1) == "i"
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
+
+    if is_valid_win(win) then
+      pcall(vim.api.nvim_win_set_cursor, win, { 1, #text })
+
+      if was_insert then
+        vim.cmd("startinsert!")
+      end
+    end
+  end
+
+  local function history_up()
+    if #history_entries == 0 then
+      return
+    end
+
+    if history_index == nil then
+      local lines = is_valid_buf(buf) and vim.api.nvim_buf_get_lines(buf, 0, 1, false) or {}
+      current_draft = lines[1] or ""
+      history_index = #history_entries
+    elseif history_index > 1 then
+      history_index = history_index - 1
+    else
+      return
+    end
+
+    set_input_text(history_entries[history_index])
+  end
+
+  local function history_down()
+    if #history_entries == 0 or history_index == nil then
+      return
+    end
+
+    if history_index < #history_entries then
+      history_index = history_index + 1
+      set_input_text(history_entries[history_index])
+    else
+      history_index = nil
+      set_input_text(current_draft)
+    end
+  end
+
   local function cancel()
     close_inspect_input()
   end
@@ -5962,6 +6111,8 @@ local function open_inspect_input()
     if val == "" then
       return
     end
+
+    add_search_history(list_key, val)
 
     local context = {
       project = project,
@@ -5983,9 +6134,25 @@ local function open_inspect_input()
     end
   end
 
+  local nav = navigation.resolve(M.state.opts)
   local map_opts = { buffer = buf, nowait = true, silent = true }
   vim.keymap.set({ "i", "n" }, "<CR>", submit, map_opts)
   vim.keymap.set({ "i", "n" }, "<kEnter>", submit, map_opts)
+  vim.keymap.set({ "i", "n" }, "<Up>", history_up, map_opts)
+  vim.keymap.set({ "i", "n" }, "<Down>", history_down, map_opts)
+  vim.keymap.set({ "i", "n" }, "<C-p>", history_up, map_opts)
+  vim.keymap.set({ "i", "n" }, "<C-n>", history_down, map_opts)
+  vim.keymap.set("n", "k", history_up, map_opts)
+  vim.keymap.set("n", "j", history_down, map_opts)
+
+  if nav.up and nav.up ~= "i" and nav.up ~= "k" and nav.up ~= "j" then
+    vim.keymap.set("n", nav.up, history_up, map_opts)
+  end
+
+  if nav.down and nav.down ~= "i" and nav.down ~= "j" and nav.down ~= "k" then
+    vim.keymap.set("n", nav.down, history_down, map_opts)
+  end
+
   vim.keymap.set("i", "<Esc>", on_insert_esc, map_opts)
   vim.keymap.set("n", "<Esc>", cancel, map_opts)
   vim.keymap.set("n", "q", cancel, map_opts)
@@ -6622,6 +6789,15 @@ end
 
 function M.open(opts)
   M.state.opts = opts or {}
+  M.state.search_history = M.state.search_history or {}
+
+  if type(M.state.opts.search_history) == "table" then
+    for k, v in pairs(M.state.opts.search_history) do
+      if not M.state.search_history[k] and type(v) == "table" then
+        M.state.search_history[k] = vim.deepcopy(v)
+      end
+    end
+  end
 
   if is_valid_win(M.state.win) then
     vim.api.nvim_set_current_win(M.state.win)
@@ -6889,4 +7065,7 @@ M._is_inspect_input_open = is_inspect_input_open
 M._prompt_inspect_by_id = prompt_inspect_by_id
 M._footer_commands_text = footer_commands_text
 M._inspect_input_title = get_inspect_input_title
+M._active_list_key = active_list_key
+M._get_search_history = get_search_history
+M._add_search_history = add_search_history
 return M

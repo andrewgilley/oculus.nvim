@@ -31,6 +31,7 @@ local defaults = {
     "assigned_issue",
   },
   project_issue_filters = {},
+  search_history = {},
   sidebar = false,
   sidebar_width = 26,
   navigation = "ijkl",
@@ -372,6 +373,10 @@ function M.setup(opts)
         and type(saved.inspect_overviews) == "table"
       then
         M.config.inspect_overviews = vim.deepcopy(saved.inspect_overviews)
+      end
+
+      if type(saved.search_history) == "table" then
+        M.config.search_history = vim.deepcopy(saved.search_history)
       end
     end
   end
