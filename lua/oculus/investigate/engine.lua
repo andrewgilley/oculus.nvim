@@ -106,6 +106,15 @@ function M.run(request, callback)
     table.insert(cmd, tostring(request.db_path))
   end
 
+  if type(request.forge_artifact) == "table" then
+    local ok_encode, encoded = pcall(vim.json.encode, request.forge_artifact)
+
+    if ok_encode and encoded and encoded ~= "" then
+      table.insert(cmd, "--forge-data")
+      table.insert(cmd, encoded)
+    end
+  end
+
   local ok, proc = pcall(vim.system, cmd, { text = true }, function(result)
     vim.schedule(function()
       if result.code ~= 0 then

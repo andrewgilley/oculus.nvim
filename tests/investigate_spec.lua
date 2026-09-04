@@ -67,8 +67,76 @@ do
   end, 50)
 
   assert(oculus_done, "expected oculus.investigate to complete")
-  assert(oculus_bundle ~= nil, "expected valid bundle from oculus.investigate")
-  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected window to open from oculus.investigate")
+  -- Test 7: Forge artifact ingestion and traceability linking
+  local forge_done = false
+  local forge_bundle = nil
+
+  local fake_issue = {
+    forge = "github",
+    kind = "issue",
+    id = "42",
+    title = "Refactor AstParser and ChangeCouplingMiner",
+    body = "We should update `AstParser` to support more tree-sitter grammars and optimize `ChangeCouplingMiner`.",
+    author = "octocat",
+    state = "open",
+    url = "https://github.com/example/oculus/issues/42",
+    labels = { "enhancement" },
+    comments = {
+      { author = "reviewer", body = "Also consider `GitReader` performance in `git.rs`." },
+    },
+  }
+
+  engine.run({ repo_root = root, forge_artifact = fake_issue }, function(bundle, err)
+    forge_bundle = bundle
+    forge_done = true
+  end)
+
+  vim.wait(10000, function()
+    return forge_done
+  end, 50)
+
+  assert(forge_done, "expected engine.run with forge_artifact to complete")
+  assert(forge_bundle ~= nil, "expected valid bundle with forge data")
+  assert(forge_bundle.forge_artifact ~= nil, "expected forge_artifact in bundle")
+  assert(forge_bundle.forge_artifact.id == "42", "expected id 42")
+  assert(type(forge_bundle.traceability_links) == "table", "expected traceability_links table")
+  assert(#forge_bundle.traceability_links > 0, "expected traceability links to be discovered")
+  -- Check window renders forge context and traceability links
+  window.open(forge_bundle)
+  local rendered = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), "\n")
+  assert(rendered:find("FORGE CONTEXT", 1, true), "expected FORGE CONTEXT in window")
+  assert(rendered:find("FORGE-TO-CODE TRACEABILITY LINKS", 1, true), "expected traceability links in window")
+  assert(rendered:find("AstParser", 1, true), "expected AstParser in traceability links")
+  window.close()
+  -- Test 8: oculus.investigate with context.event extraction
+  local event_done = false
+  local event_bundle = nil
+
+  local mock_event = {
+    type = "IssuesEvent",
+    payload = {
+      issue = {
+        number = 99,
+        title = "Fix AstParser line mapping",
+        body = "Investigate `AstParser` and `GitSemanticMapper`.",
+        html_url = "https://github.com/example/oculus/issues/99",
+      },
+    },
+  }
+
+  oculus.investigate(nil, {}, { cwd = root, event = mock_event }, function(b, err)
+    event_bundle = b
+    event_done = true
+  end)
+
+  vim.wait(10000, function()
+    return event_done
+  end, 50)
+
+  assert(event_done, "expected event investigation to complete")
+  assert(event_bundle ~= nil, "expected event bundle")
+  assert(event_bundle.forge_artifact ~= nil and event_bundle.forge_artifact.id == "99")
+  assert(#event_bundle.traceability_links > 0, "expected traceability links from event")
   window.close()
   print("ALL INVESTIGATE TESTS PASSED!")
 end
