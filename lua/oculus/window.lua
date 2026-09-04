@@ -120,6 +120,9 @@ M.state = {
   add_input_win = nil,
   add_dialog_step = nil,
   closing_add_dialog = false,
+  inspect_input_buf = nil,
+  inspect_input_win = nil,
+  closing_inspect_input = false,
   view = "contributors",
   contributor = nil,
   activity_scope = nil,
@@ -197,6 +200,10 @@ end
 
 local function is_add_dialog_open()
   return is_valid_win(M.state.add_dialog_win)
+end
+
+local function is_inspect_input_open()
+  return is_valid_win(M.state.inspect_input_win)
 end
 
 local function window_highlight_name(win, group)
@@ -572,6 +579,24 @@ local function make_sidebar_buf()
 end
 
 local function sidebar_sections_for_view(view)
+  if is_inspect_input_open() then
+    return {
+      {
+        title = "ACTIONS",
+        items = {
+          { "<CR>", "Inspect" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "<Esc>", "Cancel" },
+          { "q", "Cancel" },
+        },
+      },
+    }
+  end
+
   if is_add_dialog_open() then
     if M.state.add_dialog_step == "input" then
       return {
@@ -4602,6 +4627,34 @@ local function close_add_dialog()
   end)
 end
 
+local function close_inspect_input()
+  M.state.closing_inspect_input = true
+  vim.cmd("stopinsert")
+
+  if is_valid_win(M.state.inspect_input_win) then
+    vim.api.nvim_win_close(M.state.inspect_input_win, true)
+  end
+
+  if is_valid_buf(M.state.inspect_input_buf) then
+    vim.api.nvim_buf_delete(M.state.inspect_input_buf, { force = true })
+  end
+
+  M.state.inspect_input_win = nil
+  M.state.inspect_input_buf = nil
+
+  if is_valid_win(M.state.win) then
+    vim.api.nvim_set_current_win(M.state.win)
+  end
+
+  if is_valid_win(M.state.win) and is_sidebar_visible() then
+    render_sidebar()
+  end
+
+  vim.schedule(function()
+    M.state.closing_inspect_input = false
+  end)
+end
+
 local function update_add_dialog_lines(adding_project, provider, step)
   if not is_valid_buf(M.state.add_dialog_buf) then
     return
@@ -4683,6 +4736,7 @@ local function open_add_dialog()
     return
   end
 
+  close_inspect_input()
   close_add_dialog()
   local adding_project = M.state.community_view == "projects"
   local cursor_target = target_on_cursor()
@@ -5766,7 +5820,13 @@ local function inspect_current()
   end
 end
 
-local function prompt_inspect_by_id()
+local function open_inspect_input()
+  if not is_valid_win(M.state.win) then
+    return
+  end
+
+  close_add_dialog()
+  close_inspect_input()
   local project = M.state.activity_project
 
   if not project and M.state.view == "contributors" then
@@ -5778,13 +5838,69 @@ local function prompt_inspect_by_id()
   end
 
   local repo_hint = project and (project.name or project.repository)
+  local parent_width = vim.api.nvim_win_get_width(M.state.win)
+  local parent_height = vim.api.nvim_win_get_height(M.state.win)
+  local input_width = math.max(10, math.min(50, parent_width - 6))
+  local input_height = 1
+  local input_row = math.min(1, math.max(0, parent_height - input_height - 2))
+  local input_col = math.min(2, math.max(0, parent_width - input_width - 2))
+  local title = " Inspect ID "
 
-  local prompt = repo_hint
-      and ("Inspect in " .. repo_hint .. " (PR #, issue #, commit, or target): ")
-    or "Inspect (PR #, issue #, commit, or target): "
+  if repo_hint then
+    local candidate = " Inspect in " .. repo_hint .. " "
 
-  vim.ui.input({ prompt = prompt }, function(input)
-    if not input or vim.trim(input) == "" then
+    if #candidate <= input_width - 4 then
+      title = candidate
+    end
+  end
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "oculus-inspect-input"
+  vim.bo[buf].modifiable = true
+  M.state.inspect_input_buf = buf
+
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = "win",
+    win = M.state.win,
+    row = input_row,
+    col = input_col,
+    width = input_width,
+    height = input_height,
+    border = "rounded",
+    title = title,
+    title_pos = "left",
+    style = "minimal",
+    focusable = true,
+    zindex = 75,
+  })
+
+  M.state.inspect_input_win = win
+  vim.api.nvim_set_current_win(win)
+  use_window_highlights(win)
+
+  vim.wo[win].winhighlight =
+    "Normal:OculusNormal,NormalFloat:OculusNormal,FloatBorder:Identifier,FloatTitle:Title"
+
+  vim.wo[win].wrap = false
+  vim.wo[win].cursorline = false
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+
+  local function cancel()
+    close_inspect_input()
+  end
+
+  local function submit()
+    local lines = is_valid_buf(buf) and vim.api.nvim_buf_get_lines(buf, 0, 1, false) or {}
+    local raw_val = lines[1] or ""
+    local val = vim.trim(raw_val)
+    close_inspect_input()
+
+    if val == "" then
       return
     end
 
@@ -5794,9 +5910,41 @@ local function prompt_inspect_by_id()
       provider = project and project.provider or nil,
     }
 
-    require("oculus").inspect(input, M.state.opts, context)
+    require("oculus").inspect(val, M.state.opts, context)
+  end
+
+  local function on_insert_esc()
+    local lines = is_valid_buf(buf) and vim.api.nvim_buf_get_lines(buf, 0, 1, false) or {}
+    local raw_val = lines[1] or ""
+
+    if vim.trim(raw_val) == "" then
+      cancel()
+    else
+      vim.cmd("stopinsert")
+    end
+  end
+
+  local map_opts = { buffer = buf, nowait = true, silent = true }
+  vim.keymap.set({ "i", "n" }, "<CR>", submit, map_opts)
+  vim.keymap.set({ "i", "n" }, "<kEnter>", submit, map_opts)
+  vim.keymap.set("i", "<Esc>", on_insert_esc, map_opts)
+  vim.keymap.set("n", "<Esc>", cancel, map_opts)
+  vim.keymap.set("n", "q", cancel, map_opts)
+  vim.keymap.set({ "i", "n" }, "<C-c>", cancel, map_opts)
+  vim.cmd("startinsert!")
+
+  vim.schedule(function()
+    if is_valid_win(win) then
+      vim.cmd("startinsert!")
+    end
   end)
+
+  if is_sidebar_visible() then
+    render_sidebar()
+  end
 end
+
+local prompt_inspect_by_id = open_inspect_input
 
 local function toggle_sidebar()
   if not is_valid_win(M.state.win) then
@@ -6339,6 +6487,7 @@ function M.close()
 
   close_activity_footer()
   close_add_dialog()
+  close_inspect_input()
   close_sidebar()
 
   if is_valid_win(M.state.win) then
@@ -6360,6 +6509,9 @@ function M.close()
   M.state.sidebar_buf = nil
   M.state.sidebar_win = nil
   M.state.sidebar_visible = nil
+  M.state.inspect_input_buf = nil
+  M.state.inspect_input_win = nil
+  M.state.closing_inspect_input = false
   M.state.line_targets = {}
   M.state.inspect_targets = {}
   M.state.activity_title_lines = {}
@@ -6529,6 +6681,10 @@ function M.open(opts)
           close_add_dialog()
         end
 
+        if is_valid_win(M.state.inspect_input_win) then
+          close_inspect_input()
+        end
+
         vim.api.nvim_win_set_config(M.state.win, make_win_config(M.state.opts))
 
         if is_sidebar_visible() then
@@ -6619,8 +6775,11 @@ function M.open(opts)
         or entered == M.state.footer_win
         or entered == M.state.add_dialog_win
         or entered == M.state.add_input_win
+        or entered == M.state.inspect_input_win
         or is_add_dialog_open()
+        or is_inspect_input_open()
         or M.state.closing_add_dialog
+        or M.state.closing_inspect_input
       then
         if entered == M.state.win then
           update_activity_cursorline()
@@ -6665,4 +6824,8 @@ M._open_add_dialog = open_add_dialog
 M._close_add_dialog = close_add_dialog
 M._is_add_dialog_open = is_add_dialog_open
 M._prompt_add_account = open_add_dialog
+M._open_inspect_input = open_inspect_input
+M._close_inspect_input = close_inspect_input
+M._is_inspect_input_open = is_inspect_input_open
+M._prompt_inspect_by_id = prompt_inspect_by_id
 return M

@@ -3072,6 +3072,106 @@ do
     projects = { { repository = "org/repo1", provider = "github" } },
   })
 
+  -- Verify initial state
+  assert(not window_mod._is_inspect_input_open(), "expected inspect input to be initially closed")
+  -- Test 1: Open inspect input via shortcut H
+  local h_map = vim.fn.maparg("H", "n", false, true)
+  assert(h_map ~= nil and type(h_map.callback) == "function", "expected 'H' mapping callback")
+  h_map.callback()
+  assert(window_mod._is_inspect_input_open(), "expected inspect input to be open")
+  assert(window_mod.state.inspect_input_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.inspect_input_win))
+  assert(window_mod.state.inspect_input_buf ~= nil and vim.api.nvim_buf_is_valid(window_mod.state.inspect_input_buf))
+  -- Verify position: inside oculus window at row 1, col 2 where list title is
+  local cfg = vim.api.nvim_win_get_config(window_mod.state.inspect_input_win)
+  assert(cfg.relative == "win", "expected inspect input to be relative to win")
+  assert(cfg.win == window_mod.state.win, "expected inspect input to be inside oculus window")
+  assert(cfg.row == 1, "expected inspect input at row 1 (list title location)")
+  assert(cfg.col == 2, "expected inspect input at col 2 (list title indentation)")
+  assert(cfg.height == 1, "expected inspect input height 1")
+  assert(cfg.border ~= nil, "expected rounded border on inspect input")
+
+  -- Verify title
+  if type(cfg.title) == "table" and #cfg.title > 0 then
+    assert(cfg.title[1][1]:find("Inspect", 1, true), "expected Inspect in title")
+  end
+
+  -- Verify sidebar shows inspect commands
+  assert(window_mod.state.sidebar_buf ~= nil)
+  local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)
+  local side_text = table.concat(side_lines, "\n")
+  assert(side_text:find("Inspect", 1, true), "expected sidebar to show Inspect action")
+  assert(side_text:find("Cancel", 1, true), "expected sidebar to show Cancel general")
+  -- Test 2: Insert mode Esc with text keeps input open, Esc when empty closes
+  vim.api.nvim_buf_set_lines(window_mod.state.inspect_input_buf, 0, -1, false, { "123" })
+  local i_esc = vim.fn.maparg("<Esc>", "i", false, true)
+  assert(i_esc ~= nil and type(i_esc.callback) == "function", "expected <Esc> mapping in insert mode")
+  i_esc.callback()
+  assert(window_mod._is_inspect_input_open(), "expected inspect input to stay open after insert-mode Esc with text")
+  -- Clear buffer and press Esc
+  vim.api.nvim_buf_set_lines(window_mod.state.inspect_input_buf, 0, -1, false, { "" })
+  i_esc.callback()
+  assert(not window_mod._is_inspect_input_open(), "expected inspect input to close on empty insert-mode Esc")
+  assert(vim.api.nvim_get_current_win() == window_mod.state.win, "expected focus restored to oculus window")
+  -- Test 3: Submit via <CR>
+  window_mod._open_inspect_input()
+  assert(window_mod._is_inspect_input_open())
+  vim.api.nvim_buf_set_lines(window_mod.state.inspect_input_buf, 0, -1, false, { "999" })
+  local oculus_mod = require("oculus")
+  local original_inspect = oculus_mod.inspect
+  local inspected_id = nil
+  local inspected_context = nil
+
+  oculus_mod.inspect = function(id, opts, ctx)
+    inspected_id = id
+    inspected_context = ctx
+  end
+
+  local cr_map = vim.fn.maparg("<CR>", "n", false, true)
+  assert(cr_map ~= nil and type(cr_map.callback) == "function", "expected <CR> mapping on inspect input")
+  cr_map.callback()
+  assert(not window_mod._is_inspect_input_open(), "expected inspect input to close on submit")
+  assert(inspected_id == "999", "expected inspect called with submitted ID")
+  assert(inspected_context ~= nil, "expected inspect called with context")
+  oculus_mod.inspect = original_inspect
+  -- Test 4: Cancel via q in normal mode
+  window_mod._open_inspect_input()
+  assert(window_mod._is_inspect_input_open())
+  local q_map = vim.fn.maparg("q", "n", false, true)
+  assert(q_map ~= nil and type(q_map.callback) == "function")
+  q_map.callback()
+  assert(not window_mod._is_inspect_input_open(), "expected inspect input to close on q")
+  -- Test 5: Cancel via <C-c>
+  window_mod._open_inspect_input()
+  assert(window_mod._is_inspect_input_open())
+  local cc_map = vim.fn.maparg("<C-c>", "n", false, true)
+  assert(cc_map ~= nil and type(cc_map.callback) == "function")
+  cc_map.callback()
+  assert(not window_mod._is_inspect_input_open(), "expected inspect input to close on <C-c>")
+  -- Test 6: Clean up on window_mod.close()
+  window_mod._open_inspect_input()
+  assert(window_mod._is_inspect_input_open())
+  window_mod.close()
+  assert(window_mod.state.win == nil)
+  assert(not window_mod._is_inspect_input_open())
+  assert(window_mod.state.inspect_input_win == nil)
+  assert(window_mod.state.inspect_input_buf == nil)
+  vim.o.columns = prev_cols
+  vim.o.lines = prev_lines
+end
+
+do
+  local window_mod = require("oculus.window")
+  local prev_cols = vim.o.columns
+  local prev_lines = vim.o.lines
+  vim.o.columns = 120
+  vim.o.lines = 40
+
+  window_mod.open({
+    sidebar = true,
+    contributors = { { username = "alice", provider = "github" } },
+    projects = { { repository = "org/repo1", provider = "github" } },
+  })
+
   -- Test 1: Open add dialog from projects list
   local a_map = vim.fn.maparg("a", "n", false, true)
   assert(a_map ~= nil and type(a_map.callback) == "function", "expected 'a' mapping callback")
