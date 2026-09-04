@@ -31,7 +31,7 @@ local defaults = {
     "assigned_issue",
   },
   project_issue_filters = {},
-  sidebar = true,
+  sidebar = false,
   sidebar_width = 26,
   navigation = "ijkl",
   projects = {

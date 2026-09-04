@@ -2820,6 +2820,8 @@ do
   assert(window_mod._is_sidebar_visible() == true, "expected true when columns >= 100 and sidebar=true")
   window_mod.state.opts = { sidebar = false }
   assert(window_mod._is_sidebar_visible() == false, "expected false when opts.sidebar = false")
+  window_mod.state.opts = {}
+  assert(window_mod._is_sidebar_visible() == false, "expected false when opts.sidebar is not set (default hidden)")
   -- Explicit toggle overrides opts.sidebar
   window_mod.state.sidebar_visible = true
   assert(window_mod._is_sidebar_visible() == true, "expected true when state.sidebar_visible is true")
@@ -2860,7 +2862,7 @@ do
   assert(side_text:find("NAVIGATION", 1, true))
   assert(side_text:find("ACTIONS", 1, true))
   assert(side_text:find("GENERAL", 1, true))
-  assert(side_text:find("s", 1, true))
+  assert(side_text:find("?", 1, true))
   assert(side_text:find("Sidebar", 1, true))
   assert(side_text:find("H", 1, true))
   assert(side_text:find("Inspect ID", 1, true))
@@ -2885,7 +2887,14 @@ do
   assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win))
   local narrowed_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
   assert(narrowed_cfg.width == prev_main_width, "expected main window width to return to narrowed state")
-  -- Test 6: Verify 's' mapping exists on buffer and toggles sidebar
+  -- Test 6: Verify '?' and 's' mappings exist on buffer and toggle sidebar
+  local q_map = vim.fn.maparg("?", "n", false, true)
+  assert(q_map ~= nil and type(q_map.callback) == "function", "expected '?' keymap callback")
+  assert(q_map.desc == "Toggle Oculus command sidebar")
+  q_map.callback()
+  assert(window_mod.state.sidebar_win == nil, "expected sidebar to toggle off via ? mapping")
+  q_map.callback()
+  assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to toggle on via ? mapping")
   local s_map = vim.fn.maparg("s", "n", false, true)
   assert(s_map ~= nil and type(s_map.callback) == "function", "expected 's' keymap callback")
   assert(s_map.desc == "Toggle Oculus command sidebar")
@@ -2919,6 +2928,27 @@ do
   assert(window_mod.state.buf == nil)
   assert(window_mod.state.sidebar_win == nil)
   assert(window_mod.state.sidebar_buf == nil)
+
+  -- Test 10: Sidebar is initially hidden by default and toggles with '?'
+  window_mod.open({
+    projects = {
+      {
+        name = "TestProject",
+        repository = "test/repo",
+      },
+    },
+    contributors = {},
+  })
+
+  assert(window_mod.state.sidebar_win == nil, "expected sidebar to be initially hidden")
+  assert(not window_mod._is_sidebar_visible(), "expected sidebar not visible initially")
+  local q_toggle = vim.fn.maparg("?", "n", false, true)
+  assert(q_toggle ~= nil and type(q_toggle.callback) == "function")
+  q_toggle.callback()
+  assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to open on ? keypress")
+  q_toggle.callback()
+  assert(window_mod.state.sidebar_win == nil, "expected sidebar to close on ? keypress")
+  window_mod.close()
   vim.o.columns = prev_cols
   vim.o.lines = prev_lines
 end

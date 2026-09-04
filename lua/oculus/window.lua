@@ -497,7 +497,7 @@ local function is_sidebar_visible()
   end
 
   local opts = M.state.opts or {}
-  return opts.sidebar ~= false
+  return opts.sidebar == true
 end
 
 local function make_win_config(opts)
@@ -647,8 +647,7 @@ local function sidebar_sections_for_view(view)
       {
         title = "GENERAL",
         items = {
-          { "s", "Sidebar" },
-          { "?", "Help" },
+          { "?", "Sidebar" },
           { "q", "Close" },
         },
       },
@@ -688,8 +687,7 @@ local function sidebar_sections_for_view(view)
       {
         title = "GENERAL",
         items = {
-          { "s", "Sidebar" },
-          { "?", "Help" },
+          { "?", "Sidebar" },
           { "q", "Close" },
         },
       },
@@ -716,8 +714,7 @@ local function sidebar_sections_for_view(view)
       {
         title = "GENERAL",
         items = {
-          { "s", "Sidebar" },
-          { "?", "Help" },
+          { "?", "Sidebar" },
           { "q", "Close" },
         },
       },
@@ -741,8 +738,7 @@ local function sidebar_sections_for_view(view)
       {
         title = "GENERAL",
         items = {
-          { "s", "Sidebar" },
-          { "?", "Help" },
+          { "?", "Sidebar" },
           { "q", "Close" },
         },
       },
@@ -760,7 +756,7 @@ local function sidebar_sections_for_view(view)
     {
       title = "GENERAL",
       items = {
-        { "s", "Sidebar" },
+        { "?", "Sidebar" },
         { "q", "Close" },
       },
     },
@@ -4657,6 +4653,7 @@ local function update_add_dialog_lines(adding_project, provider, step)
   else
     local field_label = adding_project and "Repository (owner/repo):"
       or "User handle (@username):"
+
     local prov_label = provider == "codeberg" and "Codeberg" or "GitHub"
 
     local lines = {
@@ -4739,12 +4736,10 @@ local function open_add_dialog()
   vim.wo[d_win].number = false
   vim.wo[d_win].relativenumber = false
   vim.wo[d_win].signcolumn = "no"
-
   local provider = "github"
   M.state.add_dialog_step = "dropdown"
   update_add_dialog_lines(adding_project, provider, "dropdown")
   vim.api.nvim_set_current_win(d_win)
-
   local platforms = { "github", "codeberg" }
   local go_to_input
   local go_to_dropdown
@@ -4756,28 +4751,34 @@ local function open_add_dialog()
 
   local function next_provider()
     local idx = 1
+
     for i, p in ipairs(platforms) do
       if p == provider then
         idx = i
         break
       end
     end
+
     idx = (idx % #platforms) + 1
     select_provider(platforms[idx])
   end
 
   local function prev_provider()
     local idx = 1
+
     for i, p in ipairs(platforms) do
       if p == provider then
         idx = i
         break
       end
     end
+
     idx = idx - 1
+
     if idx < 1 then
       idx = #platforms
     end
+
     select_provider(platforms[idx])
   end
 
@@ -4787,15 +4788,19 @@ local function open_add_dialog()
 
   local d_map_opts = { buffer = d_buf, nowait = true, silent = true }
   local nav = navigation.resolve(M.state.opts)
+
   vim.keymap.set("n", "<CR>", function()
     go_to_input()
   end, d_map_opts)
+
   vim.keymap.set("n", "<kEnter>", function()
     go_to_input()
   end, d_map_opts)
+
   vim.keymap.set("n", "<Space>", function()
     go_to_input()
   end, d_map_opts)
+
   vim.keymap.set("n", "<Esc>", cancel, d_map_opts)
   vim.keymap.set("n", "q", cancel, d_map_opts)
   vim.keymap.set("n", "<C-c>", cancel, d_map_opts)
@@ -4819,7 +4824,6 @@ local function open_add_dialog()
   go_to_input = function()
     M.state.add_dialog_step = "input"
     update_add_dialog_lines(adding_project, provider, "input")
-
     local i_buf = vim.api.nvim_create_buf(false, true)
     vim.bo[i_buf].buftype = "nofile"
     vim.bo[i_buf].bufhidden = "wipe"
@@ -4896,8 +4900,8 @@ local function open_add_dialog()
     vim.keymap.set("n", "<Esc>", go_to_dropdown, i_map_opts)
     vim.keymap.set("n", "q", cancel, i_map_opts)
     vim.keymap.set({ "i", "n" }, "<C-c>", cancel, i_map_opts)
-
     vim.cmd("startinsert!")
+
     vim.schedule(function()
       if is_valid_win(i_win) then
         vim.cmd("startinsert!")
@@ -4923,7 +4927,6 @@ local function open_add_dialog()
 
     M.state.add_input_win = nil
     M.state.add_input_buf = nil
-
     update_add_dialog_lines(adding_project, provider, "dropdown")
 
     if is_valid_win(d_win) then
@@ -6211,7 +6214,7 @@ local function map_keys(buf)
     M.close()
   end, "Close Oculus")
 
-  map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
+  map("?", toggle_sidebar, "Toggle Oculus command sidebar")
   map("s", toggle_sidebar, "Toggle Oculus command sidebar")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
 
@@ -6356,6 +6359,7 @@ function M.close()
   M.state.win = nil
   M.state.sidebar_buf = nil
   M.state.sidebar_win = nil
+  M.state.sidebar_visible = nil
   M.state.line_targets = {}
   M.state.inspect_targets = {}
   M.state.activity_title_lines = {}
