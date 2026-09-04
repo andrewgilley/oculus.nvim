@@ -4557,7 +4557,7 @@ local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
 
   if type(config.width) == "number" then
-    local width = math.max(1, config.width - 9)
+    local width = math.max(1, config.width)
 
     config.col = (tonumber(config.col) or 0)
       + math.floor((config.width - width) / 2)
