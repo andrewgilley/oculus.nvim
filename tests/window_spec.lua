@@ -3081,20 +3081,14 @@ do
   assert(window_mod._is_inspect_input_open(), "expected inspect input to be open")
   assert(window_mod.state.inspect_input_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.inspect_input_win))
   assert(window_mod.state.inspect_input_buf ~= nil and vim.api.nvim_buf_is_valid(window_mod.state.inspect_input_buf))
-  -- Verify position: inside oculus window at row 1, col 2 where list title is
+  -- Verify position: inside footer, one tab space from the last command
   local cfg = vim.api.nvim_win_get_config(window_mod.state.inspect_input_win)
   assert(cfg.relative == "win", "expected inspect input to be relative to win")
-  assert(cfg.win == window_mod.state.win, "expected inspect input to be inside oculus window")
-  assert(cfg.row == 1, "expected inspect input at row 1 (list title location)")
-  assert(cfg.col == 2, "expected inspect input at col 2 (list title indentation)")
+  local expected_parent = window_mod.state.footer_win or window_mod.state.win
+  assert(cfg.win == expected_parent, "expected inspect input inside footer or main window")
+  local commands = window_mod._footer_commands_text()
+  assert(cfg.col == #commands + 4, "expected inspect input one tab space from last command")
   assert(cfg.height == 1, "expected inspect input height 1")
-  assert(cfg.border ~= nil, "expected rounded border on inspect input")
-
-  -- Verify title
-  if type(cfg.title) == "table" and #cfg.title > 0 then
-    assert(cfg.title[1][1]:find("Inspect", 1, true), "expected Inspect in title")
-  end
-
   -- Verify sidebar shows inspect commands
   assert(window_mod.state.sidebar_buf ~= nil)
   local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)

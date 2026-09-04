@@ -942,8 +942,35 @@ local function footer_win_config()
   }
 end
 
-local function render_activity_footer()
-  if is_sidebar_visible() then
+local function footer_commands_text()
+  local nav = navigation.resolve(M.state.opts)
+
+  if M.state.view == "contributors" then
+    local showing_users = M.state.community_view == "users"
+
+    return (showing_users
+        and "  v projects   a add   r remove   m move   ?: help   %s search"
+      or "  v users   a add   r remove   m move   ?: help   %s search"):format(nav.inspect_id)
+  end
+
+  local activity_commands = ("  %s inspect   b browser"):format(nav.inspect)
+
+  if not M.state.activity_commit_page then
+    if M.state.activity_issue_page then
+      activity_commands = activity_commands .. "   f filters"
+    else
+      if M.state.activity_project then
+        activity_commands = activity_commands .. "   u issues"
+      end
+    end
+  end
+
+  activity_commands = activity_commands .. ("   %s search"):format(nav.inspect_id)
+  return activity_commands
+end
+
+local function render_activity_footer(force)
+  if is_sidebar_visible() and not force and not is_inspect_input_open() then
     close_activity_footer()
     return
   end
@@ -962,18 +989,7 @@ local function render_activity_footer()
   end
 
   local width = config.width
-  local nav = navigation.resolve(M.state.opts)
-  local activity_commands = ("  %s inspect   b browser"):format(nav.inspect)
-
-  if not M.state.activity_commit_page then
-    if M.state.activity_issue_page then
-      activity_commands = activity_commands .. "   f filters"
-    else
-      if M.state.activity_project then
-        activity_commands = activity_commands .. "   u issues"
-      end
-    end
-  end
+  local activity_commands = footer_commands_text()
 
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -4647,7 +4663,12 @@ local function close_inspect_input()
   end
 
   if is_valid_win(M.state.win) and is_sidebar_visible() then
+    close_activity_footer()
     render_sidebar()
+  elseif is_valid_win(M.state.win) and M.state.view == "activity" then
+    render_activity_footer()
+  elseif is_valid_win(M.state.win) and M.state.view == "contributors" then
+    close_activity_footer()
   end
 
   vim.schedule(function()
@@ -5827,6 +5848,7 @@ local function open_inspect_input()
 
   close_add_dialog()
   close_inspect_input()
+  render_activity_footer(true)
   local project = M.state.activity_project
 
   if not project and M.state.view == "contributors" then
@@ -5837,23 +5859,28 @@ local function open_inspect_input()
     end
   end
 
-  local repo_hint = project and (project.name or project.repository)
-  local parent_width = vim.api.nvim_win_get_width(M.state.win)
-  local parent_height = vim.api.nvim_win_get_height(M.state.win)
-  local input_width = math.max(10, math.min(50, parent_width - 6))
-  local input_height = 1
-  local input_row = math.min(1, math.max(0, parent_height - input_height - 2))
-  local input_col = math.min(2, math.max(0, parent_width - input_width - 2))
-  local title = " Inspect ID "
+  local commands = footer_commands_text()
+  local last_cmd_end = #commands
+  local tab_space = 4
+  local input_col = last_cmd_end + tab_space
+  local parent_win
+  local input_row
 
-  if repo_hint then
-    local candidate = " Inspect in " .. repo_hint .. " "
-
-    if #candidate <= input_width - 4 then
-      title = candidate
-    end
+  if is_valid_win(M.state.footer_win) then
+    parent_win = M.state.footer_win
+    input_row = 1
+  else
+    parent_win = M.state.win
+    input_row = vim.api.nvim_win_get_height(M.state.win) - 1
   end
 
+  local parent_width = vim.api.nvim_win_get_width(parent_win)
+
+  if input_col + 10 > parent_width then
+    input_col = math.max(0, parent_width - 12)
+  end
+
+  local input_width = math.max(10, parent_width - input_col - 2)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -5864,14 +5891,12 @@ local function open_inspect_input()
 
   local win = vim.api.nvim_open_win(buf, false, {
     relative = "win",
-    win = M.state.win,
+    win = parent_win,
     row = input_row,
     col = input_col,
     width = input_width,
-    height = input_height,
-    border = "rounded",
-    title = title,
-    title_pos = "left",
+    height = 1,
+    border = "none",
     style = "minimal",
     focusable = true,
     zindex = 75,
@@ -5882,7 +5907,7 @@ local function open_inspect_input()
   use_window_highlights(win)
 
   vim.wo[win].winhighlight =
-    "Normal:OculusNormal,NormalFloat:OculusNormal,FloatBorder:Identifier,FloatTitle:Title"
+    "Normal:OculusNormal,NormalFloat:OculusNormal"
 
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = false
@@ -6828,4 +6853,5 @@ M._open_inspect_input = open_inspect_input
 M._close_inspect_input = close_inspect_input
 M._is_inspect_input_open = is_inspect_input_open
 M._prompt_inspect_by_id = prompt_inspect_by_id
+M._footer_commands_text = footer_commands_text
 return M
