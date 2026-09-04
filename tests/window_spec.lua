@@ -3138,7 +3138,90 @@ do
   assert(inspected_id == "999", "expected inspect called with submitted ID")
   assert(inspected_context ~= nil, "expected inspect called with context")
   oculus_mod.inspect = original_inspect
-  -- Test 4: Cancel via q in normal mode
+
+  -- Test 4: Verify search history navigation with <Up> and <Down>
+  window_mod._open_inspect_input()
+  assert(window_mod._is_inspect_input_open())
+  local function get_buf_map(b, mode, lhs)
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(b, mode)) do
+      if m.lhs == lhs then
+        return m
+      end
+    end
+    return nil
+  end
+
+  local up_map = get_buf_map(window_mod.state.inspect_input_buf, "i", "<Up>")
+  assert(up_map ~= nil and type(up_map.callback) == "function", "expected <Up> mapping in insert mode")
+  local down_map = get_buf_map(window_mod.state.inspect_input_buf, "i", "<Down>")
+  assert(down_map ~= nil and type(down_map.callback) == "function", "expected <Down> mapping in insert mode")
+  local cp_map = get_buf_map(window_mod.state.inspect_input_buf, "i", "<C-P>")
+  assert(cp_map ~= nil and type(cp_map.callback) == "function", "expected <C-p> mapping in insert mode")
+  local cn_map = get_buf_map(window_mod.state.inspect_input_buf, "i", "<C-N>")
+  assert(cn_map ~= nil and type(cn_map.callback) == "function", "expected <C-n> mapping in insert mode")
+  local k_map = get_buf_map(window_mod.state.inspect_input_buf, "n", "k")
+  assert(k_map ~= nil and type(k_map.callback) == "function", "expected k mapping in normal mode")
+  local j_map = get_buf_map(window_mod.state.inspect_input_buf, "n", "j")
+  assert(j_map ~= nil and type(j_map.callback) == "function", "expected j mapping in normal mode")
+
+  -- Test normal mode k and j navigation
+  k_map.callback()
+  local input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "999", "expected k to populate last search 999")
+  j_map.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "", "expected j to restore draft")
+
+  -- Navigate up to retrieve past search
+  up_map.callback()
+  local input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "999", "expected <Up> to populate last search 999")
+  -- Navigate down to restore empty draft
+  down_map.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "", "expected <Down> to restore draft")
+
+  -- Type draft text, navigate up and down
+  vim.api.nvim_buf_set_lines(window_mod.state.inspect_input_buf, 0, -1, false, { "my_draft" })
+  up_map.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "999", "expected <Up> to show 999 over draft")
+  down_map.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "my_draft", "expected <Down> to restore draft 'my_draft'")
+
+  -- Add another search "888"
+  vim.api.nvim_buf_set_lines(window_mod.state.inspect_input_buf, 0, -1, false, { "888" })
+  local cur_cr = vim.fn.maparg("<CR>", "n", false, true)
+  cur_cr.callback()
+  assert(not window_mod._is_inspect_input_open())
+
+  -- Reopen and test multi-entry history navigation
+  window_mod._open_inspect_input()
+  local cur_up = vim.fn.maparg("<Up>", "i", false, true)
+  local cur_down = vim.fn.maparg("<Down>", "i", false, true)
+  cur_up.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "888", "expected most recent search 888")
+  cur_up.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "999", "expected older search 999")
+  cur_up.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "999", "expected stay at oldest search 999")
+  cur_down.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "888", "expected newer search 888")
+  cur_down.callback()
+  input_lines = vim.api.nvim_buf_get_lines(window_mod.state.inspect_input_buf, 0, -1, false)
+  assert(input_lines[1] == "", "expected draft restored")
+
+  -- Test list-relevance: search history on another list is isolated
+  local current_list = window_mod._active_list_key()
+  local other_history = window_mod._get_search_history("issues:other/repo")
+  assert(#other_history == 0, "expected other list history to be empty")
+
+  -- Test 5: Cancel via q in normal mode
   window_mod._open_inspect_input()
   assert(window_mod._is_inspect_input_open())
   local q_map = vim.fn.maparg("q", "n", false, true)
