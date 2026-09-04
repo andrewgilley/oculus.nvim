@@ -4557,11 +4557,11 @@ local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
 
   if type(config.width) == "number" then
-    config.width = math.max(1, config.width - 1)
+    config.width = math.max(1, config.width)
   end
 
   if type(config.height) == "number" then
-    config.height = math.max(1, config.height - 1)
+    config.height = math.max(1, config.height)
   end
 
   config.footer = nil
