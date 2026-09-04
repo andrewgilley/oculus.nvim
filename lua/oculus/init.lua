@@ -449,7 +449,7 @@ function M.toggle()
   require("oculus.window").toggle(M.config)
 end
 
-function M.inspect(target, opts, context, callback)
+function M.inspect(target, opts, context, callback, lifecycle)
   local inspect = require("oculus.inspect")
 
   local effective_opts = vim.tbl_deep_extend(
@@ -458,7 +458,13 @@ function M.inspect(target, opts, context, callback)
     opts or {}
   )
 
-  return inspect.inspect_by_id(target, effective_opts, context, callback)
+  return inspect.inspect_by_id(
+    target,
+    effective_opts,
+    context,
+    callback,
+    lifecycle
+  )
 end
 
 function M.consult(request)
@@ -473,6 +479,23 @@ function M.show_opinion(value, opts)
       vim.deepcopy(M.config.opinion),
       opts or {}
     )
+  )
+end
+
+function M.investigate(target, opts, context, callback)
+  local investigate = require("oculus.investigate")
+
+  local effective_opts = vim.tbl_deep_extend(
+    "force",
+    vim.deepcopy(M.config or {}),
+    opts or {}
+  )
+
+  return investigate.investigate(
+    target,
+    effective_opts,
+    context,
+    callback
   )
 end
 

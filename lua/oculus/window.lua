@@ -283,6 +283,15 @@ local function sync_window_highlights(source_win)
   )
 
   vim.api.nvim_set_hl(0, "OculusNormal", current_normal)
+  local custom_oculus = source_highlight(source_win, "OculusBorder")
+
+  if custom_oculus and next(custom_oculus) and custom_oculus.fg and custom_oculus.fg ~= M.state.synced_border_fg then
+    current_border.fg = custom_oculus.fg
+
+    if custom_oculus.bold ~= nil then
+      current_border.bold = custom_oculus.bold
+    end
+  end
 
   if not current_border.fg then
     current_border.fg = current_normal.fg or 0xffffff
@@ -290,6 +299,7 @@ local function sync_window_highlights(source_win)
 
   current_border.bg = current_normal.bg
   current_border.ctermbg = current_normal.ctermbg
+  M.state.synced_border_fg = current_border.fg
 
   vim.api.nvim_set_hl(
     window_highlight_ns,
@@ -5873,6 +5883,40 @@ local function inspect_current()
   end
 end
 
+local function investigate_current()
+  local target = target_on_cursor()
+
+  local context = {
+    project = M.state.activity_project,
+    repository = M.state.activity_project and M.state.activity_project.repository,
+    cwd = vim.fn.getcwd(),
+  }
+
+  require("oculus").investigate(target, M.state.opts, context)
+end
+
+local function prompt_investigate_by_id()
+  vim.ui.input({ prompt = "Investigate (commit, PR #, issue, or empty for project): " }, function(input)
+    if input == nil then
+      return
+    end
+
+    local context = {
+      project = M.state.activity_project,
+      repository = M.state.activity_project and M.state.activity_project.repository,
+      cwd = vim.fn.getcwd(),
+    }
+
+    local target = vim.trim(input)
+
+    if target == "" then
+      target = nil
+    end
+
+    require("oculus").investigate(target, M.state.opts, context)
+  end)
+end
+
 local function active_list_key()
   if M.state.view == "activity" then
     if M.state.activity_project then
@@ -5914,6 +5958,7 @@ local function active_list_key()
     local repo = M.state.activity_project.repository
       or M.state.activity_project.name
       or "project"
+
     return "issue_filters:" .. repo
   elseif M.state.view == "filters" then
     return "filters:" .. (M.state.filter_scope or "global")
@@ -5988,7 +6033,6 @@ local function open_inspect_input()
   local history_entries = get_search_history(list_key)
   local history_index = nil
   local current_draft = ""
-
   local commands = footer_commands_text()
   local last_cmd_end = #commands
   local tab_space = 4
@@ -6652,6 +6696,8 @@ local function map_keys(buf)
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   map(nav.inspect, inspect_current, "Inspect Oculus change or issue")
   map(nav.inspect_id, prompt_inspect_by_id, "Inspect issue, PR, or commit by ID")
+  map(nav.investigate, investigate_current, "Investigate Oculus change or project")
+  map(nav.investigate_id, prompt_investigate_by_id, "Investigate issue, PR, commit, or project by ID")
 
   if nav.inspect_id ~= "H"
     and nav.left ~= "H"
