@@ -948,9 +948,9 @@ local function footer_commands_text()
   if M.state.view == "contributors" then
     local showing_users = M.state.community_view == "users"
 
-    return (showing_users
-        and "  v projects   a add   r remove   m move   ?: help   %s search"
-      or "  v users   a add   r remove   m move   ?: help   %s search"):format(nav.inspect_id)
+    return showing_users
+        and "  v projects   a add   r remove   m move   ?: help"
+      or "  v users   a add   r remove   m move   ?: help"
   end
 
   local activity_commands = ("  %s inspect   b browser"):format(nav.inspect)
@@ -965,7 +965,6 @@ local function footer_commands_text()
     end
   end
 
-  activity_commands = activity_commands .. ("   %s search"):format(nav.inspect_id)
   return activity_commands
 end
 
