@@ -41,6 +41,8 @@ pub enum RelationKind {
     CoChangesWith,
     TestedBy,
     ModifiedBy,
+    PrecedentFor,
+    CrossesBoundary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +160,42 @@ pub struct BundleMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoundaryCrossing {
+    pub source_subsystem: String,
+    pub target_subsystem: String,
+    pub boundary_kind: String,
+    pub entities_involved: Vec<String>,
+    pub risk_level: String,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubsystemInstability {
+    pub subsystem: String,
+    pub entity_name: String,
+    pub instability_score: f64,
+    pub risk_category: String,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoricalPrecedent {
+    pub commit_oid: String,
+    pub author: String,
+    pub timestamp: i64,
+    pub message: String,
+    pub relevant_entities: Vec<String>,
+    pub relevance_reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchitecturalDynamics {
+    pub boundary_crossings: Vec<BoundaryCrossing>,
+    pub subsystem_instabilities: Vec<SubsystemInstability>,
+    pub historical_precedents: Vec<HistoricalPrecedent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InvestigateFactBundle {
     pub metadata: BundleMetadata,
     pub entities: Vec<SemanticEntity>,
@@ -168,4 +206,6 @@ pub struct InvestigateFactBundle {
     pub invariants: Vec<InvariantCheck>,
     pub forge_artifact: Option<ForgeArtifact>,
     pub traceability_links: Vec<TraceabilityLink>,
+    #[serde(default)]
+    pub dynamics: Option<ArchitecturalDynamics>,
 }

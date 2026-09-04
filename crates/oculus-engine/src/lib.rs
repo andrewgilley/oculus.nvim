@@ -1,5 +1,6 @@
 pub mod coupling;
 pub mod db;
+pub mod dynamics;
 pub mod forge;
 pub mod git;
 pub mod impact;

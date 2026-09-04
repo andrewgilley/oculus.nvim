@@ -173,5 +173,100 @@ do
 
   window.close()
   assert(window.state.win == nil and window.state.ledger_win == nil, "expected both windows closed")
+
+  -- Test 10: Architectural Dynamics (Boundary Crossings, Subsystem Instability, Historical Precedents)
+  local dynamics_bundle = {
+    metadata = {
+      repository_root = root,
+      target = "HEAD",
+      engine_version = "0.1.0",
+      analyzed_at = "2026-09-04T00:00:00Z",
+    },
+    entities = {},
+    relationships = {},
+    invariants = {
+      { invariant_name = "boundary_integrity", passed = true, details = "0 boundary violations" },
+    },
+    dynamics = {
+      boundary_crossings = {
+        {
+          source_subsystem = "lua.investigate",
+          target_subsystem = "crates.oculus_engine",
+          source_entity = "engine.run",
+          target_entity = "main",
+          risk_level = "high",
+          reason = "Crosses native bridge into engine binary",
+        },
+      },
+      subsystem_instabilities = {
+        {
+          subsystem = "lua.investigate",
+          instability_score = 0.82,
+          churn_rate = 0.65,
+          test_coverage_ratio = 0.15,
+          bus_factor = 1,
+          primary_maintainer = "octocat",
+          risk_category = "HIGH_CHURN_UNTESTED",
+        },
+      },
+      historical_precedents = {
+        {
+          commit_oid = "abcdef1234567890",
+          author = "contributor",
+          date = "2026-09-01",
+          message = "feat: initial investigate stub",
+          similarity_score = 0.75,
+          shared_files = { "lua/oculus/investigate/init.lua" },
+          outcome_summary = "Precedent change introduced new subsystem.",
+        },
+      },
+    },
+  }
+
+  window.open(dynamics_bundle, { width = 120, height = 40 })
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected tree win for dynamics")
+  assert(window.state.ledger_win ~= nil and vim.api.nvim_win_is_valid(window.state.ledger_win), "expected ledger win for dynamics")
+  local dyn_tree_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local dyn_tree_text = table.concat(dyn_tree_lines, "\n")
+  assert(dyn_tree_text:find("ARCHITECTURAL BOUNDARY CROSSINGS", 1, true), "expected boundary crossings header")
+  assert(dyn_tree_text:find("SUBSYSTEM INSTABILITY & RISK ALERTS", 1, true), "expected subsystem instability header")
+  assert(dyn_tree_text:find("HISTORICAL PRECEDENTS", 1, true), "expected historical precedents header")
+  assert(dyn_tree_text:find("[HIGH RISK]", 1, true), "expected high risk tag")
+  assert(dyn_tree_text:find("HIGH_CHURN_UNTESTED", 1, true), "expected risk category")
+  -- Check cursor movement over boundary crossing
+  local crossing_line = nil
+  local inst_line = nil
+  local prec_line = nil
+
+  for l, prov in pairs(window.state.line_provenance) do
+    if prov.kind == "boundary_crossing" then
+      crossing_line = l
+    elseif prov.kind == "subsystem_instability" then
+      inst_line = l
+    elseif prov.kind == "historical_precedent" then
+      prec_line = l
+    end
+  end
+
+  assert(crossing_line ~= nil, "expected boundary crossing line in tree")
+  assert(inst_line ~= nil, "expected instability line in tree")
+  assert(prec_line ~= nil, "expected precedent line in tree")
+  vim.api.nvim_win_set_cursor(window.state.win, { crossing_line, 0 })
+  vim.cmd("doautocmd CursorMoved")
+  local bc_ledger = table.concat(vim.api.nvim_buf_get_lines(window.state.ledger_buf, 0, -1, false), "\n")
+  assert(bc_ledger:find("Architectural Boundary Crossing", 1, true), "expected boundary crossing in ledger")
+  assert(bc_ledger:find("CROSSES_BOUNDARY", 1, true), "expected CROSSES_BOUNDARY relation")
+  vim.api.nvim_win_set_cursor(window.state.win, { inst_line, 0 })
+  vim.cmd("doautocmd CursorMoved")
+  local inst_ledger = table.concat(vim.api.nvim_buf_get_lines(window.state.ledger_buf, 0, -1, false), "\n")
+  assert(inst_ledger:find("Subsystem Instability Metric", 1, true), "expected instability metric in ledger")
+  assert(inst_ledger:find("HIGH_CHURN_UNTESTED", 1, true), "expected risk category in ledger")
+  vim.api.nvim_win_set_cursor(window.state.win, { prec_line, 0 })
+  vim.cmd("doautocmd CursorMoved")
+  local prec_ledger = table.concat(vim.api.nvim_buf_get_lines(window.state.ledger_buf, 0, -1, false), "\n")
+  assert(prec_ledger:find("Historical Precedent", 1, true), "expected historical precedent in ledger")
+  assert(prec_ledger:find("abcdef1", 1, true), "expected commit oid in ledger")
+  window.close()
+  assert(window.state.win == nil and window.state.ledger_win == nil, "expected both windows closed after test 10")
   print("ALL INVESTIGATE TESTS PASSED!")
 end

@@ -4,6 +4,7 @@ use chrono::Utc;
 
 use crate::coupling::ChangeCouplingMiner;
 use crate::db::Database;
+use crate::dynamics::ArchitecturalDynamicsAnalyzer;
 use crate::forge::ForgeTraceabilityLinker;
 use crate::git::GitReader;
 use crate::impact::ImpactAnalyzer;
@@ -133,7 +134,17 @@ impl Investigator {
             None
         };
 
-        // 7. Invariant checks
+        // 7. Architectural Dynamics (Milestone 2: Layers 18-24)
+        let dynamics = ArchitecturalDynamicsAnalyzer::analyze(
+            &db,
+            &modified_entities,
+            impact.as_ref(),
+            &entity_histories,
+            &co_changes,
+            head_oid.as_deref(),
+        );
+
+        // 8. Invariant checks
         let mut invariants = Vec::new();
         invariants.push(InvariantCheck {
             invariant_name: "entity_resolution".to_string(),
@@ -165,10 +176,32 @@ impl Investigator {
             });
         }
 
-        // 8. Assemble unified Evidence Graph relationships with mandatory provenance
+        let has_crossings = !dynamics.boundary_crossings.is_empty();
+        invariants.push(InvariantCheck {
+            invariant_name: "boundary_integrity".to_string(),
+            passed: true,
+            details: if has_crossings {
+                format!("Detected {} cross-subsystem boundary crossings across architectural layers", dynamics.boundary_crossings.len())
+            } else {
+                "Modification surface cleanly contained within its primary architectural subsystem".to_string()
+            },
+        });
+
+        let high_risks = dynamics.subsystem_instabilities.iter().filter(|i| i.instability_score >= 3.0).count();
+        invariants.push(InvariantCheck {
+            invariant_name: "subsystem_stability".to_string(),
+            passed: high_risks == 0,
+            details: if high_risks > 0 {
+                format!("{} architectural risk alerts detected (churn without tests or maintainer bottleneck)", high_risks)
+            } else {
+                "All affected symbols maintain sound stability and test coverage metrics".to_string()
+            },
+        });
+
+        // 9. Assemble unified Evidence Graph relationships with mandatory provenance
         let mut relationships: Vec<Relationship> = Vec::new();
 
-        // 8a. Forge Traceability Links -> Relationship
+        // 9a. Forge Traceability Links -> Relationship
         if let Some(ref artifact) = forge_artifact {
             for link in &traceability_links {
                 relationships.push(Relationship {
@@ -187,7 +220,7 @@ impl Investigator {
             }
         }
 
-        // 8b. Git Diff modifications -> Relationship
+        // 9b. Git Diff modifications -> Relationship
         for entity in &modified_entities {
             relationships.push(Relationship {
                 source_id: target_oid.to_string(),
@@ -204,7 +237,7 @@ impl Investigator {
             });
         }
 
-        // 8c. Callers & Tests -> Relationship
+        // 9c. Callers & Tests -> Relationship
         if let Some(ref imp) = impact {
             for caller in &imp.direct_callers {
                 for target_e in &modified_entities {
@@ -243,7 +276,7 @@ impl Investigator {
             }
         }
 
-        // 8d. Co-Changes -> Relationship
+        // 9d. Co-Changes -> Relationship
         for co in &co_changes {
             relationships.push(Relationship {
                 source_id: co.entity_a.clone(),
@@ -260,7 +293,43 @@ impl Investigator {
             });
         }
 
-        // 9. Assemble fact bundle
+        // 9e. Historical Precedents -> Relationship
+        for precedent in &dynamics.historical_precedents {
+            for rel_entity in &precedent.relevant_entities {
+                relationships.push(Relationship {
+                    source_id: format!("commit:{}", precedent.commit_oid),
+                    target_id: rel_entity.clone(),
+                    kind: RelationKind::PrecedentFor,
+                    confidence: 0.90,
+                    provenance: Provenance {
+                        source_type: "git_history".to_string(),
+                        repository_state: Some(precedent.commit_oid.clone()),
+                        confidence: 0.90,
+                        citations: vec![format!("commit:{}", precedent.commit_oid)],
+                        details: format!("Historical precedent by @{}: \"{}\"", precedent.author, precedent.message),
+                    },
+                });
+            }
+        }
+
+        // 9f. Boundary Crossings -> Relationship
+        for crossing in &dynamics.boundary_crossings {
+            relationships.push(Relationship {
+                source_id: crossing.source_subsystem.clone(),
+                target_id: crossing.target_subsystem.clone(),
+                kind: RelationKind::CrossesBoundary,
+                confidence: 1.0,
+                provenance: Provenance {
+                    source_type: "architectural_analyzer".to_string(),
+                    repository_state: head_oid.as_deref().map(|s| s.to_string()),
+                    confidence: 1.0,
+                    citations: crossing.entities_involved.clone(),
+                    details: crossing.details.clone(),
+                },
+            });
+        }
+
+        // 10. Assemble fact bundle
         Ok(InvestigateFactBundle {
             metadata: BundleMetadata {
                 repository_root: repo_path.to_string_lossy().replace('\\', "/"),
@@ -277,6 +346,7 @@ impl Investigator {
             invariants,
             forge_artifact,
             traceability_links,
+            dynamics: Some(dynamics),
         })
     }
 
