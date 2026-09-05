@@ -82,7 +82,7 @@ function M.open(bundle, opts)
     border = opts.border or "rounded",
     title = " Oculus Investigation · Composite Path Tree ",
     title_pos = "center",
-    footer = is_split and " <CR> jump | <Tab> ledger | [q] close " or " <CR> jump | [q] close ",
+    footer = is_split and " <CR> jump | <Tab> ledger | [a]gent | [t]est | [r]efactor | [q] close " or " <CR> jump | [q] close ",
     footer_pos = "right",
   })
 
@@ -420,6 +420,77 @@ function M.render(buf, bundle)
     end
   end
 
+  -- 8. Agent Hypotheses & Adversarial Verifications (Layers 25-26)
+  local derived = bundle.derived
+
+  if derived then
+    local hypotheses = derived.hypotheses or {}
+
+    if #hypotheses > 0 then
+      local verdict_badge = derived.adversarial_verdict and string.format("[%s]", derived.adversarial_verdict) or ""
+      add_line(string.format("  ▾ AGENT HYPOTHESES & ADVERSARIAL VERIFICATIONS (Layers 25-26) %s", verdict_badge), "Title", nil, { kind = "overview" })
+
+      for _, hyp in ipairs(hypotheses) do
+        local has_refuted = false
+        local all_confirmed = true
+
+        for _, v in ipairs(hyp.verifications or {}) do
+          if v.status == "REFUTED" then
+            has_refuted = true
+          elseif v.status ~= "CONFIRMED" then
+            all_confirmed = false
+          end
+        end
+
+        local status_badge = has_refuted and "[REFUTED ✗]" or (all_confirmed and "[VERIFIED ✓]" or "[HYPOTHESIS ?]")
+        local hl = has_refuted and "DiagnosticError" or (all_confirmed and "DiagnosticOk" or "DiagnosticWarn")
+
+        add_line(string.format("    ├─ %s %s", status_badge, hyp.title), hl, nil, {
+          kind = "agent_hypothesis",
+          hypothesis = hyp,
+        })
+
+        for _, claim in ipairs(hyp.claims or {}) do
+          local v = nil
+
+          for _, ver in ipairs(hyp.verifications or {}) do
+            if ver.claim_id == claim.claim_id then
+              v = ver
+              break
+            end
+          end
+
+          local claim_badge = v and string.format("[%s]", v.status) or "[UNVERIFIED]"
+          local claim_hl = v and (v.status == "CONFIRMED" and "DiagnosticOk" or (v.status == "REFUTED" and "DiagnosticError" or "DiagnosticWarn")) or "Comment"
+
+          add_line(string.format("    │  ├─ Claim %s: \"%s\"", claim_badge, claim.assertion), claim_hl, nil, {
+            kind = "claim_verification",
+            claim = claim,
+            verification = v,
+            hypothesis = hyp,
+          })
+        end
+
+        for _, act in ipairs(hyp.suggested_actions or {}) do
+          add_line(string.format("    │  └─ Action: %s (%s)", act.label, act.description), "Special", nil, {
+            kind = "connected_action",
+            action = act,
+            hypothesis = hyp,
+          })
+        end
+      end
+
+      add_line("", nil)
+    end
+  end
+
+  -- 9. Connected Actions & Experiments Toolbar
+  add_line("  ▾ CONNECTED ACTIONS & EXPERIMENTS", "Special", nil, { kind = "overview" })
+  add_line("    ├─ [t] Generate Invariant Test Scaffold (protect callers & prevent regressions)", "Identifier", nil, { kind = "action_hint", action = "test_scaffold" })
+  add_line("    ├─ [r] Plan Subsystem Decoupling Refactor (isolate boundary crossings)", "Identifier", nil, { kind = "action_hint", action = "refactor_plan" })
+  add_line("    ├─ [a] Synthesize / Re-verify Agent Hypotheses against Ground Truth", "Identifier", nil, { kind = "action_hint", action = "agent_synthesize" })
+  add_line("    └─ [i] Pivot to Oculus Inspect (interactive diff & hunk review)", "Identifier", nil, { kind = "action_hint", action = "inspect_pivot" })
+  add_line("", nil)
   M.state.line_targets = line_targets
   M.state.line_provenance = line_provenance
   vim.bo[buf].modifiable = true
@@ -706,6 +777,92 @@ function M.render_ledger(buf, item)
       add_line("  OUTCOME & PRECEDENT ANALYSIS:", "Special")
       add_line(string.format("    %s", p.outcome_summary), "Comment")
     end
+  elseif item.kind == "agent_hypothesis" then
+    local hyp = item.hypothesis or {}
+    add_line("  NODE: Agent Derived Hypothesis (Layer 25)", "Special")
+    add_line(string.format("  CONFIDENCE: [%d%% AGENT CONFIDENCE] (Strictly Grounded)", math.floor((hyp.confidence or 0.8) * 100)), "DiagnosticInfo")
+    add_line("", nil)
+    add_line(string.format("  HYPOTHESIS: %s", hyp.title or ""), "Title")
+    add_line("", nil)
+    add_line("  MOTIVATION & RATIONALE:", "Normal")
+    add_line(string.format("    %s", hyp.rationale or "Derived from observable repository facts."), "Comment")
+    add_line("", nil)
+    local claims = hyp.claims or {}
+
+    if #claims > 0 then
+      add_line(string.format("  VERIFIABLE CLAIMS (%d):", #claims), "Special")
+
+      for _, cl in ipairs(claims) do
+        add_line(string.format("    • [%s] \"%s\"", cl.claim_type, cl.assertion), "Comment")
+      end
+
+      add_line("", nil)
+    end
+
+    local actions = hyp.suggested_actions or {}
+
+    if #actions > 0 then
+      add_line("  SUGGESTED CONNECTED ACTIONS:", "Normal")
+
+      for _, a in ipairs(actions) do
+        add_line(string.format("    • %s: %s", a.label, a.description), "Special")
+      end
+    end
+  elseif item.kind == "claim_verification" then
+    local cl = item.claim or {}
+    local ver = item.verification or {}
+    local is_confirmed = ver.status == "CONFIRMED"
+    local hl = is_confirmed and "DiagnosticOk" or (ver.status == "REFUTED" and "DiagnosticError" or "DiagnosticWarn")
+    add_line("  NODE: Adversarial Reality Check (Layer 26)", "Special")
+    add_line(string.format("  ADVERSARIAL VERDICT: [%s]", ver.status or "UNVERIFIED"), hl)
+    add_line("", nil)
+    add_line("  CLAIM SPECIFICATION:", "Normal")
+    add_line(string.format("    Type:      %s", cl.claim_type or ver.claim_type or "unknown"), "Comment")
+    add_line(string.format("    Subject:   %s", cl.subject or ""), "Identifier")
+    add_line(string.format("    Assertion: \"%s\"", cl.assertion or ver.assertion or ""), "Special")
+    add_line("", nil)
+    add_line("  DETERMINISTIC VERIFICATION DETAILS:", "Normal")
+    add_line(string.format("    Confidence: %.2f (Deterministic AST/Git search)", ver.confidence or 1.0), "Comment")
+    add_line(string.format("    Verdict:    %s", ver.details or ""), hl)
+    add_line("", nil)
+    local ev = ver.deterministic_evidence or {}
+
+    if #ev > 0 then
+      add_line("  WITNESS CITATIONS & EVIDENCE:", "Special")
+
+      for _, e in ipairs(ev) do
+        add_line(string.format("    • %s", e), "Comment")
+      end
+    end
+  elseif item.kind == "connected_action" or item.kind == "action_hint" then
+    local act = item.action or {}
+    local label = type(act) == "string" and act or (act.label or act.action_type)
+    add_line("  NODE: Connected Investigation Action", "Special")
+    add_line("  CAPABILITY: INTERACTIVE AGENTIC WORKFLOW", "DiagnosticOk")
+    add_line("", nil)
+
+    if type(act) == "table" then
+      add_line(string.format("  ACTION:      %s", act.label or ""), "Title")
+      add_line(string.format("  TYPE:        %s", act.action_type or ""), "Identifier")
+      add_line(string.format("  DESCRIPTION: %s", act.description or ""), "Normal")
+
+      if act.target then
+        add_line(string.format("  TARGET:      %s", act.target), "Comment")
+      end
+
+      if act.command_hint then
+        add_line(string.format("  COMMAND:     %s", act.command_hint), "Special")
+      end
+    else
+      add_line(string.format("  ACTION: %s", label), "Title")
+    end
+
+    add_line("", nil)
+    add_line("  EXECUTION INSTRUCTIONS:", "Normal")
+    add_line("    • Press [t] to generate Invariant Test Scaffold", "Comment")
+    add_line("    • Press [r] to plan Subsystem Decoupling Refactor", "Comment")
+    add_line("    • Press [a] to synthesize hypotheses with agent", "Comment")
+    add_line("    • Press [i] to pivot to Oculus Inspect diff view", "Comment")
   else -- overview
     local meta = (M.state.bundle and M.state.bundle.metadata) or {}
     local repo_root = meta.repository_root or vim.fn.getcwd()
@@ -729,6 +886,8 @@ function M.render_ledger(buf, item)
     local crossings_count = #(dynamics.boundary_crossings or {})
     local alerts_count = #(dynamics.subsystem_instabilities or {})
     local precs_count = #(dynamics.historical_precedents or {})
+    local derived = bundle.derived or {}
+    local hyp_count = #(derived.hypotheses or {})
     add_line("  EVIDENCE GRAPH INVENTORY:", "Normal")
     add_line(string.format("    • Modified Entities:     %d", entities_count), "DiagnosticInfo")
     add_line(string.format("    • Relationships w/ Prov: %d", rels_count), "DiagnosticInfo")
@@ -736,6 +895,7 @@ function M.render_ledger(buf, item)
     add_line(string.format("    • Boundary Crossings:    %d", crossings_count), "DiagnosticInfo")
     add_line(string.format("    • Subsystem Risk Alerts: %d", alerts_count), "DiagnosticInfo")
     add_line(string.format("    • Historical Precedents: %d", precs_count), "DiagnosticInfo")
+    add_line(string.format("    • Derived Hypotheses:    %d", hyp_count), "DiagnosticInfo")
     add_line(string.format("    • Invariant Assertions:  %d", invs_count), "DiagnosticOk")
     add_line("", nil)
     add_line("  GROUND TRUTH PRINCIPLES:", "Special")
@@ -743,6 +903,7 @@ function M.render_ledger(buf, item)
     add_line("    • Right Pane: Dynamic provenance audit trail", "Comment")
     add_line("    • Press <CR> on any symbol to jump to source", "Comment")
     add_line("    • Press <Tab> to toggle focus between panes", "Comment")
+    add_line("    • Press [t]est scaffold | [r]efactor plan | [a]gent", "Comment")
   end
 
   vim.bo[buf].modifiable = true
@@ -797,6 +958,113 @@ function M.map_keys(buf)
       end
     end
   end, "Jump to entity source location")
+
+  map("t", function()
+    local bundle = M.state.bundle
+
+    if not bundle then
+      return
+    end
+
+    local agent = require("oculus.investigate.agent")
+    local entity = (bundle.entities and bundle.entities[1]) or { name = "target_function", file_path = "src/main.rs" }
+    local callers = (bundle.impact and bundle.impact.direct_callers) or {}
+    local scaffold = agent.generate_test_scaffold(entity, callers)
+    local s_buf = vim.api.nvim_create_buf(false, true)
+    local ext = vim.fn.fnamemodify(entity.file_path or "lua", ":e")
+    vim.bo[s_buf].filetype = ext == "rs" and "rust" or (ext == "lua" and "lua" or "text")
+    vim.api.nvim_buf_set_lines(s_buf, 0, -1, false, vim.split(scaffold, "\n"))
+
+    local s_win = vim.api.nvim_open_win(s_buf, true, {
+      relative = "editor",
+      width = math.floor(vim.o.columns * 0.7),
+      height = math.min(25, vim.o.lines - 8),
+      row = math.floor(vim.o.lines * 0.15),
+      col = math.floor(vim.o.columns * 0.15),
+      border = "rounded",
+      title = " Invariant Test Scaffold (Press q to close) ",
+      title_pos = "center",
+    })
+
+    vim.keymap.set("n", "q", function()
+      pcall(vim.api.nvim_win_close, s_win, true)
+    end, { buffer = s_buf, silent = true })
+
+    vim.keymap.set("n", "<Esc>", function()
+      pcall(vim.api.nvim_win_close, s_win, true)
+    end, { buffer = s_buf, silent = true })
+  end, "Generate invariant test scaffold")
+
+  map("r", function()
+    local bundle = M.state.bundle
+
+    if not bundle then
+      return
+    end
+
+    local agent = require("oculus.investigate.agent")
+
+    local crossing = (bundle.dynamics and bundle.dynamics.boundary_crossings and bundle.dynamics.boundary_crossings[1])
+      or { source_subsystem = "core", target_subsystem = "ui", details = "Direct cross-subsystem call" }
+
+    local plan = agent.generate_refactor_plan(crossing)
+    local r_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[r_buf].filetype = "markdown"
+    vim.api.nvim_buf_set_lines(r_buf, 0, -1, false, vim.split(plan, "\n"))
+
+    local r_win = vim.api.nvim_open_win(r_buf, true, {
+      relative = "editor",
+      width = math.floor(vim.o.columns * 0.7),
+      height = math.min(25, vim.o.lines - 8),
+      row = math.floor(vim.o.lines * 0.15),
+      col = math.floor(vim.o.columns * 0.15),
+      border = "rounded",
+      title = " Decoupling Refactor Plan (Press q to close) ",
+      title_pos = "center",
+    })
+
+    vim.keymap.set("n", "q", function()
+      pcall(vim.api.nvim_win_close, r_win, true)
+    end, { buffer = r_buf, silent = true })
+
+    vim.keymap.set("n", "<Esc>", function()
+      pcall(vim.api.nvim_win_close, r_win, true)
+    end, { buffer = r_buf, silent = true })
+  end, "Plan subsystem decoupling refactor")
+
+  map("a", function()
+    local bundle = M.state.bundle
+
+    if not bundle then
+      return
+    end
+
+    local agent = require("oculus.investigate.agent")
+    vim.notify("Oculus: Synthesizing and verifying agent hypotheses...", vim.log.levels.INFO)
+
+    agent.synthesize(bundle, {}, function(derived, _)
+      if derived then
+        bundle.derived = derived
+
+        if is_valid_buf(M.state.buf) then
+          M.render(M.state.buf, bundle)
+        end
+
+        vim.notify("Oculus: Agent hypotheses verified against ground truth.", vim.log.levels.INFO)
+      end
+    end)
+  end, "Synthesize agent hypotheses")
+
+  map("i", function()
+    local bundle = M.state.bundle
+    local target = bundle and bundle.metadata and bundle.metadata.target
+    M.close()
+    local ok, oculus = pcall(require, "oculus")
+
+    if ok and type(oculus.inspect) == "function" then
+      oculus.inspect(target)
+    end
+  end, "Pivot to Oculus Inspect")
 end
 
 return M

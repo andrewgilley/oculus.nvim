@@ -195,6 +195,65 @@ pub struct ArchitecturalDynamics {
     pub historical_precedents: Vec<HistoricalPrecedent>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum VerificationStatus {
+    Confirmed,
+    Refuted,
+    Inconclusive,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentClaim {
+    pub claim_id: String,
+    pub claim_type: String,
+    pub subject: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    pub assertion: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaimVerification {
+    pub claim_id: String,
+    pub claim_type: String,
+    pub assertion: String,
+    pub status: VerificationStatus,
+    pub confidence: f64,
+    pub deterministic_evidence: Vec<String>,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectedAction {
+    pub action_type: String,
+    pub label: String,
+    pub description: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub command_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentHypothesis {
+    pub id: String,
+    pub title: String,
+    pub rationale: String,
+    pub confidence: f64,
+    pub claims: Vec<AgentClaim>,
+    pub verifications: Vec<ClaimVerification>,
+    pub suggested_actions: Vec<ConnectedAction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DerivedInvestigation {
+    pub hypotheses: Vec<AgentHypothesis>,
+    pub unanswered_questions: Vec<String>,
+    pub candidate_patches: Vec<String>,
+    pub adversarial_verdict: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InvestigateFactBundle {
     pub metadata: BundleMetadata,
@@ -208,4 +267,6 @@ pub struct InvestigateFactBundle {
     pub traceability_links: Vec<TraceabilityLink>,
     #[serde(default)]
     pub dynamics: Option<ArchitecturalDynamics>,
+    #[serde(default)]
+    pub derived: Option<DerivedInvestigation>,
 }

@@ -351,3 +351,92 @@ fn test_architectural_dynamics_analyzer() {
     assert!(!instabilities.is_empty());
     assert!(instabilities.iter().any(|i| i.risk_category == "single_maintainer_bottleneck" || i.risk_category == "high_churn_untested"));
 }
+
+#[test]
+fn test_adversarial_reality_checker() {
+    use oculus_engine::adversarial::AdversarialRealityChecker;
+    use oculus_engine::models::{AgentClaim, VerificationStatus};
+
+    let entity = SemanticEntity {
+        id: "src/engine.rs:1:run".to_string(),
+        kind: EntityKind::Function,
+        name: "run".to_string(),
+        qualified_name: "src/engine.rs::run".to_string(),
+        file_path: "src/engine.rs".to_string(),
+        start_line: 1,
+        end_line: 10,
+        start_col: 1,
+        end_col: 1,
+        git_oid: None,
+    };
+
+    let caller = SemanticEntity {
+        id: "src/main.rs:5:main".to_string(),
+        kind: EntityKind::Function,
+        name: "main".to_string(),
+        qualified_name: "src/main.rs::main".to_string(),
+        file_path: "src/main.rs".to_string(),
+        start_line: 5,
+        end_line: 15,
+        start_col: 1,
+        end_col: 1,
+        git_oid: None,
+    };
+
+    let impact = oculus_engine::models::StructuralImpact {
+        modified_entities: vec![entity.clone()],
+        direct_callers: vec![caller],
+        affected_tests: vec![],
+        affected_files: vec!["src/engine.rs".to_string(), "src/main.rs".to_string()],
+        propagation_depth: 1,
+    };
+
+    let claims = vec![
+        AgentClaim {
+            claim_id: "claim_1".to_string(),
+            claim_type: "no_external_callers".to_string(),
+            subject: "run".to_string(),
+            target: None,
+            assertion: "`run` has no callers".to_string(),
+        },
+        AgentClaim {
+            claim_id: "claim_2".to_string(),
+            claim_type: "has_test_coverage".to_string(),
+            subject: "run".to_string(),
+            target: None,
+            assertion: "`run` is covered by tests".to_string(),
+        },
+        AgentClaim {
+            claim_id: "claim_3".to_string(),
+            claim_type: "untested_entity".to_string(),
+            subject: "run".to_string(),
+            target: None,
+            assertion: "`run` is untested".to_string(),
+        },
+    ];
+
+    let verifications = AdversarialRealityChecker::verify_claims(
+        &claims,
+        &[entity.clone()],
+        Some(&impact),
+        None,
+        &[],
+    );
+
+    assert_eq!(verifications.len(), 3);
+    assert_eq!(verifications[0].status, VerificationStatus::Refuted); // Caller exists, so refuted!
+    assert_eq!(verifications[1].status, VerificationStatus::Refuted); // No tests, so refuted!
+    assert_eq!(verifications[2].status, VerificationStatus::Confirmed); // Untested is confirmed!
+
+    let derived = AdversarialRealityChecker::synthesize_derived_investigation(
+        &[entity],
+        Some(&impact),
+        None,
+        &[],
+        &[],
+    );
+
+    assert!(!derived.hypotheses.is_empty());
+    assert!(!derived.adversarial_verdict.is_empty());
+    assert!(!derived.candidate_patches.is_empty());
+}

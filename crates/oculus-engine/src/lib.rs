@@ -1,3 +1,4 @@
+pub mod adversarial;
 pub mod coupling;
 pub mod db;
 pub mod dynamics;

@@ -268,5 +268,66 @@ do
   assert(prec_ledger:find("abcdef1", 1, true), "expected commit oid in ledger")
   window.close()
   assert(window.state.win == nil and window.state.ledger_win == nil, "expected both windows closed after test 10")
+  -- Test 11: Agent Hypotheses & Adversarial Reality Checking (Layers 25-26)
+  local agent = require("oculus.investigate.agent")
+  -- Projection test
+  local projection = agent.build_projection(dynamics_bundle)
+  assert(projection:find("FACT PROJECTION", 1, true), "expected FACT PROJECTION in agent projection")
+  assert(projection:find("ARCHITECTURAL BOUNDARY CROSSINGS", 1, true), "expected boundary crossings in projection")
+  -- Test scaffold generation
+  local fake_entity = { name = "calculate_impact", file_path = "lua/oculus/investigate/engine.lua", start_line = 10 }
+  local fake_callers = { { name = "open_window", file_path = "lua/oculus/investigate/window.lua", start_line = 40 } }
+  local scaffold = agent.generate_test_scaffold(fake_entity, fake_callers)
+  assert(scaffold:find("calculate_impact", 1, true), "expected calculate_impact in scaffold")
+  assert(scaffold:find("open_window", 1, true), "expected open_window in scaffold")
+  -- Refactor plan generation
+  local fake_crossing = { source_subsystem = "lua.investigate", target_subsystem = "crates.oculus_engine", risk_level = "high", details = "Direct boundary crossing" }
+  local plan = agent.generate_refactor_plan(fake_crossing)
+  assert(plan:find("Refactor Plan", 1, true), "expected Refactor Plan in plan")
+  assert(plan:find("lua.investigate", 1, true), "expected source subsystem in plan")
+  -- Agent synthesis
+  local agent_done = false
+  local synthesized_derived = nil
+
+  agent.synthesize(dynamics_bundle, {}, function(derived, _)
+    synthesized_derived = derived
+    agent_done = true
+  end)
+
+  assert(agent_done, "expected agent synthesis to complete")
+  assert(synthesized_derived ~= nil, "expected synthesized derived")
+  assert(#synthesized_derived.hypotheses > 0, "expected hypotheses")
+  -- Window rendering of derived investigation
+  dynamics_bundle.derived = synthesized_derived
+  window.open(dynamics_bundle, { width = 120, height = 40 })
+  local derived_tree = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), "\n")
+  assert(derived_tree:find("AGENT HYPOTHESES & ADVERSARIAL VERIFICATIONS", 1, true), "expected hypotheses header")
+  assert(derived_tree:find("CONNECTED ACTIONS & EXPERIMENTS", 1, true), "expected connected actions header")
+  assert(derived_tree:find("Claim", 1, true), "expected Claim in tree")
+  -- Move cursor to hypothesis and claim to verify ledger rendering
+  local hyp_line = nil
+  local claim_line = nil
+
+  for l, prov in pairs(window.state.line_provenance) do
+    if prov.kind == "agent_hypothesis" then
+      hyp_line = l
+    elseif prov.kind == "claim_verification" then
+      claim_line = l
+    end
+  end
+
+  assert(hyp_line ~= nil, "expected hyp_line")
+  assert(claim_line ~= nil, "expected claim_line")
+  vim.api.nvim_win_set_cursor(window.state.win, { hyp_line, 0 })
+  vim.cmd("doautocmd CursorMoved")
+  local hyp_ledger = table.concat(vim.api.nvim_buf_get_lines(window.state.ledger_buf, 0, -1, false), "\n")
+  assert(hyp_ledger:find("Agent Derived Hypothesis", 1, true), "expected hypothesis in ledger")
+  vim.api.nvim_win_set_cursor(window.state.win, { claim_line, 0 })
+  vim.cmd("doautocmd CursorMoved")
+  local claim_ledger = table.concat(vim.api.nvim_buf_get_lines(window.state.ledger_buf, 0, -1, false), "\n")
+  assert(claim_ledger:find("Adversarial Reality Check", 1, true), "expected adversarial check in ledger")
+  assert(claim_ledger:find("ADVERSARIAL VERDICT", 1, true), "expected verdict in ledger")
+  window.close()
+  assert(window.state.win == nil and window.state.ledger_win == nil, "expected windows closed after test 11")
   print("ALL INVESTIGATE TESTS PASSED!")
 end
