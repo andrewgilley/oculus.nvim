@@ -674,6 +674,8 @@ local function sidebar_sections_for_view(view)
           { "v", showing_users and "Projects" or "Users" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
+          { nav.investigate, "Investigate" },
+          { nav.investigate_id, "Investigate ID" },
           { "r", "Remove" },
           { "m", "Move" },
           { "f", "Filters" },
@@ -693,6 +695,8 @@ local function sidebar_sections_for_view(view)
     local actions = {
       { nav.inspect, "Inspect" },
       { nav.inspect_id, "Inspect ID" },
+      { nav.investigate, "Investigate" },
+      { nav.investigate_id, "Investigate ID" },
       { "Tab", "Queue" },
       { "b", "Browser" },
     }
@@ -961,11 +965,11 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  v projects   a add   r remove   m move   ?: help"
-      or "  v users   a add   r remove   m move   ?: help"
+        and ("  v projects   a add   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
+      or ("  v users   a add   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
   end
 
-  local activity_commands = ("  %s inspect   b browser"):format(nav.inspect)
+  local activity_commands = ("  %s inspect   %s investigate   b browser"):format(nav.inspect, nav.investigate)
 
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
@@ -2249,10 +2253,11 @@ local function render_contributors()
 
     lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
     separator_line = #lines
+    local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and "v projects  a add  r remove  m move  ?: help"
-      or "v users  a add  r remove  m move  ?: help")
+        and ("v projects  a add  %s investigate  r remove  m move  ?: help"):format(nav.investigate)
+      or ("v users  a add  %s investigate  r remove  m move  ?: help"):format(nav.investigate))
 
     commands_line = #lines
   else
@@ -3392,6 +3397,8 @@ local function render_shortcuts()
     { "v", "Switch between project and user lists" },
     { "a", "Add a GitHub or Codeberg project or account" },
     { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
+    { nav.investigate, "Investigate the selected project repository" },
+    { nav.investigate_id, "Investigate an issue, PR, commit, or project by ID" },
     { "r", "Remove the selected project or account" },
     { "m", "Move the selected project or account" },
     { "f", "Edit filters for the selected user or project" },
@@ -3403,6 +3410,8 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { nav.inspect, "Inspect the selected change or issue" },
     { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
+    { nav.investigate, "Investigate the selected change, issue, or repository" },
+    { nav.investigate_id, "Investigate an issue, PR, commit, or project by ID" },
     { "Tab", "Queue activity for sequential inspection" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Open a project's issue activity" },
@@ -5898,9 +5907,15 @@ local function investigate_current()
     or M.state.activity_expansion_targets[line]
   )
 
+  local project = M.state.activity_project
+
+  if not project and type(target) == "table" and target.kind == "project" then
+    project = target.project or target
+  end
+
   local context = {
-    project = M.state.activity_project,
-    repository = M.state.activity_project and M.state.activity_project.repository,
+    project = project,
+    repository = project and project.repository,
     cwd = vim.fn.getcwd(),
     target_context = inspect_target,
     event = event,
@@ -5910,14 +5925,21 @@ local function investigate_current()
 end
 
 local function prompt_investigate_by_id()
+  local cursor_target = target_on_cursor()
+  local project = M.state.activity_project
+
+  if not project and type(cursor_target) == "table" and cursor_target.kind == "project" then
+    project = cursor_target.project or cursor_target
+  end
+
   vim.ui.input({ prompt = "Investigate (commit, PR #, issue, or empty for project): " }, function(input)
     if input == nil then
       return
     end
 
     local context = {
-      project = M.state.activity_project,
-      repository = M.state.activity_project and M.state.activity_project.repository,
+      project = project,
+      repository = project and project.repository,
       cwd = vim.fn.getcwd(),
     }
 
