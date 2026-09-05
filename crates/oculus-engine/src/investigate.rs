@@ -329,7 +329,16 @@ impl Investigator {
             });
         }
 
-        // 10. Assemble fact bundle
+        // 10. Synthesize derived investigation (Layers 25-26) with adversarial reality checking
+        let derived = Some(crate::adversarial::AdversarialRealityChecker::synthesize_derived_investigation(
+            &modified_entities,
+            impact.as_ref(),
+            Some(&dynamics),
+            &co_changes,
+            &invariants,
+        ));
+
+        // 11. Assemble fact bundle
         Ok(InvestigateFactBundle {
             metadata: BundleMetadata {
                 repository_root: repo_path.to_string_lossy().replace('\\', "/"),
@@ -347,6 +356,7 @@ impl Investigator {
             forge_artifact,
             traceability_links,
             dynamics: Some(dynamics),
+            derived,
         })
     }
 
