@@ -28,6 +28,24 @@ function M.plugin_root()
   return vim.fs.normalize(vim.fn.getcwd())
 end
 
+function M.find_manifest_path()
+  local root = M.plugin_root()
+
+  local candidates = {
+    vim.fs.joinpath(root, "crates", "oculus-engine", "Cargo.toml"),
+    vim.fs.joinpath(vim.fn.stdpath("data"), "lazy", "oculus.nvim", "crates", "oculus-engine", "Cargo.toml"),
+    vim.fs.joinpath(vim.fn.getcwd(), "crates", "oculus-engine", "Cargo.toml"),
+  }
+
+  for _, candidate in ipairs(candidates) do
+    if vim.fn.filereadable(candidate) == 1 then
+      return vim.fs.normalize(candidate)
+    end
+  end
+
+  return nil
+end
+
 function M.find_engine_binary(opts)
   opts = opts or {}
 
@@ -49,6 +67,12 @@ function M.find_engine_binary(opts)
     vim.fs.joinpath(root, "crates", "oculus-engine", "target", "release", exe_name),
     vim.fs.joinpath(root, "crates", "oculus-engine", "target", "debug", exe_name),
     vim.fs.joinpath(root, "bin", exe_name),
+    vim.fs.joinpath(vim.fn.stdpath("data"), "lazy", "oculus.nvim", "crates", "oculus-engine", "target", "release", exe_name),
+    vim.fs.joinpath(vim.fn.stdpath("data"), "lazy", "oculus.nvim", "crates", "oculus-engine", "target", "debug", exe_name),
+    vim.fs.joinpath(vim.fn.stdpath("data"), "oculus", "bin", exe_name),
+    vim.fs.joinpath(vim.fn.getcwd(), "crates", "oculus-engine", "target", "release", exe_name),
+    vim.fs.joinpath(vim.fn.getcwd(), "crates", "oculus-engine", "target", "debug", exe_name),
+    vim.fs.joinpath(vim.fn.expand("~"), ".cargo", "bin", exe_name),
   }
 
   for _, candidate in ipairs(candidates) do
@@ -58,6 +82,64 @@ function M.find_engine_binary(opts)
   end
 
   return nil
+end
+
+function M.build(opts, callback)
+  opts = opts or {}
+  local manifest = opts.manifest or M.find_manifest_path()
+
+  if not manifest then
+    local err = "crates/oculus-engine/Cargo.toml not found"
+    vim.notify("Oculus: " .. err, vim.log.levels.ERROR)
+
+    if callback then
+      callback(false, err)
+    end
+
+    return
+  end
+
+  if vim.fn.executable("cargo") ~= 1 then
+    local err = "cargo executable not found in PATH. Please install Rust to build oculus-engine."
+    vim.notify("Oculus: " .. err, vim.log.levels.ERROR)
+
+    if callback then
+      callback(false, err)
+    end
+
+    return
+  end
+
+  vim.notify("Oculus: Building oculus-engine binary with cargo...", vim.log.levels.INFO)
+  local cmd = { "cargo", "build", "--release", "--manifest-path", manifest }
+
+  local ok, proc = pcall(vim.system, cmd, { text = true }, function(result)
+    vim.schedule(function()
+      if result.code == 0 then
+        vim.notify("Oculus: oculus-engine built successfully!", vim.log.levels.INFO)
+
+        if callback then
+          callback(true, nil)
+        end
+      else
+        local err = vim.trim(result.stderr or result.stdout or "cargo build failed")
+        vim.notify("Oculus: failed to build oculus-engine: " .. err, vim.log.levels.ERROR)
+
+        if callback then
+          callback(false, err)
+        end
+      end
+    end)
+  end)
+
+  if not ok then
+    local err = tostring(proc)
+    vim.notify("Oculus: failed to spawn cargo: " .. err, vim.log.levels.ERROR)
+
+    if callback then
+      callback(false, err)
+    end
+  end
 end
 
 function M.run(request, callback)
@@ -73,7 +155,26 @@ function M.run(request, callback)
   local binary = M.find_engine_binary(request.opts)
 
   if not binary then
-    local err = "oculus-engine binary not found. Build it with `cargo build --release --manifest-path crates/oculus-engine/Cargo.toml`"
+    if vim.fn.executable("cargo") == 1 and not request._auto_built then
+      request._auto_built = true
+      vim.notify("Oculus: oculus-engine binary not found. Compiling automatically with cargo...", vim.log.levels.INFO)
+
+      M.build(request.opts, function(success, build_err)
+        if success then
+          M.run(request, callback)
+        else
+          local err = "oculus-engine build failed: " .. tostring(build_err)
+
+          if callback then
+            callback(nil, err)
+          end
+        end
+      end)
+
+      return
+    end
+
+    local err = "oculus-engine binary not found. Build it with `:OculusBuildEngine` or `cargo build --release --manifest-path crates/oculus-engine/Cargo.toml`"
 
     if callback then
       vim.schedule(function()

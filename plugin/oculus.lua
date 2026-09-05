@@ -59,3 +59,9 @@ end, {
   desc = "Investigate an issue, pull request, commit, or project architecture",
   complete = complete_target,
 })
+
+vim.api.nvim_create_user_command("OculusBuildEngine", function()
+  require("oculus.investigate.engine").build()
+end, {
+  desc = "Build the oculus-engine Rust binary with cargo",
+})
