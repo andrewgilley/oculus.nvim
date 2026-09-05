@@ -8,11 +8,11 @@ local navigation = require("oculus.navigation")
 do
   -- Test 1: Navigation resolves investigate keys
   local nav = navigation.resolve()
-  assert(nav.investigate == "x", "expected nav.investigate to be 'x'")
-  assert(nav.investigate_id == "X", "expected nav.investigate_id to be 'X'")
+  assert(nav.investigate == "i", "expected nav.investigate to be 'i'")
+  assert(nav.investigate_id == "I", "expected nav.investigate_id to be 'I'")
   local nav_hjkl = navigation.resolve("hjkl")
-  assert(nav_hjkl.investigate == "x")
-  assert(nav_hjkl.investigate_id == "X")
+  assert(nav_hjkl.investigate == "i")
+  assert(nav_hjkl.investigate_id == "I")
   -- Test 2: Engine binary discovery
   local binary = engine.find_engine_binary()
   assert(binary ~= nil and binary ~= "", "expected engine binary to be found")

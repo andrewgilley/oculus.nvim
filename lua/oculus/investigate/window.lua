@@ -110,10 +110,8 @@ function M.open(bundle, opts)
     col = col,
     style = "minimal",
     border = border,
-    title = is_split and " Oculus Investigation · Composite Path Tree " or " Oculus Investigation ",
-    title_pos = "center",
-    footer = is_split and " <CR> jump | <Tab> ledger | [a]gent | [t]est | [r]efactor | [q] close " or " <CR> jump | [q] close ",
-    footer_pos = "right",
+    footer = is_split and "  <CR> jump   Tab ledger   t test   r refactor   a agent   h inspect   q close  " or "  <CR> jump   t test   r refactor   a agent   h inspect   q close  ",
+    footer_pos = "left",
   })
 
   vim.wo[win].cursorline = true
@@ -144,10 +142,8 @@ function M.open(bundle, opts)
       col = col + left_width + 2,
       style = "minimal",
       border = border,
-      title = " Deterministic Provenance Ledger ",
-      title_pos = "center",
-      footer = " [q] close | <Tab> tree ",
-      footer_pos = "right",
+      footer = "  Tab tree   q close  ",
+      footer_pos = "left",
     })
 
     vim.wo[ledger_win].cursorline = false
@@ -902,7 +898,7 @@ function M.render_ledger(buf, item)
     add_line("    • Press [t] to generate Invariant Test Scaffold", "Comment")
     add_line("    • Press [r] to plan Subsystem Decoupling Refactor", "Comment")
     add_line("    • Press [a] to synthesize hypotheses with agent", "Comment")
-    add_line("    • Press [i] to pivot to Oculus Inspect diff view", "Comment")
+    add_line("    • Press [h] to pivot to Oculus Inspect diff view", "Comment")
   else -- overview
     local meta = (M.state.bundle and M.state.bundle.metadata) or {}
     local repo_root = meta.repository_root or vim.fn.getcwd()
@@ -943,7 +939,7 @@ function M.render_ledger(buf, item)
     add_line("    • Right Pane: Dynamic provenance audit trail", "Comment")
     add_line("    • Press <CR> on any symbol to jump to source", "Comment")
     add_line("    • Press <Tab> to toggle focus between panes", "Comment")
-    add_line("    • Press [t]est scaffold | [r]efactor plan | [a]gent", "Comment")
+    add_line("    • Press [t]est scaffold | [r]efactor plan | [a]gent | [h] inspect", "Comment")
   end
 
   vim.bo[buf].modifiable = true
@@ -1095,7 +1091,7 @@ function M.map_keys(buf)
     end)
   end, "Synthesize agent hypotheses")
 
-  map("i", function()
+  local function pivot_to_inspect()
     local bundle = M.state.bundle
     local target = bundle and bundle.metadata and bundle.metadata.target
     M.close()
@@ -1104,7 +1100,10 @@ function M.map_keys(buf)
     if ok and type(oculus.inspect) == "function" then
       oculus.inspect(target)
     end
-  end, "Pivot to Oculus Inspect")
+  end
+
+  map("h", pivot_to_inspect, "Pivot to Oculus Inspect")
+  map("i", pivot_to_inspect, "Pivot to Oculus Inspect")
 end
 
 return M
