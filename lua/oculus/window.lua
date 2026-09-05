@@ -969,7 +969,8 @@ local function footer_commands_text()
       or ("  v users   a add   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
   end
 
-  local activity_commands = ("  %s inspect   %s investigate   b browser"):format(nav.inspect, nav.investigate)
+  local inspect_key = nav.inspect == nav.investigate and "h" or nav.inspect
+  local activity_commands = ("  %s inspect   %s investigate   b browser"):format(inspect_key, nav.investigate)
 
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
@@ -6730,18 +6731,20 @@ local function map_keys(buf)
   end, "Remove selected Oculus item or refresh activity")
 
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
-  map(nav.inspect, inspect_current, "Inspect Oculus change or issue")
-  map(nav.inspect_id, prompt_inspect_by_id, "Inspect issue, PR, or commit by ID")
+  local inspect_key = nav.inspect == nav.investigate and "h" or nav.inspect
+  local inspect_id_key = nav.inspect_id == nav.investigate_id and "H" or nav.inspect_id
+  map(inspect_key, inspect_current, "Inspect Oculus change or issue")
+  map(inspect_id_key, prompt_inspect_by_id, "Inspect issue, PR, commit, or project by ID")
   map(nav.investigate, investigate_current, "Investigate Oculus change or project")
   map(nav.investigate_id, prompt_investigate_by_id, "Investigate issue, PR, commit, or project by ID")
 
-  if nav.inspect_id ~= "H"
+  if inspect_id_key ~= "H"
     and nav.left ~= "H"
     and nav.up ~= "H"
     and nav.down ~= "H"
     and nav.right ~= "H"
   then
-    map("H", prompt_inspect_by_id, "Inspect issue, PR, or commit by ID")
+    map("H", prompt_inspect_by_id, "Inspect issue, PR, commit, or project by ID")
   end
 
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
@@ -6751,9 +6754,11 @@ local function map_keys(buf)
     move_cursor(1)
   end, "Move down in Oculus")
 
-  map(nav.up, function()
-    move_cursor(-1)
-  end, "Move up in Oculus")
+  if nav.up ~= nav.investigate then
+    map(nav.up, function()
+      move_cursor(-1)
+    end, "Move up in Oculus")
+  end
 
   map(nav.left, move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
