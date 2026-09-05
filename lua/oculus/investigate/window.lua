@@ -18,16 +18,39 @@ local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
 end
 
-local function dimension(value, total, minimum)
-  local result = value
+local function get_target_window_config(opts)
+  opts = opts or {}
+  local oculus_window = require("oculus.window")
+  local oculus_config = require("oculus").config or {}
 
-  if type(value) == "number" and value > 0 and value <= 1 then
-    result = math.floor(total * value)
+  local effective_opts = vim.tbl_deep_extend(
+    "force",
+    vim.deepcopy(oculus_config),
+    oculus_window.state and oculus_window.state.opts or {},
+    opts
+  )
+
+  -- If main oculus window is currently open, inherit its exact live dimensions and position
+  if oculus_window.state and is_valid_win(oculus_window.state.win) then
+    local pos = vim.api.nvim_win_get_position(oculus_window.state.win)
+    local width = vim.api.nvim_win_get_width(oculus_window.state.win)
+    local height = vim.api.nvim_win_get_height(oculus_window.state.win)
+    local cfg = vim.api.nvim_win_get_config(oculus_window.state.win)
+
+    return {
+      width = width,
+      height = height,
+      row = pos[1],
+      col = pos[2],
+      border = cfg.border or effective_opts.border or "rounded",
+    }
   end
 
-  result = tonumber(result) or minimum
-  return math.max(minimum, math.min(math.floor(result), total - 2))
+  -- Otherwise compute via oculus_window.window_config
+  return oculus_window.window_config(effective_opts)
 end
+
+M.window_config = get_target_window_config
 
 function M.close()
   if is_valid_win(M.state.ledger_win) then
@@ -58,15 +81,22 @@ end
 function M.open(bundle, opts)
   opts = opts or {}
   M.close()
-  local columns = vim.o.columns
-  local lines = vim.o.lines - vim.o.cmdheight
-  local width = dimension(opts.width or 0.92, columns, 50)
-  local height = dimension(opts.height or 0.84, lines, 10)
-  local row = math.max(0, math.floor((lines - height) / 2) - 1)
-  local col = math.max(0, math.floor((columns - width) / 2))
-  local is_split = width >= 60
-  local left_width = is_split and math.floor(width * 0.52) or width
-  local right_width = is_split and (width - left_width) or 0
+  local main_cfg = get_target_window_config(opts)
+  local width = main_cfg.width
+  local height = main_cfg.height
+  local row = main_cfg.row
+  local col = main_cfg.col
+  local border = main_cfg.border or opts.border or "rounded"
+  local is_split = (opts.split ~= false) and (width >= 60)
+  local left_width = width
+  local right_width = 0
+
+  if is_split then
+    local available = math.max(20, width - 2)
+    left_width = math.floor(available * 0.52)
+    right_width = available - left_width
+  end
+
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -79,8 +109,8 @@ function M.open(bundle, opts)
     row = row,
     col = col,
     style = "minimal",
-    border = opts.border or "rounded",
-    title = " Oculus Investigation · Composite Path Tree ",
+    border = border,
+    title = is_split and " Oculus Investigation · Composite Path Tree " or " Oculus Investigation ",
     title_pos = "center",
     footer = is_split and " <CR> jump | <Tab> ledger | [a]gent | [t]est | [r]efactor | [q] close " or " <CR> jump | [q] close ",
     footer_pos = "right",
@@ -88,6 +118,15 @@ function M.open(bundle, opts)
 
   vim.wo[win].cursorline = true
   vim.wo[win].wrap = false
+
+  local winhl = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+    "FloatBorder:OculusBorder",
+    "FloatTitle:OculusBorder",
+  }, ",")
+
+  pcall(function() vim.wo[win].winhighlight = winhl end)
   local ledger_buf = nil
   local ledger_win = nil
 
@@ -102,9 +141,9 @@ function M.open(bundle, opts)
       width = right_width,
       height = height,
       row = row,
-      col = col + left_width,
+      col = col + left_width + 2,
       style = "minimal",
-      border = opts.border or "rounded",
+      border = border,
       title = " Deterministic Provenance Ledger ",
       title_pos = "center",
       footer = " [q] close | <Tab> tree ",
@@ -113,6 +152,7 @@ function M.open(bundle, opts)
 
     vim.wo[ledger_win].cursorline = false
     vim.wo[ledger_win].wrap = true
+    pcall(function() vim.wo[ledger_win].winhighlight = winhl end)
   end
 
   M.state.buf = buf
