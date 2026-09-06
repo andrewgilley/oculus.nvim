@@ -126,8 +126,6 @@ function M._execute_investigation(repo_root, target, target_kind, forge_artifact
     opts = opts,
   }
 
-  vim.notify("Oculus: Running investigation...", vim.log.levels.INFO)
-
   return engine.run(request, function(bundle, err)
     if not bundle then
       local msg = "Investigation failed: " .. tostring(err or "unknown error")
