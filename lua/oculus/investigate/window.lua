@@ -9,6 +9,8 @@ M.state = {
   footer_win = nil,
   sub_buf = nil,
   sub_win = nil,
+  sub_footer_buf = nil,
+  sub_footer_win = nil,
   view_mode = "tree",
   bundle = nil,
   line_targets = {},
@@ -213,6 +215,7 @@ function M.is_investigate_win(win)
     or win == M.state.ledger_win
     or win == M.state.footer_win
     or win == M.state.sub_win
+    or win == M.state.sub_footer_win
 end
 
 local closing = false
@@ -242,6 +245,17 @@ function M.close(for_subwin)
   end
 
   if not for_subwin then
+    if is_valid_win(M.state.sub_footer_win) then
+      pcall(vim.api.nvim_win_close, M.state.sub_footer_win, true)
+    end
+
+    if is_valid_buf(M.state.sub_footer_buf) then
+      pcall(vim.api.nvim_buf_delete, M.state.sub_footer_buf, { force = true })
+    end
+
+    M.state.sub_footer_win = nil
+    M.state.sub_footer_buf = nil
+
     if is_valid_win(M.state.sub_win) then
       pcall(vim.api.nvim_win_close, M.state.sub_win, true)
     end
@@ -1362,7 +1376,64 @@ function M.map_keys(buf)
     end
   end, "Jump to entity source location")
 
-  local function open_investigate_subwindow(buf, title, footer)
+  local function create_subwindow_footer(parent_win, cmd_text)
+    if not is_valid_win(parent_win) then
+      return nil, nil
+    end
+
+    local config = vim.api.nvim_win_get_config(parent_win)
+    local row = tonumber(config.row) or 0
+    local col = tonumber(config.col) or 0
+    local width = vim.api.nvim_win_get_width(parent_win)
+    local height = vim.api.nvim_win_get_height(parent_win)
+    local f_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[f_buf].buftype = "nofile"
+    vim.bo[f_buf].bufhidden = "wipe"
+    vim.bo[f_buf].swapfile = false
+    vim.bo[f_buf].filetype = "oculus"
+    local text = cmd_text or "  q close"
+
+    local lines = {
+      "  " .. string.rep("─", math.max(1, width - 4)),
+      text,
+    }
+
+    vim.bo[f_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(f_buf, 0, -1, false, lines)
+    vim.bo[f_buf].modifiable = false
+    vim.bo[f_buf].readonly = true
+    local ns = vim.api.nvim_create_namespace("oculus_subwindow_footer_hl")
+    vim.api.nvim_buf_clear_namespace(f_buf, ns, 0, -1)
+    vim.api.nvim_buf_add_highlight(f_buf, ns, "WinSeparator", 0, 2, -1)
+    vim.api.nvim_buf_add_highlight(f_buf, ns, "Comment", 1, 2, #text)
+
+    local f_win = vim.api.nvim_open_win(f_buf, false, {
+      relative = "editor",
+      width = width,
+      height = 2,
+      row = row + height - 1,
+      col = col + 1,
+      style = "minimal",
+      focusable = false,
+      zindex = 65,
+    })
+
+    vim.wo[f_win].wrap = false
+    vim.wo[f_win].cursorline = false
+    vim.wo[f_win].number = false
+    vim.wo[f_win].relativenumber = false
+    vim.wo[f_win].signcolumn = "no"
+
+    local winhl = table.concat({
+      "Normal:OculusNormal",
+      "NormalFloat:OculusNormal",
+    }, ",")
+
+    pcall(function() vim.wo[f_win].winhighlight = winhl end)
+    return f_win, f_buf
+  end
+
+  local function open_investigate_subwindow(buf, cmd_text)
     local bundle = M.state.bundle
     local opts = M.state.opts or {}
     local cfg = get_target_window_config(opts)
@@ -1377,14 +1448,13 @@ function M.map_keys(buf)
       style = "minimal",
       border = cfg.border or "rounded",
       zindex = 60,
-      title = title,
-      title_pos = "center",
-      footer = footer,
-      footer_pos = "left",
     })
 
+    local footer_win, footer_buf = create_subwindow_footer(win, cmd_text or "  q close")
     M.state.sub_win = win
     M.state.sub_buf = buf
+    M.state.sub_footer_win = footer_win
+    M.state.sub_footer_buf = footer_buf
     pcall(vim.api.nvim_set_current_win, win)
 
     vim.schedule(function()
@@ -1406,10 +1476,20 @@ function M.map_keys(buf)
     pcall(function() vim.wo[win].winhighlight = winhl end)
 
     local function close_sub()
+      if is_valid_win(footer_win) then
+        pcall(vim.api.nvim_win_close, footer_win, true)
+      end
+
+      if is_valid_buf(footer_buf) then
+        pcall(vim.api.nvim_buf_delete, footer_buf, { force = true })
+      end
+
       pcall(vim.api.nvim_win_close, win, true)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       M.state.sub_win = nil
       M.state.sub_buf = nil
+      M.state.sub_footer_win = nil
+      M.state.sub_footer_buf = nil
       M.open(bundle, opts)
     end
 
@@ -1433,15 +1513,18 @@ function M.map_keys(buf)
     local worktree = require("oculus.investigate.worktree")
     local ext_opts = vim.tbl_extend("force", opts, { window_config = cfg })
 
-    local exp_win = worktree.open_experiment_ui(bundle, ext_opts, function()
+    local exp_win, exp_f_win = worktree.open_experiment_ui(bundle, ext_opts, function()
       M.state.sub_win = nil
       M.state.sub_buf = nil
+      M.state.sub_footer_win = nil
+      M.state.sub_footer_buf = nil
       M.open(bundle, opts)
     end)
 
     if exp_win and is_valid_win(exp_win) then
       M.state.sub_win = exp_win
       M.state.sub_buf = vim.api.nvim_win_get_buf(exp_win)
+      M.state.sub_footer_win = exp_f_win
     end
   end, "Run worktree experiment and hypothesis probe")
 
@@ -1457,12 +1540,7 @@ function M.map_keys(buf)
     local p_buf = vim.api.nvim_create_buf(false, true)
     vim.bo[p_buf].filetype = "markdown"
     vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, vim.split(patch_text, "\n"))
-
-    open_investigate_subwindow(
-      p_buf,
-      " Candidate Patches (Press q to close) ",
-      "  q close candidate patches  "
-    )
+    open_investigate_subwindow(p_buf, "  q close")
   end, "Compare candidate patches (minimal vs architectural)")
 
   map("t", function()
@@ -1480,12 +1558,7 @@ function M.map_keys(buf)
     local ext = vim.fn.fnamemodify(entity.file_path or "lua", ":e")
     vim.bo[s_buf].filetype = ext == "rs" and "rust" or (ext == "lua" and "lua" or "text")
     vim.api.nvim_buf_set_lines(s_buf, 0, -1, false, vim.split(scaffold, "\n"))
-
-    open_investigate_subwindow(
-      s_buf,
-      " Invariant Test Scaffold (Press q to close) ",
-      "  q close test scaffold  "
-    )
+    open_investigate_subwindow(s_buf, "  q close")
   end, "Generate invariant test scaffold")
 
   map("r", function()
@@ -1504,12 +1577,7 @@ function M.map_keys(buf)
     local r_buf = vim.api.nvim_create_buf(false, true)
     vim.bo[r_buf].filetype = "markdown"
     vim.api.nvim_buf_set_lines(r_buf, 0, -1, false, vim.split(plan, "\n"))
-
-    open_investigate_subwindow(
-      r_buf,
-      " Decoupling Refactor Plan (Press q to close) ",
-      "  q close refactor plan  "
-    )
+    open_investigate_subwindow(r_buf, "  q close")
   end, "Plan subsystem decoupling refactor")
 
   map("a", function()

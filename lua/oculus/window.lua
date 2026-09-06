@@ -7330,7 +7330,7 @@ function M.open(opts)
 
       local is_inv = ok_inv and (
         (type(inv_win.is_investigate_win) == "function" and inv_win.is_investigate_win(entered))
-        or (inv_win.state and (entered == inv_win.state.win or entered == inv_win.state.ledger_win or entered == inv_win.state.footer_win or entered == inv_win.state.sub_win))
+        or (inv_win.state and (entered == inv_win.state.win or entered == inv_win.state.ledger_win or entered == inv_win.state.footer_win or entered == inv_win.state.sub_win or entered == inv_win.state.sub_footer_win))
       )
 
       if entered == M.state.win

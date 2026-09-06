@@ -146,10 +146,52 @@ function M.open_experiment_ui(bundle, opts, on_close)
     style = "minimal",
     border = border,
     zindex = 60,
-    footer = "  r run probe   o open worktree   p candidate patches   q close  ",
-    footer_pos = "left",
   })
 
+  local f_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[f_buf].buftype = "nofile"
+  vim.bo[f_buf].bufhidden = "wipe"
+  vim.bo[f_buf].swapfile = false
+  vim.bo[f_buf].filetype = "oculus"
+  local cmd_text = "  r run probe   o open worktree   p candidate patches   q close"
+
+  local f_lines = {
+    "  " .. string.rep("─", math.max(1, win_w - 4)),
+    cmd_text,
+  }
+
+  vim.bo[f_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(f_buf, 0, -1, false, f_lines)
+  vim.bo[f_buf].modifiable = false
+  vim.bo[f_buf].readonly = true
+  local f_ns = vim.api.nvim_create_namespace("oculus_worktree_footer_hl")
+  vim.api.nvim_buf_clear_namespace(f_buf, f_ns, 0, -1)
+  vim.api.nvim_buf_add_highlight(f_buf, f_ns, "WinSeparator", 0, 2, -1)
+  vim.api.nvim_buf_add_highlight(f_buf, f_ns, "Comment", 1, 2, #cmd_text)
+
+  local f_win = vim.api.nvim_open_win(f_buf, false, {
+    relative = "editor",
+    width = win_w,
+    height = 2,
+    row = row + win_h - 1,
+    col = col + 1,
+    style = "minimal",
+    focusable = false,
+    zindex = 65,
+  })
+
+  vim.wo[f_win].wrap = false
+  vim.wo[f_win].cursorline = false
+  vim.wo[f_win].number = false
+  vim.wo[f_win].relativenumber = false
+  vim.wo[f_win].signcolumn = "no"
+
+  local winhl = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+  }, ",")
+
+  pcall(function() vim.wo[f_win].winhighlight = winhl end)
   pcall(vim.api.nvim_set_current_win, win)
 
   vim.schedule(function()
@@ -252,6 +294,14 @@ function M.open_experiment_ui(bundle, opts, on_close)
       end
 
       vim.schedule(function()
+        if vim.api.nvim_win_is_valid(f_win) then
+          pcall(vim.api.nvim_win_close, f_win, true)
+        end
+
+        if vim.api.nvim_buf_is_valid(f_buf) then
+          pcall(vim.api.nvim_buf_delete, f_buf, { force = true })
+        end
+
         pcall(vim.api.nvim_win_close, win, true)
         vim.cmd("tcd " .. vim.fn.fnameescape(wt_dir))
 
@@ -286,10 +336,52 @@ function M.open_experiment_ui(bundle, opts, on_close)
       style = "minimal",
       border = border,
       zindex = 60,
-      footer = "  q close candidate patches  ",
-      footer_pos = "left",
     })
 
+    local p_f_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[p_f_buf].buftype = "nofile"
+    vim.bo[p_f_buf].bufhidden = "wipe"
+    vim.bo[p_f_buf].swapfile = false
+    vim.bo[p_f_buf].filetype = "oculus"
+    local p_cmd_text = "  q close"
+
+    local p_f_lines = {
+      "  " .. string.rep("─", math.max(1, win_w - 4)),
+      p_cmd_text,
+    }
+
+    vim.bo[p_f_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(p_f_buf, 0, -1, false, p_f_lines)
+    vim.bo[p_f_buf].modifiable = false
+    vim.bo[p_f_buf].readonly = true
+    local p_f_ns = vim.api.nvim_create_namespace("oculus_worktree_p_footer_hl")
+    vim.api.nvim_buf_clear_namespace(p_f_buf, p_f_ns, 0, -1)
+    vim.api.nvim_buf_add_highlight(p_f_buf, p_f_ns, "WinSeparator", 0, 2, -1)
+    vim.api.nvim_buf_add_highlight(p_f_buf, p_f_ns, "Comment", 1, 2, #p_cmd_text)
+
+    local p_f_win = vim.api.nvim_open_win(p_f_buf, false, {
+      relative = "editor",
+      width = win_w,
+      height = 2,
+      row = row + win_h - 1,
+      col = col + 1,
+      style = "minimal",
+      focusable = false,
+      zindex = 65,
+    })
+
+    vim.wo[p_f_win].wrap = false
+    vim.wo[p_f_win].cursorline = false
+    vim.wo[p_f_win].number = false
+    vim.wo[p_f_win].relativenumber = false
+    vim.wo[p_f_win].signcolumn = "no"
+
+    local winhl = table.concat({
+      "Normal:OculusNormal",
+      "NormalFloat:OculusNormal",
+    }, ",")
+
+    pcall(function() vim.wo[p_f_win].winhighlight = winhl end)
     pcall(vim.api.nvim_set_current_win, p_win)
 
     vim.schedule(function()
@@ -299,6 +391,14 @@ function M.open_experiment_ui(bundle, opts, on_close)
     end)
 
     local function close_p()
+      if vim.api.nvim_win_is_valid(p_f_win) then
+        pcall(vim.api.nvim_win_close, p_f_win, true)
+      end
+
+      if vim.api.nvim_buf_is_valid(p_f_buf) then
+        pcall(vim.api.nvim_buf_delete, p_f_buf, { force = true })
+      end
+
       pcall(vim.api.nvim_win_close, p_win, true)
 
       if vim.api.nvim_win_is_valid(win) then
@@ -312,6 +412,14 @@ function M.open_experiment_ui(bundle, opts, on_close)
   end
 
   local function close_ui()
+    if vim.api.nvim_win_is_valid(f_win) then
+      pcall(vim.api.nvim_win_close, f_win, true)
+    end
+
+    if vim.api.nvim_buf_is_valid(f_buf) then
+      pcall(vim.api.nvim_buf_delete, f_buf, { force = true })
+    end
+
     pcall(vim.api.nvim_win_close, win, true)
 
     if type(on_close) == "function" then
@@ -327,7 +435,7 @@ function M.open_experiment_ui(bundle, opts, on_close)
   vim.keymap.set("n", "<Esc>", close_ui, map_opts)
   vim.keymap.set("n", "<C-c>", close_ui, map_opts)
   render()
-  return win
+  return win, f_win
 end
 
 return M

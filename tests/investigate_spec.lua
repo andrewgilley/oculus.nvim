@@ -704,11 +704,17 @@ do
   assert(p_win_cfg.height == main_cfg.height, "expected candidate patches height to match main window")
   assert(p_win_cfg.row == main_cfg.row, "expected candidate patches row to match main window")
   assert(p_win_cfg.col == main_cfg.col, "expected candidate patches col to match main window")
+  assert(p_win_cfg.title == nil or #p_win_cfg.title == 0 or p_win_cfg.title[1][1] == "", "expected NO title on border of candidate patches window")
+  assert(p_win_cfg.footer == nil or #p_win_cfg.footer == 0 or p_win_cfg.footer[1][1] == "", "expected NO footer on border of candidate patches window")
+  assert(window.state.sub_footer_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_footer_win), "expected candidate patches bottom footer window")
+  local p_f_cfg = vim.api.nvim_win_get_config(window.state.sub_footer_win)
+  assert(p_f_cfg.height == 2, "expected bottom footer height to be 2")
   local p_sub_buf = window.state.sub_buf
   local p_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(p_sub_buf, "n"))[1]
   assert(p_close_km ~= nil, "expected 'q' mapped on candidate patches")
   p_close_km.callback()
   assert(window.state.sub_win == nil, "expected sub_win cleared on 'q'")
+  assert(window.state.sub_footer_win == nil, "expected sub_footer_win cleared on 'q'")
   assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected investigate window restored on 'q'")
   assert(vim.api.nvim_get_current_win() == window.state.win, "expected restored investigate window focused")
   -- 't': Invariant test scaffold
@@ -724,10 +730,14 @@ do
   local t_win_cfg = vim.api.nvim_win_get_config(window.state.sub_win)
   assert(t_win_cfg.width == main_cfg.width, "expected test scaffold width to match main window")
   assert(t_win_cfg.height == main_cfg.height, "expected test scaffold height to match main window")
+  assert(t_win_cfg.title == nil or #t_win_cfg.title == 0 or t_win_cfg.title[1][1] == "", "expected NO title on border of test scaffold window")
+  assert(t_win_cfg.footer == nil or #t_win_cfg.footer == 0 or t_win_cfg.footer[1][1] == "", "expected NO footer on border of test scaffold window")
+  assert(window.state.sub_footer_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_footer_win), "expected test scaffold bottom footer window")
   local t_sub_buf = window.state.sub_buf
   local t_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(t_sub_buf, "n"))[1]
   t_close_km.callback()
   assert(window.state.sub_win == nil)
+  assert(window.state.sub_footer_win == nil)
   assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
   assert(vim.api.nvim_get_current_win() == window.state.win)
   -- 'r': Decoupling refactor plan
@@ -743,10 +753,14 @@ do
   local r_win_cfg = vim.api.nvim_win_get_config(window.state.sub_win)
   assert(r_win_cfg.width == main_cfg.width, "expected refactor plan width to match main window")
   assert(r_win_cfg.height == main_cfg.height, "expected refactor plan height to match main window")
+  assert(r_win_cfg.title == nil or #r_win_cfg.title == 0 or r_win_cfg.title[1][1] == "", "expected NO title on border of refactor plan window")
+  assert(r_win_cfg.footer == nil or #r_win_cfg.footer == 0 or r_win_cfg.footer[1][1] == "", "expected NO footer on border of refactor plan window")
+  assert(window.state.sub_footer_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_footer_win), "expected refactor plan bottom footer window")
   local r_sub_buf = window.state.sub_buf
   local r_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(r_sub_buf, "n"))[1]
   r_close_km.callback()
   assert(window.state.sub_win == nil)
+  assert(window.state.sub_footer_win == nil)
   assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
   assert(vim.api.nvim_get_current_win() == window.state.win)
   -- 'e': Experiment UI
@@ -764,6 +778,9 @@ do
   assert(e_win_cfg.height == main_cfg.height, "expected experiment UI height to match main window")
   assert(e_win_cfg.row == main_cfg.row, "expected experiment UI row to match main window")
   assert(e_win_cfg.col == main_cfg.col, "expected experiment UI col to match main window")
+  assert(e_win_cfg.title == nil or #e_win_cfg.title == 0 or e_win_cfg.title[1][1] == "", "expected NO title on border of experiment UI window")
+  assert(e_win_cfg.footer == nil or #e_win_cfg.footer == 0 or e_win_cfg.footer[1][1] == "", "expected NO footer on border of experiment UI window")
+  assert(window.state.sub_footer_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_footer_win), "expected experiment UI bottom footer window")
   -- Press 'p' from within experiment UI
   local exp_ui_win = window.state.sub_win
   local exp_ui_buf = window.state.sub_buf
@@ -775,6 +792,8 @@ do
   local exp_p_cfg = vim.api.nvim_win_get_config(exp_p_win)
   assert(exp_p_cfg.width == main_cfg.width, "expected exp UI candidate patches width to match main window")
   assert(exp_p_cfg.height == main_cfg.height, "expected exp UI candidate patches height to match main window")
+  assert(exp_p_cfg.title == nil or #exp_p_cfg.title == 0 or exp_p_cfg.title[1][1] == "", "expected NO title on border of exp UI candidate patches window")
+  assert(exp_p_cfg.footer == nil or #exp_p_cfg.footer == 0 or exp_p_cfg.footer[1][1] == "", "expected NO footer on border of exp UI candidate patches window")
   local exp_p_buf = vim.api.nvim_win_get_buf(exp_p_win)
   local exp_p_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(exp_p_buf, "n"))[1]
   exp_p_close_km.callback()
@@ -784,6 +803,7 @@ do
   local exp_ui_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(exp_ui_buf, "n"))[1]
   exp_ui_close_km.callback()
   assert(window.state.sub_win == nil)
+  assert(window.state.sub_footer_win == nil)
   assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
   assert(vim.api.nvim_get_current_win() == window.state.win)
   -- Close investigate window
