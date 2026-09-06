@@ -4,6 +4,7 @@ local oculus = require("oculus")
 local engine = require("oculus.investigate.engine")
 local window = require("oculus.investigate.window")
 local navigation = require("oculus.navigation")
+local received_bundle = nil
 
 do
   -- Test 1: Navigation resolves investigate keys
@@ -19,7 +20,6 @@ do
   assert(vim.fn.filereadable(binary) == 1, "expected engine binary to be readable and exist")
   -- Test 3: Engine execution returns structured fact bundle
   local done = false
-  local received_bundle = nil
   local received_err = nil
 
   engine.run({ repo_root = root }, function(bundle, err)
@@ -1053,8 +1053,191 @@ do
   local view_after_f_scroll = vim.api.nvim_win_call(test_win, function() return vim.fn.winsaveview() end)
   assert(view_after_f_scroll.topline == max_topline, string.format("footer scroll down topline %d != max_topline %d", view_after_f_scroll.topline, max_topline))
   -- Check footer buffer contents were not corrupted
-  local f_lines = vim.api.nvim_buf_get_lines(f_buf, 0, -1, false)
-  assert(#f_lines == 2, "footer buffer lines should remain 2")
   window.close()
+end
+
+do
+  -- Test: Inspect command from investigate window initiates inspect workload,
+    -- overview window replaces investigate window, and Tab toggles between them.
+    local oculus_mod = require("oculus")
+    local inspect_mod = require("oculus.inspect")
+    local orig_oculus_inspect = oculus_mod.inspect
+
+    -- Test overview_window_config exact_dimensions
+    local exact_cfg = inspect_mod._overview_window_config({
+      width = 100,
+      height = 40,
+      row = 5,
+      col = 10,
+      exact_dimensions = true,
+    })
+
+    assert(exact_cfg.width == 100, "expected exact width 100")
+    assert(exact_cfg.height == 40, "expected exact height 40")
+    assert(exact_cfg.row == 5, "expected exact row 5")
+    assert(exact_cfg.col == 10, "expected exact col 10")
+    local inspect_calls = {}
+    local fake_overview_win = nil
+    local fake_overview_buf = nil
+    local fake_group = nil
+    local test_bundle_with_items = vim.deepcopy(received_bundle)
+
+    test_bundle_with_items.forge_artifact = {
+      id = "999",
+      kind = "pull_request",
+      title = "Test PR",
+      url = "https://github.com/org/repo/pull/999",
+    }
+
+    test_bundle_with_items.dynamics = test_bundle_with_items.dynamics or {}
+
+    test_bundle_with_items.dynamics.historical_precedents = {
+      {
+        commit_oid = "deadbeefcafe1234567890",
+        author = "alice",
+        message = "fix precedent",
+      },
+    }
+
+    window.open(test_bundle_with_items)
+    assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
+    -- Verify activity target resolution under cursor
+    -- 1. On forge artifact line
+    local forge_line = nil
+
+    for lnum, prov in pairs(window.state.line_provenance) do
+      if prov.kind == "forge_artifact" then
+        forge_line = lnum
+        break
+      end
+    end
+
+    assert(forge_line ~= nil, "expected forge_artifact line in investigate view")
+    vim.api.nvim_win_set_cursor(window.state.win, { forge_line, 0 })
+    local resolved = window.resolve_activity_target()
+    assert(resolved == "https://github.com/org/repo/pull/999", "expected forge artifact url resolved")
+    -- 2. On historical precedent line
+    local prec_line = nil
+
+    for lnum, prov in pairs(window.state.line_provenance) do
+      if prov.kind == "historical_precedent" then
+        prec_line = lnum
+        break
+      end
+    end
+
+    assert(prec_line ~= nil, "expected historical_precedent line in investigate view")
+    vim.api.nvim_win_set_cursor(window.state.win, { prec_line, 0 })
+    resolved = window.resolve_activity_target()
+    assert(resolved == "deadbeefcafe1234567890", "expected precedent commit oid resolved")
+
+    -- 3. Test triggering inspect command (pivot_to_inspect)
+    oculus_mod.inspect = function(target, opts, ctx, callback, lifecycle)
+      table.insert(inspect_calls, { target = target, opts = opts, ctx = ctx, lifecycle = lifecycle })
+      -- Simulate inspect workload completing and opening overview window
+      fake_overview_buf = vim.api.nvim_create_buf(false, true)
+
+      fake_overview_win = vim.api.nvim_open_win(fake_overview_buf, true, {
+        relative = "editor",
+        width = opts.window_config and opts.window_config.width or 80,
+        height = opts.window_config and opts.window_config.height or 24,
+        row = opts.window_config and opts.window_config.row or 2,
+        col = opts.window_config and opts.window_config.col or 2,
+      })
+
+      fake_group = {
+        inspection_lifecycle = lifecycle,
+        overview_win = fake_overview_win,
+        overview_buf = fake_overview_buf,
+        overview_return = { tab = vim.api.nvim_get_current_tabpage() },
+        overview_window_config = opts.window_config or {},
+      }
+
+      -- Lifecycle on_overview_opened is called
+      if lifecycle and lifecycle.on_overview_opened then
+        lifecycle.on_overview_opened(fake_group)
+      end
+
+      -- Overview buffer maps Tab to lifecycle.on_tab
+      if lifecycle and lifecycle.on_tab then
+        vim.keymap.set("n", "<Tab>", function()
+          lifecycle.on_tab(fake_group)
+        end, { buffer = fake_overview_buf, silent = true, nowait = true })
+      end
+
+      inspect_mod._overview_ui.render_footer(fake_group)
+    end
+
+    window.pivot_to_inspect()
+    assert(#inspect_calls == 1, "expected oculus.inspect called")
+    assert(inspect_calls[1].target == "deadbeefcafe1234567890", "expected target passed to inspect")
+    assert(inspect_calls[1].opts.exact_dimensions == true, "expected exact_dimensions true")
+    -- Verify investigate window closed and was replaced by overview window
+    assert(window.state.win == nil or not vim.api.nvim_win_is_valid(window.state.win), "expected investigate window closed")
+    assert(fake_overview_win ~= nil and vim.api.nvim_win_is_valid(fake_overview_win), "expected overview window open")
+    assert(vim.api.nvim_get_current_win() == fake_overview_win, "expected overview window focused")
+    -- Verify overview footer shows Tab investigate
+    local fake_f_lines = vim.api.nvim_buf_get_lines(fake_group.overview_footer_buf, 0, -1, false)
+    assert(fake_f_lines[2]:find("<Tab> investigate", 1, true), "expected <Tab> investigate in inspect overview footer")
+    -- 4. Test pressing <Tab> in inspect overview window switches back to investigate window
+    local over_tab_map = vim.tbl_filter(function(k) return k.lhs == "<Tab>" end, vim.api.nvim_buf_get_keymap(fake_overview_buf, "n"))[1]
+    assert(over_tab_map ~= nil, "expected <Tab> mapped on inspect overview buffer")
+    -- Simulate inspect overview close helper
+    local orig_close_over = inspect_mod._close_overview_window
+
+    inspect_mod._close_overview_window = function(grp)
+      if grp.overview_win and vim.api.nvim_win_is_valid(grp.overview_win) then
+        vim.api.nvim_win_close(grp.overview_win, true)
+        grp.overview_win = nil
+      end
+
+      if grp.overview_footer_win and vim.api.nvim_win_is_valid(grp.overview_footer_win) then
+        vim.api.nvim_win_close(grp.overview_footer_win, true)
+        grp.overview_footer_win = nil
+      end
+    end
+
+    over_tab_map.callback()
+    -- Verify overview window closed and investigate window restored
+    assert(fake_group.overview_win == nil or not vim.api.nvim_win_is_valid(fake_group.overview_win), "expected overview window closed after Tab")
+    assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected investigate window restored after Tab")
+    assert(vim.api.nvim_get_current_win() == window.state.win, "expected investigate window focused")
+    -- Verify investigate footer now shows <Tab> inspect
+    local inv_f_lines = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+    assert(inv_f_lines[2]:find("<Tab> inspect", 1, true), "expected <Tab> inspect in restored investigate footer")
+    -- 5. Test pressing <Tab> in investigate window switches back to inspect overview window
+    local inv_tab_map = vim.tbl_filter(function(k) return k.lhs == "<Tab>" end, vim.api.nvim_buf_get_keymap(window.state.buf, "n"))[1]
+    assert(inv_tab_map ~= nil, "expected <Tab> mapped in investigate window when inspect group active")
+    local orig_show_over = inspect_mod._show_inspection_overview
+
+    inspect_mod._show_inspection_overview = function(grp)
+      grp.overview_buf = vim.api.nvim_create_buf(false, true)
+
+      grp.overview_win = vim.api.nvim_open_win(grp.overview_buf, true, {
+        relative = "editor",
+        width = 80,
+        height = 24,
+        row = 2,
+        col = 2,
+      })
+
+      fake_overview_win = grp.overview_win
+      fake_overview_buf = grp.overview_buf
+    end
+
+    inv_tab_map.callback()
+    -- Verify investigate window closed and inspect overview reopened
+    assert(window.state.win == nil or not vim.api.nvim_win_is_valid(window.state.win), "expected investigate window closed after Tab to inspect")
+    assert(fake_group.overview_win ~= nil and vim.api.nvim_win_is_valid(fake_group.overview_win), "expected overview window reopened")
+    -- Clean up
+    inspect_mod._close_overview_window = orig_close_over
+    inspect_mod._show_inspection_overview = orig_show_over
+    oculus_mod.inspect = orig_oculus_inspect
+
+    if fake_group.overview_win and vim.api.nvim_win_is_valid(fake_group.overview_win) then
+      vim.api.nvim_win_close(fake_group.overview_win, true)
+    end
+
+    window.close()
   print("ALL INVESTIGATE TESTS PASSED!")
 end

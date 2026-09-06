@@ -126,6 +126,10 @@ local function render_investigate_footer()
   local inspect_key = get_inspect_key(nav)
   local cmd_text = ("  <CR> jump   e experiment   p patches   t test   r refactor   a agent   %s inspect   q close"):format(inspect_key)
 
+  if M.state.active_inspect_group then
+    cmd_text = ("  <CR> jump   <Tab> inspect   e experiment   p patches   t test   r refactor   a agent   %s inspect   q close"):format(inspect_key)
+  end
+
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
     cmd_text,
@@ -406,6 +410,7 @@ function M.close(for_subwin)
   if not for_subwin then
     M.state.bundle = nil
     M.state.collapsed_sections = {}
+    M.state.active_inspect_group = nil
   end
 
   M.state.line_targets = {}
@@ -430,8 +435,15 @@ end
 
 function M.open(bundle, opts)
   opts = opts or {}
+
+  if not bundle and M.state.bundle then
+    bundle = M.state.bundle
+  end
+
   bundle = sanitize_bundle(bundle) or {}
-  M.close()
+  local preserved_group = M.state.active_inspect_group
+  M.close(true)
+  M.state.active_inspect_group = preserved_group
   local ok, oculus_window = pcall(require, "oculus.window")
 
   if ok and type(oculus_window.close_activity_footer) == "function" then
@@ -1961,7 +1973,37 @@ function M.map_keys(buf)
   map("<ScrollWheelLeft>", function() end, "Ignore horizontal mouse scroll")
   map("<ScrollWheelRight>", function() end, "Ignore horizontal mouse scroll")
 
-  if is_valid_win(M.state.ledger_win) and is_valid_win(M.state.win) then
+  if M.state.active_inspect_group then
+    map("<Tab>", function()
+      local group = M.state.active_inspect_group
+
+      if group then
+        local inspect = require("oculus.inspect")
+        local target_tab = group.overview_return and group.overview_return.tab
+
+        if not target_tab and group[1] and group[1].parent and group[1].parent.tab then
+          target_tab = group[1].parent.tab
+        end
+
+        if target_tab and not vim.api.nvim_tabpage_is_valid(target_tab) then
+          M.state.active_inspect_group = nil
+          return
+        end
+
+        M.close(true)
+
+        if target_tab and vim.api.nvim_tabpage_is_valid(target_tab) then
+          vim.api.nvim_set_current_tabpage(target_tab)
+        end
+
+        if type(inspect._show_inspection_overview) == "function" then
+          inspect._show_inspection_overview(group)
+        end
+
+        return
+      end
+    end, "Switch to Oculus Inspect overview")
+  elseif is_valid_win(M.state.ledger_win) and is_valid_win(M.state.win) then
     map("<Tab>", function()
       local current = vim.api.nvim_get_current_win()
 
@@ -1971,6 +2013,131 @@ function M.map_keys(buf)
         vim.api.nvim_set_current_win(M.state.win)
       end
     end, "Toggle focus between tree and ledger panes")
+  end
+
+  local function resolve_activity_target()
+    local win = M.state.win
+    local line_num = is_valid_win(win) and vim.api.nvim_win_get_cursor(win)[1] or 1
+    local prov = (M.state.line_provenance or {})[line_num]
+    local line_target = (M.state.line_targets or {})[line_num]
+    local bundle = M.state.bundle or {}
+
+    if prov then
+      if prov.kind == "forge_artifact" and prov.artifact then
+        return prov.artifact.url
+          or (prov.artifact.kind and prov.artifact.id and ("#" .. tostring(prov.artifact.id)))
+          or prov.artifact.id
+      elseif prov.kind == "historical_precedent" and prov.precedent then
+        return prov.precedent.commit_oid
+      elseif prov.kind == "traceability_link" and prov.link then
+        if prov.link.target_entity and prov.link.target_entity.file_path then
+          return prov.link.target_entity.file_path
+        end
+      elseif prov.kind == "co_change" and prov.co_change then
+        if prov.co_change.sample_commits and prov.co_change.sample_commits[1] then
+          return prov.co_change.sample_commits[1]
+        elseif prov.co_change.entity_a then
+          return prov.co_change.entity_a
+        end
+      end
+    end
+
+    if line_target and line_target.file then
+      return line_target.file
+    end
+
+    if bundle.forge_artifact and (bundle.forge_artifact.url or bundle.forge_artifact.id) then
+      return bundle.forge_artifact.url
+        or (bundle.forge_artifact.kind and bundle.forge_artifact.id and ("#" .. tostring(bundle.forge_artifact.id)))
+        or bundle.forge_artifact.id
+    end
+
+    if bundle.metadata and bundle.metadata.target then
+      return bundle.metadata.target
+    end
+
+    return (bundle.metadata and bundle.metadata.repository_root) or vim.fn.getcwd()
+  end
+
+  local function pivot_to_inspect()
+    local target = resolve_activity_target()
+
+    if not target or target == "" then
+      vim.notify("Oculus: No target activity item found to inspect", vim.log.levels.WARN)
+      return
+    end
+
+    local bundle = M.state.bundle
+    local saved_bundle = bundle
+    local saved_opts = M.state.opts
+    local saved_tabpage = vim.api.nvim_get_current_tabpage()
+    local meta = (bundle and bundle.metadata) or {}
+    local repo_root = meta.repository_root or vim.fn.getcwd()
+
+    local context = {
+      repository = repo_root,
+      cwd = repo_root,
+      project = meta.project or {
+        repository = vim.fs.basename(repo_root),
+      },
+    }
+
+    local inspect_opts = vim.tbl_deep_extend("force", vim.deepcopy(M.state.opts or {}), {
+      exact_dimensions = true,
+    })
+
+    if is_valid_win(M.state.win) then
+      local pos = vim.api.nvim_win_get_position(M.state.win)
+      local width = vim.api.nvim_win_get_width(M.state.win)
+      local height = vim.api.nvim_win_get_height(M.state.win)
+      local cfg = vim.api.nvim_win_get_config(M.state.win)
+
+      inspect_opts.window_config = {
+        width = width,
+        height = height,
+        row = pos[1],
+        col = pos[2],
+        border = cfg.border or "rounded",
+        exact_dimensions = true,
+      }
+    end
+
+    local lifecycle = {
+      overview_on_open = true,
+      on_overview_opened = function(group)
+        group.investigate_bundle = saved_bundle
+        group.investigate_opts = saved_opts
+        group.investigate_tab = saved_tabpage
+        M.state.active_inspect_group = group
+        M.close(true)
+      end,
+      on_tab = function(group)
+        local inspect = require("oculus.inspect")
+
+        if type(inspect._close_overview_window) == "function" then
+          inspect._close_overview_window(group)
+        end
+
+        if group.investigate_tab and vim.api.nvim_tabpage_is_valid(group.investigate_tab) then
+          vim.api.nvim_set_current_tabpage(group.investigate_tab)
+        end
+
+        M.open(group.investigate_bundle or saved_bundle, group.investigate_opts or saved_opts)
+      end,
+      on_closed = function()
+        M.state.active_inspect_group = nil
+      end,
+    }
+
+    local ok, oculus = pcall(require, "oculus")
+
+    if ok and type(oculus.inspect) == "function" then
+      oculus.inspect(target, inspect_opts, context, function(inspections, kind, details, err)
+        if err then
+          vim.notify("Oculus: Inspect workload failed: " .. tostring(err), vim.log.levels.WARN)
+        end
+      end, lifecycle)
+    end
   end
 
   map("<CR>", function()
@@ -1984,6 +2151,12 @@ function M.map_keys(buf)
     local line_num = cursor[1]
     local target = M.state.line_targets[line_num]
     local sec = (M.state.line_sections or {})[line_num]
+    local prov = (M.state.line_provenance or {})[line_num]
+
+    if prov and prov.kind == "action_hint" and prov.action == "inspect_pivot" then
+      pivot_to_inspect()
+      return
+    end
 
     if target and target.file then
       M.close()
@@ -2005,7 +2178,7 @@ function M.map_keys(buf)
 
       return
     end
-  end, "Jump to entity source location or toggle/close section")
+  end, "Jump to entity source location, inspect pivot, or toggle/close section")
 
   local function create_subwindow_footer(parent_win, cmd_text)
     if not is_valid_win(parent_win) then
@@ -2290,19 +2463,10 @@ function M.map_keys(buf)
     end)
   end, "Synthesize agent hypotheses")
 
-  local function pivot_to_inspect()
-    local bundle = M.state.bundle
-    local target = bundle and bundle.metadata and bundle.metadata.target
-    M.close()
-    local ok, oculus = pcall(require, "oculus")
-
-    if ok and type(oculus.inspect) == "function" then
-      oculus.inspect(target)
-    end
-  end
-
   local inspect_key = get_inspect_key(nav)
   map(inspect_key, pivot_to_inspect, "Pivot to Oculus Inspect")
+  M.pivot_to_inspect = pivot_to_inspect
+  M.resolve_activity_target = resolve_activity_target
 end
 
 M.render_footer = render_investigate_footer

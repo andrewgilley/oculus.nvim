@@ -4556,6 +4556,13 @@ end
 local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
 
+  if config.exact_dimensions then
+    config.footer = nil
+    config.footer_pos = nil
+    config.zindex = 70
+    return config
+  end
+
   if type(config.width) == "number" then
     local width = math.max(1, config.width - 12)
 
@@ -4888,6 +4895,12 @@ function M._overview_ui.render_footer(group)
     and group.overview_agent_mode == "patch_locations"
   then
     right_commands = "<Space> toggle   <CR> open paths   "
+  end
+
+  local lifecycle = group.inspection_lifecycle
+
+  if lifecycle and type(lifecycle.on_tab) == "function" then
+    right_commands = "<Tab> investigate   " .. right_commands
   end
 
   right_commands = right_commands .. "c close"
@@ -6600,6 +6613,16 @@ show_inspection_overview = function(group)
     end
   end
 
+  if not endpoint
+    and group.overview_return
+    and group.overview_return.tab
+    and vim.api.nvim_tabpage_is_valid(group.overview_return.tab)
+  then
+    tab = group.overview_return.tab
+    vim.api.nvim_set_current_tabpage(tab)
+    endpoint = endpoint_for_tab(group, tab)
+  end
+
   if not endpoint then
     return
   end
@@ -6952,6 +6975,19 @@ show_inspection_overview = function(group)
     desc = "Toggle Oculus patch location",
   })
 
+  local lifecycle = group.inspection_lifecycle
+
+  if lifecycle and type(lifecycle.on_tab) == "function" then
+    vim.keymap.set("n", "<Tab>", function()
+      lifecycle.on_tab(group)
+    end, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = "Switch back to Oculus Investigate",
+    })
+  end
+
   if group.overview_view then
     vim.api.nvim_win_call(win, function()
       vim.fn.winrestview(group.overview_view)
@@ -6959,6 +6995,10 @@ show_inspection_overview = function(group)
   end
 
   vim.api.nvim_set_current_win(win)
+
+  if lifecycle and type(lifecycle.on_overview_opened) == "function" then
+    lifecycle.on_overview_opened(group)
+  end
 end
 
 show_sidebar_files = function(group)
@@ -8532,8 +8572,14 @@ local function load_tab(
     vim.api.nvim_set_current_win(endpoint.win)
   end
 
-  local working_directory = git.inspection_directory(path, file)
-  vim.cmd("tcd " .. vim.fn.fnameescape(working_directory))
+  local working_directory = (path and path ~= "")
+      and git.inspection_directory(path, file)
+    or vim.fn.getcwd()
+
+  if working_directory and working_directory ~= "" then
+    pcall(vim.cmd, "tcd " .. vim.fn.fnameescape(working_directory))
+  end
+
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
   local initial_undolevels = vim.bo[buf].undolevels
@@ -8594,7 +8640,7 @@ local function load_tab(
   vim.b[buf].oculus_inspect_directory = working_directory
 
   vim.b[buf].oculus_inspect_source_path =
-    file and vim.fs.joinpath(path, file) or nil
+    (file and path and path ~= "") and vim.fs.joinpath(path, file) or nil
 
   local state = {
     kind = inspection.kind,
@@ -8606,7 +8652,7 @@ local function load_tab(
     change_commit = inspection.commit,
     repository = path,
     directory = working_directory,
-    source_path = file and vim.fs.joinpath(path, file) or nil,
+    source_path = (file and path and path ~= "") and vim.fs.joinpath(path, file) or nil,
     filetype = filetype,
     loading = false,
     pair_index = pair_index,
@@ -8739,8 +8785,11 @@ local function open_tabs(
       inspect_overviews = opts.inspect_overviews or {},
       state_file = opts.state_file,
       persistence_config = opts,
-      overview_window_config =
-        require("oculus.window").window_config(opts),
+      overview_window_config = vim.tbl_extend(
+        "force",
+        opts.window_config or require("oculus.window").window_config(opts),
+        opts.exact_dimensions and { exact_dimensions = true } or {}
+      ),
     }
 
     for index, paths in ipairs(inspections) do
@@ -8778,9 +8827,14 @@ local function open_tabs(
       local session = inspection_sessions[index]
       local parent_tab = make_inspection_tab()
 
+      local repo = paths.repository
+        or (info and info.repository)
+        or (inspection_sessions[1] and inspection_sessions[1].parent_repository)
+        or nil
+
       local parent = load_tab(
         parent_tab,
-        paths.repository,
+        repo,
         paths.parent_file,
         paths.parent_role or "parent",
         paths,
@@ -8792,7 +8846,7 @@ local function open_tabs(
 
       local change = load_tab(
         change_tab,
-        paths.repository,
+        repo,
         paths.change_file,
         "change",
         paths,
@@ -9558,8 +9612,11 @@ local function open_issue_inspection(
       inspect_overviews = opts.inspect_overviews or {},
       state_file = opts.state_file,
       persistence_config = opts,
-      overview_window_config =
-        require("oculus.window").window_config(opts),
+      overview_window_config = vim.tbl_extend(
+        "force",
+        opts.window_config or require("oculus.window").window_config(opts),
+        opts.exact_dimensions and { exact_dimensions = true } or {}
+      ),
     }
 
     local session = {
@@ -10004,4 +10061,7 @@ M._sidebar_chunk = sidebar_chunk
 M._ensure_treesitter_safeguards = ensure_treesitter_safeguards
 M._apply_view_horizontal = apply_view_horizontal
 M._ensure_context_window_leftcol = ensure_context_window_leftcol
+M._open_tabs = open_tabs
+M._show_inspection_overview = show_inspection_overview
+M._close_overview_window = close_overview_window
 return M
