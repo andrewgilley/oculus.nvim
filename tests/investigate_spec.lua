@@ -349,6 +349,84 @@ do
   assert(rendered_eb:find("EXECUTIVE BRIEF", 1, true), "expected Executive Brief in rendered window")
   assert(rendered_eb:find("Surface:", 1, true), "expected surface line in executive brief")
   assert(rendered_eb:find("Blast:", 1, true), "expected blast line in executive brief")
+  -- Test 13: Dedicated Isolated Investigation Footer Structure & Isolation
+  local oculus_win = require("oculus.window")
+  -- Setup mock state for main oculus window
+  local main_mock_buf = vim.api.nvim_create_buf(false, true)
+
+  local main_mock_win = vim.api.nvim_open_win(main_mock_buf, false, {
+    relative = "editor",
+    row = 2,
+    col = 4,
+    width = 100,
+    height = 30,
+    border = "rounded",
+  })
+
+  oculus_win.state = oculus_win.state or {}
+  oculus_win.state.win = main_mock_win
+  oculus_win.state.buf = main_mock_buf
+  oculus_win.render_activity_footer()
+  assert(oculus_win.state.footer_win ~= nil and vim.api.nvim_win_is_valid(oculus_win.state.footer_win), "expected main footer window to be valid")
+  local prev_main_footer_win = oculus_win.state.footer_win
+  -- Open investigate window and verify main footer is closed
+  window.open(forge_bundle)
+  assert(oculus_win.state.footer_win == nil, "expected oculus_win.state.footer_win to be nil")
+  assert(not vim.api.nvim_win_is_valid(prev_main_footer_win), "expected previous main footer window to be closed and invalid")
+  -- Check investigate window config has NO border footer
+  local inv_win_cfg = vim.api.nvim_win_get_config(window.state.win)
+  assert(inv_win_cfg.footer == nil or #inv_win_cfg.footer == 0 or inv_win_cfg.footer[1][1] == "", "expected NO command footer on border of investigate window")
+  -- Check dedicated footer window exists and is valid
+  assert(window.state.footer_win ~= nil and vim.api.nvim_win_is_valid(window.state.footer_win), "expected investigate footer window to be valid")
+  assert(window.state.footer_buf ~= nil and vim.api.nvim_buf_is_valid(window.state.footer_buf), "expected investigate footer buf to be valid")
+  -- Check dedicated footer window structure & positioning
+  local f_cfg = vim.api.nvim_win_get_config(window.state.footer_win)
+  assert(f_cfg.relative == "editor", "expected relative='editor' for footer window")
+  assert(f_cfg.height == 2, "expected footer height == 2")
+  assert(f_cfg.width == inv_win_cfg.width, "expected footer width == investigate win width")
+  assert(f_cfg.row == inv_win_cfg.row + inv_win_cfg.height - 1, "expected footer row == row + height - 1")
+  assert(f_cfg.col == inv_win_cfg.col + 1, "expected footer col == col + 1")
+  assert(f_cfg.zindex == 65, "expected footer zindex == 65")
+  -- Check footer content in tree view
+  local f_lines = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  assert(#f_lines == 2, "expected 2 lines in footer buffer")
+  assert(f_lines[1]:find("─", 1, true), "expected top separator line with ─ in line 1")
+  assert(f_lines[2]:find("<CR> jump", 1, true), "expected <CR> jump in tree view footer")
+  assert(f_lines[2]:find("Tab ledger", 1, true), "expected Tab ledger in tree view footer")
+  assert(f_lines[2]:find("e experiment", 1, true), "expected e experiment in tree view footer")
+  assert(f_lines[2]:find("p patches", 1, true), "expected p patches in tree view footer")
+  assert(f_lines[2]:find("t test", 1, true), "expected t test in tree view footer")
+  assert(f_lines[2]:find("r refactor", 1, true), "expected r refactor in tree view footer")
+  assert(f_lines[2]:find("a agent", 1, true), "expected a agent in tree view footer")
+  assert(f_lines[2]:find("h inspect", 1, true) or f_lines[2]:find("inspect", 1, true), "expected inspect in tree view footer")
+  assert(f_lines[2]:find("q close", 1, true), "expected q close in tree view footer")
+  -- Must NOT contain main window commands
+  assert(not f_lines[2]:find("browser", 1, true), "must not contain main window browser command")
+  assert(not f_lines[2]:find("filters", 1, true), "must not contain main window filters command")
+  -- Test Tab toggle switches footer to ledger commands
+  local tab_map = vim.fn.maparg("<Tab>", "n", false, true)
+  assert(tab_map ~= nil and type(tab_map.callback) == "function", "expected <Tab> mapping")
+  tab_map.callback()
+  assert(window.state.view_mode == "ledger", "expected view_mode == 'ledger' after Tab")
+  local f_lines_ledger = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  assert(f_lines_ledger[2]:find("Tab tree", 1, true), "expected Tab tree in ledger view footer")
+  assert(f_lines_ledger[2]:find("q close", 1, true), "expected q close in ledger view footer")
+  assert(not f_lines_ledger[2]:find("experiment", 1, true), "must not contain experiment in ledger footer")
+  -- Toggle Tab back to tree view
+  tab_map.callback()
+  assert(window.state.view_mode == "tree", "expected view_mode == 'tree' after second Tab")
+  local f_lines_tree = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  assert(f_lines_tree[2]:find("<CR> jump", 1, true), "expected <CR> jump restored in tree footer")
+  -- Close investigate window and verify main window footer is restored
   window.close()
+  assert(window.state.footer_win == nil, "expected investigate footer_win to be cleared on close")
+  assert(window.state.footer_buf == nil, "expected investigate footer_buf to be cleared on close")
+  assert(oculus_win.state.footer_win ~= nil and vim.api.nvim_win_is_valid(oculus_win.state.footer_win), "expected main footer window to be restored on investigate close")
+  -- Clean up mock main window
+  oculus_win.close_activity_footer()
+  pcall(vim.api.nvim_win_close, main_mock_win, true)
+  pcall(vim.api.nvim_buf_delete, main_mock_buf, { force = true })
+  oculus_win.state.win = nil
+  oculus_win.state.buf = nil
   print("ALL INVESTIGATE TESTS PASSED!")
 end

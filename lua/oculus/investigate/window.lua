@@ -5,6 +5,9 @@ M.state = {
   win = nil,
   ledger_buf = nil,
   ledger_win = nil,
+  footer_buf = nil,
+  footer_win = nil,
+  view_mode = "tree",
   bundle = nil,
   line_targets = {},
   line_provenance = {},
@@ -16,6 +19,121 @@ end
 
 local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
+end
+
+local function close_investigate_footer()
+  if is_valid_win(M.state.footer_win) then
+    pcall(vim.api.nvim_win_close, M.state.footer_win, true)
+  end
+
+  if is_valid_buf(M.state.footer_buf) then
+    pcall(vim.api.nvim_buf_delete, M.state.footer_buf, { force = true })
+  end
+
+  M.state.footer_buf = nil
+  M.state.footer_win = nil
+end
+
+local function make_footer_buf()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "oculus"
+  return buf
+end
+
+local function investigate_footer_config()
+  if not is_valid_win(M.state.win) then
+    return nil
+  end
+
+  local config = vim.api.nvim_win_get_config(M.state.win)
+  local row = tonumber(config.row) or 0
+  local col = tonumber(config.col) or 0
+  local width = vim.api.nvim_win_get_width(M.state.win)
+  local height = vim.api.nvim_win_get_height(M.state.win)
+
+  if is_valid_win(M.state.ledger_win) then
+    local r_width = vim.api.nvim_win_get_width(M.state.ledger_win)
+    width = width + r_width + 2
+  end
+
+  return {
+    relative = "editor",
+    width = width,
+    height = 2,
+    row = row + height - 1,
+    col = col + 1,
+    style = "minimal",
+    focusable = false,
+    zindex = 65,
+  }
+end
+
+local function render_investigate_footer()
+  local config = investigate_footer_config()
+
+  if not config then
+    return
+  end
+
+  local buf = M.state.footer_buf
+
+  if not is_valid_buf(buf) then
+    buf = make_footer_buf()
+    M.state.footer_buf = buf
+  end
+
+  local width = config.width
+  local cmd_text
+
+  if M.state.view_mode == "ledger" then
+    cmd_text = "  Tab tree   q close"
+  else
+    local nav = require("oculus.navigation").resolve(M.state.opts)
+    local inspect_key = (nav.inspect == "g") and "h" or (nav.inspect or "h")
+    cmd_text = ("  <CR> jump   Tab ledger   e experiment   p patches   t test   r refactor   a agent   %s inspect   q close"):format(inspect_key)
+  end
+
+  local lines = {
+    "  " .. string.rep("─", math.max(1, width - 4)),
+    cmd_text,
+  }
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].readonly = true
+  local ns = vim.api.nvim_create_namespace("oculus_investigate_footer_hl")
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "WinSeparator", 0, 2, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 1, 2, #cmd_text)
+
+  if is_valid_win(M.state.footer_win) then
+    pcall(vim.api.nvim_win_set_config, M.state.footer_win, config)
+  else
+    M.state.footer_win = vim.api.nvim_open_win(buf, false, config)
+  end
+
+  vim.wo[M.state.footer_win].wrap = false
+  vim.wo[M.state.footer_win].cursorline = false
+  vim.wo[M.state.footer_win].number = false
+  vim.wo[M.state.footer_win].relativenumber = false
+  vim.wo[M.state.footer_win].signcolumn = "no"
+
+  vim.wo[M.state.footer_win].winhighlight = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+  }, ",")
+
+  pcall(function()
+    local oculus_window = require("oculus.window")
+
+    if type(oculus_window.apply_window_highlights) == "function" then
+      oculus_window.apply_window_highlights(M.state.footer_win)
+    end
+  end)
 end
 
 local function get_target_window_config(opts)
@@ -51,8 +169,16 @@ local function get_target_window_config(opts)
 end
 
 M.window_config = get_target_window_config
+local closing = false
 
 function M.close()
+  if closing then
+    return
+  end
+
+  closing = true
+  close_investigate_footer()
+
   if is_valid_win(M.state.ledger_win) then
     pcall(vim.api.nvim_win_close, M.state.ledger_win, true)
   end
@@ -73,14 +199,34 @@ function M.close()
   M.state.buf = nil
   M.state.ledger_win = nil
   M.state.ledger_buf = nil
+  M.state.footer_win = nil
+  M.state.footer_buf = nil
+  M.state.view_mode = "tree"
   M.state.bundle = nil
   M.state.line_targets = {}
   M.state.line_provenance = {}
+  local ok, oculus_window = pcall(require, "oculus.window")
+
+  if ok and oculus_window.state and is_valid_win(oculus_window.state.win) then
+    if type(oculus_window.render_activity_footer) == "function" then
+      pcall(oculus_window.render_activity_footer)
+    end
+  end
+
+  closing = false
 end
 
 function M.open(bundle, opts)
   opts = opts or {}
   M.close()
+  local ok, oculus_window = pcall(require, "oculus.window")
+
+  if ok and type(oculus_window.close_activity_footer) == "function" then
+    pcall(oculus_window.close_activity_footer)
+  end
+
+  M.state.opts = opts
+  M.state.view_mode = "tree"
   local main_cfg = get_target_window_config(opts)
   local width = main_cfg.width
   local height = main_cfg.height
@@ -99,7 +245,7 @@ function M.open(bundle, opts)
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
 
   local win = vim.api.nvim_open_win(buf, true, {
@@ -110,8 +256,6 @@ function M.open(bundle, opts)
     col = col,
     style = "minimal",
     border = border,
-    footer = "  <CR> jump   Tab ledger   e experiment   p patches   t test   r refactor   a agent   h inspect   q close  ",
-    footer_pos = "left",
   })
 
   vim.wo[win].cursorline = true
@@ -127,7 +271,7 @@ function M.open(bundle, opts)
   pcall(function() vim.wo[win].winhighlight = winhl end)
   local ledger_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[ledger_buf].buftype = "nofile"
-  vim.bo[ledger_buf].bufhidden = "wipe"
+  vim.bo[ledger_buf].bufhidden = "hide"
   vim.bo[ledger_buf].swapfile = false
   local ledger_win = nil
 
@@ -140,8 +284,6 @@ function M.open(bundle, opts)
       col = col + left_width + 2,
       style = "minimal",
       border = border,
-      footer = "  Tab tree   q close  ",
-      footer_pos = "left",
     })
 
     vim.wo[ledger_win].cursorline = false
@@ -178,6 +320,15 @@ function M.open(bundle, opts)
   end
 
   M.map_keys(buf)
+  render_investigate_footer()
+
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(win),
+    once = true,
+    callback = function()
+      M.close()
+    end,
+  })
 end
 
 function M.render(buf, bundle)
@@ -1012,9 +1163,13 @@ function M.map_keys(buf)
 
       if current == M.state.win then
         vim.api.nvim_set_current_win(M.state.ledger_win)
+        M.state.view_mode = "ledger"
       else
         vim.api.nvim_set_current_win(M.state.win)
+        M.state.view_mode = "tree"
       end
+
+      render_investigate_footer()
     elseif is_valid_win(M.state.win) and is_valid_buf(M.state.buf) and is_valid_buf(M.state.ledger_buf) then
       local cur_buf = vim.api.nvim_win_get_buf(M.state.win)
 
@@ -1023,18 +1178,12 @@ function M.map_keys(buf)
         local prov = M.state.line_provenance[cursor[1]] or { kind = "overview" }
         M.render_ledger(M.state.ledger_buf, prov)
         vim.api.nvim_win_set_buf(M.state.win, M.state.ledger_buf)
-
-        pcall(vim.api.nvim_win_set_config, M.state.win, {
-          footer = "  Tab tree   q close  ",
-          footer_pos = "left",
-        })
+        M.state.view_mode = "ledger"
+        render_investigate_footer()
       else
         vim.api.nvim_win_set_buf(M.state.win, M.state.buf)
-
-        pcall(vim.api.nvim_win_set_config, M.state.win, {
-          footer = "  <CR> jump   Tab ledger   e experiment   p patches   t test   r refactor   a agent   h inspect   q close  ",
-          footer_pos = "left",
-        })
+        M.state.view_mode = "tree"
+        render_investigate_footer()
       end
     end
   end, "Toggle between tree and provenance ledger")
@@ -1214,4 +1363,6 @@ function M.map_keys(buf)
   map("i", pivot_to_inspect, "Pivot to Oculus Inspect")
 end
 
+M.render_footer = render_investigate_footer
+M.close_footer = close_investigate_footer
 return M

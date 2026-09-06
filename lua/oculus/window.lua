@@ -7155,4 +7155,6 @@ M._inspect_input_title = get_inspect_input_title
 M._active_list_key = active_list_key
 M._get_search_history = get_search_history
 M._add_search_history = add_search_history
+M.close_activity_footer = close_activity_footer
+M.render_activity_footer = render_activity_footer
 return M
