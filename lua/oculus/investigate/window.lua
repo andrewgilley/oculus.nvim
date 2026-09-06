@@ -17,6 +17,8 @@ M.state = {
   bundle = nil,
   line_targets = {},
   line_provenance = {},
+  line_sections = {},
+  collapsed_sections = {},
 }
 
 local function is_valid_win(win)
@@ -276,10 +278,12 @@ function M.close(for_subwin)
 
   if not for_subwin then
     M.state.bundle = nil
+    M.state.collapsed_sections = {}
   end
 
   M.state.line_targets = {}
   M.state.line_provenance = {}
+  M.state.line_sections = {}
 
   if not for_subwin then
     local ok, oculus_window = pcall(require, "oculus.window")
@@ -455,8 +459,10 @@ function M.render(buf, bundle)
   local highlights = {}
   local line_targets = {}
   local line_provenance = {}
+  local line_sections = {}
+  local current_sec_id = nil
 
-  local function add_line(text, hl_group, target, prov)
+  local function add_line(text, hl_group, target, prov, sec_info)
     lines[#lines + 1] = text
     local line_idx = #lines
 
@@ -470,6 +476,12 @@ function M.render(buf, bundle)
 
     if prov then
       line_provenance[line_idx] = prov
+    end
+
+    if sec_info then
+      line_sections[line_idx] = sec_info
+    elseif current_sec_id then
+      line_sections[line_idx] = { id = current_sec_id, is_header = false }
     end
 
     return line_idx
@@ -507,13 +519,6 @@ function M.render(buf, bundle)
 
   local engine_ver = type(meta.engine_version) == "string" and meta.engine_version or "0.1.0"
   local analyzed = type(meta.analyzed_at) == "string" and meta.analyzed_at or os.date("!%Y-%m-%dT%H:%M:%SZ")
-  -- 1. Investigation Target Header & Overview Root
-  add_line(string.format("  ▾ %s", target_desc), "Title", nil, { kind = "overview" })
-  add_line(string.format("    Repository: %s · Engine: v%s", repo_name, engine_ver), "Comment", nil, { kind = "overview" })
-  add_line(string.format("    Analyzed:   %s", analyzed), "Comment", nil, { kind = "overview" })
-  add_line("", nil)
-  -- 2. Executive Brief (High-Signal Insights)
-  add_line("  ▾ EXECUTIVE BRIEF (High-Signal Insights)", "Special", nil, { kind = "overview" })
   local trace_links = type(bundle.traceability_links) == "table" and bundle.traceability_links or {}
   local entities = type(bundle.entities) == "table" and bundle.entities or {}
   local impact = type(bundle.impact) == "table" and bundle.impact or nil
@@ -525,59 +530,109 @@ function M.render(buf, bundle)
   local alerts = (dynamics and dynamics.subsystem_instabilities) or {}
   local precedents = (dynamics and dynamics.historical_precedents) or {}
   local invariants = type(bundle.invariants) == "table" and bundle.invariants or {}
+  local forge_art = bundle.forge_artifact
+  local co_changes = type(bundle.co_changes) == "table" and bundle.co_changes or {}
+  local derived = type(bundle.derived) == "table" and bundle.derived or nil
+  local relationships = type(bundle.relationships) == "table" and bundle.relationships or {}
+  local history_lookup = {}
 
-  local surface_desc = #trace_links > 0
-      and string.format("    • Surface:    %d symbol(s) linked from context (%s)", #trace_links, (trace_links[1].target_entity and trace_links[1].target_entity.name) or "candidate")
-    or (#entities > 0 and string.format("    • Surface:    %d modified semantic entity(ies) isolated", #entities)
-        or "    • Surface:    No direct AST modifications isolated; clean working tree")
-
-  add_line(surface_desc, "DiagnosticInfo", nil, { kind = "overview" })
-  local blast_desc = string.format("    • Blast:      %d direct caller(s) across %d file(s) · %d covering test(s)", #callers, math.max(1, #files), #tests)
-  add_line(blast_desc, #tests > 0 and "DiagnosticOk" or "DiagnosticWarn", nil, { kind = "overview" })
-
-  local dyn_desc = (#crossings > 0 or #alerts > 0)
-      and string.format("    • Dynamics:   %d boundary crossing(s) · %d risk alert(s)", #crossings, #alerts)
-    or "    • Dynamics:   Zero boundary violations; clean subsystem confinement"
-
-  add_line(dyn_desc, (#crossings > 0 or #alerts > 0) and "DiagnosticError" or "DiagnosticOk", nil, { kind = "overview" })
-
-  if #precedents > 0 then
-    local p = precedents[1]
-    local prec_desc = string.format("    • Precedent:  Commit %s addressed similar files (\"%s\")", p.commit_oid:sub(1, 7), p.message:sub(1, 40))
-    add_line(prec_desc, "Comment", nil, { kind = "historical_precedent", precedent = p })
+  for _, h in ipairs(type(bundle.entity_histories) == "table" and bundle.entity_histories or {}) do
+    history_lookup[h.entity_id] = h
   end
 
-  local passed_inv = 0
+  M.state.collapsed_sections = M.state.collapsed_sections or {}
 
-  for _, inv in ipairs(invariants) do
-    if inv.passed then passed_inv = passed_inv + 1 end
+  local function is_section_open(sec_id)
+    return not M.state.collapsed_sections[sec_id]
   end
 
-  local inv_desc = string.format("    • Invariants: ✓ %d/%d verified ground-truth integrity", passed_inv, math.max(1, #invariants))
-  add_line(inv_desc, passed_inv == #invariants and "DiagnosticOk" or "DiagnosticWarn", nil, { kind = "overview" })
-  add_line("", nil)
+  -- 1. Investigation Target Header & Overview Root
+  local target_sec_id = "target"
+  local target_open = is_section_open(target_sec_id)
+  local target_arrow = target_open and "▾" or "▸"
+  add_line(string.format("  %s %s", target_arrow, target_desc), "Title", nil, { kind = "overview" }, { id = target_sec_id, is_header = true })
+
+  if target_open then
+    current_sec_id = target_sec_id
+    add_line(string.format("    Repository: %s · Engine: v%s", repo_name, engine_ver), "Comment", nil, { kind = "overview" })
+    add_line(string.format("    Analyzed:   %s", analyzed), "Comment", nil, { kind = "overview" })
+    add_line("", nil)
+    current_sec_id = nil
+  end
+
+  -- 2. Executive Brief (High-Signal Insights)
+  local exec_sec_id = "executive_brief"
+  local exec_open = is_section_open(exec_sec_id)
+  local exec_arrow = exec_open and "▾" or "▸"
+  add_line(string.format("  %s EXECUTIVE BRIEF (High-Signal Insights)", exec_arrow), "Special", nil, { kind = "overview" }, { id = exec_sec_id, is_header = true })
+
+  if exec_open then
+    current_sec_id = exec_sec_id
+
+    local surface_desc = #trace_links > 0
+        and string.format("    • Surface:    %d symbol(s) linked from context (%s)", #trace_links, (trace_links[1].target_entity and trace_links[1].target_entity.name) or "candidate")
+      or (#entities > 0 and string.format("    • Surface:    %d modified semantic entity(ies) isolated", #entities)
+          or "    • Surface:    No direct AST modifications isolated; clean working tree")
+
+    add_line(surface_desc, "DiagnosticInfo", nil, { kind = "overview" })
+    local blast_desc = string.format("    • Blast:      %d direct caller(s) across %d file(s) · %d covering test(s)", #callers, math.max(1, #files), #tests)
+    add_line(blast_desc, #tests > 0 and "DiagnosticOk" or "DiagnosticWarn", nil, { kind = "overview" })
+
+    local dyn_desc = (#crossings > 0 or #alerts > 0)
+        and string.format("    • Dynamics:   %d boundary crossing(s) · %d risk alert(s)", #crossings, #alerts)
+      or "    • Dynamics:   Zero boundary violations; clean subsystem confinement"
+
+    add_line(dyn_desc, (#crossings > 0 or #alerts > 0) and "DiagnosticError" or "DiagnosticOk", nil, { kind = "overview" })
+
+    if #precedents > 0 then
+      local p = precedents[1]
+      local prec_desc = string.format("    • Precedent:  Commit %s addressed similar files (\"%s\")", p.commit_oid:sub(1, 7), p.message:sub(1, 40))
+      add_line(prec_desc, "Comment", nil, { kind = "historical_precedent", precedent = p })
+    end
+
+    local passed_inv = 0
+
+    for _, inv in ipairs(invariants) do
+      if inv.passed then passed_inv = passed_inv + 1 end
+    end
+
+    local inv_desc = string.format("    • Invariants: ✓ %d/%d verified ground-truth integrity", passed_inv, math.max(1, #invariants))
+    add_line(inv_desc, passed_inv == #invariants and "DiagnosticOk" or "DiagnosticWarn", nil, { kind = "overview" })
+    add_line("", nil)
+    current_sec_id = nil
+  end
 
   -- 3. Invariants & Reality Check Integrity
   if #invariants > 0 then
-    add_line("  ▾ VERIFIED INVARIANTS & INTEGRITY", "Special", nil, { kind = "overview" })
+    local inv_sec_id = "invariants"
+    local inv_open = is_section_open(inv_sec_id)
+    local inv_arrow = inv_open and "▾" or "▸"
+    add_line(string.format("  %s VERIFIED INVARIANTS & INTEGRITY", inv_arrow), "Special", nil, { kind = "overview" }, { id = inv_sec_id, is_header = true })
 
-    for _, inv in ipairs(invariants) do
-      local icon = inv.passed and "✓" or "✗"
-      local hl = inv.passed and "DiagnosticOk" or "DiagnosticWarn"
+    if inv_open then
+      current_sec_id = inv_sec_id
 
-      add_line(string.format("    %s %s: %s", icon, inv.invariant_name, inv.details), hl, nil, {
-        kind = "invariant",
-        invariant = inv,
-      })
+      for _, inv in ipairs(invariants) do
+        local icon = inv.passed and "✓" or "✗"
+        local hl = inv.passed and "DiagnosticOk" or "DiagnosticWarn"
+
+        add_line(string.format("    %s %s: %s", icon, inv.invariant_name, inv.details), hl, nil, {
+          kind = "invariant",
+          invariant = inv,
+        })
+      end
+
+      add_line("", nil)
+      current_sec_id = nil
     end
-
-    add_line("", nil)
   end
 
-  -- 3. Forge Artifact Context
-  local forge_art = bundle.forge_artifact
-
+  -- 4. Forge Artifact Context
   if type(forge_art) == "table" and type(forge_art.id) == "string" then
+    local forge_sec_id = "forge_context"
+    local forge_open = is_section_open(forge_sec_id)
+    local forge_arrow = forge_open and "▾" or "▸"
+
     local kind_label = forge_art.kind == "pull_request" and "Pull Request"
       or (forge_art.kind:sub(1, 1):upper() .. forge_art.kind:sub(2))
 
@@ -585,466 +640,528 @@ function M.render(buf, bundle)
     local author_str = type(forge_art.author) == "string" and (" by @" .. forge_art.author) or ""
     local state_badge = type(forge_art.state) == "string" and string.format("[%s]", forge_art.state:upper()) or ""
 
-    add_line(string.format("  ▾ FORGE CONTEXT: %s #%s %s%s", kind_label, forge_art.id, state_badge, author_str), "Title", nil, {
+    add_line(string.format("  %s FORGE CONTEXT: %s #%s %s%s", forge_arrow, kind_label, forge_art.id, state_badge, author_str), "Title", nil, {
       kind = "forge_artifact",
       artifact = forge_art,
-    })
+    }, { id = forge_sec_id, is_header = true })
 
-    add_line(string.format("      Title: \"%s\"", title_str), "Normal", nil, {
-      kind = "forge_artifact",
-      artifact = forge_art,
-    })
+    if forge_open then
+      current_sec_id = forge_sec_id
 
-    if type(forge_art.url) == "string" and forge_art.url ~= "" then
-      add_line(string.format("      URL:   %s", forge_art.url), "Comment", nil, {
+      add_line(string.format("      Title: \"%s\"", title_str), "Normal", nil, {
         kind = "forge_artifact",
         artifact = forge_art,
       })
-    end
 
-    add_line("", nil)
-  end
-
-  -- 4. Forge-to-Code Traceability Candidates
-  local trace_links = bundle.traceability_links or {}
-
-  if #trace_links > 0 then
-    add_line(string.format("  ▾ FORGE-TO-CODE TRACEABILITY LINKS (%d candidates)", #trace_links), "Special", nil, { kind = "overview" })
-
-    for _, link in ipairs(trace_links) do
-      local pct = math.floor((link.confidence or 0.8) * 100)
-      local target_e = link.target_entity or {}
-      local badge = string.format("[%d%% MATCH]", pct)
-      local disp = string.format("    ├─ %s %s (%s:%d)", badge, target_e.qualified_name or target_e.name or "unknown", target_e.file_path or "", target_e.start_line or 1)
-
-      add_line(disp, "DiagnosticInfo", { file = target_e.file_path, line = target_e.start_line }, {
-        kind = "traceability_link",
-        link = link,
-      })
-    end
-
-    add_line("", nil)
-  end
-
-  -- Index histories by entity id
-  local history_lookup = {}
-
-  for _, h in ipairs(type(bundle.entity_histories) == "table" and bundle.entity_histories or {}) do
-    history_lookup[h.entity_id] = h
-  end
-
-  -- 5. Affected Semantic Entities & Composite Paths (Entity -> Callers -> Tests -> Lineage)
-  local entities = type(bundle.entities) == "table" and bundle.entities or {}
-  add_line(string.format("  ▾ AFFECTED SEMANTIC ENTITIES (%d)", #entities), "Special", nil, { kind = "overview" })
-
-  if #entities == 0 then
-    add_line("    No specific AST symbol modifications isolated in this change set.", "Comment", nil, { kind = "overview" })
-  else
-    local impact = type(bundle.impact) == "table" and bundle.impact or nil
-    local callers = impact and impact.direct_callers or {}
-    local tests = impact and impact.affected_tests or {}
-
-    for _, e in ipairs(entities) do
-      local kind_badge = string.format("[%s]", (e.kind or "entity"):upper())
-      local entity_line = string.format("    ├─ %s %s (%s:%d)", kind_badge, e.name or "unknown", e.file_path or "", e.start_line or 1)
-
-      add_line(entity_line, "Identifier", { file = e.file_path, line = e.start_line }, {
-        kind = "entity",
-        entity = e,
-        history = history_lookup[e.id],
-      })
-
-      -- Nested Callers under Entity
-      if #callers > 0 then
-        for _, c in ipairs(callers) do
-          local caller_line = string.format("    │  ├─ Caller: %s (%s:%d)", c.name or c.caller or "unknown", c.file_path or c.file or "", c.start_line or 1)
-
-          add_line(caller_line, "DiagnosticInfo", { file = c.file_path or c.file, line = c.start_line or 1 }, {
-            kind = "caller",
-            caller = c,
-            target = e,
-          })
-        end
-      end
-
-      -- Nested Tests under Entity
-      if #tests > 0 then
-        for _, t in ipairs(tests) do
-          local test_line = string.format("    │  ├─ Test: %s (%s:%d)", t.name or t.test or "unknown", t.file_path or t.file or "", t.start_line or 1)
-
-          add_line(test_line, "DiagnosticOk", { file = t.file_path or t.file, line = t.start_line or 1 }, {
-            kind = "test",
-            test = t,
-            target = e,
-          })
-        end
-      end
-
-      -- Nested Lineage under Entity
-      local h = history_lookup[e.id]
-
-      if h then
-        local authors_str = table.concat(h.authors, ", ")
-        local lineage_line = string.format("    │  └─ Lineage: %d commits · authors: %s", h.total_commits, authors_str ~= "" and authors_str or "Unknown")
-
-        add_line(lineage_line, "Comment", { file = e.file_path, line = e.start_line }, {
-          kind = "entity",
-          entity = e,
-          history = h,
-        })
-      end
-    end
-  end
-
-  add_line("", nil)
-  -- 6. Change Coupling & Implicit Architecture
-  local co_changes = type(bundle.co_changes) == "table" and bundle.co_changes or {}
-
-  if #co_changes > 0 then
-    add_line(string.format("  ▾ CHANGE COUPLING · IMPLICIT ARCHITECTURE (%d pairs)", math.min(10, #co_changes)), "Special", nil, { kind = "overview" })
-
-    for i = 1, math.min(8, #co_changes) do
-      local cc = co_changes[i]
-      local pct = math.floor(cc.confidence * 100)
-      local line_text = string.format("    ├─ %s ↔ %s [%d%% co-change | %d commits]", cc.entity_a, cc.entity_b, pct, cc.co_change_count)
-
-      add_line(line_text, "DiagnosticWarn", { file = cc.entity_a, line = 1 }, {
-        kind = "co_change",
-        co_change = cc,
-      })
-    end
-
-    add_line("", nil)
-  end
-
-  -- 7. Architectural Dynamics (Boundary Crossings, Subsystem Instability, Historical Precedents)
-  local dynamics = type(bundle.dynamics) == "table" and bundle.dynamics or nil
-
-  if dynamics then
-    local crossings = dynamics.boundary_crossings or {}
-
-    if #crossings > 0 then
-      add_line(string.format("  ▾ ARCHITECTURAL BOUNDARY CROSSINGS (%d)", #crossings), "Special", nil, { kind = "overview" })
-
-      for _, bc in ipairs(crossings) do
-        local risk_tag = string.format("[%s RISK]", (bc.risk_level or "low"):upper())
-        local hl = (bc.risk_level == "high") and "DiagnosticError" or ((bc.risk_level == "medium") and "DiagnosticWarn" or "DiagnosticInfo")
-        local line_text = string.format("    ├─ %s %s ➔ %s (%s ➔ %s)", risk_tag, bc.source_subsystem, bc.target_subsystem, bc.source_entity, bc.target_entity)
-
-        add_line(line_text, hl, nil, {
-          kind = "boundary_crossing",
-          crossing = bc,
+      if type(forge_art.url) == "string" and forge_art.url ~= "" then
+        add_line(string.format("      URL:   %s", forge_art.url), "Comment", nil, {
+          kind = "forge_artifact",
+          artifact = forge_art,
         })
       end
 
       add_line("", nil)
+      current_sec_id = nil
+    end
+  end
+
+  -- 5. Forge-to-Code Traceability Candidates
+  if #trace_links > 0 then
+    local trace_sec_id = "traceability"
+    local trace_open = is_section_open(trace_sec_id)
+    local trace_arrow = trace_open and "▾" or "▸"
+    add_line(string.format("  %s FORGE-TO-CODE TRACEABILITY LINKS (%d candidates)", trace_arrow, #trace_links), "Special", nil, { kind = "overview" }, { id = trace_sec_id, is_header = true })
+
+    if trace_open then
+      current_sec_id = trace_sec_id
+
+      for _, link in ipairs(trace_links) do
+        local pct = math.floor((link.confidence or 0.8) * 100)
+        local target_e = link.target_entity or {}
+        local badge = string.format("[%d%% MATCH]", pct)
+        local disp = string.format("    ├─ %s %s (%s:%d)", badge, target_e.qualified_name or target_e.name or "unknown", target_e.file_path or "", target_e.start_line or 1)
+
+        add_line(disp, "DiagnosticInfo", { file = target_e.file_path, line = target_e.start_line }, {
+          kind = "traceability_link",
+          link = link,
+        })
+      end
+
+      add_line("", nil)
+      current_sec_id = nil
+    end
+  end
+
+  -- 6. Affected Semantic Entities & Composite Paths (Entity -> Callers -> Tests -> Lineage)
+  local ent_sec_id = "entities"
+  local ent_open = is_section_open(ent_sec_id)
+  local ent_arrow = ent_open and "▾" or "▸"
+  add_line(string.format("  %s AFFECTED SEMANTIC ENTITIES (%d)", ent_arrow, #entities), "Special", nil, { kind = "overview" }, { id = ent_sec_id, is_header = true })
+
+  if ent_open then
+    current_sec_id = ent_sec_id
+
+    if #entities == 0 then
+      add_line("    No specific AST symbol modifications isolated in this change set.", "Comment", nil, { kind = "overview" })
+    else
+      for _, e in ipairs(entities) do
+        local kind_badge = string.format("[%s]", (e.kind or "entity"):upper())
+        local entity_line = string.format("    ├─ %s %s (%s:%d)", kind_badge, e.name or "unknown", e.file_path or "", e.start_line or 1)
+
+        add_line(entity_line, "Identifier", { file = e.file_path, line = e.start_line }, {
+          kind = "entity",
+          entity = e,
+          history = history_lookup[e.id],
+        })
+
+        -- Nested Callers under Entity
+        if #callers > 0 then
+          for _, c in ipairs(callers) do
+            local caller_line = string.format("    │  ├─ Caller: %s (%s:%d)", c.name or c.caller or "unknown", c.file_path or c.file or "", c.start_line or 1)
+
+            add_line(caller_line, "DiagnosticInfo", { file = c.file_path or c.file, line = c.start_line or 1 }, {
+              kind = "caller",
+              caller = c,
+              target = e,
+            })
+          end
+        end
+
+        -- Nested Tests under Entity
+        if #tests > 0 then
+          for _, t in ipairs(tests) do
+            local test_line = string.format("    │  ├─ Test: %s (%s:%d)", t.name or t.test or "unknown", t.file_path or t.file or "", t.start_line or 1)
+
+            add_line(test_line, "DiagnosticOk", { file = t.file_path or t.file, line = t.start_line or 1 }, {
+              kind = "test",
+              test = t,
+              target = e,
+            })
+          end
+        end
+
+        -- Nested Lineage under Entity
+        local h = history_lookup[e.id]
+
+        if h then
+          local authors_str = table.concat(h.authors, ", ")
+          local lineage_line = string.format("    │  └─ Lineage: %d commits · authors: %s", h.total_commits, authors_str ~= "" and authors_str or "Unknown")
+
+          add_line(lineage_line, "Comment", { file = e.file_path, line = e.start_line }, {
+            kind = "entity",
+            entity = e,
+            history = h,
+          })
+        end
+      end
+    end
+
+    add_line("", nil)
+    current_sec_id = nil
+  end
+
+  -- 7. Change Coupling & Implicit Architecture
+  if #co_changes > 0 then
+    local cc_sec_id = "co_changes"
+    local cc_open = is_section_open(cc_sec_id)
+    local cc_arrow = cc_open and "▾" or "▸"
+    add_line(string.format("  %s CHANGE COUPLING · IMPLICIT ARCHITECTURE (%d pairs)", cc_arrow, math.min(10, #co_changes)), "Special", nil, { kind = "overview" }, { id = cc_sec_id, is_header = true })
+
+    if cc_open then
+      current_sec_id = cc_sec_id
+
+      for i = 1, math.min(8, #co_changes) do
+        local cc = co_changes[i]
+        local pct = math.floor(cc.confidence * 100)
+        local line_text = string.format("    ├─ %s ↔ %s [%d%% co-change | %d commits]", cc.entity_a, cc.entity_b, pct, cc.co_change_count)
+
+        add_line(line_text, "DiagnosticWarn", { file = cc.entity_a, line = 1 }, {
+          kind = "co_change",
+          co_change = cc,
+        })
+      end
+
+      add_line("", nil)
+      current_sec_id = nil
+    end
+  end
+
+  -- 8. Architectural Dynamics (Boundary Crossings, Subsystem Instability, Historical Precedents)
+  if dynamics then
+    local crossings = dynamics.boundary_crossings or {}
+
+    if #crossings > 0 then
+      local cross_sec_id = "crossings"
+      local cross_open = is_section_open(cross_sec_id)
+      local cross_arrow = cross_open and "▾" or "▸"
+      add_line(string.format("  %s ARCHITECTURAL BOUNDARY CROSSINGS (%d)", cross_arrow, #crossings), "Special", nil, { kind = "overview" }, { id = cross_sec_id, is_header = true })
+
+      if cross_open then
+        current_sec_id = cross_sec_id
+
+        for _, bc in ipairs(crossings) do
+          local risk_tag = string.format("[%s RISK]", (bc.risk_level or "low"):upper())
+          local hl = (bc.risk_level == "high") and "DiagnosticError" or ((bc.risk_level == "medium") and "DiagnosticWarn" or "DiagnosticInfo")
+          local line_text = string.format("    ├─ %s %s ➔ %s (%s ➔ %s)", risk_tag, bc.source_subsystem, bc.target_subsystem, bc.source_entity, bc.target_entity)
+
+          add_line(line_text, hl, nil, {
+            kind = "boundary_crossing",
+            crossing = bc,
+          })
+        end
+
+        add_line("", nil)
+        current_sec_id = nil
+      end
     end
 
     local instabilities = dynamics.subsystem_instabilities or {}
 
     if #instabilities > 0 then
-      add_line(string.format("  ▾ SUBSYSTEM INSTABILITY & RISK ALERTS (%d)", #instabilities), "Special", nil, { kind = "overview" })
+      local inst_sec_id = "instabilities"
+      local inst_open = is_section_open(inst_sec_id)
+      local inst_arrow = inst_open and "▾" or "▸"
+      add_line(string.format("  %s SUBSYSTEM INSTABILITY & RISK ALERTS (%d)", inst_arrow, #instabilities), "Special", nil, { kind = "overview" }, { id = inst_sec_id, is_header = true })
 
-      for _, inst in ipairs(instabilities) do
-        local hl = (inst.risk_category == "HIGH_CHURN_UNTESTED" or inst.risk_category == "COUPLING_HUB") and "DiagnosticError"
-          or (inst.risk_category == "SINGLE_MAINTAINER_BOTTLENECK" and "DiagnosticWarn" or "DiagnosticOk")
+      if inst_open then
+        current_sec_id = inst_sec_id
 
-        local maintainer = inst.primary_maintainer and (" · @" .. inst.primary_maintainer) or ""
-        local line_text = string.format("    ├─ [%s] %s (instability: %.2f%s)", inst.risk_category, inst.subsystem, inst.instability_score, maintainer)
+        for _, inst in ipairs(instabilities) do
+          local hl = (inst.risk_category == "HIGH_CHURN_UNTESTED" or inst.risk_category == "COUPLING_HUB") and "DiagnosticError"
+            or (inst.risk_category == "SINGLE_MAINTAINER_BOTTLENECK" and "DiagnosticWarn" or "DiagnosticOk")
 
-        add_line(line_text, hl, nil, {
-          kind = "subsystem_instability",
-          instability = inst,
-        })
+          local maintainer = inst.primary_maintainer and (" · @" .. inst.primary_maintainer) or ""
+          local line_text = string.format("    ├─ [%s] %s (instability: %.2f%s)", inst.risk_category, inst.subsystem, inst.instability_score, maintainer)
+
+          add_line(line_text, hl, nil, {
+            kind = "subsystem_instability",
+            instability = inst,
+          })
+        end
+
+        add_line("", nil)
+        current_sec_id = nil
       end
-
-      add_line("", nil)
     end
 
     local precedents = dynamics.historical_precedents or {}
 
     if #precedents > 0 then
-      add_line(string.format("  ▾ HISTORICAL PRECEDENTS (%d similar changes)", #precedents), "Special", nil, { kind = "overview" })
+      local prec_sec_id = "precedents"
+      local prec_open = is_section_open(prec_sec_id)
+      local prec_arrow = prec_open and "▾" or "▸"
+      add_line(string.format("  %s HISTORICAL PRECEDENTS (%d similar changes)", prec_arrow, #precedents), "Special", nil, { kind = "overview" }, { id = prec_sec_id, is_header = true })
 
-      for _, p in ipairs(precedents) do
-        local short_oid = p.commit_oid:sub(1, 7)
-        local author_str = p.author ~= "" and (" by " .. p.author) or ""
-        local line_text = string.format("    ├─ commit:%s%s · \"%s\"", short_oid, author_str, p.message)
+      if prec_open then
+        current_sec_id = prec_sec_id
 
-        add_line(line_text, "Comment", nil, {
-          kind = "historical_precedent",
-          precedent = p,
-        })
+        for _, p in ipairs(precedents) do
+          local short_oid = p.commit_oid:sub(1, 7)
+          local author_str = p.author ~= "" and (" by " .. p.author) or ""
+          local line_text = string.format("    ├─ commit:%s%s · \"%s\"", short_oid, author_str, p.message)
+
+          add_line(line_text, "Comment", nil, {
+            kind = "historical_precedent",
+            precedent = p,
+          })
+        end
+
+        add_line("", nil)
+        current_sec_id = nil
       end
-
-      add_line("", nil)
     end
   end
 
-  -- 8. Agent Hypotheses & Adversarial Verifications (Layers 25-26)
-  local derived = type(bundle.derived) == "table" and bundle.derived or nil
-
+  -- 9. Agent Hypotheses & Adversarial Verifications (Layers 25-26)
   if derived then
     local hypotheses = derived.hypotheses or {}
 
     if #hypotheses > 0 then
+      local hyp_sec_id = "hypotheses"
+      local hyp_open = is_section_open(hyp_sec_id)
+      local hyp_arrow = hyp_open and "▾" or "▸"
       local verdict_badge = derived.adversarial_verdict and string.format("[%s]", derived.adversarial_verdict) or ""
-      add_line(string.format("  ▾ AGENT HYPOTHESES & ADVERSARIAL VERIFICATIONS (Layers 25-26) %s", verdict_badge), "Title", nil, { kind = "overview" })
+      add_line(string.format("  %s AGENT HYPOTHESES & ADVERSARIAL VERIFICATIONS (Layers 25-26) %s", hyp_arrow, verdict_badge), "Title", nil, { kind = "overview" }, { id = hyp_sec_id, is_header = true })
 
-      for _, hyp in ipairs(hypotheses) do
-        local has_refuted = false
-        local all_confirmed = true
+      if hyp_open then
+        current_sec_id = hyp_sec_id
 
-        for _, v in ipairs(hyp.verifications or {}) do
-          if v.status == "REFUTED" then
-            has_refuted = true
-          elseif v.status ~= "CONFIRMED" then
-            all_confirmed = false
-          end
-        end
+        for _, hyp in ipairs(hypotheses) do
+          local has_refuted = false
+          local all_confirmed = true
 
-        local status_badge = has_refuted and "[REFUTED ✗]" or (all_confirmed and "[VERIFIED ✓]" or "[HYPOTHESIS ?]")
-        local hl = has_refuted and "DiagnosticError" or (all_confirmed and "DiagnosticOk" or "DiagnosticWarn")
-
-        add_line(string.format("    ├─ %s %s", status_badge, hyp.title), hl, nil, {
-          kind = "agent_hypothesis",
-          hypothesis = hyp,
-        })
-
-        for _, claim in ipairs(hyp.claims or {}) do
-          local v = nil
-
-          for _, ver in ipairs(hyp.verifications or {}) do
-            if ver.claim_id == claim.claim_id then
-              v = ver
-              break
+          for _, v in ipairs(hyp.verifications or {}) do
+            if v.status == "REFUTED" then
+              has_refuted = true
+            elseif v.status ~= "CONFIRMED" then
+              all_confirmed = false
             end
           end
 
-          local claim_badge = v and string.format("[%s]", v.status) or "[UNVERIFIED]"
-          local claim_hl = v and (v.status == "CONFIRMED" and "DiagnosticOk" or (v.status == "REFUTED" and "DiagnosticError" or "DiagnosticWarn")) or "Comment"
+          local status_badge = has_refuted and "[REFUTED ✗]" or (all_confirmed and "[VERIFIED ✓]" or "[HYPOTHESIS ?]")
+          local hl = has_refuted and "DiagnosticError" or (all_confirmed and "DiagnosticOk" or "DiagnosticWarn")
 
-          add_line(string.format("    │  ├─ Claim %s: \"%s\"", claim_badge, claim.assertion), claim_hl, nil, {
-            kind = "claim_verification",
-            claim = claim,
-            verification = v,
+          add_line(string.format("    ├─ %s %s", status_badge, hyp.title), hl, nil, {
+            kind = "agent_hypothesis",
             hypothesis = hyp,
           })
+
+          for _, claim in ipairs(hyp.claims or {}) do
+            local v = nil
+
+            for _, ver in ipairs(hyp.verifications or {}) do
+              if ver.claim_id == claim.claim_id then
+                v = ver
+                break
+              end
+            end
+
+            local claim_badge = v and string.format("[%s]", v.status) or "[UNVERIFIED]"
+            local claim_hl = v and (v.status == "CONFIRMED" and "DiagnosticOk" or (v.status == "REFUTED" and "DiagnosticError" or "DiagnosticWarn")) or "Comment"
+
+            add_line(string.format("    │  ├─ Claim %s: \"%s\"", claim_badge, claim.assertion), claim_hl, nil, {
+              kind = "claim_verification",
+              claim = claim,
+              verification = v,
+              hypothesis = hyp,
+            })
+          end
+
+          for _, act in ipairs(hyp.suggested_actions or {}) do
+            add_line(string.format("    │  └─ Action: %s (%s)", act.label, act.description), "Special", nil, {
+              kind = "connected_action",
+              action = act,
+              hypothesis = hyp,
+            })
+          end
         end
 
-        for _, act in ipairs(hyp.suggested_actions or {}) do
-          add_line(string.format("    │  └─ Action: %s (%s)", act.label, act.description), "Special", nil, {
-            kind = "connected_action",
-            action = act,
-            hypothesis = hyp,
-          })
+        add_line("", nil)
+        current_sec_id = nil
+      end
+    end
+  end
+
+  -- 10. Connected Actions & Experiments Toolbar
+  local act_sec_id = "actions"
+  local act_open = is_section_open(act_sec_id)
+  local act_arrow = act_open and "▾" or "▸"
+  add_line(string.format("  %s CONNECTED ACTIONS & EXPERIMENTS", act_arrow), "Special", nil, { kind = "overview" }, { id = act_sec_id, is_header = true })
+
+  if act_open then
+    current_sec_id = act_sec_id
+    add_line("    ├─ [e] Run Worktree Experiment (isolate hypothesis in git worktree & run test probe)", "Special", nil, { kind = "action_hint", action = "worktree_experiment" })
+    add_line("    ├─ [p] Compare Candidate Patches (evaluate minimal fix vs. architectural refactor)", "Identifier", nil, { kind = "action_hint", action = "candidate_patches" })
+    add_line("    ├─ [t] Generate Invariant Test Scaffold (protect callers & prevent regressions)", "Identifier", nil, { kind = "action_hint", action = "test_scaffold" })
+    add_line("    ├─ [r] Plan Subsystem Decoupling Refactor (isolate boundary crossings)", "Identifier", nil, { kind = "action_hint", action = "refactor_plan" })
+    add_line("    ├─ [a] Synthesize / Re-verify Agent Hypotheses against Ground Truth", "Identifier", nil, { kind = "action_hint", action = "agent_synthesize" })
+    add_line("    └─ [h] Pivot to Oculus Inspect (interactive diff & hunk review)", "Identifier", nil, { kind = "action_hint", action = "inspect_pivot" })
+    add_line("", nil)
+    current_sec_id = nil
+  end
+
+  -- 11. Deterministic Provenance Ledger (Evidence Graph Ground Truth) at Bottom of Window
+  local ledger_sec_id = "ledger"
+  local ledger_open = is_section_open(ledger_sec_id)
+  local ledger_arrow = ledger_open and "▾" or "▸"
+  local ledger_header_idx = add_line(string.format("  %s DETERMINISTIC PROVENANCE LEDGER & AUDIT TRAIL", ledger_arrow), "Title", nil, { kind = "overview" }, { id = ledger_sec_id, is_header = true })
+  M.state.ledger_start_line = ledger_header_idx
+
+  if ledger_open then
+    current_sec_id = ledger_sec_id
+    add_line("    " .. string.rep("═", 56), "Comment", nil, { kind = "overview" })
+    add_line("    Ground-truth factual substrate answering where facts originated and at what repository state.", "Comment", nil, { kind = "overview" })
+    add_line("", nil)
+    add_line("  EVIDENCE GRAPH INVENTORY & REPOSITORY STATE:", "Special", nil, { kind = "overview" })
+    add_line(string.format("    • Repository:     %s (%s)", repo_name, repo_root ~= "" and repo_root or "local"), "Identifier", nil, { kind = "overview" })
+    add_line(string.format("    • Target State:   %s", target_desc), "Comment", nil, { kind = "overview" })
+    add_line(string.format("    • Engine Version: v%s · Analyzed: %s", engine_ver, analyzed), "Comment", nil, { kind = "overview" })
+    add_line("    • Ground Truth:   Deterministic AST, Git history & adversarial verification", "Comment", nil, { kind = "overview" })
+    add_line("", nil)
+    add_line("  PROVENANCE PRINCIPLES & METRICS:", "Normal", nil, { kind = "overview" })
+    add_line(string.format("    • Modified Entities:     %d (Tree-sitter AST, 1.00 confidence)", #entities), "DiagnosticInfo", nil, { kind = "overview" })
+    add_line(string.format("    • Relationships w/ Prov: %d verified provenance edges", #relationships), "DiagnosticInfo", nil, { kind = "overview" })
+    add_line(string.format("    • Traceability Matches:  %d candidates", #trace_links), "DiagnosticInfo", nil, { kind = "overview" })
+    add_line(string.format("    • Boundary Crossings:    %d detected", #crossings), "DiagnosticInfo", nil, { kind = "overview" })
+    add_line(string.format("    • Subsystem Risk Alerts: %d alerts", #alerts), "DiagnosticInfo", nil, { kind = "overview" })
+    add_line(string.format("    • Historical Precedents: %d precedents", #precedents), "DiagnosticInfo", nil, { kind = "overview" })
+    add_line(string.format("    • Invariant Assertions:  %d verified checks", #invariants), "DiagnosticOk", nil, { kind = "overview" })
+    add_line("", nil)
+
+    -- Verified Ground-Truth Invariants
+    if #invariants > 0 then
+      add_line("  VERIFIED GROUND-TRUTH INVARIANTS:", "Special", nil, { kind = "overview" })
+
+      for _, inv in ipairs(invariants) do
+        local icon = inv.passed and "[PASSED ✓]" or "[FAILED ✗]"
+        local hl = inv.passed and "DiagnosticOk" or "DiagnosticWarn"
+
+        add_line(string.format("    • %s %s: %s", icon, inv.invariant_name, inv.details), hl, nil, {
+          kind = "invariant",
+          invariant = inv,
+        })
+      end
+
+      add_line("", nil)
+    end
+
+    -- Semantic Entities AST Provenance & Lineage
+    if #entities > 0 then
+      add_line("  SEMANTIC ENTITIES AST PROVENANCE & LINEAGE:", "Special", nil, { kind = "overview" })
+
+      for _, e in ipairs(entities) do
+        local kind_str = (e.kind or "entity"):upper()
+
+        add_line(string.format("    ▸ Symbol: %s [%s]", e.name or "unknown", kind_str), "Identifier", { file = e.file_path, line = e.start_line }, {
+          kind = "entity",
+          entity = e,
+          history = history_lookup[e.id],
+        })
+
+        add_line(string.format("      File:       %s:%d-%d (cols %d-%d)", e.file_path or "", e.start_line or 1, e.end_line or 1, e.start_col or 1, e.end_col or 1), "Comment", { file = e.file_path, line = e.start_line })
+        add_line("      Parser:     Tree-sitter AST Polyglot Engine (CONFIDENCE: 1.00)", "DiagnosticOk")
+        add_line(string.format("      Git State:  %s", e.git_oid or "HEAD (Working Tree)"), "Comment")
+        local h = history_lookup[e.id]
+
+        if h then
+          local authors_str = table.concat(h.authors or {}, ", ")
+          add_line(string.format("      History:    %d commits in lineage · Contributors: %s", h.total_commits or 0, authors_str ~= "" and authors_str or "Unknown"), "Comment")
         end
       end
 
       add_line("", nil)
     end
-  end
 
-  -- 9. Connected Actions & Experiments Toolbar
-  add_line("  ▾ CONNECTED ACTIONS & EXPERIMENTS", "Special", nil, { kind = "overview" })
-  add_line("    ├─ [e] Run Worktree Experiment (isolate hypothesis in git worktree & run test probe)", "Special", nil, { kind = "action_hint", action = "worktree_experiment" })
-  add_line("    ├─ [p] Compare Candidate Patches (evaluate minimal fix vs. architectural refactor)", "Identifier", nil, { kind = "action_hint", action = "candidate_patches" })
-  add_line("    ├─ [t] Generate Invariant Test Scaffold (protect callers & prevent regressions)", "Identifier", nil, { kind = "action_hint", action = "test_scaffold" })
-  add_line("    ├─ [r] Plan Subsystem Decoupling Refactor (isolate boundary crossings)", "Identifier", nil, { kind = "action_hint", action = "refactor_plan" })
-  add_line("    ├─ [a] Synthesize / Re-verify Agent Hypotheses against Ground Truth", "Identifier", nil, { kind = "action_hint", action = "agent_synthesize" })
-  add_line("    └─ [h] Pivot to Oculus Inspect (interactive diff & hunk review)", "Identifier", nil, { kind = "action_hint", action = "inspect_pivot" })
-  add_line("", nil)
-  -- 10. Deterministic Provenance Ledger (Evidence Graph Ground Truth) at Bottom of Window
-  local ledger_header_idx = add_line("  ▾ DETERMINISTIC PROVENANCE LEDGER & AUDIT TRAIL", "Title", nil, { kind = "overview" })
-  M.state.ledger_start_line = ledger_header_idx
-  add_line("    " .. string.rep("═", 56), "Comment", nil, { kind = "overview" })
-  add_line("    Ground-truth factual substrate answering where facts originated and at what repository state.", "Comment", nil, { kind = "overview" })
-  add_line("", nil)
-  add_line("  EVIDENCE GRAPH INVENTORY & REPOSITORY STATE:", "Special", nil, { kind = "overview" })
-  add_line(string.format("    • Repository:     %s (%s)", repo_name, repo_root ~= "" and repo_root or "local"), "Identifier", nil, { kind = "overview" })
-  add_line(string.format("    • Target State:   %s", target_desc), "Comment", nil, { kind = "overview" })
-  add_line(string.format("    • Engine Version: v%s · Analyzed: %s", engine_ver, analyzed), "Comment", nil, { kind = "overview" })
-  add_line("    • Ground Truth:   Deterministic AST, Git history & adversarial verification", "Comment", nil, { kind = "overview" })
-  add_line("", nil)
-  add_line("  PROVENANCE PRINCIPLES & METRICS:", "Normal", nil, { kind = "overview" })
-  add_line(string.format("    • Modified Entities:     %d (Tree-sitter AST, 1.00 confidence)", #entities), "DiagnosticInfo", nil, { kind = "overview" })
-  add_line(string.format("    • Relationships w/ Prov: %d verified provenance edges", #(type(bundle.relationships) == "table" and bundle.relationships or {})), "DiagnosticInfo", nil, { kind = "overview" })
-  add_line(string.format("    • Traceability Matches:  %d candidates", #trace_links), "DiagnosticInfo", nil, { kind = "overview" })
-  add_line(string.format("    • Boundary Crossings:    %d detected", #crossings), "DiagnosticInfo", nil, { kind = "overview" })
-  add_line(string.format("    • Subsystem Risk Alerts: %d alerts", #alerts), "DiagnosticInfo", nil, { kind = "overview" })
-  add_line(string.format("    • Historical Precedents: %d precedents", #precedents), "DiagnosticInfo", nil, { kind = "overview" })
-  add_line(string.format("    • Invariant Assertions:  %d verified checks", #invariants), "DiagnosticOk", nil, { kind = "overview" })
-  add_line("", nil)
+    -- Call Graph & Test Suite Provenance
+    if #callers > 0 or #tests > 0 then
+      add_line("  CALL GRAPH & TEST SUITE PROVENANCE:", "Special", nil, { kind = "overview" })
 
-  -- Verified Ground-Truth Invariants
-  if #invariants > 0 then
-    add_line("  VERIFIED GROUND-TRUTH INVARIANTS:", "Special", nil, { kind = "overview" })
+      for _, c in ipairs(callers) do
+        add_line(string.format("    • Direct Caller: %s in %s:%d [95%% CONFIDENCE] (Relation: CALLS)", c.name or "unknown", c.file_path or "", c.start_line or 1), "DiagnosticInfo", { file = c.file_path, line = c.start_line or 1 }, {
+          kind = "caller",
+          caller = c,
+        })
 
-    for _, inv in ipairs(invariants) do
-      local icon = inv.passed and "[PASSED ✓]" or "[FAILED ✗]"
-      local hl = inv.passed and "DiagnosticOk" or "DiagnosticWarn"
-
-      add_line(string.format("    • %s %s: %s", icon, inv.invariant_name, inv.details), hl, nil, {
-        kind = "invariant",
-        invariant = inv,
-      })
-    end
-
-    add_line("", nil)
-  end
-
-  -- Semantic Entities AST Provenance & Lineage
-  if #entities > 0 then
-    add_line("  SEMANTIC ENTITIES AST PROVENANCE & LINEAGE:", "Special", nil, { kind = "overview" })
-
-    for _, e in ipairs(entities) do
-      local kind_str = (e.kind or "entity"):upper()
-
-      add_line(string.format("    ▸ Symbol: %s [%s]", e.name or "unknown", kind_str), "Identifier", { file = e.file_path, line = e.start_line }, {
-        kind = "entity",
-        entity = e,
-        history = history_lookup[e.id],
-      })
-
-      add_line(string.format("      File:       %s:%d-%d (cols %d-%d)", e.file_path or "", e.start_line or 1, e.end_line or 1, e.start_col or 1, e.end_col or 1), "Comment", { file = e.file_path, line = e.start_line })
-      add_line("      Parser:     Tree-sitter AST Polyglot Engine (CONFIDENCE: 1.00)", "DiagnosticOk")
-      add_line(string.format("      Git State:  %s", e.git_oid or "HEAD (Working Tree)"), "Comment")
-      local h = history_lookup[e.id]
-
-      if h then
-        local authors_str = table.concat(h.authors or {}, ", ")
-        add_line(string.format("      History:    %d commits in lineage · Contributors: %s", h.total_commits or 0, authors_str ~= "" and authors_str or "Unknown"), "Comment")
+        add_line("      Source: Tree-sitter Call Expression Matcher · Verified syntactic node", "Comment")
       end
+
+      for _, t in ipairs(tests) do
+        add_line(string.format("    • Associated Test: %s in %s:%d [90%% CONFIDENCE] (Relation: TESTED_BY)", t.name or "unknown", t.file_path or "", t.start_line or 1), "DiagnosticOk", { file = t.file_path, line = t.start_line or 1 }, {
+          kind = "test",
+          test = t,
+        })
+
+        add_line("      Source: ImpactAnalyzer & Test File Detector · Coverage relationship", "Comment")
+      end
+
+      add_line("", nil)
     end
 
-    add_line("", nil)
-  end
+    -- Implicit Architecture & Co-Change Provenance
+    if #co_changes > 0 then
+      add_line("  IMPLICIT ARCHITECTURE & CO-CHANGE PROVENANCE:", "Special", nil, { kind = "overview" })
 
-  -- Call Graph & Test Suite Provenance
-  if #callers > 0 or #tests > 0 then
-    add_line("  CALL GRAPH & TEST SUITE PROVENANCE:", "Special", nil, { kind = "overview" })
+      for _, cc in ipairs(co_changes) do
+        local pct = math.floor((cc.confidence or 0.5) * 100)
 
-    for _, c in ipairs(callers) do
-      add_line(string.format("    • Direct Caller: %s in %s:%d [95%% CONFIDENCE] (Relation: CALLS)", c.name or "unknown", c.file_path or "", c.start_line or 1), "DiagnosticInfo", { file = c.file_path, line = c.start_line or 1 }, {
-        kind = "caller",
-        caller = c,
-      })
+        add_line(string.format("    • %s ↔ %s [%d%% STATISTICAL CONFIDENCE] (Relation: CO_CHANGES_WITH)", cc.entity_a, cc.entity_b, pct), "DiagnosticWarn", { file = cc.entity_a, line = 1 }, {
+          kind = "co_change",
+          co_change = cc,
+        })
 
-      add_line("      Source: Tree-sitter Call Expression Matcher · Verified syntactic node", "Comment")
+        local sample_commits = cc.sample_commits or {}
+        local sample_str = #sample_commits > 0 and (" · commits: " .. table.concat(sample_commits, ", ")) or ""
+        add_line(string.format("      Source: Git Commit History Miner · Frequency: %d co-changes%s", cc.co_change_count or 0, sample_str), "Comment")
+      end
+
+      add_line("", nil)
     end
 
-    for _, t in ipairs(tests) do
-      add_line(string.format("    • Associated Test: %s in %s:%d [90%% CONFIDENCE] (Relation: TESTED_BY)", t.name or "unknown", t.file_path or "", t.start_line or 1), "DiagnosticOk", { file = t.file_path, line = t.start_line or 1 }, {
-        kind = "test",
-        test = t,
-      })
+    -- Architectural Dynamics Provenance
+    if #crossings > 0 or #alerts > 0 or #precedents > 0 then
+      add_line("  ARCHITECTURAL DYNAMICS & BOUNDARY PROVENANCE:", "Special", nil, { kind = "overview" })
 
-      add_line("      Source: ImpactAnalyzer & Test File Detector · Coverage relationship", "Comment")
+      for _, bc in ipairs(crossings) do
+        local risk = (bc.risk_level or "low"):upper()
+
+        add_line(string.format("    • Architectural Boundary Crossing: %s ➔ %s [%s RISK] (Relation: CROSSES_BOUNDARY)", bc.source_subsystem, bc.target_subsystem, risk), "DiagnosticError", nil, {
+          kind = "boundary_crossing",
+          crossing = bc,
+        })
+
+        add_line(string.format("      Details: %s ➔ %s (%s) · Source: ArchitecturalDynamicsAnalyzer", bc.source_entity or "", bc.target_entity or "", bc.details or ""), "Comment")
+      end
+
+      for _, inst in ipairs(alerts) do
+        local cat = inst.risk_category or "RISK"
+
+        add_line(string.format("    • Subsystem Instability Metric: %s (instability: %.2f) [%s]", inst.subsystem or "", inst.instability_score or 0.0, cat), "DiagnosticWarn", nil, {
+          kind = "subsystem_instability",
+          instability = inst,
+        })
+
+        local maint = inst.primary_maintainer and (" · Maintainer: @" .. inst.primary_maintainer) or ""
+        add_line(string.format("      Metric Details: Churn commits: %d · Uncovered: %d%s", inst.churn_commits or 0, inst.uncovered_modifications or 0, maint), "Comment")
+      end
+
+      for _, p in ipairs(precedents) do
+        add_line(string.format("    • Historical Precedent commit:%s by @%s", p.commit_oid, p.author or "unknown"), "Comment", nil, {
+          kind = "historical_precedent",
+          precedent = p,
+        })
+
+        add_line(string.format("      Message: \"%s\" · Confidence: 0.90", p.message or ""), "Comment")
+      end
+
+      add_line("", nil)
     end
 
-    add_line("", nil)
-  end
+    -- Adversarial Reality Checking & Agent Hypotheses Provenance (Layers 25-26)
+    if derived then
+      add_line("  ADVERSARIAL REALITY CHECK & AGENT PROVENANCE (Layers 25-26):", "Special", nil, { kind = "overview" })
+      local verd = derived.adversarial_verdict or "INCONCLUSIVE"
+      local verd_hl = verd == "ALL_CLAIMS_VERIFIED" and "DiagnosticOk" or (verd == "PARTIALLY_VERIFIED" and "DiagnosticWarn" or "DiagnosticError")
+      add_line(string.format("    ADVERSARIAL VERDICT: [%s]", verd), verd_hl, nil, { kind = "overview" })
+      add_line("", nil)
 
-  -- Implicit Architecture & Co-Change Provenance
-  if #co_changes > 0 then
-    add_line("  IMPLICIT ARCHITECTURE & CO-CHANGE PROVENANCE:", "Special", nil, { kind = "overview" })
-
-    for _, cc in ipairs(co_changes) do
-      local pct = math.floor((cc.confidence or 0.5) * 100)
-
-      add_line(string.format("    • %s ↔ %s [%d%% STATISTICAL CONFIDENCE] (Relation: CO_CHANGES_WITH)", cc.entity_a, cc.entity_b, pct), "DiagnosticWarn", { file = cc.entity_a, line = 1 }, {
-        kind = "co_change",
-        co_change = cc,
-      })
-
-      local sample_commits = cc.sample_commits or {}
-      local sample_str = #sample_commits > 0 and (" · commits: " .. table.concat(sample_commits, ", ")) or ""
-      add_line(string.format("      Source: Git Commit History Miner · Frequency: %d co-changes%s", cc.co_change_count or 0, sample_str), "Comment")
-    end
-
-    add_line("", nil)
-  end
-
-  -- Architectural Dynamics Provenance
-  if #crossings > 0 or #alerts > 0 or #precedents > 0 then
-    add_line("  ARCHITECTURAL DYNAMICS & BOUNDARY PROVENANCE:", "Special", nil, { kind = "overview" })
-
-    for _, bc in ipairs(crossings) do
-      local risk = (bc.risk_level or "low"):upper()
-
-      add_line(string.format("    • Architectural Boundary Crossing: %s ➔ %s [%s RISK] (Relation: CROSSES_BOUNDARY)", bc.source_subsystem, bc.target_subsystem, risk), "DiagnosticError", nil, {
-        kind = "boundary_crossing",
-        crossing = bc,
-      })
-
-      add_line(string.format("      Details: %s ➔ %s (%s) · Source: ArchitecturalDynamicsAnalyzer", bc.source_entity or "", bc.target_entity or "", bc.details or ""), "Comment")
-    end
-
-    for _, inst in ipairs(alerts) do
-      local cat = inst.risk_category or "RISK"
-
-      add_line(string.format("    • Subsystem Instability Metric: %s (instability: %.2f) [%s]", inst.subsystem or "", inst.instability_score or 0.0, cat), "DiagnosticWarn", nil, {
-        kind = "subsystem_instability",
-        instability = inst,
-      })
-
-      local maint = inst.primary_maintainer and (" · Maintainer: @" .. inst.primary_maintainer) or ""
-      add_line(string.format("      Metric Details: Churn commits: %d · Uncovered: %d%s", inst.churn_commits or 0, inst.uncovered_modifications or 0, maint), "Comment")
-    end
-
-    for _, p in ipairs(precedents) do
-      add_line(string.format("    • Historical Precedent commit:%s by @%s", p.commit_oid, p.author or "unknown"), "Comment", nil, {
-        kind = "historical_precedent",
-        precedent = p,
-      })
-
-      add_line(string.format("      Message: \"%s\" · Confidence: 0.90", p.message or ""), "Comment")
-    end
-
-    add_line("", nil)
-  end
-
-  -- Adversarial Reality Checking & Agent Hypotheses Provenance (Layers 25-26)
-  if derived then
-    add_line("  ADVERSARIAL REALITY CHECK & AGENT PROVENANCE (Layers 25-26):", "Special", nil, { kind = "overview" })
-    local verd = derived.adversarial_verdict or "INCONCLUSIVE"
-    local verd_hl = verd == "ALL_CLAIMS_VERIFIED" and "DiagnosticOk" or (verd == "PARTIALLY_VERIFIED" and "DiagnosticWarn" or "DiagnosticError")
-    add_line(string.format("    ADVERSARIAL VERDICT: [%s]", verd), verd_hl, nil, { kind = "overview" })
-    add_line("", nil)
-
-    for _, hyp in ipairs(derived.hypotheses or {}) do
-      add_line(string.format("    ▸ Agent Derived Hypothesis: %s", hyp.title or "Untitled"), "Title", nil, {
-        kind = "agent_hypothesis",
-        hypothesis = hyp,
-      })
-
-      add_line(string.format("      Rationale:  %s", hyp.rationale or ""), "Comment")
-      add_line(string.format("      Confidence: %.2f", hyp.confidence or 0.9), "Comment")
-
-      for _, ver in ipairs(hyp.verifications or {}) do
-        local is_conf = ver.status == "CONFIRMED"
-        local v_hl = is_conf and "DiagnosticOk" or (ver.status == "REFUTED" and "DiagnosticError" or "DiagnosticWarn")
-
-        add_line(string.format("      • Adversarial Reality Check: [%s] (Confidence: %.2f)", ver.status or "UNVERIFIED", ver.confidence or 1.0), v_hl, nil, {
-          kind = "claim_verification",
-          verification = ver,
+      for _, hyp in ipairs(derived.hypotheses or {}) do
+        add_line(string.format("    ▸ Agent Derived Hypothesis: %s", hyp.title or "Untitled"), "Title", nil, {
+          kind = "agent_hypothesis",
           hypothesis = hyp,
         })
 
-        add_line(string.format("        Assertion: \"%s\"", ver.assertion or ""), "Normal")
-        add_line(string.format("        Details:   %s", ver.details or ""), "Comment")
+        add_line(string.format("      Rationale:  %s", hyp.rationale or ""), "Comment")
+        add_line(string.format("      Confidence: %.2f", hyp.confidence or 0.9), "Comment")
 
-        for _, ev in ipairs(ver.deterministic_evidence or {}) do
-          add_line(string.format("        Evidence:  %s", ev), "Comment")
+        for _, ver in ipairs(hyp.verifications or {}) do
+          local is_conf = ver.status == "CONFIRMED"
+          local v_hl = is_conf and "DiagnosticOk" or (ver.status == "REFUTED" and "DiagnosticError" or "DiagnosticWarn")
+
+          add_line(string.format("      • Adversarial Reality Check: [%s] (Confidence: %.2f)", ver.status or "UNVERIFIED", ver.confidence or 1.0), v_hl, nil, {
+            kind = "claim_verification",
+            verification = ver,
+            hypothesis = hyp,
+          })
+
+          add_line(string.format("        Assertion: \"%s\"", ver.assertion or ""), "Normal")
+          add_line(string.format("        Details:   %s", ver.details or ""), "Comment")
+
+          for _, ev in ipairs(ver.deterministic_evidence or {}) do
+            add_line(string.format("        Evidence:  %s", ev), "Comment")
+          end
         end
       end
+
+      add_line("", nil)
     end
 
-    add_line("", nil)
+    current_sec_id = nil
   end
 
   M.state.line_targets = line_targets
   M.state.line_provenance = line_provenance
+  M.state.line_sections = line_sections
+  vim.bo[buf].readonly = false
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -1493,6 +1610,93 @@ function M.map_keys(buf)
     pcall(vim.cmd.normal, { "l", bang = true })
   end
 
+  local function rerender_to_section(sec_id)
+    local win = M.state.win
+
+    if not is_valid_win(win) or not is_valid_buf(buf) then
+      return
+    end
+
+    M.render(buf, M.state.bundle)
+
+    if is_valid_win(win) then
+      local target_line = 1
+
+      if sec_id then
+        for idx, s in pairs(M.state.line_sections or {}) do
+          if s.id == sec_id and s.is_header then
+            target_line = idx
+            break
+          end
+        end
+      end
+
+      local max_line = vim.api.nvim_buf_line_count(buf)
+      target_line = math.max(1, math.min(target_line, max_line))
+      pcall(vim.api.nvim_win_set_cursor, win, { target_line, 0 })
+    end
+  end
+
+  local function toggle_or_expand_section(sec_id)
+    if not sec_id then
+      return
+    end
+
+    M.state.collapsed_sections = M.state.collapsed_sections or {}
+
+    if M.state.collapsed_sections[sec_id] then
+      M.state.collapsed_sections[sec_id] = nil
+    else
+      M.state.collapsed_sections[sec_id] = true
+    end
+
+    rerender_to_section(sec_id)
+  end
+
+  local function collapse_current_section(sec_id)
+    if not sec_id then
+      return
+    end
+
+    M.state.collapsed_sections = M.state.collapsed_sections or {}
+    M.state.collapsed_sections[sec_id] = true
+    rerender_to_section(sec_id)
+  end
+
+  local function handle_left()
+    local win = M.state.win
+
+    if not is_valid_win(win) then
+      return
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local sec = (M.state.line_sections or {})[cursor[1]]
+
+    if sec and sec.id then
+      collapse_current_section(sec.id)
+    else
+      move_left()
+    end
+  end
+
+  local function handle_right()
+    local win = M.state.win
+
+    if not is_valid_win(win) then
+      return
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local sec = (M.state.line_sections or {})[cursor[1]]
+
+    if sec and sec.id and sec.is_header then
+      toggle_or_expand_section(sec.id)
+    else
+      move_right()
+    end
+  end
+
   if nav.up then
     map(nav.up, move_up, "Move up in investigation")
   end
@@ -1502,21 +1706,25 @@ function M.map_keys(buf)
   end
 
   if nav.left then
-    map(nav.left, move_left, "Move left in investigation")
+    map(nav.left, handle_left, "Collapse section in investigation")
   end
 
   if nav.right then
-    map(nav.right, move_right, "Move right in investigation")
+    map(nav.right, handle_right, "Open/toggle section in investigation")
   end
 
-  if nav.up ~= "i" then
+  if nav.up ~= "i" and nav.left ~= "i" and nav.down ~= "i" and nav.right ~= "i" then
     map("i", move_up, "Move up in investigation")
+  end
+
+  if nav.right ~= "l" and nav.up ~= "l" and nav.down ~= "l" and nav.left ~= "l" then
+    map("l", handle_right, "Open/toggle section in investigation")
   end
 
   map("<Up>", move_up, "Move up in investigation")
   map("<Down>", move_down, "Move down in investigation")
-  map("<Left>", move_left, "Move left in investigation")
-  map("<Right>", move_right, "Move right in investigation")
+  map("<Left>", handle_left, "Collapse section in investigation")
+  map("<Right>", handle_right, "Open/toggle section in investigation")
   map("q", M.close, "Close investigation")
   map("<Esc>", M.close, "Close investigation")
   map("<C-c>", M.close, "Close investigation")
@@ -1541,7 +1749,9 @@ function M.map_keys(buf)
     end
 
     local cursor = vim.api.nvim_win_get_cursor(win)
-    local target = M.state.line_targets[cursor[1]]
+    local line_num = cursor[1]
+    local target = M.state.line_targets[line_num]
+    local sec = (M.state.line_sections or {})[line_num]
 
     if target and target.file then
       M.close()
@@ -1550,8 +1760,20 @@ function M.map_keys(buf)
       if target.line and target.line > 0 then
         pcall(vim.api.nvim_win_set_cursor, 0, { target.line, 0 })
       end
+
+      return
     end
-  end, "Jump to entity source location")
+
+    if sec and sec.id then
+      if sec.is_header then
+        toggle_or_expand_section(sec.id)
+      else
+        collapse_current_section(sec.id)
+      end
+
+      return
+    end
+  end, "Jump to entity source location or toggle/close section")
 
   local function create_subwindow_footer(parent_win, cmd_text)
     if not is_valid_win(parent_win) then

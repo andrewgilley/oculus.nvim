@@ -825,5 +825,110 @@ do
   assert(f_lines[2]:find("p patches", 1, true), "expected p patches in footer")
   window.close()
   assert(window.state.win == nil and window.state.footer_win == nil, "expected clean close")
+  -- Test 29: Collapsible / foldable sections in investigate window with l, j, and <CR>
+  window.open(forge_bundle)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
+  local test_buf = window.state.buf
+  local buf_lines = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  -- Verify initial open arrows are downward (▾)
+  local found_down_arrow = false
+
+  for _, line in ipairs(buf_lines) do
+    if line:find("▾", 1, true) then
+      found_down_arrow = true
+      break
+    end
+  end
+
+  assert(found_down_arrow, "expected downward arrows ▾ for open sections by default")
+  -- Find the header line for AFFECTED SEMANTIC ENTITIES
+  local entities_header_line = nil
+
+  for idx, line in ipairs(buf_lines) do
+    if line:find("AFFECTED SEMANTIC ENTITIES", 1, true) then
+      entities_header_line = idx
+      assert(line:find("▾", 1, true), "expected entities header to have ▾ when open")
+      break
+    end
+  end
+
+  assert(entities_header_line ~= nil, "expected to find entities header line")
+  -- Extract keymaps
+  local buf_keymaps = vim.api.nvim_buf_get_keymap(test_buf, "n")
+  local cr_km = vim.tbl_filter(function(k) return k.lhs == "<CR>" end, buf_keymaps)[1]
+  local l_km = vim.tbl_filter(function(k) return k.lhs == "l" end, buf_keymaps)[1]
+  local j_km = vim.tbl_filter(function(k) return k.lhs == "j" end, buf_keymaps)[1]
+  assert(cr_km ~= nil, "expected <CR> mapped")
+  assert(l_km ~= nil, "expected l mapped")
+  assert(j_km ~= nil, "expected j mapped")
+  -- 1. On section header: press <CR> to close section
+  vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
+  cr_km.callback()
+  -- After closing: header must face right (▸) and content lines must be hidden
+  local lines_after_close = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  local closed_header = lines_after_close[entities_header_line]
+  assert(closed_header:find("▸", 1, true), "expected header arrow to face right ▸ when closed: " .. tostring(closed_header))
+  assert(not closed_header:find("▾", 1, true), "header must not have ▾ when closed")
+  assert(window.state.collapsed_sections["entities"] == true, "expected entities marked collapsed in state")
+  -- Check that content lines are collapsed (e.g. entity line not present right below header)
+  local next_line = lines_after_close[entities_header_line + 1] or ""
+  assert(not next_line:find("├─ [", 1, true), "expected content lines hidden when collapsed")
+  -- 2. On closed section header: press 'l' to open section
+  vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
+  l_km.callback()
+  local lines_after_open = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  local opened_header = lines_after_open[entities_header_line]
+  assert(opened_header:find("▾", 1, true), "expected header arrow to face down ▾ when opened via 'l'")
+  assert(window.state.collapsed_sections["entities"] == nil, "expected entities not collapsed in state")
+  local opened_next_line = lines_after_open[entities_header_line + 1] or ""
+  assert(opened_next_line:find("├─ [", 1, true), "expected content lines restored when opened via 'l'")
+  -- 3. On open section header: press 'j' to close section
+  vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
+  j_km.callback()
+  local lines_after_j_close = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  local j_closed_header = lines_after_j_close[entities_header_line]
+  assert(j_closed_header:find("▸", 1, true), "expected header arrow to face right ▸ when closed via 'j'")
+  assert(window.state.collapsed_sections["entities"] == true)
+  -- 4. On closed section header: press <CR> to open section
+  vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
+  cr_km.callback()
+  local lines_after_cr_open = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  local cr_opened_header = lines_after_cr_open[entities_header_line]
+  assert(cr_opened_header:find("▾", 1, true), "expected header arrow to face down ▾ when opened via <CR>")
+  -- 5. On a content line of the section: press 'j' to close the section
+  local content_line_idx = entities_header_line + 1
+  vim.api.nvim_win_set_cursor(window.state.win, { content_line_idx, 0 })
+  j_km.callback()
+  local lines_after_child_j = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  local child_j_header = lines_after_child_j[entities_header_line]
+  assert(child_j_header:find("▸", 1, true), "expected section closed when pressing 'j' on content line")
+  local cursor_pos = vim.api.nvim_win_get_cursor(window.state.win)
+  assert(cursor_pos[1] == entities_header_line, "expected cursor positioned on section header after content collapse")
+  -- 6. Open it back with 'l', then navigate to a non-jumpable content line in executive brief and close with <CR>
+  l_km.callback() -- open entities back
+  local exec_header_idx = nil
+
+  for idx, line in ipairs(vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)) do
+    if line:find("EXECUTIVE BRIEF", 1, true) then
+      exec_header_idx = idx
+      break
+    end
+  end
+
+  assert(exec_header_idx ~= nil)
+  -- Move cursor to a child content line in executive brief (e.g. Surface or Blast line)
+  local exec_child_line = exec_header_idx + 1
+  vim.api.nvim_win_set_cursor(window.state.win, { exec_child_line, 0 })
+  cr_km.callback()
+  local lines_after_exec_child_cr = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  local exec_closed_header = lines_after_exec_child_cr[exec_header_idx]
+  assert(exec_closed_header:find("▸", 1, true), "expected executive brief closed when pressing <CR> on content line")
+  assert(window.state.collapsed_sections["executive_brief"] == true)
+  local exec_cursor = vim.api.nvim_win_get_cursor(window.state.win)
+  assert(exec_cursor[1] == exec_header_idx, "expected cursor on executive brief header after collapse")
+  -- 7. Close window and check clean reset
+  window.close()
+  assert(window.state.win == nil)
+  assert(vim.tbl_isempty(window.state.collapsed_sections or {}), "expected collapsed_sections reset on full close")
   print("ALL INVESTIGATE TESTS PASSED!")
 end
