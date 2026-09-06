@@ -975,5 +975,74 @@ do
   assert(tree_cc_count == 10, string.format("expected 10 tree co-change items, got %d", tree_cc_count))
   assert(ledger_cc_count == 10, string.format("expected 10 ledger co-change items, got %d", ledger_cc_count))
   window.close()
+  -- Test: Cursor prevented from scrolling into footer rows, and mouse scrolling bounded
+  window.open(received_bundle)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected window open")
+  assert(window.state.footer_win ~= nil and vim.api.nvim_win_is_valid(window.state.footer_win), "expected footer open")
+  local test_win = window.state.win
+  local test_f_win = window.state.footer_win
+  local scroll_test_buf = window.state.buf
+  local win_h = vim.api.nvim_win_get_height(test_win)
+  local footer_h = vim.api.nvim_win_get_height(test_f_win)
+  local visible_rows = win_h - footer_h
+  local total_lines = vim.api.nvim_buf_line_count(scroll_test_buf)
+  local max_topline = math.max(1, total_lines - visible_rows + 1)
+  -- 1. Test keyboard downward movement: cursor must NEVER enter footer rows
+  local buf_keymaps = vim.api.nvim_buf_get_keymap(scroll_test_buf, "n")
+  local down_km = vim.tbl_filter(function(k) return k.desc == "Move down in investigation" end, buf_keymaps)[1]
+  assert(down_km ~= nil, "expected Move down in investigation keymap")
+  vim.api.nvim_win_set_cursor(test_win, { 1, 0 })
+
+  for _ = 1, total_lines + 5 do
+    down_km.callback()
+    local winline = vim.api.nvim_win_call(test_win, function() return vim.fn.winline() end)
+    assert(winline <= visible_rows, string.format("cursor winline %d exceeded visible_rows %d (entered footer rows!)", winline, visible_rows))
+  end
+
+  -- 2. Test jump to bottom (G) followed by clamp
+  vim.api.nvim_win_call(test_win, function() vim.cmd("normal! G") end)
+  window.clamp_scroll(test_win, test_f_win)
+  local winline_after_g = vim.api.nvim_win_call(test_win, function() return vim.fn.winline() end)
+  assert(winline_after_g <= visible_rows, string.format("cursor winline %d after G exceeded visible_rows %d", winline_after_g, visible_rows))
+  -- 3. Test mouse scroll down cannot exceed boundaries
+  local scroll_down_km = vim.tbl_filter(function(k) return k.lhs == "<ScrollWheelDown>" end, buf_keymaps)[1]
+  assert(scroll_down_km ~= nil, "expected <ScrollWheelDown> keymap")
+
+  for _ = 1, 150 do
+    scroll_down_km.callback()
+  end
+
+  local view_after_scroll_down = vim.api.nvim_win_call(test_win, function() return vim.fn.winsaveview() end)
+  assert(view_after_scroll_down.topline == max_topline, string.format("topline %d exceeded max_topline %d", view_after_scroll_down.topline, max_topline))
+  local winline_scroll_down = vim.api.nvim_win_call(test_win, function() return vim.fn.winline() end)
+  assert(winline_scroll_down <= visible_rows, string.format("cursor winline %d in footer after scroll down", winline_scroll_down))
+  -- 4. Test mouse scroll up cannot go below top boundary (topline = 1)
+  local scroll_up_km = vim.tbl_filter(function(k) return k.lhs == "<ScrollWheelUp>" end, buf_keymaps)[1]
+  assert(scroll_up_km ~= nil, "expected <ScrollWheelUp> keymap")
+
+  for _ = 1, 150 do
+    scroll_up_km.callback()
+  end
+
+  local view_after_scroll_up = vim.api.nvim_win_call(test_win, function() return vim.fn.winsaveview() end)
+  assert(view_after_scroll_up.topline == 1, string.format("topline %d below min boundary 1", view_after_scroll_up.topline))
+  local winline_scroll_up = vim.api.nvim_win_call(test_win, function() return vim.fn.winline() end)
+  assert(winline_scroll_up <= visible_rows, string.format("cursor winline %d in footer after scroll up", winline_scroll_up))
+  -- 5. Test mouse scrolling over footer window delegates correctly without exceeding boundaries
+  local f_buf = window.state.footer_buf
+  local f_keymaps = vim.api.nvim_buf_get_keymap(f_buf, "n")
+  local f_scroll_down_km = vim.tbl_filter(function(k) return k.lhs == "<ScrollWheelDown>" end, f_keymaps)[1]
+  assert(f_scroll_down_km ~= nil, "expected <ScrollWheelDown> on footer buf")
+
+  for _ = 1, 150 do
+    f_scroll_down_km.callback()
+  end
+
+  local view_after_f_scroll = vim.api.nvim_win_call(test_win, function() return vim.fn.winsaveview() end)
+  assert(view_after_f_scroll.topline == max_topline, string.format("footer scroll down topline %d != max_topline %d", view_after_f_scroll.topline, max_topline))
+  -- Check footer buffer contents were not corrupted
+  local f_lines = vim.api.nvim_buf_get_lines(f_buf, 0, -1, false)
+  assert(#f_lines == 2, "footer buffer lines should remain 2")
+  window.close()
   print("ALL INVESTIGATE TESTS PASSED!")
 end

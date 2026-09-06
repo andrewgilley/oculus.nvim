@@ -164,6 +164,133 @@ local function render_investigate_footer()
       oculus_window.apply_window_highlights(M.state.footer_win)
     end
   end)
+
+  local f_kopts = { buffer = buf, silent = true, nowait = true }
+
+  vim.keymap.set("n", "<ScrollWheelDown>", function()
+    M.scroll_window(M.state.win, M.state.footer_win, 3)
+  end, f_kopts)
+
+  vim.keymap.set("n", "<ScrollWheelUp>", function()
+    M.scroll_window(M.state.win, M.state.footer_win, -3)
+  end, f_kopts)
+
+  vim.keymap.set("n", "<ScrollWheelLeft>", function() end, f_kopts)
+  vim.keymap.set("n", "<ScrollWheelRight>", function() end, f_kopts)
+end
+
+function M.clamp_scroll(win, footer_win)
+  if not is_valid_win(win) then
+    return
+  end
+
+  local buf = vim.api.nvim_win_get_buf(win)
+
+  if not is_valid_buf(buf) then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(buf)
+
+  if line_count == 0 then
+    return
+  end
+
+  local win_height = vim.api.nvim_win_get_height(win)
+  local footer_height = is_valid_win(footer_win) and vim.api.nvim_win_get_height(footer_win) or 0
+  local visible_rows = math.max(1, win_height - footer_height)
+  local max_topline = math.max(1, line_count - visible_rows + 1)
+
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local lnum = cursor[1]
+    local topline = view.topline
+
+    -- 1. Clamp topline to boundaries [1, max_topline]
+    if topline > max_topline then
+      topline = max_topline
+    end
+
+    if topline < 1 then
+      topline = 1
+    end
+
+    -- 2. Keep lnum within valid buffer bounds [1, line_count]
+    if lnum > line_count then
+      lnum = line_count
+    end
+
+    if lnum < 1 then
+      lnum = 1
+    end
+
+    -- 3. If cursor is above the viewport, pull it down to topline
+    if lnum < topline then
+      lnum = math.min(line_count, topline)
+    end
+
+    -- 4. Prevent cursor from entering footer rows (rows > visible_rows)
+    local cursor_screen_row = lnum - topline + 1
+
+    if cursor_screen_row > visible_rows then
+      local needed_scroll = cursor_screen_row - visible_rows
+      local new_topline = math.min(max_topline, topline + needed_scroll)
+      topline = new_topline
+
+      if lnum - topline + 1 > visible_rows then
+        lnum = math.min(line_count, topline + visible_rows - 1)
+      end
+    end
+
+    view.topline = topline
+    view.lnum = lnum
+    view.topfill = 0
+    vim.fn.winrestview(view)
+  end)
+end
+
+function M.scroll_window(win, footer_win, delta)
+  if not is_valid_win(win) then
+    return
+  end
+
+  local buf = vim.api.nvim_win_get_buf(win)
+
+  if not is_valid_buf(buf) then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(buf)
+
+  if line_count == 0 then
+    return
+  end
+
+  local win_height = vim.api.nvim_win_get_height(win)
+  local footer_height = is_valid_win(footer_win) and vim.api.nvim_win_get_height(footer_win) or 0
+  local visible_rows = math.max(1, win_height - footer_height)
+  local max_topline = math.max(1, line_count - visible_rows + 1)
+
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    local new_topline = math.max(1, math.min(max_topline, view.topline + delta))
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local max_allowed_line = math.min(line_count, new_topline + visible_rows - 1)
+    local min_allowed_line = new_topline
+    local lnum = cursor[1]
+
+    if lnum > max_allowed_line then
+      lnum = max_allowed_line
+    elseif lnum < min_allowed_line then
+      lnum = min_allowed_line
+    end
+
+    view.topline = new_topline
+    view.lnum = lnum
+    view.topfill = 0
+    vim.fn.winrestview(view)
+  end)
 end
 
 local function get_target_window_config(opts)
@@ -286,6 +413,7 @@ function M.close(for_subwin)
   M.state.line_sections = {}
 
   if not for_subwin then
+    pcall(vim.api.nvim_clear_autocmds, { group = "oculus_investigate_scroll" })
     local ok, oculus_window = pcall(require, "oculus.window")
 
     if ok and oculus_window.state and is_valid_win(oculus_window.state.win) then
@@ -350,6 +478,7 @@ function M.open(bundle, opts)
 
   vim.wo[win].cursorline = true
   vim.wo[win].wrap = false
+  vim.wo[win].scrolloff = 2
 
   local winhl = table.concat({
     "Normal:OculusNormal",
@@ -381,6 +510,7 @@ function M.open(bundle, opts)
 
     vim.wo[ledger_win].cursorline = false
     vim.wo[ledger_win].wrap = true
+    vim.wo[ledger_win].scrolloff = 2
     pcall(function() vim.wo[ledger_win].winhighlight = winhl end)
   else
     ledger_buf = buf
@@ -409,14 +539,18 @@ function M.open(bundle, opts)
     M.map_keys(ledger_buf)
   end
 
-  -- Cursor tracking in main window
+  local scroll_group = vim.api.nvim_create_augroup("oculus_investigate_scroll", { clear = true })
+
+  -- Cursor tracking and scroll clamping in main window
   vim.api.nvim_create_autocmd("CursorMoved", {
+    group = scroll_group,
     buffer = buf,
     callback = function()
       if not is_valid_win(M.state.win) then
         return
       end
 
+      M.clamp_scroll(M.state.win, M.state.footer_win)
       local cursor = vim.api.nvim_win_get_cursor(M.state.win)
       local line = cursor[1]
 
@@ -427,8 +561,38 @@ function M.open(bundle, opts)
     end,
   })
 
+  if is_split and ledger_buf and ledger_buf ~= buf then
+    vim.api.nvim_create_autocmd("CursorMoved", {
+      group = scroll_group,
+      buffer = ledger_buf,
+      callback = function()
+        if not is_valid_win(M.state.ledger_win) then
+          return
+        end
+
+        M.clamp_scroll(M.state.ledger_win, M.state.footer_win)
+      end,
+    })
+  end
+
+  vim.api.nvim_create_autocmd("WinScrolled", {
+    group = scroll_group,
+    callback = function(args)
+      local win_id = tonumber(args.match) or vim.api.nvim_get_current_win()
+
+      if is_valid_win(M.state.win) and win_id == M.state.win then
+        M.clamp_scroll(M.state.win, M.state.footer_win)
+      elseif is_valid_win(M.state.ledger_win) and win_id == M.state.ledger_win then
+        M.clamp_scroll(M.state.ledger_win, M.state.footer_win)
+      elseif is_valid_win(M.state.sub_win) and win_id == M.state.sub_win then
+        M.clamp_scroll(M.state.sub_win, M.state.sub_footer_win)
+      end
+    end,
+  })
+
   M.map_keys(buf)
   render_investigate_footer()
+  M.clamp_scroll(win, M.state.footer_win)
 
   if is_valid_win(win) then
     pcall(vim.api.nvim_set_current_win, win)
@@ -1595,12 +1759,28 @@ function M.map_keys(buf)
 
   local nav = require("oculus.navigation").resolve(M.state.opts)
 
+  local function current_active_win_and_footer()
+    local cur_win = vim.api.nvim_get_current_win()
+
+    if is_valid_win(M.state.ledger_win) and cur_win == M.state.ledger_win then
+      return M.state.ledger_win, M.state.footer_win
+    elseif is_valid_win(M.state.sub_win) and cur_win == M.state.sub_win then
+      return M.state.sub_win, M.state.sub_footer_win
+    else
+      return M.state.win, M.state.footer_win
+    end
+  end
+
   local function move_up()
     pcall(vim.cmd.normal, { "k", bang = true })
+    local w, f = current_active_win_and_footer()
+    M.clamp_scroll(w, f)
   end
 
   local function move_down()
     pcall(vim.cmd.normal, { "j", bang = true })
+    local w, f = current_active_win_and_footer()
+    M.clamp_scroll(w, f)
   end
 
   local function move_left()
@@ -1635,6 +1815,7 @@ function M.map_keys(buf)
       local max_line = vim.api.nvim_buf_line_count(buf)
       target_line = math.max(1, math.min(target_line, max_line))
       pcall(vim.api.nvim_win_set_cursor, win, { target_line, 0 })
+      M.clamp_scroll(win, M.state.footer_win)
     end
   end
 
@@ -1729,6 +1910,25 @@ function M.map_keys(buf)
   map("q", M.close, "Close investigation")
   map("<Esc>", M.close, "Close investigation")
   map("<C-c>", M.close, "Close investigation")
+  local scroll_down_keys = { "<ScrollWheelDown>", "<2-ScrollWheelDown>", "<3-ScrollWheelDown>", "<4-ScrollWheelDown>" }
+  local scroll_up_keys = { "<ScrollWheelUp>", "<2-ScrollWheelUp>", "<3-ScrollWheelUp>", "<4-ScrollWheelUp>" }
+
+  for _, key in ipairs(scroll_down_keys) do
+    map(key, function()
+      local w, f = current_active_win_and_footer()
+      M.scroll_window(w, f, 3)
+    end, "Scroll investigate down")
+  end
+
+  for _, key in ipairs(scroll_up_keys) do
+    map(key, function()
+      local w, f = current_active_win_and_footer()
+      M.scroll_window(w, f, -3)
+    end, "Scroll investigate up")
+  end
+
+  map("<ScrollWheelLeft>", function() end, "Ignore horizontal mouse scroll")
+  map("<ScrollWheelRight>", function() end, "Ignore horizontal mouse scroll")
 
   if is_valid_win(M.state.ledger_win) and is_valid_win(M.state.win) then
     map("<Tab>", function()
@@ -1830,6 +2030,18 @@ function M.map_keys(buf)
     }, ",")
 
     pcall(function() vim.wo[f_win].winhighlight = winhl end)
+    local f_kopts = { buffer = f_buf, silent = true, nowait = true }
+
+    vim.keymap.set("n", "<ScrollWheelDown>", function()
+      M.scroll_window(parent_win, f_win, 3)
+    end, f_kopts)
+
+    vim.keymap.set("n", "<ScrollWheelUp>", function()
+      M.scroll_window(parent_win, f_win, -3)
+    end, f_kopts)
+
+    vim.keymap.set("n", "<ScrollWheelLeft>", function() end, f_kopts)
+    vim.keymap.set("n", "<ScrollWheelRight>", function() end, f_kopts)
     return f_win, f_buf
   end
 
@@ -1865,6 +2077,7 @@ function M.map_keys(buf)
 
     vim.wo[win].cursorline = true
     vim.wo[win].wrap = false
+    vim.wo[win].scrolloff = 2
 
     local winhl = table.concat({
       "Normal:OculusNormal",
@@ -1897,6 +2110,49 @@ function M.map_keys(buf)
     vim.keymap.set("n", "q", close_sub, kopts)
     vim.keymap.set("n", "<Esc>", close_sub, kopts)
     vim.keymap.set("n", "<C-c>", close_sub, kopts)
+
+    vim.keymap.set("n", "<ScrollWheelDown>", function()
+      M.scroll_window(win, footer_win, 3)
+    end, kopts)
+
+    vim.keymap.set("n", "<ScrollWheelUp>", function()
+      M.scroll_window(win, footer_win, -3)
+    end, kopts)
+
+    vim.keymap.set("n", "<ScrollWheelLeft>", function() end, kopts)
+    vim.keymap.set("n", "<ScrollWheelRight>", function() end, kopts)
+
+    vim.keymap.set("n", "j", function()
+      pcall(vim.cmd.normal, { "j", bang = true })
+      M.clamp_scroll(win, footer_win)
+    end, kopts)
+
+    vim.keymap.set("n", "k", function()
+      pcall(vim.cmd.normal, { "k", bang = true })
+      M.clamp_scroll(win, footer_win)
+    end, kopts)
+
+    vim.keymap.set("n", "<Down>", function()
+      pcall(vim.cmd.normal, { "j", bang = true })
+      M.clamp_scroll(win, footer_win)
+    end, kopts)
+
+    vim.keymap.set("n", "<Up>", function()
+      pcall(vim.cmd.normal, { "k", bang = true })
+      M.clamp_scroll(win, footer_win)
+    end, kopts)
+
+    local sub_scroll_group = vim.api.nvim_create_augroup("oculus_investigate_scroll", { clear = true })
+
+    vim.api.nvim_create_autocmd({ "CursorMoved", "WinScrolled" }, {
+      group = sub_scroll_group,
+      buffer = buf,
+      callback = function()
+        M.clamp_scroll(win, footer_win)
+      end,
+    })
+
+    M.clamp_scroll(win, footer_win)
     return win
   end
 
