@@ -330,5 +330,25 @@ do
   assert(claim_ledger:find("ADVERSARIAL VERDICT", 1, true), "expected verdict in ledger")
   window.close()
   assert(window.state.win == nil and window.state.ledger_win == nil, "expected windows closed after test 11")
+  -- Test 12: Vertical Slice: Executive Brief, Worktree Harness & Candidate Patches
+  local worktree = require("oculus.investigate.worktree")
+  local branch_slug = worktree.get_suggested_branch(forge_bundle)
+  assert(branch_slug:find("experiment-issue-42", 1, true), "expected suggested branch for issue 42")
+  local wt_dir = worktree.get_worktree_dir(root, branch_slug)
+  assert(wt_dir:find("experiment-issue-42", 1, true), "expected worktree path with branch slug")
+  local test_cmd = worktree.detect_test_cmd(root)
+  assert(type(test_cmd) == "table" and #test_cmd >= 2, "expected detected test command")
+  -- Candidate patches matrix
+  local patches = agent.generate_candidate_patches(forge_bundle)
+  assert(patches:find("CANDIDATE PATCH A", 1, true), "expected Candidate Patch A in matrix")
+  assert(patches:find("CANDIDATE PATCH B", 1, true), "expected Candidate Patch B in matrix")
+  assert(patches:find("Blast Radius", 1, true), "expected blast radius comparison")
+  -- Executive brief rendering in window
+  window.open(forge_bundle)
+  local rendered_eb = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), "\n")
+  assert(rendered_eb:find("EXECUTIVE BRIEF", 1, true), "expected Executive Brief in rendered window")
+  assert(rendered_eb:find("Surface:", 1, true), "expected surface line in executive brief")
+  assert(rendered_eb:find("Blast:", 1, true), "expected blast line in executive brief")
+  window.close()
   print("ALL INVESTIGATE TESTS PASSED!")
 end

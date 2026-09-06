@@ -331,4 +331,57 @@ function M.generate_refactor_plan(crossing)
   return table.concat(lines, "\n")
 end
 
+function M.generate_candidate_patches(bundle)
+  bundle = bundle or {}
+
+  local entity = (bundle.entities and bundle.entities[1])
+    or (bundle.traceability_links and bundle.traceability_links[1] and bundle.traceability_links[1].target_entity)
+    or { name = "target_symbol", file_path = "src/lib.rs", start_line = 1 }
+
+  local impact = bundle.impact or {}
+  local callers = impact.direct_callers or {}
+  local tests = impact.affected_tests or {}
+  local dynamics = bundle.dynamics or {}
+  local crossings = dynamics.boundary_crossings or {}
+
+  local lines = {
+    "# COMPARATIVE CANDIDATE PATCH MATRIX (First-Class Artifacts)",
+    "Evaluate candidate approaches by blast radius, caller impact, and verification confidence before patching.",
+    "",
+    string.format("Target Entity: `%s` in `%s:%d`", entity.name, entity.file_path, entity.start_line or 1),
+    "",
+    "## CANDIDATE PATCH A: Minimal Defensive Fix",
+    "• Strategy:    Local invariant check at entry point without changing interface signatures.",
+    string.format("• Blast Radius: 1 file (`%s`) · 0 boundary crossings · %d caller(s) unaffected", entity.file_path, #callers),
+    string.format("• Test Scope:   Exercises %d existing test(s); requires 1 regression probe test", #tests),
+    "• Risk Level:   LOW (Zero public API alteration)",
+    "• Proposed Probe:",
+    "  ```",
+    string.format("  // Ensure valid input invariants prior to execution in %s", entity.name),
+    "  if input == nil or input.is_empty() {",
+    "      return Err(Error::InvalidInvariant(\"empty input\"));",
+    "  }",
+    "  ```",
+    "",
+    "## CANDIDATE PATCH B: Architectural Decoupling Refactor",
+    "• Strategy:    Decouple caller dependencies via typed adapter or dependency inversion.",
+    string.format("• Blast Radius: %d caller(s) across %d file(s) · resolves %d boundary crossing(s)", #callers, math.max(1, #(impact.affected_files or {})), #crossings),
+    string.format("• Test Scope:   Requires %d unit tests + integration test scaffold for downstream callers", #callers + 1),
+    "• Risk Level:   MEDIUM (Refactors internal caller interface)",
+    "• Proposed Probe:",
+    "  ```",
+    string.format("  // Define decoupled trait/interface isolating %s", entity.name),
+    string.format("  pub trait %sHandler {", entity.name),
+    "      fn handle(&self, request: &Request) -> Result<Response>;",
+    "  }",
+    "  ```",
+    "",
+    "## RECOMMENDATION & DECISION GUIDE",
+    #callers > 3 and "• Recommendation: Patch B is preferred to eliminate architectural coupling across multiple callers."
+      or "• Recommendation: Patch A is preferred for immediate, low-risk resolution with zero downstream blast radius.",
+  }
+
+  return table.concat(lines, "\n")
+end
+
 return M

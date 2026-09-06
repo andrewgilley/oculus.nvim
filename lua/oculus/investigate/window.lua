@@ -110,7 +110,7 @@ function M.open(bundle, opts)
     col = col,
     style = "minimal",
     border = border,
-    footer = "  <CR> jump   Tab ledger   t test   r refactor   a agent   h inspect   q close  ",
+    footer = "  <CR> jump   Tab ledger   e experiment   p patches   t test   r refactor   a agent   h inspect   q close  ",
     footer_pos = "left",
   })
 
@@ -228,9 +228,52 @@ function M.render(buf, bundle)
   add_line(string.format("    Repository: %s · Engine: v%s", repo_name, engine_ver), "Comment", nil, { kind = "overview" })
   add_line(string.format("    Analyzed:   %s", analyzed), "Comment", nil, { kind = "overview" })
   add_line("", nil)
-  -- 2. Invariants & Reality Check Integrity
+  -- 2. Executive Brief (High-Signal Insights)
+  add_line("  ▾ EXECUTIVE BRIEF (High-Signal Insights)", "Special", nil, { kind = "overview" })
+  local trace_links = bundle.traceability_links or {}
+  local entities = bundle.entities or {}
+  local impact = bundle.impact
+  local callers = (impact and impact.direct_callers) or {}
+  local tests = (impact and impact.affected_tests) or {}
+  local files = (impact and impact.affected_files) or {}
+  local dynamics = bundle.dynamics
+  local crossings = (dynamics and dynamics.boundary_crossings) or {}
+  local alerts = (dynamics and dynamics.subsystem_instabilities) or {}
+  local precedents = (dynamics and dynamics.historical_precedents) or {}
   local invariants = bundle.invariants or {}
 
+  local surface_desc = #trace_links > 0
+      and string.format("    • Surface:    %d symbol(s) linked from context (%s)", #trace_links, (trace_links[1].target_entity and trace_links[1].target_entity.name) or "candidate")
+    or (#entities > 0 and string.format("    • Surface:    %d modified semantic entity(ies) isolated", #entities)
+        or "    • Surface:    No direct AST modifications isolated; clean working tree")
+
+  add_line(surface_desc, "DiagnosticInfo", nil, { kind = "overview" })
+  local blast_desc = string.format("    • Blast:      %d direct caller(s) across %d file(s) · %d covering test(s)", #callers, math.max(1, #files), #tests)
+  add_line(blast_desc, #tests > 0 and "DiagnosticOk" or "DiagnosticWarn", nil, { kind = "overview" })
+
+  local dyn_desc = (#crossings > 0 or #alerts > 0)
+      and string.format("    • Dynamics:   %d boundary crossing(s) · %d risk alert(s)", #crossings, #alerts)
+    or "    • Dynamics:   Zero boundary violations; clean subsystem confinement"
+
+  add_line(dyn_desc, (#crossings > 0 or #alerts > 0) and "DiagnosticError" or "DiagnosticOk", nil, { kind = "overview" })
+
+  if #precedents > 0 then
+    local p = precedents[1]
+    local prec_desc = string.format("    • Precedent:  Commit %s addressed similar files (\"%s\")", p.commit_oid:sub(1, 7), p.message:sub(1, 40))
+    add_line(prec_desc, "Comment", nil, { kind = "historical_precedent", precedent = p })
+  end
+
+  local passed_inv = 0
+
+  for _, inv in ipairs(invariants) do
+    if inv.passed then passed_inv = passed_inv + 1 end
+  end
+
+  local inv_desc = string.format("    • Invariants: ✓ %d/%d verified ground-truth integrity", passed_inv, math.max(1, #invariants))
+  add_line(inv_desc, passed_inv == #invariants and "DiagnosticOk" or "DiagnosticWarn", nil, { kind = "overview" })
+  add_line("", nil)
+
+  -- 3. Invariants & Reality Check Integrity
   if #invariants > 0 then
     add_line("  ▾ VERIFIED INVARIANTS & INTEGRITY", "Special", nil, { kind = "overview" })
 
@@ -520,10 +563,12 @@ function M.render(buf, bundle)
 
   -- 9. Connected Actions & Experiments Toolbar
   add_line("  ▾ CONNECTED ACTIONS & EXPERIMENTS", "Special", nil, { kind = "overview" })
+  add_line("    ├─ [e] Run Worktree Experiment (isolate hypothesis in git worktree & run test probe)", "Special", nil, { kind = "action_hint", action = "worktree_experiment" })
+  add_line("    ├─ [p] Compare Candidate Patches (evaluate minimal fix vs. architectural refactor)", "Identifier", nil, { kind = "action_hint", action = "candidate_patches" })
   add_line("    ├─ [t] Generate Invariant Test Scaffold (protect callers & prevent regressions)", "Identifier", nil, { kind = "action_hint", action = "test_scaffold" })
   add_line("    ├─ [r] Plan Subsystem Decoupling Refactor (isolate boundary crossings)", "Identifier", nil, { kind = "action_hint", action = "refactor_plan" })
   add_line("    ├─ [a] Synthesize / Re-verify Agent Hypotheses against Ground Truth", "Identifier", nil, { kind = "action_hint", action = "agent_synthesize" })
-  add_line("    └─ [i] Pivot to Oculus Inspect (interactive diff & hunk review)", "Identifier", nil, { kind = "action_hint", action = "inspect_pivot" })
+  add_line("    └─ [h] Pivot to Oculus Inspect (interactive diff & hunk review)", "Identifier", nil, { kind = "action_hint", action = "inspect_pivot" })
   add_line("", nil)
   M.state.line_targets = line_targets
   M.state.line_provenance = line_provenance
@@ -987,7 +1032,7 @@ function M.map_keys(buf)
         vim.api.nvim_win_set_buf(M.state.win, M.state.buf)
 
         pcall(vim.api.nvim_win_set_config, M.state.win, {
-          footer = "  <CR> jump   Tab ledger   t test   r refactor   a agent   h inspect   q close  ",
+          footer = "  <CR> jump   Tab ledger   e experiment   p patches   t test   r refactor   a agent   h inspect   q close  ",
           footer_pos = "left",
         })
       end
@@ -1013,6 +1058,50 @@ function M.map_keys(buf)
       end
     end
   end, "Jump to entity source location")
+
+  map("e", function()
+    local bundle = M.state.bundle
+
+    if not bundle then
+      return
+    end
+
+    local worktree = require("oculus.investigate.worktree")
+    worktree.open_experiment_ui(bundle)
+  end, "Run worktree experiment and hypothesis probe")
+
+  map("p", function()
+    local bundle = M.state.bundle
+
+    if not bundle then
+      return
+    end
+
+    local agent = require("oculus.investigate.agent")
+    local patch_text = agent.generate_candidate_patches(bundle)
+    local p_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[p_buf].filetype = "markdown"
+    vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, vim.split(patch_text, "\n"))
+
+    local p_win = vim.api.nvim_open_win(p_buf, true, {
+      relative = "editor",
+      width = math.floor(vim.o.columns * 0.78),
+      height = math.min(28, vim.o.lines - 8),
+      row = math.floor(vim.o.lines * 0.12),
+      col = math.floor(vim.o.columns * 0.11),
+      border = "rounded",
+      footer = "  q close candidate patches  ",
+      footer_pos = "left",
+    })
+
+    vim.keymap.set("n", "q", function()
+      pcall(vim.api.nvim_win_close, p_win, true)
+    end, { buffer = p_buf, silent = true })
+
+    vim.keymap.set("n", "<Esc>", function()
+      pcall(vim.api.nvim_win_close, p_win, true)
+    end, { buffer = p_buf, silent = true })
+  end, "Compare candidate patches (minimal vs architectural)")
 
   map("t", function()
     local bundle = M.state.bundle
