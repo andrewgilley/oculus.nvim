@@ -6109,12 +6109,23 @@ local function investigate_current()
     project = target.project or target
   end
 
+  local launch_origin = {
+    type = "activity_list",
+    win = M.state.win,
+    buf = M.state.buf,
+    view = M.state.view,
+    project = project,
+    contributor = M.state.contributor,
+    cursor = is_valid_win(M.state.win) and vim.api.nvim_win_get_cursor(M.state.win) or (line and { line, 0 } or nil),
+  }
+
   local context = {
     project = project,
     repository = project and project.repository,
     cwd = vim.fn.getcwd(),
     target_context = inspect_target,
     event = event,
+    launch_origin = launch_origin,
   }
 
   if source_line and M.state.view == "activity" then
@@ -6146,10 +6157,21 @@ local function prompt_investigate_by_id()
       return
     end
 
+    local launch_origin = {
+      type = "activity_list",
+      win = M.state.win,
+      buf = M.state.buf,
+      view = M.state.view,
+      project = project,
+      contributor = M.state.contributor,
+      cursor = is_valid_win(M.state.win) and vim.api.nvim_win_get_cursor(M.state.win) or (line and { line, 0 } or nil),
+    }
+
     local context = {
       project = project,
       repository = project and project.repository,
       cwd = vim.fn.getcwd(),
+      launch_origin = launch_origin,
     }
 
     local target = vim.trim(input)
@@ -7368,6 +7390,18 @@ function M.open(opts)
 end
 
 function M.toggle(opts)
+  local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
+
+  if ok_inv and inv_win.is_open and inv_win.is_open() then
+    inv_win.close()
+    return
+  end
+
+  if ok_inv and inv_win.can_restore and inv_win.can_restore() then
+    inv_win.restore()
+    return
+  end
+
   if is_valid_win(M.state.win) then
     M.close()
   else

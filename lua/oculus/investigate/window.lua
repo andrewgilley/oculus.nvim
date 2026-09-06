@@ -19,6 +19,9 @@ M.state = {
   line_provenance = {},
   line_sections = {},
   collapsed_sections = {},
+  saved_investigation = nil,
+  should_restore = false,
+  launch_origin = nil,
 }
 
 local function is_valid_win(win)
@@ -352,12 +355,29 @@ end
 
 local closing = false
 
-function M.close(for_subwin)
+function M.close(for_subwin, returning_to_origin, close_parent)
   if closing then
     return
   end
 
   closing = true
+
+  if not for_subwin and M.state.bundle then
+    M.state.saved_investigation = {
+      bundle = M.state.bundle,
+      opts = vim.deepcopy(M.state.opts or {}),
+      collapsed_sections = vim.deepcopy(M.state.collapsed_sections or {}),
+      cursor = is_valid_win(M.state.win) and vim.api.nvim_win_get_cursor(M.state.win) or nil,
+      launch_origin = M.state.launch_origin,
+    }
+
+    if not returning_to_origin then
+      M.state.should_restore = true
+    else
+      M.state.should_restore = false
+    end
+  end
+
   close_investigate_footer()
 
   if is_valid_win(M.state.ledger_win) then
@@ -425,15 +445,117 @@ function M.close(for_subwin)
     local ok, oculus_window = pcall(require, "oculus.window")
 
     if ok and oculus_window.state and is_valid_win(oculus_window.state.win) then
-      if type(oculus_window.render_activity_footer) == "function" then
-        pcall(oculus_window.render_activity_footer)
-      end
+      if close_parent then
+        pcall(oculus_window.close)
+      else
+        if type(oculus_window.render_activity_footer) == "function" then
+          pcall(oculus_window.render_activity_footer)
+        end
 
-      pcall(vim.api.nvim_set_current_win, oculus_window.state.win)
+        pcall(vim.api.nvim_set_current_win, oculus_window.state.win)
+      end
     end
   end
 
   closing = false
+end
+
+function M.is_open()
+  return is_valid_win(M.state.win)
+end
+
+function M.can_restore()
+  return (not M.is_open())
+    and M.state.should_restore == true
+    and M.state.saved_investigation ~= nil
+    and M.state.saved_investigation.bundle ~= nil
+end
+
+function M.restore()
+  local saved = M.state.saved_investigation
+
+  if not saved or not saved.bundle then
+    return false
+  end
+
+  M.state.should_restore = false
+  M.state.collapsed_sections = vim.deepcopy(saved.collapsed_sections or {})
+  M.state.launch_origin = saved.launch_origin
+  M.open(saved.bundle, saved.opts or {})
+
+  if is_valid_win(M.state.win) and saved.cursor and #saved.cursor == 2 then
+    pcall(vim.api.nvim_win_set_cursor, M.state.win, saved.cursor)
+    M.clamp_scroll(M.state.win, M.state.footer_win)
+  end
+
+  return true
+end
+
+function M.return_to_launch_origin()
+  local origin = M.state.launch_origin
+  local win = M.state.win
+
+  if not is_valid_win(win) and not origin then
+    return
+  end
+
+  M.close(false, true)
+
+  if not origin then
+    local ok_win, oc_win = pcall(require, "oculus.window")
+
+    if ok_win and oc_win.state and is_valid_win(oc_win.state.win) then
+      pcall(vim.api.nvim_set_current_win, oc_win.state.win)
+
+      if type(oc_win.render_activity_footer) == "function" then
+        pcall(oc_win.render_activity_footer)
+      end
+    end
+
+    return
+  end
+
+  if origin.type == "activity_list" or origin.type == "oculus_window" then
+    local ok_win, oc_win = pcall(require, "oculus.window")
+
+    if ok_win then
+      if is_valid_win(origin.win) then
+        pcall(vim.api.nvim_set_current_win, origin.win)
+
+        if origin.cursor and #origin.cursor == 2 then
+          pcall(vim.api.nvim_win_set_cursor, origin.win, origin.cursor)
+        end
+
+        if type(oc_win.render_activity_footer) == "function" then
+          pcall(oc_win.render_activity_footer)
+        end
+      else
+        if origin.view == "activity" and (origin.project or origin.contributor) then
+          oc_win.state.activity_project = origin.project
+          oc_win.state.contributor = origin.contributor
+          oc_win.state.view = "activity"
+        elseif origin.view then
+          oc_win.state.view = origin.view
+        end
+
+        oc_win.open(vim.tbl_extend("force", M.state.opts or {}, { force = true }))
+
+        if origin.cursor and is_valid_win(oc_win.state.win) and #origin.cursor == 2 then
+          pcall(vim.api.nvim_win_set_cursor, oc_win.state.win, origin.cursor)
+        end
+      end
+    end
+  elseif origin.type == "buffer" then
+    if is_valid_win(origin.win) then
+      pcall(vim.api.nvim_set_current_win, origin.win)
+    end
+  elseif origin.type == "inspect" then
+    local ok_insp, insp = pcall(require, "oculus.inspect")
+
+    if ok_insp and type(insp.restore_group) == "function" and origin.group then
+      insp.restore_group(origin.group)
+    end
+  end
 end
 
 function M.open(bundle, opts)
@@ -455,6 +577,34 @@ function M.open(bundle, opts)
 
   if ok and type(oculus_window.stop_activity_investigate_spinner) == "function" then
     pcall(oculus_window.stop_activity_investigate_spinner)
+  end
+
+  M.state.should_restore = false
+
+  if opts.launch_origin then
+    M.state.launch_origin = opts.launch_origin
+  elseif not M.state.launch_origin then
+    local ok_win, oc_win = pcall(require, "oculus.window")
+
+    if ok_win and oc_win.state and is_valid_win(oc_win.state.win) then
+      M.state.launch_origin = {
+        type = "activity_list",
+        win = oc_win.state.win,
+        buf = oc_win.state.buf,
+        view = oc_win.state.view or "activity",
+        project = oc_win.state.activity_project,
+        contributor = oc_win.state.contributor,
+        cursor = pcall(vim.api.nvim_win_get_cursor, oc_win.state.win) and vim.api.nvim_win_get_cursor(oc_win.state.win) or { 1, 0 },
+      }
+    else
+      local cur_win = vim.api.nvim_get_current_win()
+
+      M.state.launch_origin = {
+        type = "buffer",
+        win = cur_win,
+        buf = vim.api.nvim_win_get_buf(cur_win),
+      }
+    end
   end
 
   M.state.opts = opts
@@ -1899,10 +2049,14 @@ function M.map_keys(buf)
     local cursor = vim.api.nvim_win_get_cursor(win)
     local sec = (M.state.line_sections or {})[cursor[1]]
 
-    if sec and sec.id and not (M.state.collapsed_sections and M.state.collapsed_sections[sec.id]) then
-      collapse_current_section(sec.id)
-    elseif cursor[2] ~= 0 then
-      pcall(vim.api.nvim_win_set_cursor, win, { cursor[1], 0 })
+    if sec and sec.id then
+      if not (M.state.collapsed_sections and M.state.collapsed_sections[sec.id]) then
+        collapse_current_section(sec.id)
+      elseif cursor[2] ~= 0 then
+        pcall(vim.api.nvim_win_set_cursor, win, { cursor[1], 0 })
+      end
+    else
+      M.return_to_launch_origin()
     end
   end
 
@@ -1949,9 +2103,19 @@ function M.map_keys(buf)
   map("<Down>", move_down, "Move down in investigation")
   map("<Left>", handle_left, "Collapse section in investigation")
   map("<Right>", handle_right, "Open section in investigation")
-  map("q", M.close, "Close investigation")
-  map("<Esc>", M.close, "Close investigation")
-  map("<C-c>", M.close, "Close investigation")
+
+  map("q", function()
+    M.close(false, false, true)
+  end, "Close investigation and plugin")
+
+  map("<Esc>", function()
+    M.close(false, false, true)
+  end, "Close investigation and plugin")
+
+  map("<C-c>", function()
+    M.close(false, false, true)
+  end, "Close investigation and plugin")
+
   local scroll_down_keys = { "<ScrollWheelDown>", "<2-ScrollWheelDown>", "<3-ScrollWheelDown>", "<4-ScrollWheelDown>" }
   local scroll_up_keys = { "<ScrollWheelUp>", "<2-ScrollWheelUp>", "<3-ScrollWheelUp>", "<4-ScrollWheelUp>" }
 

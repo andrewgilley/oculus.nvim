@@ -342,6 +342,10 @@ function M.investigate(target, opts, context, callback)
   opts = opts or {}
   context = context or {}
 
+  if context.launch_origin and not opts.launch_origin then
+    opts = vim.tbl_extend("force", opts, { launch_origin = context.launch_origin })
+  end
+
   if type(target) == "table" then
     target = nil
   end
@@ -442,6 +446,18 @@ end
 
 function M.close()
   window.close()
+end
+
+function M.is_open()
+  return window.is_open()
+end
+
+function M.can_restore()
+  return window.can_restore()
+end
+
+function M.restore()
+  return window.restore()
 end
 
 return M

@@ -1257,5 +1257,81 @@ do
     end
 
     window.close()
+  end
+
+  -- Test: Return to launch origin on 'j' when not on section list row, and restore closed investigation on require("oculus").open()
+  do
+    local inv_window = require("oculus.investigate.window")
+    local oculus_main = require("oculus")
+    -- 1. Test returning to launch origin when pressing 'j' on a non-section row
+    local origin_mock_buf = vim.api.nvim_create_buf(false, true)
+
+    local origin_mock_win = vim.api.nvim_open_win(origin_mock_buf, true, {
+      relative = "editor",
+      row = 3,
+      col = 3,
+      width = 80,
+      height = 20,
+    })
+
+    local sample_bundle = {
+      metadata = {
+        repository_root = root,
+        target = "origin-restore-target",
+      },
+      entities = {
+        { name = "sample_fn", file_path = "lua/oculus/init.lua", kind = "function", start_line = 10 },
+      },
+    }
+
+    inv_window.open(sample_bundle, {
+      launch_origin = {
+        type = "activity_list",
+        win = origin_mock_win,
+        buf = origin_mock_buf,
+        cursor = { 1, 0 },
+      },
+    })
+
+    assert(inv_window.is_open(), "expected investigate window open")
+    -- Locate a non-section line (e.g. spacer line where line_sections is nil)
+    local target_spacer_line = nil
+
+    for l = 1, vim.api.nvim_buf_line_count(inv_window.state.buf) do
+      if not (inv_window.state.line_sections and inv_window.state.line_sections[l]) then
+        target_spacer_line = l
+        break
+      end
+    end
+
+    assert(target_spacer_line ~= nil, "expected non-section spacer line")
+    vim.api.nvim_win_set_cursor(inv_window.state.win, { target_spacer_line, 0 })
+    local j_mapping = vim.tbl_filter(function(k) return k.lhs == "j" end, vim.api.nvim_buf_get_keymap(inv_window.state.buf, "n"))[1]
+    assert(j_mapping ~= nil and type(j_mapping.callback) == "function", "expected j mapping")
+    -- Pressing 'j' on non-section row returns user to launch origin
+    j_mapping.callback()
+    assert(not inv_window.is_open(), "expected investigate window to close when j is pressed on non-section row")
+    assert(vim.api.nvim_get_current_win() == origin_mock_win, "expected focus to return to launch origin window")
+    assert(not inv_window.can_restore(), "expected can_restore to be false after deliberate return to launch origin")
+    pcall(vim.api.nvim_win_close, origin_mock_win, true)
+    pcall(vim.api.nvim_buf_delete, origin_mock_buf, { force = true })
+    -- 2. Test restoring closed investigation on require("oculus").open() (<leader>oc)
+    inv_window.open(sample_bundle)
+    assert(inv_window.is_open(), "expected investigate window open")
+    inv_window.state.collapsed_sections = { entities = true }
+    vim.api.nvim_win_set_cursor(inv_window.state.win, { 2, 0 })
+    -- Close via 'q'
+    local q_mapping = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(inv_window.state.buf, "n"))[1]
+    assert(q_mapping ~= nil and type(q_mapping.callback) == "function", "expected q mapping")
+    q_mapping.callback()
+    assert(not inv_window.is_open(), "expected investigate window closed via q")
+    assert(inv_window.can_restore(), "expected can_restore to be true after investigate close")
+    -- Open plugin again via oculus.open() (simulating <leader>oc)
+    oculus_main.open()
+    assert(inv_window.is_open(), "expected investigate window restored on oculus.open()")
+    assert(inv_window.state.collapsed_sections["entities"] == true, "expected collapsed sections preserved")
+    assert(vim.api.nvim_win_get_cursor(inv_window.state.win)[1] == 2, "expected cursor position preserved")
+    inv_window.close()
+  end
+
   print("ALL INVESTIGATE TESTS PASSED!")
-end
