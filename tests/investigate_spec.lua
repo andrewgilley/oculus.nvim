@@ -930,7 +930,7 @@ do
   window.close()
   assert(window.state.win == nil)
   assert(vim.tbl_isempty(window.state.collapsed_sections or {}), "expected collapsed_sections reset on full close")
-  -- Test: Co-change and implicit architecture sections limit display to 10 items initially
+  -- Test: Co-change and implicit architecture sections limit display to 5 items initially
   local many_co_changes = {}
 
   for i = 1, 20 do
@@ -972,8 +972,8 @@ do
     end
   end
 
-  assert(tree_cc_count == 10, string.format("expected 10 tree co-change items, got %d", tree_cc_count))
-  assert(ledger_cc_count == 10, string.format("expected 10 ledger co-change items, got %d", ledger_cc_count))
+  assert(tree_cc_count == 5, string.format("expected 5 tree co-change items, got %d", tree_cc_count))
+  assert(ledger_cc_count == 5, string.format("expected 5 ledger co-change items, got %d", ledger_cc_count))
   window.close()
   -- Test: Cursor prevented from scrolling into footer rows, and mouse scrolling bounded
   window.open(received_bundle)
