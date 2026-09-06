@@ -120,15 +120,9 @@ local function render_investigate_footer()
   end
 
   local width = config.width
-  local cmd_text
-
-  if M.state.view_mode == "ledger" then
-    cmd_text = "  Tab tree   q close"
-  else
-    local nav = require("oculus.navigation").resolve(M.state.opts)
-    local inspect_key = get_inspect_key(nav)
-    cmd_text = ("  <CR> jump   Tab ledger   e experiment   p patches   t test   r refactor   a agent   %s inspect   q close"):format(inspect_key)
-  end
+  local nav = require("oculus.navigation").resolve(M.state.opts)
+  local inspect_key = get_inspect_key(nav)
+  local cmd_text = ("  <CR> jump   e experiment   p patches   t test   r refactor   a agent   %s inspect   q close"):format(inspect_key)
 
   local lines = {
     "  " .. string.rep("─", math.max(1, width - 4)),
@@ -425,15 +419,6 @@ function M.open(bundle, opts)
       if is_valid_win(M.state.ledger_win) and is_valid_buf(M.state.ledger_buf) and M.state.ledger_buf ~= buf then
         local prov = M.state.line_provenance[line] or { kind = "overview" }
         M.render_ledger(M.state.ledger_buf, prov)
-      end
-
-      if M.state.ledger_start_line then
-        local new_mode = (line >= M.state.ledger_start_line) and "ledger" or "tree"
-
-        if new_mode ~= M.state.view_mode then
-          M.state.view_mode = new_mode
-          render_investigate_footer()
-        end
       end
     end,
   })
@@ -1536,36 +1521,17 @@ function M.map_keys(buf)
   map("<Esc>", M.close, "Close investigation")
   map("<C-c>", M.close, "Close investigation")
 
-  map("<Tab>", function()
-    if is_valid_win(M.state.ledger_win) and is_valid_win(M.state.win) then
+  if is_valid_win(M.state.ledger_win) and is_valid_win(M.state.win) then
+    map("<Tab>", function()
       local current = vim.api.nvim_get_current_win()
 
       if current == M.state.win then
         vim.api.nvim_set_current_win(M.state.ledger_win)
-        M.state.view_mode = "ledger"
       else
         vim.api.nvim_set_current_win(M.state.win)
-        M.state.view_mode = "tree"
       end
-
-      render_investigate_footer()
-    elseif is_valid_win(M.state.win) and M.state.ledger_start_line then
-      local cursor = vim.api.nvim_win_get_cursor(M.state.win)
-      local line = cursor[1]
-
-      if line < M.state.ledger_start_line then
-        M.state.tree_last_line = line
-        pcall(vim.api.nvim_win_set_cursor, M.state.win, { M.state.ledger_start_line, 0 })
-        M.state.view_mode = "ledger"
-      else
-        local target = math.max(1, M.state.tree_last_line or 1)
-        pcall(vim.api.nvim_win_set_cursor, M.state.win, { target, 0 })
-        M.state.view_mode = "tree"
-      end
-
-      render_investigate_footer()
-    end
-  end, "Toggle between tree and provenance ledger")
+    end, "Toggle focus between tree and ledger panes")
+  end
 
   map("<CR>", function()
     local win = M.state.win

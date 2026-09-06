@@ -392,7 +392,8 @@ do
   assert(#f_lines == 2, "expected 2 lines in footer buffer")
   assert(f_lines[1]:find("─", 1, true), "expected top separator line with ─ in line 1")
   assert(f_lines[2]:find("<CR> jump", 1, true), "expected <CR> jump in tree view footer")
-  assert(f_lines[2]:find("Tab ledger", 1, true), "expected Tab ledger in tree view footer")
+  assert(not f_lines[2]:find("Tab ledger", 1, true), "must not contain Tab ledger in tree view footer")
+  assert(not f_lines[2]:find("Tab tree", 1, true), "must not contain Tab tree in tree view footer")
   assert(f_lines[2]:find("e experiment", 1, true), "expected e experiment in tree view footer")
   assert(f_lines[2]:find("p patches", 1, true), "expected p patches in tree view footer")
   assert(f_lines[2]:find("t test", 1, true), "expected t test in tree view footer")
@@ -403,20 +404,9 @@ do
   -- Must NOT contain main window commands
   assert(not f_lines[2]:find("browser", 1, true), "must not contain main window browser command")
   assert(not f_lines[2]:find("filters", 1, true), "must not contain main window filters command")
-  -- Test Tab toggle switches footer to ledger commands
-  local tab_map = vim.fn.maparg("<Tab>", "n", false, true)
-  assert(tab_map ~= nil and type(tab_map.callback) == "function", "expected <Tab> mapping")
-  tab_map.callback()
-  assert(window.state.view_mode == "ledger", "expected view_mode == 'ledger' after Tab")
-  local f_lines_ledger = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
-  assert(f_lines_ledger[2]:find("Tab tree", 1, true), "expected Tab tree in ledger view footer")
-  assert(f_lines_ledger[2]:find("q close", 1, true), "expected q close in ledger view footer")
-  assert(not f_lines_ledger[2]:find("experiment", 1, true), "must not contain experiment in ledger footer")
-  -- Toggle Tab back to tree view
-  tab_map.callback()
-  assert(window.state.view_mode == "tree", "expected view_mode == 'tree' after second Tab")
-  local f_lines_tree = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
-  assert(f_lines_tree[2]:find("<CR> jump", 1, true), "expected <CR> jump restored in tree footer")
+  -- Verify Tab is not mapped for jumping in default single-window view
+  local tab_map = vim.tbl_filter(function(k) return k.lhs == "<Tab>" end, vim.api.nvim_buf_get_keymap(window.state.buf, "n"))[1]
+  assert(tab_map == nil, "expected <Tab> NOT to be mapped in single-window investigate view")
   -- Close investigate window and verify main window footer is restored
   window.close()
   assert(window.state.footer_win == nil, "expected investigate footer_win to be cleared on close")
@@ -823,30 +813,16 @@ do
   assert(all_text:find("DETERMINISTIC PROVENANCE LEDGER & AUDIT TRAIL", 1, true), "expected provenance ledger header in main buffer")
   assert(all_text:find("EVIDENCE GRAPH INVENTORY & REPOSITORY STATE", 1, true), "expected inventory in main buffer")
   assert(all_text:find("VERIFIED GROUND-TRUTH INVARIANTS", 1, true), "expected verified invariants in main buffer")
-  -- Tab key jumps cursor to bottom ledger section without buffer swap
+  -- Tab key is NOT mapped for jumping
   local orig_buf = window.state.buf
   local tab_km = vim.tbl_filter(function(k) return k.lhs == "<Tab>" end, vim.api.nvim_buf_get_keymap(orig_buf, "n"))[1]
-  assert(tab_km ~= nil, "expected <Tab> mapped on main buffer")
-  tab_km.callback()
-  assert(vim.api.nvim_win_get_buf(window.state.win) == orig_buf, "buffer must NOT swap on Tab")
-  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] >= window.state.ledger_start_line, "expected cursor jumped to bottom ledger section")
-  assert(window.state.view_mode == "ledger", "expected view_mode == 'ledger' when in bottom ledger")
-  -- Tab again jumps cursor back to upper tree section
-  tab_km.callback()
-  assert(vim.api.nvim_win_get_buf(window.state.win) == orig_buf, "buffer must still be orig_buf")
-  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] < window.state.ledger_start_line, "expected cursor jumped back to upper tree section")
-  assert(window.state.view_mode == "tree", "expected view_mode == 'tree' when in upper tree")
-  -- Manual cursor navigation crossing ledger_start_line updates view_mode and footer
-  vim.api.nvim_win_set_cursor(window.state.win, { window.state.ledger_start_line + 2, 0 })
-  vim.cmd("doautocmd CursorMoved")
-  assert(window.state.view_mode == "ledger", "expected view_mode == 'ledger' when cursor moved into ledger")
-  local f_lines_bot = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
-  assert(f_lines_bot[2]:find("Tab tree", 1, true), "expected Tab tree in footer when in bottom ledger")
-  vim.api.nvim_win_set_cursor(window.state.win, { 2, 0 })
-  vim.cmd("doautocmd CursorMoved")
-  assert(window.state.view_mode == "tree", "expected view_mode == 'tree' when cursor moved into tree")
-  local f_lines_top = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
-  assert(f_lines_top[2]:find("Tab ledger", 1, true), "expected Tab ledger in footer when in tree")
+  assert(tab_km == nil, "expected no <Tab> mapping on main buffer for ledger jump")
+  -- Footer commands remain constant without Tab jump prompts
+  local f_lines = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  assert(not f_lines[2]:find("Tab ledger", 1, true), "must not contain Tab ledger in footer")
+  assert(not f_lines[2]:find("Tab tree", 1, true), "must not contain Tab tree in footer")
+  assert(f_lines[2]:find("e experiment", 1, true), "expected e experiment in footer")
+  assert(f_lines[2]:find("p patches", 1, true), "expected p patches in footer")
   window.close()
   assert(window.state.win == nil and window.state.footer_win == nil, "expected clean close")
   print("ALL INVESTIGATE TESTS PASSED!")
