@@ -127,6 +127,7 @@ M.state = {
   inspect_input_buf = nil,
   inspect_input_win = nil,
   closing_inspect_input = false,
+  closing = false,
   view = "contributors",
   contributor = nil,
   activity_scope = nil,
@@ -4744,13 +4745,15 @@ local function close_inspect_input()
     vim.api.nvim_set_current_win(M.state.win)
   end
 
-  if is_valid_win(M.state.win) and is_sidebar_visible() then
-    close_activity_footer()
-    render_sidebar()
-  elseif is_valid_win(M.state.win) and M.state.view == "activity" then
-    render_activity_footer()
-  elseif is_valid_win(M.state.win) and M.state.view == "contributors" then
-    close_activity_footer()
+  if not M.state.closing then
+    if is_valid_win(M.state.win) and is_sidebar_visible() then
+      close_activity_footer()
+      render_sidebar()
+    elseif is_valid_win(M.state.win) and M.state.view == "activity" then
+      render_activity_footer()
+    elseif is_valid_win(M.state.win) and M.state.view == "contributors" then
+      close_activity_footer()
+    end
   end
 
   vim.schedule(function()
@@ -6997,6 +7000,11 @@ local function map_keys(buf)
 end
 
 function M.close()
+  if M.state.closing then
+    return
+  end
+
+  M.state.closing = true
   local origin_tab = M.state.origin_tab
   local origin_win = M.state.origin_win
   local origin_view = vim.deepcopy(M.state.origin_view)
@@ -7022,10 +7030,10 @@ function M.close()
     )
   end
 
-  close_activity_footer()
   close_add_dialog()
   close_inspect_input()
   close_sidebar()
+  close_activity_footer()
 
   if is_valid_win(M.state.win) then
     M.state.restore_cursor = vim.api.nvim_win_get_cursor(M.state.win)
@@ -7078,6 +7086,8 @@ function M.close()
       end
     end
   end
+
+  M.state.closing = false
 end
 
 function M.inspection_window_options()
@@ -7320,7 +7330,7 @@ function M.open(opts)
 
       local is_inv = ok_inv and (
         (type(inv_win.is_investigate_win) == "function" and inv_win.is_investigate_win(entered))
-        or (inv_win.state and (entered == inv_win.state.win or entered == inv_win.state.ledger_win or entered == inv_win.state.footer_win))
+        or (inv_win.state and (entered == inv_win.state.win or entered == inv_win.state.ledger_win or entered == inv_win.state.footer_win or entered == inv_win.state.sub_win))
       )
 
       if entered == M.state.win

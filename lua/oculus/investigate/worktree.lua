@@ -109,7 +109,7 @@ function M.run_test_probe(worktree_dir, test_cmd, callback)
   end
 end
 
-function M.open_experiment_ui(bundle, opts)
+function M.open_experiment_ui(bundle, opts, on_close)
   bundle = bundle or {}
   opts = opts or {}
   local meta = bundle.metadata or {}
@@ -121,22 +121,42 @@ function M.open_experiment_ui(bundle, opts)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].filetype = "markdown"
-  local win_w = math.min(100, math.floor(vim.o.columns * 0.82))
-  local win_h = math.min(30, math.floor(vim.o.lines * 0.75))
-  local row = math.floor((vim.o.lines - win_h) / 2)
-  local col = math.floor((vim.o.columns - win_w) / 2)
+  local cfg = opts.window_config
 
-  local win = vim.api.nvim_open_win(buf, true, {
+  if not cfg then
+    local ok_win, inv_win = pcall(require, "oculus.investigate.window")
+
+    if ok_win and type(inv_win.window_config) == "function" then
+      cfg = inv_win.window_config(opts)
+    end
+  end
+
+  local win_w = (cfg and cfg.width) or math.min(100, math.floor(vim.o.columns * 0.82))
+  local win_h = (cfg and cfg.height) or math.min(30, math.floor(vim.o.lines * 0.75))
+  local row = (cfg and cfg.row) or math.floor((vim.o.lines - win_h) / 2)
+  local col = (cfg and cfg.col) or math.floor((vim.o.columns - win_w) / 2)
+  local border = (cfg and cfg.border) or "rounded"
+
+  local win = vim.api.nvim_open_win(buf, false, {
     relative = "editor",
     width = win_w,
     height = win_h,
     row = row,
     col = col,
     style = "minimal",
-    border = "rounded",
+    border = border,
+    zindex = 60,
     footer = "  r run probe   o open worktree   p candidate patches   q close  ",
     footer_pos = "left",
   })
+
+  pcall(vim.api.nvim_set_current_win, win)
+
+  vim.schedule(function()
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_set_current_win, win)
+    end
+  end)
 
   vim.wo[win].cursorline = true
   vim.wo[win].wrap = false
@@ -257,41 +277,57 @@ function M.open_experiment_ui(bundle, opts)
     vim.bo[p_buf].filetype = "markdown"
     vim.api.nvim_buf_set_lines(p_buf, 0, -1, false, vim.split(patch_text, "\n"))
 
-    local p_win = vim.api.nvim_open_win(p_buf, true, {
+    local p_win = vim.api.nvim_open_win(p_buf, false, {
       relative = "editor",
       width = win_w,
       height = win_h,
       row = row,
       col = col,
       style = "minimal",
-      border = "rounded",
+      border = border,
+      zindex = 60,
       footer = "  q close candidate patches  ",
       footer_pos = "left",
     })
 
-    vim.keymap.set("n", "q", function()
-      pcall(vim.api.nvim_win_close, p_win, true)
-    end, { buffer = p_buf, silent = true })
+    pcall(vim.api.nvim_set_current_win, p_win)
 
-    vim.keymap.set("n", "<Esc>", function()
+    vim.schedule(function()
+      if vim.api.nvim_win_is_valid(p_win) then
+        pcall(vim.api.nvim_set_current_win, p_win)
+      end
+    end)
+
+    local function close_p()
       pcall(vim.api.nvim_win_close, p_win, true)
-    end, { buffer = p_buf, silent = true })
+
+      if vim.api.nvim_win_is_valid(win) then
+        pcall(vim.api.nvim_set_current_win, win)
+      end
+    end
+
+    vim.keymap.set("n", "q", close_p, { buffer = p_buf, silent = true, nowait = true })
+    vim.keymap.set("n", "<Esc>", close_p, { buffer = p_buf, silent = true, nowait = true })
+    vim.keymap.set("n", "<C-c>", close_p, { buffer = p_buf, silent = true, nowait = true })
+  end
+
+  local function close_ui()
+    pcall(vim.api.nvim_win_close, win, true)
+
+    if type(on_close) == "function" then
+      on_close()
+    end
   end
 
   local map_opts = { buffer = buf, silent = true, nowait = true }
   vim.keymap.set("n", "r", ensure_and_run_test, map_opts)
   vim.keymap.set("n", "o", open_worktree_editor, map_opts)
   vim.keymap.set("n", "p", show_candidate_patches, map_opts)
-
-  vim.keymap.set("n", "q", function()
-    pcall(vim.api.nvim_win_close, win, true)
-  end, map_opts)
-
-  vim.keymap.set("n", "<Esc>", function()
-    pcall(vim.api.nvim_win_close, win, true)
-  end, map_opts)
-
+  vim.keymap.set("n", "q", close_ui, map_opts)
+  vim.keymap.set("n", "<Esc>", close_ui, map_opts)
+  vim.keymap.set("n", "<C-c>", close_ui, map_opts)
   render()
+  return win
 end
 
 return M

@@ -659,5 +659,139 @@ do
   assert(not hjkl_footer_text:find("i inspect", 1, true), "expected footer NOT to contain 'i inspect' under hjkl")
   assert(hjkl_footer_text:find("H inspect", 1, true), "expected footer to contain 'H inspect' under hjkl")
   window.close()
+  -- Test 27: Sub-windows opened from investigate window close investigate window, match main window dimensions, auto-focus, and restore on close
+  local oculus_window = require("oculus.window")
+  oculus_window.open()
+  local main_cfg = oculus_window.window_config()
+  local main_win = oculus_window.state.win
+
+  local subwin_bundle = {
+    metadata = {
+      repository_root = root,
+      target = "subwin-target",
+    },
+    invariants = {
+      { rule = "inv1", status = "satisfied" },
+    },
+    entities = {
+      { name = "subwin_fn", file_path = "lua/oculus/init.lua", kind = "function", start_line = 10 },
+    },
+    impact = {
+      direct_callers = { { name = "caller_fn", file_path = "lua/oculus/window.lua", start_line = 20 } },
+    },
+    dynamics = {
+      boundary_crossings = {
+        { source_subsystem = "engine", target_subsystem = "ui", details = "subsystem crossing" },
+      },
+    },
+  }
+
+  window.open(subwin_bundle)
+  assert(window.state.win ~= nil, "expected investigate window open")
+  assert(vim.api.nvim_get_current_win() == window.state.win, "expected investigate window focused")
+  local inv_win_id = window.state.win
+  -- 'p': Candidate patches
+  local curr_buf = window.state.buf
+  local p_km = vim.tbl_filter(function(k) return k.lhs == "p" end, vim.api.nvim_buf_get_keymap(curr_buf, "n"))[1]
+  assert(p_km ~= nil, "expected 'p' mapped")
+  p_km.callback()
+  assert(window.state.win == nil, "expected investigate window closed on 'p'")
+  assert(not vim.api.nvim_win_is_valid(inv_win_id), "expected orig investigate window closed on 'p'")
+  assert(window.state.sub_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_win), "expected candidate patches window valid")
+  assert(vim.api.nvim_get_current_win() == window.state.sub_win, "expected candidate patches window focused")
+  local p_win_cfg = vim.api.nvim_win_get_config(window.state.sub_win)
+  assert(p_win_cfg.width == main_cfg.width, "expected candidate patches width to match main window")
+  assert(p_win_cfg.height == main_cfg.height, "expected candidate patches height to match main window")
+  assert(p_win_cfg.row == main_cfg.row, "expected candidate patches row to match main window")
+  assert(p_win_cfg.col == main_cfg.col, "expected candidate patches col to match main window")
+  local p_sub_buf = window.state.sub_buf
+  local p_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(p_sub_buf, "n"))[1]
+  assert(p_close_km ~= nil, "expected 'q' mapped on candidate patches")
+  p_close_km.callback()
+  assert(window.state.sub_win == nil, "expected sub_win cleared on 'q'")
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected investigate window restored on 'q'")
+  assert(vim.api.nvim_get_current_win() == window.state.win, "expected restored investigate window focused")
+  -- 't': Invariant test scaffold
+  curr_buf = window.state.buf
+  inv_win_id = window.state.win
+  local t_km = vim.tbl_filter(function(k) return k.lhs == "t" end, vim.api.nvim_buf_get_keymap(curr_buf, "n"))[1]
+  assert(t_km ~= nil, "expected 't' mapped")
+  t_km.callback()
+  assert(window.state.win == nil, "expected investigate window closed on 't'")
+  assert(not vim.api.nvim_win_is_valid(inv_win_id), "expected orig investigate window closed on 't'")
+  assert(window.state.sub_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_win), "expected test scaffold window valid")
+  assert(vim.api.nvim_get_current_win() == window.state.sub_win, "expected test scaffold window focused")
+  local t_win_cfg = vim.api.nvim_win_get_config(window.state.sub_win)
+  assert(t_win_cfg.width == main_cfg.width, "expected test scaffold width to match main window")
+  assert(t_win_cfg.height == main_cfg.height, "expected test scaffold height to match main window")
+  local t_sub_buf = window.state.sub_buf
+  local t_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(t_sub_buf, "n"))[1]
+  t_close_km.callback()
+  assert(window.state.sub_win == nil)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
+  assert(vim.api.nvim_get_current_win() == window.state.win)
+  -- 'r': Decoupling refactor plan
+  curr_buf = window.state.buf
+  inv_win_id = window.state.win
+  local r_km = vim.tbl_filter(function(k) return k.lhs == "r" end, vim.api.nvim_buf_get_keymap(curr_buf, "n"))[1]
+  assert(r_km ~= nil, "expected 'r' mapped")
+  r_km.callback()
+  assert(window.state.win == nil, "expected investigate window closed on 'r'")
+  assert(not vim.api.nvim_win_is_valid(inv_win_id), "expected orig investigate window closed on 'r'")
+  assert(window.state.sub_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_win), "expected refactor plan window valid")
+  assert(vim.api.nvim_get_current_win() == window.state.sub_win, "expected refactor plan window focused")
+  local r_win_cfg = vim.api.nvim_win_get_config(window.state.sub_win)
+  assert(r_win_cfg.width == main_cfg.width, "expected refactor plan width to match main window")
+  assert(r_win_cfg.height == main_cfg.height, "expected refactor plan height to match main window")
+  local r_sub_buf = window.state.sub_buf
+  local r_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(r_sub_buf, "n"))[1]
+  r_close_km.callback()
+  assert(window.state.sub_win == nil)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
+  assert(vim.api.nvim_get_current_win() == window.state.win)
+  -- 'e': Experiment UI
+  curr_buf = window.state.buf
+  inv_win_id = window.state.win
+  local e_km = vim.tbl_filter(function(k) return k.lhs == "e" end, vim.api.nvim_buf_get_keymap(curr_buf, "n"))[1]
+  assert(e_km ~= nil, "expected 'e' mapped")
+  e_km.callback()
+  assert(window.state.win == nil, "expected investigate window closed on 'e'")
+  assert(not vim.api.nvim_win_is_valid(inv_win_id), "expected orig investigate window closed on 'e'")
+  assert(window.state.sub_win ~= nil and vim.api.nvim_win_is_valid(window.state.sub_win), "expected experiment UI valid")
+  assert(vim.api.nvim_get_current_win() == window.state.sub_win, "expected experiment UI focused")
+  local e_win_cfg = vim.api.nvim_win_get_config(window.state.sub_win)
+  assert(e_win_cfg.width == main_cfg.width, "expected experiment UI width to match main window")
+  assert(e_win_cfg.height == main_cfg.height, "expected experiment UI height to match main window")
+  assert(e_win_cfg.row == main_cfg.row, "expected experiment UI row to match main window")
+  assert(e_win_cfg.col == main_cfg.col, "expected experiment UI col to match main window")
+  -- Press 'p' from within experiment UI
+  local exp_ui_win = window.state.sub_win
+  local exp_ui_buf = window.state.sub_buf
+  local exp_p_km = vim.tbl_filter(function(k) return k.lhs == "p" end, vim.api.nvim_buf_get_keymap(exp_ui_buf, "n"))[1]
+  assert(exp_p_km ~= nil, "expected 'p' mapped in experiment UI")
+  exp_p_km.callback()
+  local exp_p_win = vim.api.nvim_get_current_win()
+  assert(exp_p_win ~= exp_ui_win, "expected separate window for candidate patches from exp UI")
+  local exp_p_cfg = vim.api.nvim_win_get_config(exp_p_win)
+  assert(exp_p_cfg.width == main_cfg.width, "expected exp UI candidate patches width to match main window")
+  assert(exp_p_cfg.height == main_cfg.height, "expected exp UI candidate patches height to match main window")
+  local exp_p_buf = vim.api.nvim_win_get_buf(exp_p_win)
+  local exp_p_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(exp_p_buf, "n"))[1]
+  exp_p_close_km.callback()
+  assert(not vim.api.nvim_win_is_valid(exp_p_win), "expected exp UI candidate patches closed")
+  assert(vim.api.nvim_get_current_win() == exp_ui_win, "expected focus back to experiment UI")
+  -- Close experiment UI
+  local exp_ui_close_km = vim.tbl_filter(function(k) return k.lhs == "q" end, vim.api.nvim_buf_get_keymap(exp_ui_buf, "n"))[1]
+  exp_ui_close_km.callback()
+  assert(window.state.sub_win == nil)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win))
+  assert(vim.api.nvim_get_current_win() == window.state.win)
+  -- Close investigate window
+  window.close()
+  assert(window.state.win == nil)
+  assert(vim.api.nvim_get_current_win() == main_win, "expected main Oculus window focused")
+  -- Clean up main Oculus window
+  oculus_window.close()
+  assert(oculus_window.state.win == nil)
   print("ALL INVESTIGATE TESTS PASSED!")
 end
