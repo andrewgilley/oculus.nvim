@@ -35,6 +35,7 @@ local defaults = {
   sidebar = false,
   sidebar_width = 26,
   navigation = "ijkl",
+  project_directories = {},
   projects = {
     {
       name = "Neovim",
@@ -256,10 +257,34 @@ local function merge_projects(configured, saved)
         then
           result[existing_index].description = project.description
         end
+
+        if project.directory and not result[existing_index].directory then
+          result[existing_index].directory = project.directory
+        end
       else
         result[#result + 1] = vim.deepcopy(project)
         present[key] = #result
       end
+    end
+  end
+
+  return result
+end
+
+local function merge_project_directories(configured, saved)
+  local result = vim.deepcopy(configured or {})
+  local seen = {}
+
+  for _, d in ipairs(result) do
+    if type(d) == "string" and d ~= "" then
+      seen[d:lower()] = true
+    end
+  end
+
+  for _, d in ipairs(saved or {}) do
+    if type(d) == "string" and d ~= "" and not seen[d:lower()] then
+      result[#result + 1] = d
+      seen[d:lower()] = true
     end
   end
 
@@ -298,6 +323,10 @@ function M.setup(opts)
 
   if opts.projects ~= nil then
     M.config.projects = vim.deepcopy(opts.projects)
+  end
+
+  if opts.project_directories ~= nil then
+    M.config.project_directories = vim.deepcopy(opts.project_directories)
   end
 
   if M.config.persist_filters
@@ -350,6 +379,13 @@ function M.setup(opts)
         M.config.projects = merge_projects(
           M.config.projects,
           saved.projects
+        )
+      end
+
+      if M.config.persist_projects and type(saved.project_directories) == "table" then
+        M.config.project_directories = merge_project_directories(
+          M.config.project_directories,
+          saved.project_directories
         )
       end
 
@@ -528,6 +564,18 @@ function M.investigate(target, opts, context, callback)
     context,
     callback
   )
+end
+
+function M.create_project_directory(name)
+  return require("oculus.window").create_project_directory(name)
+end
+
+function M.remove_project_directory(name)
+  return require("oculus.window").remove_project_directory(name)
+end
+
+function M.move_project_to_directory(project, dir_name)
+  return require("oculus.window").move_project_to_directory(project, dir_name)
 end
 
 return M

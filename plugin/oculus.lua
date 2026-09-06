@@ -65,3 +65,31 @@ vim.api.nvim_create_user_command("OculusBuildEngine", function()
 end, {
   desc = "Build the oculus-engine Rust binary with cargo",
 })
+
+vim.api.nvim_create_user_command("OculusAddDirectory", function(opts)
+  local name = opts.args ~= "" and opts.args or nil
+
+  if not name then
+    require("oculus.window").prompt_create_directory()
+  else
+    require("oculus").create_project_directory(name)
+  end
+end, {
+  nargs = "?",
+  desc = "Create a parent directory for projects in Oculus",
+})
+
+vim.api.nvim_create_user_command("OculusMoveToDirectory", function(opts)
+  local args = vim.split(vim.trim(opts.args or ""), "%s+")
+
+  if #args == 0 or args[1] == "" then
+    require("oculus.window").prompt_move_project_to_directory()
+  elseif #args == 1 then
+    require("oculus.window").move_project_to_directory(nil, args[1])
+  else
+    require("oculus.window").move_project_to_directory(args[1], args[2])
+  end
+end, {
+  nargs = "*",
+  desc = "Move a project to a directory in Oculus",
+})

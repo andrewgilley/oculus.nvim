@@ -1038,7 +1038,7 @@ do
   local scroll_down_km = vim.tbl_filter(function(k) return k.lhs == "<ScrollWheelDown>" end, buf_keymaps)[1]
   assert(scroll_down_km ~= nil, "expected <ScrollWheelDown> keymap")
 
-  for _ = 1, 150 do
+  for _ = 1, 200 do
     scroll_down_km.callback()
   end
 
@@ -1050,7 +1050,7 @@ do
   local scroll_up_km = vim.tbl_filter(function(k) return k.lhs == "<ScrollWheelUp>" end, buf_keymaps)[1]
   assert(scroll_up_km ~= nil, "expected <ScrollWheelUp> keymap")
 
-  for _ = 1, 150 do
+  for _ = 1, 200 do
     scroll_up_km.callback()
   end
 
@@ -1064,7 +1064,7 @@ do
   local f_scroll_down_km = vim.tbl_filter(function(k) return k.lhs == "<ScrollWheelDown>" end, f_keymaps)[1]
   assert(f_scroll_down_km ~= nil, "expected <ScrollWheelDown> on footer buf")
 
-  for _ = 1, 150 do
+  for _ = 1, 200 do
     f_scroll_down_km.callback()
   end
 

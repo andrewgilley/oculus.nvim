@@ -146,6 +146,8 @@ M.state = {
   community_view = "projects",
   selected_username = nil,
   selected_project = nil,
+  selected_directory = nil,
+  collapsed_project_directories = {},
   moving_item = nil,
   contributor_offset = 1,
   filter_scope = nil,
@@ -683,9 +685,22 @@ local function sidebar_sections_for_view(view)
       },
       {
         title = "ACTIONS",
-        items = {
-          { "v", showing_users and "Projects" or "Users" },
+        items = showing_users and {
+          { "v", "Projects" },
           { "a", "Add" },
+          { nav.inspect_id, "Inspect ID" },
+          { nav.investigate, "Investigate" },
+          { nav.investigate_id, "Investigate ID" },
+          { "r", "Remove" },
+          { "m", "Move" },
+          { "f", "Filters" },
+          { "d", "Defaults" },
+          { "o", "Profile" },
+        } or {
+          { "v", "Users" },
+          { "a", "Add" },
+          { "K", "New Dir" },
+          { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
           { nav.investigate, "Investigate" },
           { nav.investigate_id, "Investigate ID" },
@@ -1183,6 +1198,10 @@ local function clamp_list_cursor()
           if target.project.repository
             == (M.state.selected_project or {}).repository
           then
+            selected_line = line
+          end
+        elseif target.kind == "directory" or target.kind == "directory_empty" then
+          if (target.name or target.directory) == M.state.selected_directory then
             selected_line = line
           end
         elseif target.username == M.state.selected_username then
@@ -1911,6 +1930,45 @@ local function project_preview_items(project, width)
   return items
 end
 
+local function directory_preview_items(dir_name, width)
+  local projects = visible_projects()
+  local count = 0
+
+  for _, p in ipairs(projects) do
+    if p.directory and p.directory:lower() == dir_name:lower() then
+      count = count + 1
+    end
+  end
+
+  local items = {
+    [2] = { "DIRECTORY", "Title" },
+    [4] = { dir_name, "Directory" },
+    [5] = { ("%d %s"):format(count, count == 1 and "project" or "projects"), "Comment" },
+  }
+
+  return items
+end
+
+local function queue_directory_preview(dir_name)
+  if not dir_name or M.state.view ~= "contributors" then
+    return
+  end
+
+  local key = "dir:" .. dir_name:lower()
+
+  if M.state.preview_key == key then
+    return
+  end
+
+  M.state.preview_key = key
+  M.state.preview_project = nil
+  M.state.preview_contributor = nil
+  local window_width = vim.api.nvim_win_get_width(M.state.win)
+  local left_width = preview_left_width(window_width)
+  local preview_width = math.max(15, window_width - left_width - 5)
+  render_preview_panel(directory_preview_items(dir_name, preview_width))
+end
+
 local function activity_types_for(contributor)
   local overrides = M.state.opts.user_activity_types or {}
   local username = contributor.username
@@ -2175,24 +2233,82 @@ local function render_contributors()
   if not showing_users then
     project_heading_line = #lines + 1
     lines[#lines + 1] = "  PROJECTS"
+    local dirs = M.state.opts.project_directories or {}
+    local rendered_projects = {}
 
-    for _, project in ipairs(projects) do
-      local line = #lines + 1
+    for _, dir_name in ipairs(dirs) do
+      local is_collapsed = (M.state.collapsed_project_directories or {})[dir_name] == true
+      local arrow = is_collapsed and "▸" or "▾"
+      local dir_line = #lines + 1
+      lines[dir_line] = pad_cell("  " .. arrow .. " " .. dir_name, left_width)
 
-      lines[line] = pad_cell(
-        "  " .. project_title(project),
-        left_width
-      )
-
-      M.state.line_targets[line] = {
-        kind = "project",
-        project = project,
+      M.state.line_targets[dir_line] = {
+        kind = "directory",
+        name = dir_name,
+        collapsed = is_collapsed,
       }
 
-      project_lines[#project_lines + 1] = line
+      project_lines[#project_lines + 1] = dir_line
+
+      if not is_collapsed then
+        local child_count = 0
+
+        for _, project in ipairs(projects) do
+          if project.directory and project.directory:lower() == dir_name:lower() then
+            child_count = child_count + 1
+            rendered_projects[project_key(project)] = true
+            local child_line = #lines + 1
+            lines[child_line] = pad_cell("    " .. project_title(project), left_width)
+
+            M.state.line_targets[child_line] = {
+              kind = "project",
+              project = project,
+              directory = dir_name,
+            }
+
+            project_lines[#project_lines + 1] = child_line
+          end
+        end
+
+        if child_count == 0 then
+          local empty_line = #lines + 1
+          lines[empty_line] = pad_cell("    (empty)", left_width)
+
+          M.state.line_targets[empty_line] = {
+            kind = "directory_empty",
+            directory = dir_name,
+          }
+
+          project_lines[#project_lines + 1] = empty_line
+        end
+      else
+        for _, project in ipairs(projects) do
+          if project.directory and project.directory:lower() == dir_name:lower() then
+            rendered_projects[project_key(project)] = true
+          end
+        end
+      end
     end
 
-    if #projects == 0 then
+    for _, project in ipairs(projects) do
+      if not rendered_projects[project_key(project)] then
+        local line = #lines + 1
+
+        lines[line] = pad_cell(
+          "  " .. project_title(project),
+          left_width
+        )
+
+        M.state.line_targets[line] = {
+          kind = "project",
+          project = project,
+        }
+
+        project_lines[#project_lines + 1] = line
+      end
+    end
+
+    if #projects == 0 and #dirs == 0 then
       lines[#lines + 1] = "  No projects configured."
     end
   end
@@ -2271,7 +2387,7 @@ local function render_contributors()
 
     footer(lines, showing_users
         and ("v projects  a add  %s investigate  r remove  m move  ?: help"):format(nav.investigate)
-      or ("v users  a add  %s investigate  r remove  m move  ?: help"):format(nav.investigate))
+      or ("v users  a add  K new dir  %s investigate  r remove  m move  ?: help"):format(nav.investigate))
 
     commands_line = #lines
   else
@@ -2296,12 +2412,16 @@ local function render_contributors()
   for line, _ in pairs(M.state.line_targets) do
     local target = M.state.line_targets[line]
 
-    highlight(
-      line,
-      2,
-      target.kind == "project" and -1 or 2 + username_width,
-      "Identifier"
-    )
+    if target.kind == "directory" then
+      highlight(line, 2, 5, "Special")
+      highlight(line, 6, -1, "Directory")
+    elseif target.kind == "directory_empty" then
+      highlight(line, 4, -1, "Comment")
+    elseif target.kind == "project" then
+      highlight(line, 2, -1, "Identifier")
+    else
+      highlight(line, 2, 2 + username_width, "Identifier")
+    end
   end
 
   if separator_line then
@@ -2321,7 +2441,14 @@ local function render_contributors()
     then
       selected_line = line
       break
+    elseif (target.kind == "directory" or target.kind == "directory_empty")
+      and (target.name or target.directory) == M.state.selected_directory
+    then
+      selected_line = line
+      break
     elseif target.kind ~= "project"
+      and target.kind ~= "directory"
+      and target.kind ~= "directory_empty"
       and target.username == M.state.selected_username
     then
       selected_line = line
@@ -2345,15 +2472,23 @@ local function render_contributors()
     if target.kind == "project" then
       M.state.selected_project = target.project
       M.state.selected_username = nil
+      M.state.selected_directory = nil
+    elseif target.kind == "directory" or target.kind == "directory_empty" then
+      M.state.selected_project = nil
+      M.state.selected_username = nil
+      M.state.selected_directory = target.name or target.directory
     else
       M.state.selected_project = nil
       M.state.selected_username = target.username
+      M.state.selected_directory = nil
     end
 
     vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
 
     if target.kind == "project" then
       queue_project_preview(target.project)
+    elseif target.kind == "directory" or target.kind == "directory_empty" then
+      queue_directory_preview(target.name or target.directory)
     else
       queue_preview(target)
     end
@@ -2362,9 +2497,12 @@ local function render_contributors()
   else
     local preview_contributor = M.state.preview_contributor
     local preview_project = M.state.preview_project
+    local preview_directory = M.state.selected_directory
 
     if preview_project then
       queue_project_preview(preview_project)
+    elseif preview_directory then
+      queue_directory_preview(preview_directory)
     elseif preview_contributor then
       queue_preview(preview_contributor)
     else
@@ -2461,6 +2599,238 @@ local function persist_projects()
       "Oculus could not save projects: " .. tostring(err),
       vim.log.levels.ERROR
     )
+  end
+end
+
+local function create_project_directory(name)
+  if type(name) ~= "string" then
+    return false, "directory name must be a string"
+  end
+
+  local trimmed = vim.trim(name)
+
+  if trimmed == "" then
+    return false, "directory name cannot be empty"
+  end
+
+  M.state.opts = M.state.opts or {}
+  M.state.opts.project_directories = M.state.opts.project_directories or {}
+
+  for _, d in ipairs(M.state.opts.project_directories) do
+    if type(d) == "string" and d:lower() == trimmed:lower() then
+      return false, "directory already exists"
+    end
+  end
+
+  table.insert(M.state.opts.project_directories, trimmed)
+  M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
+  M.state.collapsed_project_directories[trimmed] = false
+  M.state.selected_directory = trimmed
+  M.state.selected_project = nil
+  M.state.selected_username = nil
+  persist_projects()
+
+  if is_valid_win(M.state.win) and M.state.view == "contributors" then
+    render_contributors()
+  end
+
+  return true
+end
+
+local function remove_project_directory(name)
+  if type(name) ~= "string" or vim.trim(name) == "" then
+    return false, "invalid directory name"
+  end
+
+  local trimmed = vim.trim(name):lower()
+  M.state.opts = M.state.opts or {}
+  local dirs = M.state.opts.project_directories or {}
+  local found_idx = nil
+
+  for idx, d in ipairs(dirs) do
+    if type(d) == "string" and d:lower() == trimmed then
+      found_idx = idx
+      break
+    end
+  end
+
+  if not found_idx then
+    return false, "directory not found"
+  end
+
+  local removed_name = table.remove(dirs, found_idx)
+
+  for _, p in ipairs(M.state.opts.projects or {}) do
+    if p.directory and p.directory:lower() == trimmed then
+      p.directory = nil
+    end
+  end
+
+  if M.state.collapsed_project_directories then
+    M.state.collapsed_project_directories[removed_name] = nil
+  end
+
+  if M.state.selected_directory and M.state.selected_directory:lower() == trimmed then
+    M.state.selected_directory = nil
+  end
+
+  persist_projects()
+
+  if is_valid_win(M.state.win) and M.state.view == "contributors" then
+    render_contributors()
+  end
+
+  return true
+end
+
+local function move_project_to_directory(project_or_key, dir_name)
+  M.state.opts = M.state.opts or {}
+  local projects = M.state.opts.projects or {}
+  local target_project = nil
+
+  if type(project_or_key) == "table" then
+    local key = project_key(project_or_key)
+
+    for _, p in ipairs(projects) do
+      if project_key(p) == key then
+        target_project = p
+        break
+      end
+    end
+  elseif type(project_or_key) == "string" and project_or_key ~= "" then
+    local key = project_or_key:lower()
+
+    for _, p in ipairs(projects) do
+      if (p.repository and p.repository:lower() == key)
+        or (p.name and p.name:lower() == key)
+        or (project_key(p) and project_key(p):lower() == key)
+      then
+        target_project = p
+        break
+      end
+    end
+  elseif not project_or_key then
+    target_project = M.state.selected_project
+
+    if not target_project then
+      local cur_target = target_on_cursor()
+
+      if type(cur_target) == "table" and cur_target.kind == "project" then
+        target_project = cur_target.project
+      end
+    end
+  end
+
+  if not target_project then
+    return false, "project not found"
+  end
+
+  local clean_dir = nil
+
+  if type(dir_name) == "string" then
+    clean_dir = vim.trim(dir_name)
+
+    if clean_dir == "" or clean_dir == "/" or clean_dir:lower() == "root" then
+      clean_dir = nil
+    end
+  end
+
+  if clean_dir then
+    M.state.opts.project_directories = M.state.opts.project_directories or {}
+    local exists = false
+    local canonical_name = clean_dir
+
+    for _, d in ipairs(M.state.opts.project_directories) do
+      if type(d) == "string" and d:lower() == clean_dir:lower() then
+        exists = true
+        canonical_name = d
+        break
+      end
+    end
+
+    if not exists then
+      table.insert(M.state.opts.project_directories, clean_dir)
+    end
+
+    target_project.directory = canonical_name
+    M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
+    M.state.collapsed_project_directories[canonical_name] = false
+  else
+    target_project.directory = nil
+  end
+
+  M.state.selected_project = target_project
+  M.state.selected_directory = nil
+  M.state.selected_username = nil
+  persist_projects()
+
+  if is_valid_win(M.state.win) and M.state.view == "contributors" then
+    render_contributors()
+  end
+
+  return true
+end
+
+local function toggle_project_directory(name)
+  if not name then
+    return
+  end
+
+  M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
+  M.state.collapsed_project_directories[name] = not M.state.collapsed_project_directories[name]
+  M.state.selected_directory = name
+  render_contributors()
+end
+
+local function prompt_create_directory()
+  local function on_confirm(input)
+    if input and vim.trim(input) ~= "" then
+      local ok, err = create_project_directory(vim.trim(input))
+
+      if not ok and err then
+        vim.notify("Oculus: " .. tostring(err), vim.log.levels.WARN)
+      end
+    end
+  end
+
+  if vim.ui and vim.ui.input then
+    vim.ui.input({ prompt = "New project directory name: " }, on_confirm)
+  else
+    local input = vim.fn.input("New project directory name: ")
+    on_confirm(input)
+  end
+end
+
+local function prompt_move_project_to_directory(project)
+  project = project or M.state.selected_project
+
+  if not project then
+    local target = target_on_cursor()
+
+    if type(target) == "table" and target.kind == "project" then
+      project = target.project
+    end
+  end
+
+  if not project then
+    vim.notify("Oculus: No project selected to move", vim.log.levels.WARN)
+    return
+  end
+
+  local prompt_text = ("Move '%s' to directory (leave empty or '/' for root): "):format(project_title(project))
+  local default_val = project.directory or ""
+
+  local function on_confirm(input)
+    if input ~= nil then
+      move_project_to_directory(project, input)
+    end
+  end
+
+  if vim.ui and vim.ui.input then
+    vim.ui.input({ prompt = prompt_text, default = default_val }, on_confirm)
+  else
+    local input = vim.fn.input(prompt_text, default_val)
+    on_confirm(input)
   end
 end
 
@@ -5131,6 +5501,16 @@ local function remove_current_item()
     return
   end
 
+  if target.kind == "directory" or target.kind == "directory_empty" then
+    local dir_name = target.name or target.directory
+
+    if dir_name then
+      remove_project_directory(dir_name)
+    end
+
+    return
+  end
+
   if target.kind == "project" then
     local key = project_key(target.project)
 
@@ -5188,6 +5568,11 @@ local function toggle_move_item()
         kind = "project",
         project = target.project,
       }
+    elseif target.kind == "directory" or target.kind == "directory_empty" then
+      M.state.moving_item = {
+        kind = "directory",
+        name = target.name or target.directory,
+      }
     else
       M.state.moving_item = {
         kind = "contributor",
@@ -5207,33 +5592,93 @@ local function toggle_move_item()
     return
   end
 
-  if moving_item.kind == "project" and target.kind == "project" then
-    local source_key = project_key(moving_item.project)
-    local dest_key = project_key(target.project)
+  if moving_item.kind == "project" then
+    if target.kind == "directory" or target.kind == "directory_empty" then
+      local dir_name = target.name or target.directory
+      local source_key = project_key(moving_item.project)
 
-    if source_key and dest_key and source_key ~= dest_key then
-      local source_idx, dest_idx
-
-      for idx, project in ipairs(M.state.opts.projects or {}) do
-        local key = project_key(project)
-
-        if key == source_key then
-          source_idx = idx
-        end
-
-        if key == dest_key then
-          dest_idx = idx
+      for _, project in ipairs(M.state.opts.projects or {}) do
+        if project_key(project) == source_key then
+          project.directory = dir_name
+          M.state.selected_project = project
+          break
         end
       end
 
-      if source_idx and dest_idx then
-        local item = table.remove(M.state.opts.projects, source_idx)
-        table.insert(M.state.opts.projects, dest_idx, item)
-        M.state.selected_project = item
-        persist_projects()
+      M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
+      M.state.collapsed_project_directories[dir_name] = false
+      persist_projects()
+      render_contributors()
+      return
+    elseif target.kind == "project" then
+      local source_key = project_key(moving_item.project)
+      local dest_key = project_key(target.project)
+
+      if source_key and dest_key then
+        local source_idx, dest_idx
+
+        for idx, project in ipairs(M.state.opts.projects or {}) do
+          local key = project_key(project)
+
+          if key == source_key then
+            source_idx = idx
+          end
+
+          if key == dest_key then
+            dest_idx = idx
+          end
+        end
+
+        if source_idx then
+          local item = M.state.opts.projects[source_idx]
+          item.directory = target.project.directory
+
+          if item.directory then
+            M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
+            M.state.collapsed_project_directories[item.directory] = false
+          end
+
+          if dest_idx and source_idx ~= dest_idx then
+            table.remove(M.state.opts.projects, source_idx)
+            table.insert(M.state.opts.projects, dest_idx, item)
+          end
+
+          M.state.selected_project = item
+          persist_projects()
+          render_contributors()
+          return
+        end
       end
     end
-  elseif moving_item.kind == "contributor" and target.kind ~= "project" then
+  elseif moving_item.kind == "directory" then
+    if target.kind == "directory" or target.kind == "directory_empty" then
+      local source_name = moving_item.name
+      local dest_name = target.name or target.directory
+
+      if source_name and dest_name and source_name:lower() ~= dest_name:lower() then
+        local source_idx, dest_idx
+
+        for idx, d in ipairs(M.state.opts.project_directories or {}) do
+          if type(d) == "string" and d:lower() == source_name:lower() then
+            source_idx = idx
+          end
+
+          if type(d) == "string" and d:lower() == dest_name:lower() then
+            dest_idx = idx
+          end
+        end
+
+        if source_idx and dest_idx then
+          local item = table.remove(M.state.opts.project_directories, source_idx)
+          table.insert(M.state.opts.project_directories, dest_idx, item)
+          M.state.selected_directory = item
+          persist_projects()
+          render_contributors()
+          return
+        end
+      end
+    end
+  elseif moving_item.kind == "contributor" and target.kind ~= "project" and target.kind ~= "directory" and target.kind ~= "directory_empty" then
     local source_key = contributor_key(moving_item.contributor)
     local dest_key = contributor_key(target)
 
@@ -5257,6 +5702,8 @@ local function toggle_move_item()
         table.insert(M.state.contributors, dest_idx, item)
         M.state.selected_username = item.username
         persist_contributors()
+        render_contributors()
+        return
       end
     end
   end
@@ -5307,14 +5754,24 @@ local function select_current()
   local target = target_on_cursor()
 
   if M.state.view == "contributors" and type(target) == "table" then
-    if target.kind == "project" then
+    if target.kind == "directory" or target.kind == "directory_empty" then
+      local dir_name = target.name or target.directory
+
+      if dir_name then
+        toggle_project_directory(dir_name)
+      end
+
+      return
+    elseif target.kind == "project" then
       M.state.selected_project = target.project
       M.state.selected_username = nil
+      M.state.selected_directory = nil
       M.state.project_issue_return = nil
       load_project_activity(target.project, false)
     else
       M.state.selected_project = nil
       M.state.selected_username = target.username
+      M.state.selected_directory = nil
       load_activity(target, false)
     end
   elseif M.state.view == "activity" then
@@ -6597,9 +7054,15 @@ local function move_cursor(direction)
       if candidate.kind == "project" then
         M.state.selected_project = candidate.project
         M.state.selected_username = nil
+        M.state.selected_directory = nil
+      elseif candidate.kind == "directory" or candidate.kind == "directory_empty" then
+        M.state.selected_project = nil
+        M.state.selected_username = nil
+        M.state.selected_directory = candidate.name or candidate.directory
       else
         M.state.selected_project = nil
         M.state.selected_username = candidate.username
+        M.state.selected_directory = nil
       end
 
       render_contributors()
@@ -6795,6 +7258,24 @@ local function go_back()
 end
 
 local function move_left()
+  if M.state.view == "contributors" then
+    local target = target_on_cursor()
+
+    if type(target) == "table" then
+      local dir_name = (target.kind == "directory" and target.name)
+        or (target.kind == "directory_empty" and target.directory)
+        or (target.kind == "project" and target.project and target.project.directory)
+
+      if dir_name and not (M.state.collapsed_project_directories or {})[dir_name] then
+        M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
+        M.state.collapsed_project_directories[dir_name] = true
+        M.state.selected_directory = dir_name
+        render_contributors()
+        return
+      end
+    end
+  end
+
   if M.state.view == "activity"
     and not M.state.activity_commit_page
     and (M.state.activity_page or 1) > 1
@@ -6809,6 +7290,21 @@ end
 local function move_right()
   if open_activity_expansion() then
     return
+  end
+
+  if M.state.view == "contributors" then
+    local target = target_on_cursor()
+
+    if type(target) == "table" and (target.kind == "directory" or target.kind == "directory_empty") then
+      local dir_name = target.name or target.directory
+
+      if dir_name and (M.state.collapsed_project_directories or {})[dir_name] then
+        M.state.collapsed_project_directories[dir_name] = false
+        M.state.selected_directory = dir_name
+        render_contributors()
+        return
+      end
+    end
   end
 
   if M.state.view == "activity"
@@ -6919,6 +7415,24 @@ local function map_keys(buf)
       toggle_move_item()
     end
   end, "Move selected Oculus project or user")
+
+  map("M", function()
+    if M.state.view == "contributors" and M.state.community_view == "projects" then
+      prompt_move_project_to_directory()
+    end
+  end, "Move project to directory")
+
+  map("K", function()
+    if M.state.view == "contributors" and M.state.community_view == "projects" then
+      prompt_create_directory()
+    end
+  end, "Create project directory")
+
+  map("D", function()
+    if M.state.view == "contributors" and M.state.community_view == "projects" then
+      prompt_create_directory()
+    end
+  end, "Create project directory")
 
   map("<CR>", select_current, "Select Oculus item")
   map(nav.right, move_right, "Move right in Oculus")
@@ -7315,10 +7829,17 @@ function M.open(opts)
         if target.kind == "project" then
           M.state.selected_project = target.project
           M.state.selected_username = nil
+          M.state.selected_directory = nil
           queue_project_preview(target.project)
+        elseif target.kind == "directory" or target.kind == "directory_empty" then
+          M.state.selected_project = nil
+          M.state.selected_username = nil
+          M.state.selected_directory = target.name or target.directory
+          queue_directory_preview(target.name or target.directory)
         else
           M.state.selected_project = nil
           M.state.selected_username = target.username
+          M.state.selected_directory = nil
           queue_preview(target)
         end
       end
@@ -7438,4 +7959,14 @@ M.start_activity_investigate_spinner = start_activity_investigate_spinner
 M._draw_activity_investigate_spinner = draw_activity_investigate_spinner
 M._investigate_loading_ns = investigate_loading_ns
 M._investigate_current = investigate_current
+M.create_project_directory = create_project_directory
+M.remove_project_directory = remove_project_directory
+M.move_project_to_directory = move_project_to_directory
+M.toggle_project_directory = toggle_project_directory
+M.prompt_create_directory = prompt_create_directory
+M.prompt_move_project_to_directory = prompt_move_project_to_directory
+M._create_project_directory = create_project_directory
+M._remove_project_directory = remove_project_directory
+M._move_project_to_directory = move_project_to_directory
+M._toggle_project_directory = toggle_project_directory
 return M
