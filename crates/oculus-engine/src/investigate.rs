@@ -362,27 +362,87 @@ impl Investigator {
 
     fn collect_source_files(dir: &Path) -> Vec<PathBuf> {
         let mut files = Vec::new();
-        Self::visit_dirs(dir, &mut files);
-        files
-    }
+        let mut stack = vec![dir.to_path_buf()];
+        let mut visited_dirs = std::collections::HashSet::new();
 
-    fn visit_dirs(dir: &Path, list: &mut Vec<PathBuf>) {
-        if let Ok(entries) = fs::read_dir(dir) {
+        if let Ok(canonical) = fs::canonicalize(dir) {
+            visited_dirs.insert(canonical);
+        }
+
+        let ignored_names = [
+            ".git",
+            "target",
+            "node_modules",
+            ".gemini",
+            "build",
+            ".deps",
+            "deps",
+            "dist",
+            "out",
+            "vendor",
+            ".venv",
+            "venv",
+            "env",
+            ".cache",
+            ".zig-cache",
+            "zig-pkg",
+            ".pytest_cache",
+            ".mypy_cache",
+            "CMakeFiles",
+            ".turbo",
+            ".next",
+            ".cargo",
+            "obj",
+            "bin",
+        ];
+
+        while let Some(current_dir) = stack.pop() {
+            let entries = match fs::read_dir(&current_dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
             for entry in entries.flatten() {
+                let file_type = match entry.file_type() {
+                    Ok(ft) => ft,
+                    Err(_) => continue,
+                };
+
+                // Skip symlinks to avoid infinite loops and escaping the project root
+                if file_type.is_symlink() {
+                    continue;
+                }
+
                 let path = entry.path();
-                if path.is_dir() {
+                if file_type.is_dir() {
                     let name = entry.file_name().to_string_lossy().to_string();
-                    if name == ".git" || name == "target" || name == "node_modules" || name == ".gemini" {
+                    if ignored_names.iter().any(|&ignored| ignored == name) {
                         continue;
                     }
-                    Self::visit_dirs(&path, list);
-                } else if path.is_file() {
+                    if let Ok(canonical) = fs::canonicalize(&path) {
+                        if !visited_dirs.insert(canonical) {
+                            continue;
+                        }
+                    }
+                    stack.push(path);
+                } else if file_type.is_file() {
                     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
                     if ext == "rs" || ext == "c" || ext == "h" || ext == "lua" {
-                        list.push(path);
+                        // Skip runaway large files (> 2MB)
+                        if let Ok(meta) = entry.metadata() {
+                            if meta.len() > 2 * 1024 * 1024 {
+                                continue;
+                            }
+                        }
+                        files.push(path);
+                        if files.len() >= 10000 {
+                            return files;
+                        }
                     }
                 }
             }
         }
+
+        files
     }
 }

@@ -56,6 +56,48 @@ impl AstParser {
     }
 
     fn walk_tree(
+        root_node: Node,
+        bytes: &[u8],
+        file_path: &str,
+        git_oid: Option<&str>,
+        ext: &str,
+        entities: &mut Vec<SemanticEntity>,
+        relationships: &mut Vec<Relationship>,
+    ) {
+        let mut cursor = root_node.walk();
+        let mut reached_root = false;
+
+        while !reached_root {
+            let node = cursor.node();
+            Self::process_node(
+                node,
+                bytes,
+                file_path,
+                git_oid,
+                ext,
+                entities,
+                relationships,
+            );
+
+            if cursor.goto_first_child() {
+                continue;
+            }
+            if cursor.goto_next_sibling() {
+                continue;
+            }
+            loop {
+                if !cursor.goto_parent() {
+                    reached_root = true;
+                    break;
+                }
+                if cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn process_node(
         node: Node,
         bytes: &[u8],
         file_path: &str,
@@ -203,20 +245,6 @@ impl AstParser {
                 }
             }
         }
-
-        // Recurse children
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            Self::walk_tree(
-                child,
-                bytes,
-                file_path,
-                git_oid,
-                ext,
-                entities,
-                relationships,
-            );
-        }
     }
 
     fn is_rust_test(node: Node, bytes: &[u8]) -> bool {
@@ -236,13 +264,17 @@ impl AstParser {
     }
 
     fn extract_c_fn_name(decl: Node, bytes: &[u8]) -> String {
-        if decl.kind() == "identifier" {
-            return decl.utf8_text(bytes).unwrap_or("").to_string();
+        let mut curr = decl;
+        loop {
+            if curr.kind() == "identifier" {
+                return curr.utf8_text(bytes).unwrap_or("").to_string();
+            }
+            if let Some(direct) = curr.child_by_field_name("declarator") {
+                curr = direct;
+            } else {
+                return curr.utf8_text(bytes).unwrap_or("").to_string();
+            }
         }
-        if let Some(direct) = decl.child_by_field_name("declarator") {
-            return Self::extract_c_fn_name(direct, bytes);
-        }
-        decl.utf8_text(bytes).unwrap_or("").to_string()
     }
 
     fn find_enclosing_function(

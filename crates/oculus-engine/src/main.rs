@@ -119,13 +119,43 @@ fn main() {
         env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     });
 
-    match Investigator::run_investigation(
-        &repo,
-        target.as_deref(),
-        target_kind.as_deref(),
-        db_path.as_deref(),
-        forge_artifact,
-    ) {
+    let builder = std::thread::Builder::new()
+        .name("investigator".into())
+        .stack_size(32 * 1024 * 1024);
+
+    let handler = builder.spawn(move || {
+        Investigator::run_investigation(
+            &repo,
+            target.as_deref(),
+            target_kind.as_deref(),
+            db_path.as_deref(),
+            forge_artifact,
+        )
+        .map_err(|e| e.to_string())
+    });
+
+    let result = match handler {
+        Ok(h) => match h.join() {
+            Ok(res) => res,
+            Err(panic_err) => {
+                let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Investigation worker thread panicked".to_string()
+                };
+                eprintln!("Investigation failed: {}", msg);
+                exit(1);
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to spawn investigation thread: {}", e);
+            exit(1);
+        }
+    };
+
+    match result {
         Ok(bundle) => {
             match serde_json::to_string_pretty(&bundle) {
                 Ok(json) => println!("{}", json),
