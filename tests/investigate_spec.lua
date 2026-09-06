@@ -40,10 +40,11 @@ do
   assert(type(received_bundle.invariants) == "table", "expected invariants table")
   assert(#received_bundle.invariants >= 2, "expected at least 2 invariant checks")
   assert(type(received_bundle.co_changes) == "table", "expected co_changes table")
-  -- Test 4: Window rendering
+  -- Test 4: Window rendering (single window by default)
   window.open(received_bundle)
   assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected window to be open and valid")
   assert(window.state.buf ~= nil and vim.api.nvim_buf_is_valid(window.state.buf), "expected buffer to be open and valid")
+  assert(window.state.ledger_win == nil, "expected no adjacent ledger window by default")
   local lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
   local text = table.concat(lines, "\n")
   assert(text:find("Oculus Investigation", 1, true) or text:find("VERIFIED INVARIANTS", 1, true), "expected header in rendered buffer")
@@ -147,7 +148,7 @@ do
     assert(type(rel.confidence) == "number" and rel.confidence > 0, "expected confidence score")
   end
 
-  window.open(forge_bundle, { width = 120, height = 40 })
+  window.open(forge_bundle, { width = 120, height = 40, split = true })
   assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected tree win")
   assert(window.state.ledger_win ~= nil and vim.api.nvim_win_is_valid(window.state.ledger_win), "expected ledger win in split layout")
   assert(window.state.ledger_buf ~= nil and vim.api.nvim_buf_is_valid(window.state.ledger_buf), "expected ledger buf")
@@ -223,7 +224,7 @@ do
     },
   }
 
-  window.open(dynamics_bundle, { width = 120, height = 40 })
+  window.open(dynamics_bundle, { width = 120, height = 40, split = true })
   assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected tree win for dynamics")
   assert(window.state.ledger_win ~= nil and vim.api.nvim_win_is_valid(window.state.ledger_win), "expected ledger win for dynamics")
   local dyn_tree_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
@@ -299,7 +300,7 @@ do
   assert(#synthesized_derived.hypotheses > 0, "expected hypotheses")
   -- Window rendering of derived investigation
   dynamics_bundle.derived = synthesized_derived
-  window.open(dynamics_bundle, { width = 120, height = 40 })
+  window.open(dynamics_bundle, { width = 120, height = 40, split = true })
   local derived_tree = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), "\n")
   assert(derived_tree:find("AGENT HYPOTHESES & ADVERSARIAL VERIFICATIONS", 1, true), "expected hypotheses header")
   assert(derived_tree:find("CONNECTED ACTIONS & EXPERIMENTS", 1, true), "expected connected actions header")

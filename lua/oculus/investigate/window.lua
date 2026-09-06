@@ -87,7 +87,7 @@ function M.open(bundle, opts)
   local row = main_cfg.row
   local col = main_cfg.col
   local border = main_cfg.border or opts.border or "rounded"
-  local is_split = (opts.split ~= false) and (width >= 60)
+  local is_split = opts.split == true
   local left_width = width
   local right_width = 0
 
@@ -110,7 +110,7 @@ function M.open(bundle, opts)
     col = col,
     style = "minimal",
     border = border,
-    footer = is_split and "  <CR> jump   Tab ledger   t test   r refactor   a agent   h inspect   q close  " or "  <CR> jump   t test   r refactor   a agent   h inspect   q close  ",
+    footer = "  <CR> jump   Tab ledger   t test   r refactor   a agent   h inspect   q close  ",
     footer_pos = "left",
   })
 
@@ -125,15 +125,13 @@ function M.open(bundle, opts)
   }, ",")
 
   pcall(function() vim.wo[win].winhighlight = winhl end)
-  local ledger_buf = nil
+  local ledger_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[ledger_buf].buftype = "nofile"
+  vim.bo[ledger_buf].bufhidden = "wipe"
+  vim.bo[ledger_buf].swapfile = false
   local ledger_win = nil
 
   if is_split then
-    ledger_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[ledger_buf].buftype = "nofile"
-    vim.bo[ledger_buf].bufhidden = "wipe"
-    vim.bo[ledger_buf].swapfile = false
-
     ledger_win = vim.api.nvim_open_win(ledger_buf, false, {
       relative = "editor",
       width = right_width,
@@ -160,10 +158,10 @@ function M.open(bundle, opts)
   M.state.line_provenance = {}
   M.render(buf, bundle)
 
-  if is_split and ledger_buf then
+  if ledger_buf then
     M.render_ledger(ledger_buf, M.state.line_provenance[1] or { kind = "overview" })
 
-    -- Cursor tracking in left tree to dynamically update right provenance ledger
+    -- Cursor tracking in left tree to dynamically update provenance ledger
     vim.api.nvim_create_autocmd("CursorMoved", {
       buffer = buf,
       callback = function()
@@ -971,6 +969,27 @@ function M.map_keys(buf)
         vim.api.nvim_set_current_win(M.state.ledger_win)
       else
         vim.api.nvim_set_current_win(M.state.win)
+      end
+    elseif is_valid_win(M.state.win) and is_valid_buf(M.state.buf) and is_valid_buf(M.state.ledger_buf) then
+      local cur_buf = vim.api.nvim_win_get_buf(M.state.win)
+
+      if cur_buf == M.state.buf then
+        local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+        local prov = M.state.line_provenance[cursor[1]] or { kind = "overview" }
+        M.render_ledger(M.state.ledger_buf, prov)
+        vim.api.nvim_win_set_buf(M.state.win, M.state.ledger_buf)
+
+        pcall(vim.api.nvim_win_set_config, M.state.win, {
+          footer = "  Tab tree   q close  ",
+          footer_pos = "left",
+        })
+      else
+        vim.api.nvim_win_set_buf(M.state.win, M.state.buf)
+
+        pcall(vim.api.nvim_win_set_config, M.state.win, {
+          footer = "  <CR> jump   Tab ledger   t test   r refactor   a agent   h inspect   q close  ",
+          footer_pos = "left",
+        })
       end
     end
   end, "Toggle between tree and provenance ledger")
