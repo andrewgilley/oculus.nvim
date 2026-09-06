@@ -930,5 +930,50 @@ do
   window.close()
   assert(window.state.win == nil)
   assert(vim.tbl_isempty(window.state.collapsed_sections or {}), "expected collapsed_sections reset on full close")
+  -- Test: Co-change and implicit architecture sections limit display to 10 items initially
+  local many_co_changes = {}
+
+  for i = 1, 20 do
+    table.insert(many_co_changes, {
+      entity_a = string.format("entity_a_%d.lua", i),
+      entity_b = string.format("entity_b_%d.lua", i),
+      confidence = 0.85,
+      co_change_count = i,
+      sample_commits = { "abc1234" },
+    })
+  end
+
+  local bundle_with_many_co_changes = {
+    metadata = { repository_root = root, target = "test" },
+    entities = {},
+    relationships = {},
+    invariants = {},
+    co_changes = many_co_changes,
+  }
+
+  window.open(bundle_with_many_co_changes)
+  assert(window.state.win ~= nil, "expected window open")
+  local rendered_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local tree_cc_count = 0
+  local ledger_cc_count = 0
+  local in_ledger_cc = false
+
+  for _, line in ipairs(rendered_lines) do
+    if line:find("CHANGE COUPLING · IMPLICIT ARCHITECTURE", 1, true) then
+      -- tree section
+    elseif line:find("IMPLICIT ARCHITECTURE & CO-CHANGE PROVENANCE:", 1, true) then
+      in_ledger_cc = true
+    elseif in_ledger_cc and line:find("^[ ]*$", 1) then
+      in_ledger_cc = false
+    elseif not in_ledger_cc and line:find("├─ entity_a_", 1, true) then
+      tree_cc_count = tree_cc_count + 1
+    elseif in_ledger_cc and line:find("• entity_a_", 1, true) then
+      ledger_cc_count = ledger_cc_count + 1
+    end
+  end
+
+  assert(tree_cc_count == 10, string.format("expected 10 tree co-change items, got %d", tree_cc_count))
+  assert(ledger_cc_count == 10, string.format("expected 10 ledger co-change items, got %d", ledger_cc_count))
+  window.close()
   print("ALL INVESTIGATE TESTS PASSED!")
 end

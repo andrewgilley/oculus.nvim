@@ -770,7 +770,7 @@ function M.render(buf, bundle)
     if cc_open then
       current_sec_id = cc_sec_id
 
-      for i = 1, math.min(8, #co_changes) do
+      for i = 1, math.min(10, #co_changes) do
         local cc = co_changes[i]
         local pct = math.floor(cc.confidence * 100)
         local line_text = string.format("    ├─ %s ↔ %s [%d%% co-change | %d commits]", cc.entity_a, cc.entity_b, pct, cc.co_change_count)
@@ -1061,7 +1061,8 @@ function M.render(buf, bundle)
     if #co_changes > 0 then
       add_line("  IMPLICIT ARCHITECTURE & CO-CHANGE PROVENANCE:", "Special", nil, { kind = "overview" })
 
-      for _, cc in ipairs(co_changes) do
+      for i = 1, math.min(10, #co_changes) do
+        local cc = co_changes[i]
         local pct = math.floor((cc.confidence or 0.5) * 100)
 
         add_line(string.format("    • %s ↔ %s [%d%% STATISTICAL CONFIDENCE] (Relation: CO_CHANGES_WITH)", cc.entity_a, cc.entity_b, pct), "DiagnosticWarn", { file = cc.entity_a, line = 1 }, {
