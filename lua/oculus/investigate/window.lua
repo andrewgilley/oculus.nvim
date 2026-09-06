@@ -89,6 +89,16 @@ local function investigate_footer_config()
   }
 end
 
+local function get_inspect_key(nav)
+  local inspect_key = nav and nav.inspect
+
+  if not inspect_key or inspect_key == "i" or inspect_key == "g" or (nav and inspect_key == nav.up) then
+    inspect_key = (nav and nav.left == "h") and "H" or "h"
+  end
+
+  return inspect_key
+end
+
 local function render_investigate_footer()
   local config = investigate_footer_config()
 
@@ -110,7 +120,7 @@ local function render_investigate_footer()
     cmd_text = "  Tab tree   q close"
   else
     local nav = require("oculus.navigation").resolve(M.state.opts)
-    local inspect_key = (nav.inspect == "g") and "h" or (nav.inspect or "h")
+    local inspect_key = get_inspect_key(nav)
     cmd_text = ("  <CR> jump   Tab ledger   e experiment   p patches   t test   r refactor   a agent   %s inspect   q close"):format(inspect_key)
   end
 
@@ -1222,6 +1232,48 @@ function M.map_keys(buf)
     vim.keymap.set("n", key, fn, { buffer = buf, silent = true, nowait = true, desc = desc })
   end
 
+  local nav = require("oculus.navigation").resolve(M.state.opts)
+
+  local function move_up()
+    pcall(vim.cmd.normal, { "k", bang = true })
+  end
+
+  local function move_down()
+    pcall(vim.cmd.normal, { "j", bang = true })
+  end
+
+  local function move_left()
+    pcall(vim.cmd.normal, { "h", bang = true })
+  end
+
+  local function move_right()
+    pcall(vim.cmd.normal, { "l", bang = true })
+  end
+
+  if nav.up then
+    map(nav.up, move_up, "Move up in investigation")
+  end
+
+  if nav.down then
+    map(nav.down, move_down, "Move down in investigation")
+  end
+
+  if nav.left then
+    map(nav.left, move_left, "Move left in investigation")
+  end
+
+  if nav.right then
+    map(nav.right, move_right, "Move right in investigation")
+  end
+
+  if nav.up ~= "i" then
+    map("i", move_up, "Move up in investigation")
+  end
+
+  map("<Up>", move_up, "Move up in investigation")
+  map("<Down>", move_down, "Move down in investigation")
+  map("<Left>", move_left, "Move left in investigation")
+  map("<Right>", move_right, "Move right in investigation")
   map("q", M.close, "Close investigation")
   map("<Esc>", M.close, "Close investigation")
   map("<C-c>", M.close, "Close investigation")
@@ -1428,8 +1480,8 @@ function M.map_keys(buf)
     end
   end
 
-  map("h", pivot_to_inspect, "Pivot to Oculus Inspect")
-  map("i", pivot_to_inspect, "Pivot to Oculus Inspect")
+  local inspect_key = get_inspect_key(nav)
+  map(inspect_key, pivot_to_inspect, "Pivot to Oculus Inspect")
 end
 
 M.render_footer = render_investigate_footer

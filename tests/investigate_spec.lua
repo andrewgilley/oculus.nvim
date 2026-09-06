@@ -606,5 +606,58 @@ do
   local decoded_text = table.concat(decoded_lines, "\n")
   assert(decoded_text:find("EXECUTIVE BRIEF", 1, true), "expected executive brief in rendered text")
   window.close()
+  -- Test 25: "i" is handled as navigation key and not as a custom command in investigate window
+  local test_bundle = vim.deepcopy(decoded_bundle)
+  window.open(test_bundle)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected window open")
+  local inv_buf = window.state.buf
+  local keymaps = vim.api.nvim_buf_get_keymap(inv_buf, "n")
+  local keymap_by_lhs = {}
+
+  for _, km in ipairs(keymaps) do
+    keymap_by_lhs[km.lhs] = km
+  end
+
+  -- Verify "i" is mapped to navigation (move up), not inspect or a custom action
+  assert(keymap_by_lhs["i"] ~= nil, "expected 'i' to be mapped in investigate window")
+
+  assert(keymap_by_lhs["i"].desc == "Move up in investigation",
+    "expected 'i' description to be 'Move up in investigation', got: " .. tostring(keymap_by_lhs["i"].desc))
+
+  assert(keymap_by_lhs["i"].desc ~= "Pivot to Oculus Inspect", "expected 'i' NOT to be mapped to Pivot to Oculus Inspect")
+  -- Verify footer does NOT contain "i inspect"
+  assert(window.state.footer_buf ~= nil, "expected footer_buf to be valid")
+  local footer_lines = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  local footer_text = table.concat(footer_lines, "\n")
+  assert(not footer_text:find("i inspect", 1, true), "expected footer NOT to have 'i inspect'")
+  assert(footer_text:find("h inspect", 1, true), "expected footer to have 'h inspect' for default navigation")
+  -- Test cursor movement with navigation keys:
+  vim.api.nvim_win_set_cursor(window.state.win, { 5, 0 })
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] == 5)
+  keymap_by_lhs["i"].callback()
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] == 4, "expected 'i' callback to move cursor up to line 4")
+  assert(keymap_by_lhs["k"] ~= nil, "expected 'k' to be mapped in investigate window")
+  keymap_by_lhs["k"].callback()
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] == 5, "expected 'k' callback to move cursor down to line 5")
+  window.close()
+  -- Test 26: With navigation = "hjkl", "i" is still a navigation key (up) and inspect is "H" (not "i")
+  window.open(test_bundle, { navigation = "hjkl" })
+  local hjkl_buf = window.state.buf
+  local hjkl_maps = vim.api.nvim_buf_get_keymap(hjkl_buf, "n")
+  local hjkl_by_lhs = {}
+
+  for _, km in ipairs(hjkl_maps) do
+    hjkl_by_lhs[km.lhs] = km
+  end
+
+  assert(hjkl_by_lhs["i"] ~= nil, "expected 'i' to be mapped in investigate window under hjkl")
+  assert(hjkl_by_lhs["i"].desc == "Move up in investigation", "expected 'i' to remain navigation key under hjkl")
+  assert(hjkl_by_lhs["H"] ~= nil, "expected 'H' to be mapped for inspect under hjkl")
+  assert(hjkl_by_lhs["H"].desc == "Pivot to Oculus Inspect", "expected 'H' to be Pivot to Oculus Inspect")
+  local hjkl_footer_lines = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  local hjkl_footer_text = table.concat(hjkl_footer_lines, "\n")
+  assert(not hjkl_footer_text:find("i inspect", 1, true), "expected footer NOT to contain 'i inspect' under hjkl")
+  assert(hjkl_footer_text:find("H inspect", 1, true), "expected footer to contain 'H inspect' under hjkl")
+  window.close()
   print("ALL INVESTIGATE TESTS PASSED!")
 end
