@@ -720,10 +720,10 @@ function M.render(buf, bundle)
     current_sec_id = target_sec_id
     add_line(string.format("    Repository: %s · Engine: v%s", repo_name, engine_ver), "Comment", nil, { kind = "overview" })
     add_line(string.format("    Analyzed:   %s", analyzed), "Comment", nil, { kind = "overview" })
-    add_line("", nil)
     current_sec_id = nil
   end
 
+  add_line("", nil)
   -- 2. Executive Brief (High-Signal Insights)
   local exec_sec_id = "executive_brief"
   local exec_open = is_section_open(exec_sec_id)
@@ -762,9 +762,10 @@ function M.render(buf, bundle)
 
     local inv_desc = string.format("    • Invariants: ✓ %d/%d verified ground-truth integrity", passed_inv, math.max(1, #invariants))
     add_line(inv_desc, passed_inv == #invariants and "DiagnosticOk" or "DiagnosticWarn", nil, { kind = "overview" })
-    add_line("", nil)
     current_sec_id = nil
   end
+
+  add_line("", nil)
 
   -- 3. Invariants & Reality Check Integrity
   if #invariants > 0 then
@@ -786,9 +787,10 @@ function M.render(buf, bundle)
         })
       end
 
-      add_line("", nil)
       current_sec_id = nil
     end
+
+    add_line("", nil)
   end
 
   -- 4. Forge Artifact Context
@@ -824,9 +826,10 @@ function M.render(buf, bundle)
         })
       end
 
-      add_line("", nil)
       current_sec_id = nil
     end
+
+    add_line("", nil)
   end
 
   -- 5. Forge-to-Code Traceability Candidates
@@ -851,9 +854,10 @@ function M.render(buf, bundle)
         })
       end
 
-      add_line("", nil)
       current_sec_id = nil
     end
+
+    add_line("", nil)
   end
 
   -- 6. Affected Semantic Entities & Composite Paths (Entity -> Callers -> Tests -> Lineage)
@@ -920,9 +924,10 @@ function M.render(buf, bundle)
       end
     end
 
-    add_line("", nil)
     current_sec_id = nil
   end
+
+  add_line("", nil)
 
   -- 7. Change Coupling & Implicit Architecture
   if #co_changes > 0 then
@@ -945,9 +950,10 @@ function M.render(buf, bundle)
         })
       end
 
-      add_line("", nil)
       current_sec_id = nil
     end
+
+    add_line("", nil)
   end
 
   -- 8. Architectural Dynamics (Boundary Crossings, Subsystem Instability, Historical Precedents)
@@ -974,9 +980,10 @@ function M.render(buf, bundle)
           })
         end
 
-        add_line("", nil)
         current_sec_id = nil
       end
+
+      add_line("", nil)
     end
 
     local instabilities = dynamics.subsystem_instabilities or {}
@@ -1003,9 +1010,10 @@ function M.render(buf, bundle)
           })
         end
 
-        add_line("", nil)
         current_sec_id = nil
       end
+
+      add_line("", nil)
     end
 
     local precedents = dynamics.historical_precedents or {}
@@ -1030,9 +1038,10 @@ function M.render(buf, bundle)
           })
         end
 
-        add_line("", nil)
         current_sec_id = nil
       end
+
+      add_line("", nil)
     end
   end
 
@@ -1100,9 +1109,10 @@ function M.render(buf, bundle)
           end
         end
 
-        add_line("", nil)
         current_sec_id = nil
       end
+
+      add_line("", nil)
     end
   end
 
@@ -1120,10 +1130,10 @@ function M.render(buf, bundle)
     add_line("    ├─ [r] Plan Subsystem Decoupling Refactor (isolate boundary crossings)", "Identifier", nil, { kind = "action_hint", action = "refactor_plan" })
     add_line("    ├─ [a] Synthesize / Re-verify Agent Hypotheses against Ground Truth", "Identifier", nil, { kind = "action_hint", action = "agent_synthesize" })
     add_line("    └─ [h] Pivot to Oculus Inspect (interactive diff & hunk review)", "Identifier", nil, { kind = "action_hint", action = "inspect_pivot" })
-    add_line("", nil)
     current_sec_id = nil
   end
 
+  add_line("", nil)
   -- 11. Deterministic Provenance Ledger (Evidence Graph Ground Truth) at Bottom of Window
   local ledger_sec_id = "ledger"
   local ledger_open = is_section_open(ledger_sec_id)
@@ -1316,13 +1326,12 @@ function M.render(buf, bundle)
           end
         end
       end
-
-      add_line("", nil)
     end
 
     current_sec_id = nil
   end
 
+  add_line("", nil)
   M.state.line_targets = line_targets
   M.state.line_provenance = line_provenance
   M.state.line_sections = line_sections
@@ -1819,6 +1828,26 @@ function M.map_keys(buf)
     end
   end
 
+  local function expand_section(sec_id)
+    if not sec_id then
+      return
+    end
+
+    M.state.collapsed_sections = M.state.collapsed_sections or {}
+    M.state.collapsed_sections[sec_id] = nil
+    rerender_to_section(sec_id)
+  end
+
+  local function collapse_current_section(sec_id)
+    if not sec_id then
+      return
+    end
+
+    M.state.collapsed_sections = M.state.collapsed_sections or {}
+    M.state.collapsed_sections[sec_id] = true
+    rerender_to_section(sec_id)
+  end
+
   local function toggle_or_expand_section(sec_id)
     if not sec_id then
       return
@@ -1835,16 +1864,6 @@ function M.map_keys(buf)
     rerender_to_section(sec_id)
   end
 
-  local function collapse_current_section(sec_id)
-    if not sec_id then
-      return
-    end
-
-    M.state.collapsed_sections = M.state.collapsed_sections or {}
-    M.state.collapsed_sections[sec_id] = true
-    rerender_to_section(sec_id)
-  end
-
   local function handle_left()
     local win = M.state.win
 
@@ -1855,10 +1874,14 @@ function M.map_keys(buf)
     local cursor = vim.api.nvim_win_get_cursor(win)
     local sec = (M.state.line_sections or {})[cursor[1]]
 
-    if sec and sec.id then
+    if sec and sec.id and not (M.state.collapsed_sections and M.state.collapsed_sections[sec.id]) then
       collapse_current_section(sec.id)
     else
-      move_left()
+      if nav.down == "j" then
+        move_down()
+      else
+        move_left()
+      end
     end
   end
 
@@ -1872,8 +1895,8 @@ function M.map_keys(buf)
     local cursor = vim.api.nvim_win_get_cursor(win)
     local sec = (M.state.line_sections or {})[cursor[1]]
 
-    if sec and sec.id and sec.is_header then
-      toggle_or_expand_section(sec.id)
+    if sec and sec.id and (M.state.collapsed_sections and M.state.collapsed_sections[sec.id]) then
+      expand_section(sec.id)
     else
       move_right()
     end
@@ -1892,7 +1915,7 @@ function M.map_keys(buf)
   end
 
   if nav.right then
-    map(nav.right, handle_right, "Open/toggle section in investigation")
+    map(nav.right, handle_right, "Open section in investigation")
   end
 
   if nav.up ~= "i" and nav.left ~= "i" and nav.down ~= "i" and nav.right ~= "i" then
@@ -1900,13 +1923,21 @@ function M.map_keys(buf)
   end
 
   if nav.right ~= "l" and nav.up ~= "l" and nav.down ~= "l" and nav.left ~= "l" then
-    map("l", handle_right, "Open/toggle section in investigation")
+    map("l", handle_right, "Open section in investigation")
+  end
+
+  if nav.left ~= "j" and nav.up ~= "j" and nav.down ~= "j" and nav.right ~= "j" then
+    map("j", handle_left, "Collapse section in investigation")
+  end
+
+  if nav.down == "j" then
+    map("j", handle_left, "Collapse section in investigation or move down")
   end
 
   map("<Up>", move_up, "Move up in investigation")
   map("<Down>", move_down, "Move down in investigation")
   map("<Left>", handle_left, "Collapse section in investigation")
-  map("<Right>", handle_right, "Open/toggle section in investigation")
+  map("<Right>", handle_right, "Open section in investigation")
   map("q", M.close, "Close investigation")
   map("<Esc>", M.close, "Close investigation")
   map("<C-c>", M.close, "Close investigation")

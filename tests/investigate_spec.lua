@@ -870,9 +870,10 @@ do
   assert(closed_header:find("▸", 1, true), "expected header arrow to face right ▸ when closed: " .. tostring(closed_header))
   assert(not closed_header:find("▾", 1, true), "header must not have ▾ when closed")
   assert(window.state.collapsed_sections["entities"] == true, "expected entities marked collapsed in state")
-  -- Check that content lines are collapsed (e.g. entity line not present right below header)
-  local next_line = lines_after_close[entities_header_line + 1] or ""
-  assert(not next_line:find("├─ [", 1, true), "expected content lines hidden when collapsed")
+  -- Check that content lines are collapsed and a spacer row exists between the closed section and the next section
+  assert(lines_after_close[entities_header_line + 1] == "", "expected spacer row between closed section and next section title")
+  local next_section_title = lines_after_close[entities_header_line + 2] or ""
+  assert(next_section_title ~= "" and (next_section_title:find("▾", 1, true) or next_section_title:find("▸", 1, true)), "expected next section title row after spacer row: " .. next_section_title)
   -- 2. On closed section header: press 'l' to open section
   vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
   l_km.callback()
@@ -882,6 +883,11 @@ do
   assert(window.state.collapsed_sections["entities"] == nil, "expected entities not collapsed in state")
   local opened_next_line = lines_after_open[entities_header_line + 1] or ""
   assert(opened_next_line:find("├─ [", 1, true), "expected content lines restored when opened via 'l'")
+  -- 2b. On open section header: press 'l' again - it must ONLY open closed sections, NOT close open ones
+  l_km.callback()
+  assert(window.state.collapsed_sections["entities"] == nil, "l should only open a closed section, not close an open one")
+  local lines_after_l_repeat = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  assert(lines_after_l_repeat[entities_header_line]:find("▾", 1, true), "section must remain open after pressing 'l'")
   -- 3. On open section header: press 'j' to close section
   vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
   j_km.callback()
@@ -889,6 +895,12 @@ do
   local j_closed_header = lines_after_j_close[entities_header_line]
   assert(j_closed_header:find("▸", 1, true), "expected header arrow to face right ▸ when closed via 'j'")
   assert(window.state.collapsed_sections["entities"] == true)
+  assert(lines_after_j_close[entities_header_line + 1] == "", "expected spacer row after j-closed section")
+  -- 3b. On closed section header: press 'j' again - it must NOT open a closed section
+  j_km.callback()
+  assert(window.state.collapsed_sections["entities"] == true, "j should only close open sections, not open closed ones")
+  local lines_after_j_repeat = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
+  assert(lines_after_j_repeat[entities_header_line]:find("▸", 1, true), "section must remain closed after pressing 'j'")
   -- 4. On closed section header: press <CR> to open section
   vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
   cr_km.callback()
