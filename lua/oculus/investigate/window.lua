@@ -250,6 +250,9 @@ function M.clamp_scroll(win, footer_win)
     view.topline = topline
     view.lnum = lnum
     view.topfill = 0
+    view.col = 0
+    view.curswant = 0
+    view.leftcol = 0
     vim.fn.winrestview(view)
   end)
 end
@@ -1795,21 +1798,31 @@ function M.map_keys(buf)
   local function move_up()
     pcall(vim.cmd.normal, { "k", bang = true })
     local w, f = current_active_win_and_footer()
+
+    if is_valid_win(w) then
+      local cur = vim.api.nvim_win_get_cursor(w)
+
+      if cur[2] ~= 0 then
+        pcall(vim.api.nvim_win_set_cursor, w, { cur[1], 0 })
+      end
+    end
+
     M.clamp_scroll(w, f)
   end
 
   local function move_down()
     pcall(vim.cmd.normal, { "j", bang = true })
     local w, f = current_active_win_and_footer()
+
+    if is_valid_win(w) then
+      local cur = vim.api.nvim_win_get_cursor(w)
+
+      if cur[2] ~= 0 then
+        pcall(vim.api.nvim_win_set_cursor, w, { cur[1], 0 })
+      end
+    end
+
     M.clamp_scroll(w, f)
-  end
-
-  local function move_left()
-    pcall(vim.cmd.normal, { "h", bang = true })
-  end
-
-  local function move_right()
-    pcall(vim.cmd.normal, { "l", bang = true })
   end
 
   local function rerender_to_section(sec_id)
@@ -1888,12 +1901,8 @@ function M.map_keys(buf)
 
     if sec and sec.id and not (M.state.collapsed_sections and M.state.collapsed_sections[sec.id]) then
       collapse_current_section(sec.id)
-    else
-      if nav.down == "j" then
-        move_down()
-      else
-        move_left()
-      end
+    elseif cursor[2] ~= 0 then
+      pcall(vim.api.nvim_win_set_cursor, win, { cursor[1], 0 })
     end
   end
 
@@ -1909,8 +1918,8 @@ function M.map_keys(buf)
 
     if sec and sec.id and (M.state.collapsed_sections and M.state.collapsed_sections[sec.id]) then
       expand_section(sec.id)
-    else
-      move_right()
+    elseif cursor[2] ~= 0 then
+      pcall(vim.api.nvim_win_set_cursor, win, { cursor[1], 0 })
     end
   end
 
@@ -1918,15 +1927,15 @@ function M.map_keys(buf)
     map(nav.up, move_up, "Move up in investigation")
   end
 
-  if nav.down then
+  if nav.down and nav.down ~= "j" then
     map(nav.down, move_down, "Move down in investigation")
   end
 
-  if nav.left then
+  if nav.left and nav.left ~= "j" then
     map(nav.left, handle_left, "Collapse section in investigation")
   end
 
-  if nav.right then
+  if nav.right and nav.right ~= "l" then
     map(nav.right, handle_right, "Open section in investigation")
   end
 
@@ -1934,18 +1943,8 @@ function M.map_keys(buf)
     map("i", move_up, "Move up in investigation")
   end
 
-  if nav.right ~= "l" and nav.up ~= "l" and nav.down ~= "l" and nav.left ~= "l" then
-    map("l", handle_right, "Open section in investigation")
-  end
-
-  if nav.left ~= "j" and nav.up ~= "j" and nav.down ~= "j" and nav.right ~= "j" then
-    map("j", handle_left, "Collapse section in investigation")
-  end
-
-  if nav.down == "j" then
-    map("j", handle_left, "Collapse section in investigation or move down")
-  end
-
+  map("j", handle_left, "Collapse section in investigation")
+  map("l", handle_right, "Open section in investigation")
   map("<Up>", move_up, "Move up in investigation")
   map("<Down>", move_down, "Move down in investigation")
   map("<Left>", handle_left, "Collapse section in investigation")

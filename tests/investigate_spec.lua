@@ -888,6 +888,11 @@ do
   assert(window.state.collapsed_sections["entities"] == nil, "l should only open a closed section, not close an open one")
   local lines_after_l_repeat = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
   assert(lines_after_l_repeat[entities_header_line]:find("▾", 1, true), "section must remain open after pressing 'l'")
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[2] == 0, "l key must not move cursor horizontally")
+  -- Verify l resets/clamps column to 0 if non-zero
+  vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 5 })
+  l_km.callback()
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[2] == 0, "l key must clamp cursor column to 0")
   -- 3. On open section header: press 'j' to close section
   vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
   j_km.callback()
@@ -901,6 +906,11 @@ do
   assert(window.state.collapsed_sections["entities"] == true, "j should only close open sections, not open closed ones")
   local lines_after_j_repeat = vim.api.nvim_buf_get_lines(test_buf, 0, -1, false)
   assert(lines_after_j_repeat[entities_header_line]:find("▸", 1, true), "section must remain closed after pressing 'j'")
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[2] == 0, "j key must not move cursor horizontally")
+  -- Verify j resets/clamps column to 0 if non-zero
+  vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 5 })
+  j_km.callback()
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[2] == 0, "j key must clamp cursor column to 0")
   -- 4. On closed section header: press <CR> to open section
   vim.api.nvim_win_set_cursor(window.state.win, { entities_header_line, 0 })
   cr_km.callback()
@@ -938,6 +948,14 @@ do
   assert(window.state.collapsed_sections["executive_brief"] == true)
   local exec_cursor = vim.api.nvim_win_get_cursor(window.state.win)
   assert(exec_cursor[1] == exec_header_idx, "expected cursor on executive brief header after collapse")
+  -- 6b. On a non-section row (line 1), j and l must not move cursor horizontally or vertically
+  vim.api.nvim_win_set_cursor(window.state.win, { 1, 0 })
+  j_km.callback()
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] == 1, "j on non-section line must not move line")
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[2] == 0, "j on non-section line must not move column")
+  l_km.callback()
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] == 1, "l on non-section line must not move line")
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[2] == 0, "l on non-section line must not move column")
   -- 7. Close window and check clean reset
   window.close()
   assert(window.state.win == nil)
