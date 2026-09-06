@@ -38,6 +38,7 @@ function M.save(path, config)
     contributors = config.contributors or {},
     projects = config.projects or {},
     project_directories = config.project_directories or {},
+    project_order = config.project_order or {},
     removed_contributors = config.removed_contributors or {},
     removed_projects = config.removed_projects or {},
     inspect_overviews = config.inspect_overviews or {},

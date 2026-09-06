@@ -36,6 +36,7 @@ local defaults = {
   sidebar_width = 26,
   navigation = "ijkl",
   project_directories = {},
+  project_order = {},
   projects = {
     {
       name = "Neovim",
@@ -329,6 +330,10 @@ function M.setup(opts)
     M.config.project_directories = vim.deepcopy(opts.project_directories)
   end
 
+  if opts.project_order ~= nil then
+    M.config.project_order = vim.deepcopy(opts.project_order)
+  end
+
   if M.config.persist_filters
     or M.config.persist_contributors
     or M.config.persist_projects
@@ -387,6 +392,10 @@ function M.setup(opts)
           M.config.project_directories,
           saved.project_directories
         )
+      end
+
+      if M.config.persist_projects and opts.project_order == nil and type(saved.project_order) == "table" then
+        M.config.project_order = vim.deepcopy(saved.project_order)
       end
 
       if M.config.persist_contributors then

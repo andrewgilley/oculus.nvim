@@ -3476,7 +3476,7 @@ do
   buf_text = table.concat(buf_lines, "\n")
   assert(not buf_text:find("  org/alpha", 1, true), "expected Project Alpha hidden from startup list")
   assert(buf_text:find("  Core Tools", 1, true), "expected Core Tools in startup list")
-  -- Test 4: Move project into directory via m key / toggle_move_item
+  -- Test 4: Move project to location of directory via m key (does NOT nest)
   local beta_line = nil
   local libs_dir_line = nil
 
@@ -3494,7 +3494,7 @@ do
   vim.api.nvim_win_set_cursor(window_mod.state.win, { beta_line, 0 })
   window_mod._toggle_move_item()
   assert(window_mod.state.moving_item ~= nil and window_mod.state.moving_item.kind == "project")
-  -- Move cursor to Libraries directory and press m
+  -- Move cursor to Libraries directory and press m (reorders list, does not nest)
   vim.api.nvim_win_set_cursor(window_mod.state.win, { libs_dir_line, 0 })
   window_mod._toggle_move_item()
   assert(window_mod.state.moving_item == nil)
@@ -3506,7 +3506,27 @@ do
     end
   end
 
-  assert(beta_proj ~= nil and beta_proj.directory == "Libraries")
+  assert(beta_proj ~= nil and beta_proj.directory == nil, "m should not nest project inside directory")
+
+  -- Now test l key: select Beta with m, move cursor to Libraries, press l to make it a child
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "project" and target.project.repository == "org/beta" then
+      beta_line = l
+    elseif target.kind == "directory" and target.name == "Libraries" then
+      libs_dir_line = l
+    end
+  end
+
+  assert(beta_line ~= nil and libs_dir_line ~= nil)
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { beta_line, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item ~= nil and window_mod.state.moving_item.kind == "project")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { libs_dir_line, 0 })
+  local right_map = vim.fn.maparg("<Right>", "n", false, true)
+  assert(right_map ~= nil and type(right_map.callback) == "function")
+  right_map.callback()
+  assert(window_mod.state.moving_item == nil, "expected moving_item cleared after l")
+  assert(beta_proj.directory == "Libraries", "expected beta nested inside Libraries via l key")
   -- Test 5: Open child items as a new UI screen via select_current (<CR>)
   libs_dir_line = nil
 
@@ -3690,7 +3710,116 @@ do
   assert(window_mod.state.current_directory == "Plugins")
   -- Go back from Plugins directory screen -> returns to startup list
   left_map.callback()
-  assert(window_mod.state.view == "contributors", "expected return to contributors startup list")
+  -- Test 15: Interleaved project and folder reordering via m key
+  -- Currently in startup list. Find a root project and a directory.
+  local test15_proj = nil
+  local test15_proj_line = nil
+  local test15_dir = nil
+  local test15_dir_line = nil
+
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "project" and not test15_proj_line then
+      test15_proj = target.project
+      test15_proj_line = l
+    elseif target.kind == "directory" and not test15_dir_line then
+      test15_dir = target.name
+      test15_dir_line = l
+    end
+  end
+
+  assert(test15_proj ~= nil and test15_proj_line ~= nil, "expected root project in startup list")
+  assert(test15_dir ~= nil and test15_dir_line ~= nil, "expected directory in startup list")
+  -- Move project to directory's place via m
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { test15_proj_line, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item ~= nil and window_mod.state.moving_item.kind == "project")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { test15_dir_line, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item == nil, "expected moving_item cleared after second m")
+  assert(test15_proj.directory == nil, "m on directory must NOT make project a child of directory")
+  -- Verify project now sits at target place in project_order
+  local proj_key = "proj:github:" .. test15_proj.repository:lower()
+  local dir_key = "dir:" .. test15_dir:lower()
+  local found_proj_order_idx = nil
+  local found_dir_order_idx = nil
+
+  for idx, k in ipairs(window_mod.state.opts.project_order) do
+    if k == proj_key then found_proj_order_idx = idx end
+    if k == dir_key then found_dir_order_idx = idx end
+  end
+
+  assert(found_proj_order_idx ~= nil and found_dir_order_idx ~= nil)
+  -- Now test l key on folder with moving item: makes that item a child of the folder
+  -- Refresh line targets for test15_proj and test15_dir
+  test15_proj_line = nil
+  test15_dir_line = nil
+
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "project" and target.project.repository == test15_proj.repository then
+      test15_proj_line = l
+    elseif target.kind == "directory" and target.name == test15_dir then
+      test15_dir_line = l
+    end
+  end
+
+  assert(test15_proj_line ~= nil and test15_dir_line ~= nil)
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { test15_proj_line, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item ~= nil and window_mod.state.moving_item.kind == "project")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { test15_dir_line, 0 })
+  right_map.callback()
+  local updated_test15_proj = nil
+
+  for _, p in ipairs(window_mod.state.opts.projects) do
+    if p.repository == test15_proj.repository then
+      updated_test15_proj = p
+      break
+    end
+  end
+
+  assert(updated_test15_proj ~= nil and updated_test15_proj.directory == test15_dir, "expected project to become child of folder via l key")
+
+  -- Now test l key on folder WITHOUT moving item: opens directory view
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "directory" and target.name == test15_dir then
+      test15_dir_line = l
+    end
+  end
+
+  assert(test15_dir_line ~= nil)
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { test15_dir_line, 0 })
+  right_map.callback()
+  assert(window_mod.state.view == "directory", "expected directory view when pressing l on folder without moving_item")
+  assert(window_mod.state.current_directory == test15_dir)
+  left_map.callback()
+  assert(window_mod.state.view == "contributors", "expected return to contributors")
+  -- Test 16: Persistence of project_order across oculus setup
+  local oculus = require("oculus")
+  local persist_order_state_file = vim.fn.tempname() .. ".json"
+
+  local dummy_config = {
+    projects = {
+      { repository = "alpha/one", provider = "github" },
+      { repository = "alpha/two", provider = "github" },
+    },
+    project_directories = { "Tools", "Libs" },
+    project_order = { "dir:libs", "proj:github:alpha/two", "dir:tools", "proj:github:alpha/one" },
+  }
+
+  require("oculus.storage").save(persist_order_state_file, dummy_config)
+
+  oculus.setup({
+    state_file = persist_order_state_file,
+    persist_projects = true,
+  })
+
+  assert(type(oculus.config.project_order) == "table", "expected project_order to be loaded")
+  assert(#oculus.config.project_order == 4)
+  assert(oculus.config.project_order[1] == "dir:libs")
+  assert(oculus.config.project_order[2] == "proj:github:alpha/two")
+  assert(oculus.config.project_order[3] == "dir:tools")
+  assert(oculus.config.project_order[4] == "proj:github:alpha/one")
+  os.remove(persist_order_state_file)
   os.remove(test_state_file)
   vim.o.columns = prev_cols
   vim.o.lines = prev_lines

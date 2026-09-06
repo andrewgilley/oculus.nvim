@@ -2242,6 +2242,84 @@ local function update_contributor_selection()
   end
 end
 
+local function startup_project_items()
+  M.state.opts = M.state.opts or {}
+  local dirs = M.state.opts.project_directories or {}
+  local all_projects = visible_projects()
+  local dir_map = {}
+  local dir_keys = {}
+
+  for _, d in ipairs(dirs) do
+    if type(d) == "string" and d ~= "" then
+      local key = "dir:" .. d:lower()
+
+      if not dir_map[key] then
+        dir_map[key] = { kind = "directory", name = d }
+        dir_keys[#dir_keys + 1] = key
+      end
+    end
+  end
+
+  local proj_map = {}
+  local proj_keys = {}
+
+  for _, p in ipairs(all_projects) do
+    if not p.directory or p.directory == "" then
+      local pkey = project_key(p)
+
+      if pkey then
+        local key = "proj:" .. pkey:lower()
+
+        if not proj_map[key] then
+          proj_map[key] = { kind = "project", project = p }
+          proj_keys[#proj_keys + 1] = key
+        end
+      end
+    end
+  end
+
+  local ordered_items = {}
+  local seen_keys = {}
+  local new_project_order = {}
+
+  for _, key in ipairs(M.state.opts.project_order or {}) do
+    if type(key) == "string" then
+      local lkey = key:lower()
+
+      if not seen_keys[lkey] then
+        if dir_map[lkey] then
+          ordered_items[#ordered_items + 1] = dir_map[lkey]
+          seen_keys[lkey] = true
+          new_project_order[#new_project_order + 1] = lkey
+        elseif proj_map[lkey] then
+          ordered_items[#ordered_items + 1] = proj_map[lkey]
+          seen_keys[lkey] = true
+          new_project_order[#new_project_order + 1] = lkey
+        end
+      end
+    end
+  end
+
+  for _, key in ipairs(dir_keys) do
+    if not seen_keys[key] then
+      ordered_items[#ordered_items + 1] = dir_map[key]
+      seen_keys[key] = true
+      new_project_order[#new_project_order + 1] = key
+    end
+  end
+
+  for _, key in ipairs(proj_keys) do
+    if not seen_keys[key] then
+      ordered_items[#ordered_items + 1] = proj_map[key]
+      seen_keys[key] = true
+      new_project_order[#new_project_order + 1] = key
+    end
+  end
+
+  M.state.opts.project_order = new_project_order
+  return ordered_items
+end
+
 local function render_contributors()
   stop_activity_page_loading()
   close_activity_footer()
@@ -2264,11 +2342,6 @@ local function render_contributors()
   }
 
   local contributors = showing_users and visible_contributors() or {}
-
-  local projects = not showing_users
-      and visible_projects()
-    or {}
-
   local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
   local username_width = 5
 
@@ -2283,42 +2356,34 @@ local function render_contributors()
   if not showing_users then
     project_heading_line = #lines + 1
     lines[#lines + 1] = "  PROJECTS"
-    local dirs = M.state.opts.project_directories or {}
+    local items = startup_project_items()
 
-    for _, dir_name in ipairs(dirs) do
-      local dir_line = #lines + 1
-      lines[dir_line] = pad_cell("  " .. dir_name, left_width)
+    for _, item in ipairs(items) do
+      local line = #lines + 1
 
-      M.state.line_targets[dir_line] = {
-        kind = "directory",
-        name = dir_name,
-      }
+      if item.kind == "directory" then
+        lines[line] = pad_cell("  " .. item.name, left_width)
 
-      project_lines[#project_lines + 1] = dir_line
-    end
-
-    local count_root_projects = 0
-
-    for _, project in ipairs(projects) do
-      if not project.directory or project.directory == "" then
-        count_root_projects = count_root_projects + 1
-        local line = #lines + 1
-
+        M.state.line_targets[line] = {
+          kind = "directory",
+          name = item.name,
+        }
+      else
         lines[line] = pad_cell(
-          "  " .. project_title(project),
+          "  " .. project_title(item.project),
           left_width
         )
 
         M.state.line_targets[line] = {
           kind = "project",
-          project = project,
+          project = item.project,
         }
-
-        project_lines[#project_lines + 1] = line
       end
+
+      project_lines[#project_lines + 1] = line
     end
 
-    if count_root_projects == 0 and #dirs == 0 then
+    if #items == 0 then
       lines[#lines + 1] = "  No projects configured."
     end
   end
@@ -2632,6 +2697,8 @@ local function create_project_directory(name)
   end
 
   table.insert(M.state.opts.project_directories, trimmed)
+  M.state.opts.project_order = M.state.opts.project_order or {}
+  table.insert(M.state.opts.project_order, "dir:" .. trimmed:lower())
   M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
   M.state.collapsed_project_directories[trimmed] = false
   M.state.selected_directory = trimmed
@@ -2672,6 +2739,16 @@ local function remove_project_directory(name)
   end
 
   local removed_name = table.remove(dirs, found_idx)
+
+  if M.state.opts.project_order then
+    local dir_k = "dir:" .. trimmed
+
+    for i = #M.state.opts.project_order, 1, -1 do
+      if M.state.opts.project_order[i]:lower() == dir_k then
+        table.remove(M.state.opts.project_order, i)
+      end
+    end
+  end
 
   for _, p in ipairs(M.state.opts.projects or {}) do
     if p.directory and p.directory:lower() == trimmed then
@@ -2776,17 +2853,37 @@ local function move_project_to_directory(project_or_key, dir_name)
 
     if not exists then
       table.insert(M.state.opts.project_directories, clean_dir)
+      M.state.opts.project_order = M.state.opts.project_order or {}
+      table.insert(M.state.opts.project_order, "dir:" .. clean_dir:lower())
     end
 
     target_project.directory = canonical_name
     M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
     M.state.collapsed_project_directories[canonical_name] = false
+
+    if M.state.opts.project_order then
+      local proj_k = "proj:" .. (project_key(target_project) or ""):lower()
+
+      for i = #M.state.opts.project_order, 1, -1 do
+        if M.state.opts.project_order[i]:lower() == proj_k then
+          table.remove(M.state.opts.project_order, i)
+        end
+      end
+    end
+
+    if M.state.view == "contributors" then
+      M.state.selected_directory = canonical_name
+      M.state.selected_project = nil
+    else
+      M.state.selected_project = target_project
+      M.state.selected_directory = nil
+    end
   else
     target_project.directory = nil
+    M.state.selected_project = target_project
+    M.state.selected_directory = nil
   end
 
-  M.state.selected_project = target_project
-  M.state.selected_directory = nil
   M.state.selected_username = nil
   persist_projects()
 
@@ -5718,6 +5815,16 @@ local function remove_current_item()
       end
     end
 
+    if M.state.opts.project_order then
+      local proj_k = "proj:" .. key:lower()
+
+      for i = #M.state.opts.project_order, 1, -1 do
+        if M.state.opts.project_order[i]:lower() == proj_k then
+          table.remove(M.state.opts.project_order, i)
+        end
+      end
+    end
+
     remember_removed("removed_projects", key)
     M.state.selected_project = nil
     persist_projects()
@@ -5791,100 +5898,125 @@ local function toggle_move_item()
     return
   end
 
-  if moving_item.kind == "project" then
-    if target.kind == "directory" or target.kind == "directory_empty" then
-      local dir_name = target.name or target.directory
-      local source_key = project_key(moving_item.project)
+  if M.state.view == "contributors" and (M.state.community_view or "projects") == "projects" then
+    local function get_startup_item_key(item)
+      if type(item) ~= "table" then
+        return nil
+      end
 
-      for _, project in ipairs(M.state.opts.projects or {}) do
-        if project_key(project) == source_key then
-          project.directory = dir_name
-          M.state.selected_project = project
-          break
+      if item.kind == "project" and item.project then
+        local pkey = project_key(item.project)
+        return pkey and ("proj:" .. pkey:lower()) or nil
+      elseif item.kind == "directory" or item.kind == "directory_empty" then
+        local name = item.name or item.directory
+        return name and ("dir:" .. name:lower()) or nil
+      end
+
+      return nil
+    end
+
+    local source_key = get_startup_item_key(moving_item)
+    local dest_key = get_startup_item_key(target)
+
+    if source_key and dest_key and source_key ~= dest_key then
+      startup_project_items()
+      local source_idx, dest_idx
+
+      for idx, k in ipairs(M.state.opts.project_order or {}) do
+        if k == source_key then
+          source_idx = idx
+        end
+
+        if k == dest_key then
+          dest_idx = idx
         end
       end
 
-      M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
-      M.state.collapsed_project_directories[dir_name] = false
-      persist_projects()
+      if source_idx and dest_idx and source_idx ~= dest_idx then
+        local moved_k = table.remove(M.state.opts.project_order, source_idx)
+        table.insert(M.state.opts.project_order, dest_idx, moved_k)
 
-      if M.state.view == "directory" and M.state.current_directory then
-        render_directory(M.state.current_directory)
-      else
+        if moving_item.kind == "project" and target.kind == "project" then
+          local p_source_k = project_key(moving_item.project)
+          local p_dest_k = project_key(target.project)
+          local p_s_idx, p_d_idx
+
+          for idx, p in ipairs(M.state.opts.projects or {}) do
+            local k = project_key(p)
+
+            if k == p_source_k then
+              p_s_idx = idx
+            end
+
+            if k == p_dest_k then
+              p_d_idx = idx
+            end
+          end
+
+          if p_s_idx and p_d_idx and p_s_idx ~= p_d_idx then
+            local p_item = table.remove(M.state.opts.projects, p_s_idx)
+            table.insert(M.state.opts.projects, p_d_idx, p_item)
+          end
+        elseif moving_item.kind == "directory" and (target.kind == "directory" or target.kind == "directory_empty") then
+          local d_source_name = (moving_item.name or moving_item.directory):lower()
+          local d_dest_name = (target.name or target.directory):lower()
+          local d_s_idx, d_d_idx
+
+          for idx, d in ipairs(M.state.opts.project_directories or {}) do
+            if type(d) == "string" and d:lower() == d_source_name then
+              d_s_idx = idx
+            end
+
+            if type(d) == "string" and d:lower() == d_dest_name then
+              d_d_idx = idx
+            end
+          end
+
+          if d_s_idx and d_d_idx and d_s_idx ~= d_d_idx then
+            local d_item = table.remove(M.state.opts.project_directories, d_s_idx)
+            table.insert(M.state.opts.project_directories, d_d_idx, d_item)
+          end
+        end
+
+        if moving_item.kind == "project" then
+          M.state.selected_project = moving_item.project
+          M.state.selected_directory = nil
+        else
+          M.state.selected_directory = moving_item.name or moving_item.directory
+          M.state.selected_project = nil
+        end
+
+        persist_projects()
         render_contributors()
-      end
-
-      return
-    elseif target.kind == "project" then
-      local source_key = project_key(moving_item.project)
-      local dest_key = project_key(target.project)
-
-      if source_key and dest_key then
-        local source_idx, dest_idx
-
-        for idx, project in ipairs(M.state.opts.projects or {}) do
-          local key = project_key(project)
-
-          if key == source_key then
-            source_idx = idx
-          end
-
-          if key == dest_key then
-            dest_idx = idx
-          end
-        end
-
-        if source_idx then
-          local item = M.state.opts.projects[source_idx]
-          item.directory = target.project.directory
-
-          if item.directory then
-            M.state.collapsed_project_directories = M.state.collapsed_project_directories or {}
-            M.state.collapsed_project_directories[item.directory] = false
-          end
-
-          if dest_idx and source_idx ~= dest_idx then
-            table.remove(M.state.opts.projects, source_idx)
-            table.insert(M.state.opts.projects, dest_idx, item)
-          end
-
-          M.state.selected_project = item
-          persist_projects()
-
-          if M.state.view == "directory" and M.state.current_directory then
-            render_directory(M.state.current_directory)
-          else
-            render_contributors()
-          end
-
-          return
-        end
+        return
       end
     end
-  elseif moving_item.kind == "directory" then
-    if target.kind == "directory" or target.kind == "directory_empty" then
-      local source_name = moving_item.name
-      local dest_name = target.name or target.directory
+  elseif M.state.view == "directory" then
+    if moving_item.kind == "project" and target.kind == "project" then
+      local source_k = project_key(moving_item.project)
+      local dest_k = project_key(target.project)
 
-      if source_name and dest_name and source_name:lower() ~= dest_name:lower() then
-        local source_idx, dest_idx
+      if source_k and dest_k and source_k ~= dest_k then
+        local s_idx, d_idx
 
-        for idx, d in ipairs(M.state.opts.project_directories or {}) do
-          if type(d) == "string" and d:lower() == source_name:lower() then
-            source_idx = idx
+        for idx, p in ipairs(M.state.opts.projects or {}) do
+          local k = project_key(p)
+
+          if k == source_k then
+            s_idx = idx
           end
 
-          if type(d) == "string" and d:lower() == dest_name:lower() then
-            dest_idx = idx
+          if k == dest_k then
+            d_idx = idx
           end
         end
 
-        if source_idx and dest_idx then
-          local item = table.remove(M.state.opts.project_directories, source_idx)
-          table.insert(M.state.opts.project_directories, dest_idx, item)
-          M.state.selected_directory = item
+        if s_idx and d_idx and s_idx ~= d_idx then
+          local item = table.remove(M.state.opts.projects, s_idx)
+          table.insert(M.state.opts.projects, d_idx, item)
+          M.state.selected_project = item
           persist_projects()
-          render_contributors()
+          render_directory(M.state.current_directory)
           return
         end
       end
@@ -5919,7 +6051,11 @@ local function toggle_move_item()
     end
   end
 
-  render_contributors()
+  if M.state.view == "directory" and M.state.current_directory then
+    render_directory(M.state.current_directory)
+  else
+    render_contributors()
+  end
 end
 
 target_on_cursor = function()
@@ -7534,6 +7670,14 @@ local function move_right()
       local dir_name = target.name or target.directory
 
       if dir_name then
+        if M.state.moving_item and M.state.moving_item.kind == "project" then
+          local moving_project = M.state.moving_item.project
+          M.state.moving_item = nil
+          move_project_to_directory(moving_project, dir_name)
+          return
+        end
+
+        M.state.moving_item = nil
         render_directory(dir_name)
         return
       end
@@ -8220,4 +8364,5 @@ M._create_project_directory = create_project_directory
 M._remove_project_directory = remove_project_directory
 M._move_project_to_directory = move_project_to_directory
 M._toggle_project_directory = toggle_project_directory
+M._startup_project_items = startup_project_items
 return M
