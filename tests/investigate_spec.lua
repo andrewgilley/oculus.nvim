@@ -512,6 +512,83 @@ do
     "expected formatted PR target description, got: " .. pr_header_line)
 
   window.close()
+  -- Test 15: Loading Spinner on Activity List Items during Investigation
+  local activity_mock_buf = vim.api.nvim_create_buf(false, true)
+
+  local activity_mock_win = vim.api.nvim_open_win(activity_mock_buf, false, {
+    relative = "editor",
+    row = 2,
+    col = 4,
+    width = 100,
+    height = 20,
+  })
+
+  local orig_item_text = "    #32812 treesitter: high CPU usage when editing lua files                  2 hours ago"
+
+  vim.api.nvim_buf_set_lines(activity_mock_buf, 0, -1, false, {
+    "  ISSUES",
+    "  neovim/neovim",
+    "",
+    orig_item_text,
+  })
+
+  oculus_win.state = oculus_win.state or {}
+  oculus_win.state.buf = activity_mock_buf
+  oculus_win.state.win = activity_mock_win
+  oculus_win.state.view = "activity"
+  oculus_win.state.activity_title_lines = { [4] = 4 }
+  oculus_win.state.line_targets = { [4] = "https://github.com/neovim/neovim/issues/32812" }
+  -- Start investigate spinner on line 4
+  oculus_win.start_activity_investigate_spinner(4, "https://github.com/neovim/neovim/issues/32812")
+  assert(oculus_win.state.investigate_loading_line == 4, "expected loading line to be 4")
+  assert(oculus_win.state.investigate_loading_line_text == orig_item_text, "expected saved original line text")
+  assert(oculus_win.state.investigate_loading_buf == activity_mock_buf, "expected saved loading buffer")
+  local spinning_text = vim.api.nvim_buf_get_lines(activity_mock_buf, 3, 4, false)[1]
+  assert(spinning_text:find("⠋", 1, true), "expected initial spinner frame ⠋ on activity item line")
+  assert(spinning_text:find("#32812", 1, true), "expected issue number to be preserved")
+  assert(spinning_text:find("2 hours ago", 1, true), "expected timestamp to be preserved")
+  -- Check highlight in investigate_loading_ns
+  local inv_ns = vim.api.nvim_get_namespaces().oculus_investigate_activity_loading
+  assert(inv_ns ~= nil, "expected oculus_investigate_activity_loading namespace to exist")
+  local marks = vim.api.nvim_buf_get_extmarks(activity_mock_buf, inv_ns, 0, -1, { details = true })
+  assert(#marks > 0, "expected extmark highlight for spinner frame")
+  -- Advance spinner frame
+  oculus_win.state.investigate_loading_frame = 2
+  oculus_win._draw_activity_investigate_spinner()
+  local frame2_text = vim.api.nvim_buf_get_lines(activity_mock_buf, 3, 4, false)[1]
+  assert(frame2_text:find("⠙", 1, true), "expected second spinner frame ⠙ on activity item line")
+  -- Stop investigate spinner
+  oculus_win.stop_activity_investigate_spinner()
+  assert(oculus_win.state.investigate_loading_timer == nil, "expected timer to be nil")
+  assert(oculus_win.state.investigate_loading_line == nil, "expected loading line to be cleared")
+  local restored_text = vim.api.nvim_buf_get_lines(activity_mock_buf, 3, 4, false)[1]
+  assert(restored_text == orig_item_text, "expected line text to be restored exactly to original")
+  local marks_after = vim.api.nvim_buf_get_extmarks(activity_mock_buf, inv_ns, 0, -1, {})
+  -- Integration: trigger via key mapping or investigate_current with cursor on line 4
+  vim.api.nvim_win_set_cursor(activity_mock_win, { 4, 0 })
+  local inv_called = false
+  local orig_investigate = oculus.investigate
+
+  oculus.investigate = function(target, opts, context, callback)
+    inv_called = true
+    assert(oculus_win.state.investigate_loading_line == 4, "expected spinner to be active during investigate call")
+    local line_during_inv = vim.api.nvim_buf_get_lines(activity_mock_buf, 3, 4, false)[1]
+    assert(line_during_inv:find("⠋", 1, true), "expected spinner frame in line during investigation")
+
+    if callback then
+      callback(nil, "mock finished")
+    end
+  end
+
+  oculus_win._investigate_current()
+  assert(inv_called, "expected oculus.investigate to be invoked")
+  assert(oculus_win.state.investigate_loading_line == nil, "expected spinner stopped after investigate completes")
+  local line_after_inv = vim.api.nvim_buf_get_lines(activity_mock_buf, 3, 4, false)[1]
+  assert(line_after_inv == orig_item_text, "expected line restored after investigate completion")
+  oculus.investigate = orig_investigate
+  -- Clean up activity mock window
+  pcall(vim.api.nvim_win_close, activity_mock_win, true)
+  pcall(vim.api.nvim_buf_delete, activity_mock_buf, { force = true })
   -- Clean up mock main window
   oculus_win.close_activity_footer()
   pcall(vim.api.nvim_win_close, main_mock_win, true)

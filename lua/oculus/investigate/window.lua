@@ -225,6 +225,10 @@ function M.open(bundle, opts)
     pcall(oculus_window.close_activity_footer)
   end
 
+  if ok and type(oculus_window.stop_activity_investigate_spinner) == "function" then
+    pcall(oculus_window.stop_activity_investigate_spinner)
+  end
+
   M.state.opts = opts
   M.state.view_mode = "tree"
   local main_cfg = get_target_window_config(opts)

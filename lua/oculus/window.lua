@@ -39,6 +39,10 @@ local inspect_loading_ns = vim.api.nvim_create_namespace(
   "oculus_inspect_activity_loading"
 )
 
+local investigate_loading_ns = vim.api.nvim_create_namespace(
+  "oculus_investigate_activity_loading"
+)
+
 local activity_page_loading_ns = vim.api.nvim_create_namespace(
   "oculus_activity_page_loading"
 )
@@ -177,6 +181,12 @@ M.state = {
   activity_inspect_queue_running = false,
   activity_loading_timer = nil,
   activity_loading_frame = 1,
+  investigate_loading_timer = nil,
+  investigate_loading_buf = nil,
+  investigate_loading_line = nil,
+  investigate_loading_line_text = nil,
+  investigate_loading_target = nil,
+  investigate_loading_frame = 1,
   restore_cursor = nil,
   restore_view = nil,
   shortcut_return = nil,
@@ -405,6 +415,8 @@ local activity_loading_frames = {
   "⠇",
   "⠏",
 }
+
+local stop_activity_investigate_spinner
 
 local function stop_activity_page_loading()
   local timer = M.state.activity_loading_timer
@@ -2791,6 +2803,11 @@ end
 
 local function render_loading(target)
   stop_activity_page_loading()
+
+  if stop_activity_investigate_spinner then
+    stop_activity_investigate_spinner()
+  end
+
   close_activity_footer()
   M.state.view = "activity"
   M.state.activity_commit_page = false
@@ -2825,6 +2842,11 @@ end
 
 local function render_error(message)
   stop_activity_page_loading()
+
+  if stop_activity_investigate_spinner then
+    stop_activity_investigate_spinner()
+  end
+
   close_activity_footer()
   M.state.view = "activity"
   M.state.activity_commit_page = false
@@ -2908,6 +2930,11 @@ end
 
 local function render_activity(events, cached, notice, opts)
   stop_activity_page_loading()
+
+  if stop_activity_investigate_spinner then
+    stop_activity_investigate_spinner()
+  end
+
   opts = opts or {}
 
   notice = type(notice) == "string" and notice ~= ""
@@ -5896,6 +5923,171 @@ local function inspect_current()
   end
 end
 
+stop_activity_investigate_spinner = function()
+  local timer = M.state.investigate_loading_timer
+  M.state.investigate_loading_timer = nil
+  M.state.investigate_loading_frame = 1
+
+  if timer then
+    pcall(timer.stop, timer)
+
+    if not timer:is_closing() then
+      timer:close()
+    end
+  end
+
+  local buf = M.state.investigate_loading_buf
+  local line = M.state.investigate_loading_line
+  local orig_text = M.state.investigate_loading_line_text
+
+  if buf and is_valid_buf(buf) and line and orig_text then
+    local current_line_count = vim.api.nvim_buf_line_count(buf)
+
+    if line <= current_line_count then
+      local modifiable = vim.bo[buf].modifiable
+      vim.bo[buf].modifiable = true
+
+      vim.api.nvim_buf_set_lines(
+        buf,
+        line - 1,
+        line,
+        false,
+        { orig_text }
+      )
+
+      vim.bo[buf].modifiable = modifiable
+      highlight(line, 0, 5, "OculusActivityIcon")
+      apply_activity_inspect_queue_highlights()
+    end
+
+    vim.api.nvim_buf_clear_namespace(
+      buf,
+      investigate_loading_ns,
+      0,
+      -1
+    )
+  end
+
+  M.state.investigate_loading_buf = nil
+  M.state.investigate_loading_line = nil
+  M.state.investigate_loading_line_text = nil
+  M.state.investigate_loading_target = nil
+end
+
+local function draw_activity_investigate_spinner()
+  local buf = M.state.investigate_loading_buf
+  local line = M.state.investigate_loading_line
+  local orig_text = M.state.investigate_loading_line_text
+
+  if not buf or not is_valid_buf(buf) or not line or not orig_text then
+    return
+  end
+
+  if M.state.view ~= "activity" or M.state.buf ~= buf then
+    return
+  end
+
+  local current_line_count = vim.api.nvim_buf_line_count(buf)
+
+  if line > current_line_count then
+    return
+  end
+
+  local frame_idx = M.state.investigate_loading_frame or 1
+  local frame = activity_loading_frames[frame_idx] or activity_loading_frames[1]
+  local is_title = M.state.activity_title_lines and M.state.activity_title_lines[line] == line
+  local loading_line, spinner_column = activity_loading_line(orig_text, frame, is_title)
+  local modifiable = vim.bo[buf].modifiable
+  vim.bo[buf].modifiable = true
+
+  vim.api.nvim_buf_set_lines(
+    buf,
+    line - 1,
+    line,
+    false,
+    { loading_line }
+  )
+
+  vim.bo[buf].modifiable = modifiable
+  highlight(line, 0, 5, "OculusActivityIcon")
+  apply_activity_inspect_queue_highlights()
+
+  vim.api.nvim_buf_clear_namespace(
+    buf,
+    investigate_loading_ns,
+    0,
+    -1
+  )
+
+  vim.api.nvim_buf_add_highlight(
+    buf,
+    investigate_loading_ns,
+    "DiagnosticInfo",
+    line - 1,
+    spinner_column,
+    spinner_column + #frame
+  )
+
+  if is_valid_win(M.state.win) and vim.api.nvim_get_current_win() == M.state.win then
+    vim.cmd("redraw")
+  end
+end
+
+local function start_activity_investigate_spinner(line, target)
+  stop_activity_investigate_spinner()
+
+  if not line or not is_valid_buf(M.state.buf) or M.state.view ~= "activity" then
+    return
+  end
+
+  local current_line_count = vim.api.nvim_buf_line_count(M.state.buf)
+
+  if line > current_line_count then
+    return
+  end
+
+  local orig_text = vim.api.nvim_buf_get_lines(
+    M.state.buf,
+    line - 1,
+    line,
+    false
+  )[1]
+
+  if not orig_text or orig_text == "" then
+    return
+  end
+
+  M.state.investigate_loading_buf = M.state.buf
+  M.state.investigate_loading_line = line
+  M.state.investigate_loading_line_text = orig_text
+  M.state.investigate_loading_target = target
+  M.state.investigate_loading_frame = 1
+  draw_activity_investigate_spinner()
+  local timer = vim.uv.new_timer()
+
+  if not timer then
+    return
+  end
+
+  M.state.investigate_loading_timer = timer
+
+  timer:start(80, 80, vim.schedule_wrap(function()
+    if M.state.investigate_loading_timer ~= timer then
+      return
+    end
+
+    if not is_valid_buf(M.state.investigate_loading_buf) or M.state.view ~= "activity" then
+      stop_activity_investigate_spinner()
+      return
+    end
+
+    M.state.investigate_loading_frame =
+      (M.state.investigate_loading_frame % #activity_loading_frames) + 1
+
+    draw_activity_investigate_spinner()
+  end))
+end
+
 local function investigate_current()
   local target = target_on_cursor()
   local line = is_valid_win(M.state.win) and vim.api.nvim_win_get_cursor(M.state.win)[1] or nil
@@ -5922,11 +6114,19 @@ local function investigate_current()
     event = event,
   }
 
-  require("oculus").investigate(target, M.state.opts, context)
+  if source_line and M.state.view == "activity" then
+    start_activity_investigate_spinner(source_line, target)
+  end
+
+  require("oculus").investigate(target, M.state.opts, context, function(bundle, err)
+    stop_activity_investigate_spinner()
+  end)
 end
 
 local function prompt_investigate_by_id()
   local cursor_target = target_on_cursor()
+  local line = is_valid_win(M.state.win) and vim.api.nvim_win_get_cursor(M.state.win)[1] or nil
+  local source_line = line and (M.state.activity_title_lines[line] or line) or nil
   local project = M.state.activity_project
 
   if not project and type(cursor_target) == "table" and cursor_target.kind == "project" then
@@ -5950,7 +6150,13 @@ local function prompt_investigate_by_id()
       target = nil
     end
 
-    require("oculus").investigate(target, M.state.opts, context)
+    if source_line and M.state.view == "activity" then
+      start_activity_investigate_spinner(source_line, target)
+    end
+
+    require("oculus").investigate(target, M.state.opts, context, function(bundle, err)
+      stop_activity_investigate_spinner()
+    end)
   end)
 end
 
@@ -6787,12 +6993,20 @@ function M.close()
   M.state.request_id = M.state.request_id + 1
   M.state.moving_item = nil
   stop_activity_page_loading()
+  stop_activity_investigate_spinner()
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
 
   if is_valid_buf(M.state.buf) then
     vim.api.nvim_buf_clear_namespace(
       M.state.buf,
       inspect_loading_ns,
+      0,
+      -1
+    )
+
+    vim.api.nvim_buf_clear_namespace(
+      M.state.buf,
+      investigate_loading_ns,
       0,
       -1
     )
@@ -7157,4 +7371,9 @@ M._get_search_history = get_search_history
 M._add_search_history = add_search_history
 M.close_activity_footer = close_activity_footer
 M.render_activity_footer = render_activity_footer
+M.stop_activity_investigate_spinner = stop_activity_investigate_spinner
+M.start_activity_investigate_spinner = start_activity_investigate_spinner
+M._draw_activity_investigate_spinner = draw_activity_investigate_spinner
+M._investigate_loading_ns = investigate_loading_ns
+M._investigate_current = investigate_current
 return M
