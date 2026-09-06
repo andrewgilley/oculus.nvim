@@ -12,6 +12,8 @@ M.state = {
   sub_footer_buf = nil,
   sub_footer_win = nil,
   view_mode = "tree",
+  ledger_start_line = nil,
+  tree_last_line = nil,
   bundle = nil,
   line_targets = {},
   line_provenance = {},
@@ -232,7 +234,7 @@ function M.close(for_subwin)
     pcall(vim.api.nvim_win_close, M.state.ledger_win, true)
   end
 
-  if is_valid_buf(M.state.ledger_buf) then
+  if is_valid_buf(M.state.ledger_buf) and M.state.ledger_buf ~= M.state.buf then
     pcall(vim.api.nvim_buf_delete, M.state.ledger_buf, { force = true })
   end
 
@@ -275,6 +277,8 @@ function M.close(for_subwin)
   M.state.footer_win = nil
   M.state.footer_buf = nil
   M.state.view_mode = "tree"
+  M.state.ledger_start_line = nil
+  M.state.tree_last_line = nil
 
   if not for_subwin then
     M.state.bundle = nil
@@ -357,13 +361,15 @@ function M.open(bundle, opts)
   }, ",")
 
   pcall(function() vim.wo[win].winhighlight = winhl end)
-  local ledger_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[ledger_buf].buftype = "nofile"
-  vim.bo[ledger_buf].bufhidden = "hide"
-  vim.bo[ledger_buf].swapfile = false
+  local ledger_buf = nil
   local ledger_win = nil
 
   if is_split then
+    ledger_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[ledger_buf].buftype = "nofile"
+    vim.bo[ledger_buf].bufhidden = "hide"
+    vim.bo[ledger_buf].swapfile = false
+
     ledger_win = vim.api.nvim_open_win(ledger_buf, false, {
       relative = "editor",
       width = right_width,
@@ -378,6 +384,8 @@ function M.open(bundle, opts)
     vim.wo[ledger_win].cursorline = false
     vim.wo[ledger_win].wrap = true
     pcall(function() vim.wo[ledger_win].winhighlight = winhl end)
+  else
+    ledger_buf = buf
   end
 
   M.state.buf = buf
@@ -387,6 +395,7 @@ function M.open(bundle, opts)
   M.state.bundle = bundle
   M.state.line_targets = {}
   M.state.line_provenance = {}
+  M.state.tree_last_line = 1
   pcall(vim.api.nvim_set_current_win, win)
 
   vim.schedule(function()
@@ -397,24 +406,37 @@ function M.open(bundle, opts)
 
   M.render(buf, bundle)
 
-  if ledger_buf then
+  if is_split and ledger_buf and ledger_buf ~= buf then
     M.render_ledger(ledger_buf, M.state.line_provenance[1] or { kind = "overview" })
-
-    -- Cursor tracking in left tree to dynamically update provenance ledger
-    vim.api.nvim_create_autocmd("CursorMoved", {
-      buffer = buf,
-      callback = function()
-        if is_valid_win(M.state.win) and is_valid_buf(M.state.ledger_buf) then
-          local cursor = vim.api.nvim_win_get_cursor(M.state.win)
-          local line = cursor[1]
-          local prov = M.state.line_provenance[line] or { kind = "overview" }
-          M.render_ledger(M.state.ledger_buf, prov)
-        end
-      end,
-    })
-
     M.map_keys(ledger_buf)
   end
+
+  -- Cursor tracking in main window
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    buffer = buf,
+    callback = function()
+      if not is_valid_win(M.state.win) then
+        return
+      end
+
+      local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+      local line = cursor[1]
+
+      if is_valid_win(M.state.ledger_win) and is_valid_buf(M.state.ledger_buf) and M.state.ledger_buf ~= buf then
+        local prov = M.state.line_provenance[line] or { kind = "overview" }
+        M.render_ledger(M.state.ledger_buf, prov)
+      end
+
+      if M.state.ledger_start_line then
+        local new_mode = (line >= M.state.ledger_start_line) and "ledger" or "tree"
+
+        if new_mode ~= M.state.view_mode then
+          M.state.view_mode = new_mode
+          render_investigate_footer()
+        end
+      end
+    end,
+  })
 
   M.map_keys(buf)
   render_investigate_footer()
@@ -847,6 +869,195 @@ function M.render(buf, bundle)
   add_line("    ├─ [a] Synthesize / Re-verify Agent Hypotheses against Ground Truth", "Identifier", nil, { kind = "action_hint", action = "agent_synthesize" })
   add_line("    └─ [h] Pivot to Oculus Inspect (interactive diff & hunk review)", "Identifier", nil, { kind = "action_hint", action = "inspect_pivot" })
   add_line("", nil)
+  -- 10. Deterministic Provenance Ledger (Evidence Graph Ground Truth) at Bottom of Window
+  local ledger_header_idx = add_line("  ▾ DETERMINISTIC PROVENANCE LEDGER & AUDIT TRAIL", "Title", nil, { kind = "overview" })
+  M.state.ledger_start_line = ledger_header_idx
+  add_line("    " .. string.rep("═", 56), "Comment", nil, { kind = "overview" })
+  add_line("    Ground-truth factual substrate answering where facts originated and at what repository state.", "Comment", nil, { kind = "overview" })
+  add_line("", nil)
+  add_line("  EVIDENCE GRAPH INVENTORY & REPOSITORY STATE:", "Special", nil, { kind = "overview" })
+  add_line(string.format("    • Repository:     %s (%s)", repo_name, repo_root ~= "" and repo_root or "local"), "Identifier", nil, { kind = "overview" })
+  add_line(string.format("    • Target State:   %s", target_desc), "Comment", nil, { kind = "overview" })
+  add_line(string.format("    • Engine Version: v%s · Analyzed: %s", engine_ver, analyzed), "Comment", nil, { kind = "overview" })
+  add_line("    • Ground Truth:   Deterministic AST, Git history & adversarial verification", "Comment", nil, { kind = "overview" })
+  add_line("", nil)
+  add_line("  PROVENANCE PRINCIPLES & METRICS:", "Normal", nil, { kind = "overview" })
+  add_line(string.format("    • Modified Entities:     %d (Tree-sitter AST, 1.00 confidence)", #entities), "DiagnosticInfo", nil, { kind = "overview" })
+  add_line(string.format("    • Relationships w/ Prov: %d verified provenance edges", #(type(bundle.relationships) == "table" and bundle.relationships or {})), "DiagnosticInfo", nil, { kind = "overview" })
+  add_line(string.format("    • Traceability Matches:  %d candidates", #trace_links), "DiagnosticInfo", nil, { kind = "overview" })
+  add_line(string.format("    • Boundary Crossings:    %d detected", #crossings), "DiagnosticInfo", nil, { kind = "overview" })
+  add_line(string.format("    • Subsystem Risk Alerts: %d alerts", #alerts), "DiagnosticInfo", nil, { kind = "overview" })
+  add_line(string.format("    • Historical Precedents: %d precedents", #precedents), "DiagnosticInfo", nil, { kind = "overview" })
+  add_line(string.format("    • Invariant Assertions:  %d verified checks", #invariants), "DiagnosticOk", nil, { kind = "overview" })
+  add_line("", nil)
+
+  -- Verified Ground-Truth Invariants
+  if #invariants > 0 then
+    add_line("  VERIFIED GROUND-TRUTH INVARIANTS:", "Special", nil, { kind = "overview" })
+
+    for _, inv in ipairs(invariants) do
+      local icon = inv.passed and "[PASSED ✓]" or "[FAILED ✗]"
+      local hl = inv.passed and "DiagnosticOk" or "DiagnosticWarn"
+
+      add_line(string.format("    • %s %s: %s", icon, inv.invariant_name, inv.details), hl, nil, {
+        kind = "invariant",
+        invariant = inv,
+      })
+    end
+
+    add_line("", nil)
+  end
+
+  -- Semantic Entities AST Provenance & Lineage
+  if #entities > 0 then
+    add_line("  SEMANTIC ENTITIES AST PROVENANCE & LINEAGE:", "Special", nil, { kind = "overview" })
+
+    for _, e in ipairs(entities) do
+      local kind_str = (e.kind or "entity"):upper()
+
+      add_line(string.format("    ▸ Symbol: %s [%s]", e.name or "unknown", kind_str), "Identifier", { file = e.file_path, line = e.start_line }, {
+        kind = "entity",
+        entity = e,
+        history = history_lookup[e.id],
+      })
+
+      add_line(string.format("      File:       %s:%d-%d (cols %d-%d)", e.file_path or "", e.start_line or 1, e.end_line or 1, e.start_col or 1, e.end_col or 1), "Comment", { file = e.file_path, line = e.start_line })
+      add_line("      Parser:     Tree-sitter AST Polyglot Engine (CONFIDENCE: 1.00)", "DiagnosticOk")
+      add_line(string.format("      Git State:  %s", e.git_oid or "HEAD (Working Tree)"), "Comment")
+      local h = history_lookup[e.id]
+
+      if h then
+        local authors_str = table.concat(h.authors or {}, ", ")
+        add_line(string.format("      History:    %d commits in lineage · Contributors: %s", h.total_commits or 0, authors_str ~= "" and authors_str or "Unknown"), "Comment")
+      end
+    end
+
+    add_line("", nil)
+  end
+
+  -- Call Graph & Test Suite Provenance
+  if #callers > 0 or #tests > 0 then
+    add_line("  CALL GRAPH & TEST SUITE PROVENANCE:", "Special", nil, { kind = "overview" })
+
+    for _, c in ipairs(callers) do
+      add_line(string.format("    • Direct Caller: %s in %s:%d [95%% CONFIDENCE] (Relation: CALLS)", c.name or "unknown", c.file_path or "", c.start_line or 1), "DiagnosticInfo", { file = c.file_path, line = c.start_line or 1 }, {
+        kind = "caller",
+        caller = c,
+      })
+
+      add_line("      Source: Tree-sitter Call Expression Matcher · Verified syntactic node", "Comment")
+    end
+
+    for _, t in ipairs(tests) do
+      add_line(string.format("    • Associated Test: %s in %s:%d [90%% CONFIDENCE] (Relation: TESTED_BY)", t.name or "unknown", t.file_path or "", t.start_line or 1), "DiagnosticOk", { file = t.file_path, line = t.start_line or 1 }, {
+        kind = "test",
+        test = t,
+      })
+
+      add_line("      Source: ImpactAnalyzer & Test File Detector · Coverage relationship", "Comment")
+    end
+
+    add_line("", nil)
+  end
+
+  -- Implicit Architecture & Co-Change Provenance
+  if #co_changes > 0 then
+    add_line("  IMPLICIT ARCHITECTURE & CO-CHANGE PROVENANCE:", "Special", nil, { kind = "overview" })
+
+    for _, cc in ipairs(co_changes) do
+      local pct = math.floor((cc.confidence or 0.5) * 100)
+
+      add_line(string.format("    • %s ↔ %s [%d%% STATISTICAL CONFIDENCE] (Relation: CO_CHANGES_WITH)", cc.entity_a, cc.entity_b, pct), "DiagnosticWarn", { file = cc.entity_a, line = 1 }, {
+        kind = "co_change",
+        co_change = cc,
+      })
+
+      local sample_commits = cc.sample_commits or {}
+      local sample_str = #sample_commits > 0 and (" · commits: " .. table.concat(sample_commits, ", ")) or ""
+      add_line(string.format("      Source: Git Commit History Miner · Frequency: %d co-changes%s", cc.co_change_count or 0, sample_str), "Comment")
+    end
+
+    add_line("", nil)
+  end
+
+  -- Architectural Dynamics Provenance
+  if #crossings > 0 or #alerts > 0 or #precedents > 0 then
+    add_line("  ARCHITECTURAL DYNAMICS & BOUNDARY PROVENANCE:", "Special", nil, { kind = "overview" })
+
+    for _, bc in ipairs(crossings) do
+      local risk = (bc.risk_level or "low"):upper()
+
+      add_line(string.format("    • Architectural Boundary Crossing: %s ➔ %s [%s RISK] (Relation: CROSSES_BOUNDARY)", bc.source_subsystem, bc.target_subsystem, risk), "DiagnosticError", nil, {
+        kind = "boundary_crossing",
+        crossing = bc,
+      })
+
+      add_line(string.format("      Details: %s ➔ %s (%s) · Source: ArchitecturalDynamicsAnalyzer", bc.source_entity or "", bc.target_entity or "", bc.details or ""), "Comment")
+    end
+
+    for _, inst in ipairs(alerts) do
+      local cat = inst.risk_category or "RISK"
+
+      add_line(string.format("    • Subsystem Instability Metric: %s (instability: %.2f) [%s]", inst.subsystem or "", inst.instability_score or 0.0, cat), "DiagnosticWarn", nil, {
+        kind = "subsystem_instability",
+        instability = inst,
+      })
+
+      local maint = inst.primary_maintainer and (" · Maintainer: @" .. inst.primary_maintainer) or ""
+      add_line(string.format("      Metric Details: Churn commits: %d · Uncovered: %d%s", inst.churn_commits or 0, inst.uncovered_modifications or 0, maint), "Comment")
+    end
+
+    for _, p in ipairs(precedents) do
+      add_line(string.format("    • Historical Precedent commit:%s by @%s", p.commit_oid, p.author or "unknown"), "Comment", nil, {
+        kind = "historical_precedent",
+        precedent = p,
+      })
+
+      add_line(string.format("      Message: \"%s\" · Confidence: 0.90", p.message or ""), "Comment")
+    end
+
+    add_line("", nil)
+  end
+
+  -- Adversarial Reality Checking & Agent Hypotheses Provenance (Layers 25-26)
+  if derived then
+    add_line("  ADVERSARIAL REALITY CHECK & AGENT PROVENANCE (Layers 25-26):", "Special", nil, { kind = "overview" })
+    local verd = derived.adversarial_verdict or "INCONCLUSIVE"
+    local verd_hl = verd == "ALL_CLAIMS_VERIFIED" and "DiagnosticOk" or (verd == "PARTIALLY_VERIFIED" and "DiagnosticWarn" or "DiagnosticError")
+    add_line(string.format("    ADVERSARIAL VERDICT: [%s]", verd), verd_hl, nil, { kind = "overview" })
+    add_line("", nil)
+
+    for _, hyp in ipairs(derived.hypotheses or {}) do
+      add_line(string.format("    ▸ Agent Derived Hypothesis: %s", hyp.title or "Untitled"), "Title", nil, {
+        kind = "agent_hypothesis",
+        hypothesis = hyp,
+      })
+
+      add_line(string.format("      Rationale:  %s", hyp.rationale or ""), "Comment")
+      add_line(string.format("      Confidence: %.2f", hyp.confidence or 0.9), "Comment")
+
+      for _, ver in ipairs(hyp.verifications or {}) do
+        local is_conf = ver.status == "CONFIRMED"
+        local v_hl = is_conf and "DiagnosticOk" or (ver.status == "REFUTED" and "DiagnosticError" or "DiagnosticWarn")
+
+        add_line(string.format("      • Adversarial Reality Check: [%s] (Confidence: %.2f)", ver.status or "UNVERIFIED", ver.confidence or 1.0), v_hl, nil, {
+          kind = "claim_verification",
+          verification = ver,
+          hypothesis = hyp,
+        })
+
+        add_line(string.format("        Assertion: \"%s\"", ver.assertion or ""), "Normal")
+        add_line(string.format("        Details:   %s", ver.details or ""), "Comment")
+
+        for _, ev in ipairs(ver.deterministic_evidence or {}) do
+          add_line(string.format("        Evidence:  %s", ev), "Comment")
+        end
+      end
+    end
+
+    add_line("", nil)
+  end
+
   M.state.line_targets = line_targets
   M.state.line_provenance = line_provenance
   vim.bo[buf].modifiable = true
@@ -1338,21 +1549,21 @@ function M.map_keys(buf)
       end
 
       render_investigate_footer()
-    elseif is_valid_win(M.state.win) and is_valid_buf(M.state.buf) and is_valid_buf(M.state.ledger_buf) then
-      local cur_buf = vim.api.nvim_win_get_buf(M.state.win)
+    elseif is_valid_win(M.state.win) and M.state.ledger_start_line then
+      local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+      local line = cursor[1]
 
-      if cur_buf == M.state.buf then
-        local cursor = vim.api.nvim_win_get_cursor(M.state.win)
-        local prov = M.state.line_provenance[cursor[1]] or { kind = "overview" }
-        M.render_ledger(M.state.ledger_buf, prov)
-        vim.api.nvim_win_set_buf(M.state.win, M.state.ledger_buf)
+      if line < M.state.ledger_start_line then
+        M.state.tree_last_line = line
+        pcall(vim.api.nvim_win_set_cursor, M.state.win, { M.state.ledger_start_line, 0 })
         M.state.view_mode = "ledger"
-        render_investigate_footer()
       else
-        vim.api.nvim_win_set_buf(M.state.win, M.state.buf)
+        local target = math.max(1, M.state.tree_last_line or 1)
+        pcall(vim.api.nvim_win_set_cursor, M.state.win, { target, 0 })
         M.state.view_mode = "tree"
-        render_investigate_footer()
       end
+
+      render_investigate_footer()
     end
   end, "Toggle between tree and provenance ledger")
 

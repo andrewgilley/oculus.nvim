@@ -813,5 +813,41 @@ do
   -- Clean up main Oculus window
   oculus_window.close()
   assert(oculus_window.state.win == nil)
+  -- Test 28: Provenance ledger is part of main investigate window at bottom of page
+  window.open(forge_bundle)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected window open")
+  assert(window.state.ledger_win == nil, "expected no separate ledger window in default investigate view")
+  assert(window.state.ledger_start_line ~= nil and window.state.ledger_start_line > 10, "expected ledger_start_line recorded")
+  local all_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local all_text = table.concat(all_lines, "\n")
+  assert(all_text:find("DETERMINISTIC PROVENANCE LEDGER & AUDIT TRAIL", 1, true), "expected provenance ledger header in main buffer")
+  assert(all_text:find("EVIDENCE GRAPH INVENTORY & REPOSITORY STATE", 1, true), "expected inventory in main buffer")
+  assert(all_text:find("VERIFIED GROUND-TRUTH INVARIANTS", 1, true), "expected verified invariants in main buffer")
+  -- Tab key jumps cursor to bottom ledger section without buffer swap
+  local orig_buf = window.state.buf
+  local tab_km = vim.tbl_filter(function(k) return k.lhs == "<Tab>" end, vim.api.nvim_buf_get_keymap(orig_buf, "n"))[1]
+  assert(tab_km ~= nil, "expected <Tab> mapped on main buffer")
+  tab_km.callback()
+  assert(vim.api.nvim_win_get_buf(window.state.win) == orig_buf, "buffer must NOT swap on Tab")
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] >= window.state.ledger_start_line, "expected cursor jumped to bottom ledger section")
+  assert(window.state.view_mode == "ledger", "expected view_mode == 'ledger' when in bottom ledger")
+  -- Tab again jumps cursor back to upper tree section
+  tab_km.callback()
+  assert(vim.api.nvim_win_get_buf(window.state.win) == orig_buf, "buffer must still be orig_buf")
+  assert(vim.api.nvim_win_get_cursor(window.state.win)[1] < window.state.ledger_start_line, "expected cursor jumped back to upper tree section")
+  assert(window.state.view_mode == "tree", "expected view_mode == 'tree' when in upper tree")
+  -- Manual cursor navigation crossing ledger_start_line updates view_mode and footer
+  vim.api.nvim_win_set_cursor(window.state.win, { window.state.ledger_start_line + 2, 0 })
+  vim.cmd("doautocmd CursorMoved")
+  assert(window.state.view_mode == "ledger", "expected view_mode == 'ledger' when cursor moved into ledger")
+  local f_lines_bot = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  assert(f_lines_bot[2]:find("Tab tree", 1, true), "expected Tab tree in footer when in bottom ledger")
+  vim.api.nvim_win_set_cursor(window.state.win, { 2, 0 })
+  vim.cmd("doautocmd CursorMoved")
+  assert(window.state.view_mode == "tree", "expected view_mode == 'tree' when cursor moved into tree")
+  local f_lines_top = vim.api.nvim_buf_get_lines(window.state.footer_buf, 0, -1, false)
+  assert(f_lines_top[2]:find("Tab ledger", 1, true), "expected Tab ledger in footer when in tree")
+  window.close()
+  assert(window.state.win == nil and window.state.footer_win == nil, "expected clean close")
   print("ALL INVESTIGATE TESTS PASSED!")
 end
