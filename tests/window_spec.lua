@@ -3793,7 +3793,82 @@ do
   assert(window_mod.state.current_directory == test15_dir)
   left_map.callback()
   assert(window_mod.state.view == "contributors", "expected return to contributors")
-  -- Test 16: Persistence of project_order across oculus setup
+
+  -- Test 16: A move command selected child item moves to parent directory when j is pressed
+  -- Re-open test15_dir
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "directory" and target.name == test15_dir then
+      test15_dir_line = l
+    end
+  end
+
+  assert(test15_dir_line ~= nil)
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { test15_dir_line, 0 })
+  right_map.callback()
+  assert(window_mod.state.view == "directory")
+  assert(window_mod.state.current_directory == test15_dir)
+  -- Find child project in directory screen
+  local child_project_line = nil
+
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "project" and target.project.repository == updated_test15_proj.repository then
+      child_project_line = l
+    end
+  end
+
+  assert(child_project_line ~= nil, "expected child project in directory view")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { child_project_line, 0 })
+  -- Select child project with m (move command)
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item ~= nil and window_mod.state.moving_item.kind == "project")
+  assert(window_mod.state.moving_item.project.repository == updated_test15_proj.repository)
+  -- Press j (left navigation) to move child item to parent directory
+  left_map.callback()
+  assert(window_mod.state.moving_item == nil, "expected moving_item cleared after j")
+  assert(updated_test15_proj.directory == nil, "expected project.directory to be nil after moving to parent directory")
+  assert(window_mod.state.view == "contributors", "expected return to parent directory / contributors")
+  assert(window_mod.state.selected_project ~= nil and window_mod.state.selected_project.repository == updated_test15_proj.repository)
+  -- Verify project is positioned right after test15_dir in project_order
+  local moved_proj_order_idx = nil
+  local parent_dir_order_idx = nil
+
+  for idx, k in ipairs(window_mod.state.opts.project_order) do
+    if k == "proj:github:" .. updated_test15_proj.repository:lower() then
+      moved_proj_order_idx = idx
+    elseif k == "dir:" .. test15_dir:lower() then
+      parent_dir_order_idx = idx
+    end
+  end
+
+  assert(moved_proj_order_idx ~= nil and parent_dir_order_idx ~= nil)
+  assert(moved_proj_order_idx == parent_dir_order_idx + 1, "expected project to be inserted directly after parent directory in order")
+  -- Verify project is visible in startup list and no longer in child directory
+  buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  buf_text = table.concat(buf_lines, "\n")
+  assert(buf_text:find(updated_test15_proj.repository, 1, true), "expected project visible in startup list")
+
+  -- Re-enter test15_dir and ensure child project is gone from it
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "directory" and target.name == test15_dir then
+      test15_dir_line = l
+    end
+  end
+
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { test15_dir_line, 0 })
+  right_map.callback()
+  assert(window_mod.state.view == "directory")
+  local found_child = false
+
+  for _, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "project" and target.project.repository == updated_test15_proj.repository then
+      found_child = true
+    end
+  end
+
+  assert(not found_child, "expected project no longer in child directory")
+  left_map.callback()
+  assert(window_mod.state.view == "contributors")
+  -- Test 17: Persistence of project_order across oculus setup
   local oculus = require("oculus")
   local persist_order_state_file = vim.fn.tempname() .. ".json"
 

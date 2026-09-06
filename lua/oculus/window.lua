@@ -2879,9 +2879,38 @@ local function move_project_to_directory(project_or_key, dir_name)
       M.state.selected_directory = nil
     end
   else
+    local old_dir = target_project.directory
     target_project.directory = nil
     M.state.selected_project = target_project
     M.state.selected_directory = nil
+
+    if M.state.opts.project_order then
+      local proj_k = "proj:" .. (project_key(target_project) or ""):lower()
+
+      for i = #M.state.opts.project_order, 1, -1 do
+        if M.state.opts.project_order[i]:lower() == proj_k then
+          table.remove(M.state.opts.project_order, i)
+        end
+      end
+
+      local inserted = false
+
+      if old_dir and old_dir ~= "" then
+        local dir_k = "dir:" .. old_dir:lower()
+
+        for idx, k in ipairs(M.state.opts.project_order) do
+          if k:lower() == dir_k then
+            table.insert(M.state.opts.project_order, idx + 1, proj_k)
+            inserted = true
+            break
+          end
+        end
+      end
+
+      if not inserted then
+        table.insert(M.state.opts.project_order, proj_k)
+      end
+    end
   end
 
   M.state.selected_username = nil
@@ -2893,6 +2922,69 @@ local function move_project_to_directory(project_or_key, dir_name)
     elseif M.state.view == "contributors" then
       render_contributors()
     end
+  end
+
+  return true
+end
+
+local function move_to_parent_directory(moving_project)
+  if not moving_project then
+    return false
+  end
+
+  local old_dir = moving_project.directory or M.state.current_directory
+  moving_project.directory = nil
+  M.state.moving_item = nil
+  M.state.opts = M.state.opts or {}
+  local projects = M.state.opts.projects or {}
+  local pkey = project_key(moving_project)
+
+  for _, p in ipairs(projects) do
+    if project_key(p) == pkey then
+      p.directory = nil
+      break
+    end
+  end
+
+  if M.state.opts.project_order then
+    local proj_k = pkey and ("proj:" .. pkey:lower()) or nil
+
+    if proj_k then
+      for i = #M.state.opts.project_order, 1, -1 do
+        if M.state.opts.project_order[i]:lower() == proj_k then
+          table.remove(M.state.opts.project_order, i)
+        end
+      end
+
+      local inserted = false
+
+      if old_dir and old_dir ~= "" then
+        local dir_k = "dir:" .. old_dir:lower()
+
+        for idx, k in ipairs(M.state.opts.project_order) do
+          if k:lower() == dir_k then
+            table.insert(M.state.opts.project_order, idx + 1, proj_k)
+            inserted = true
+            break
+          end
+        end
+      end
+
+      if not inserted then
+        table.insert(M.state.opts.project_order, proj_k)
+      end
+    end
+  end
+
+  M.state.current_directory = nil
+  M.state.directory_return = nil
+  M.state.selected_project = moving_project
+  M.state.selected_directory = nil
+  M.state.selected_username = nil
+  persist_projects()
+
+  if is_valid_win(M.state.win) then
+    render_contributors()
   end
 
   return true
@@ -7638,6 +7730,19 @@ local function go_back()
 end
 
 local function move_left()
+  if
+    (M.state.view == "directory" or M.state.view == "contributors")
+    and M.state.moving_item
+    and M.state.moving_item.kind == "project"
+  then
+    local moving_proj = M.state.moving_item.project
+
+    if moving_proj and (moving_proj.directory or M.state.current_directory) then
+      move_to_parent_directory(moving_proj)
+      return
+    end
+  end
+
   if M.state.view == "contributors" then
     return
   end
@@ -7894,6 +7999,18 @@ local function map_keys(buf)
   map("u", open_project_issue_activity, "Open Oculus project issues")
 
   map(nav.down, function()
+    if
+      (M.state.view == "directory" or M.state.view == "contributors")
+      and M.state.moving_item
+      and M.state.moving_item.kind == "project"
+      and M.state.moving_item.project
+      and (M.state.moving_item.project.directory or M.state.current_directory)
+      and nav.down == "j"
+    then
+      move_to_parent_directory(M.state.moving_item.project)
+      return
+    end
+
     move_cursor(1)
   end, "Move down in Oculus")
 
@@ -7905,6 +8022,21 @@ local function map_keys(buf)
 
   map(nav.left, move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
+
+  if nav.left ~= "j" and nav.down ~= "j" then
+    map("j", function()
+      if
+        (M.state.view == "directory" or M.state.view == "contributors")
+        and M.state.moving_item
+        and M.state.moving_item.kind == "project"
+        and M.state.moving_item.project
+        and (M.state.moving_item.project.directory or M.state.current_directory)
+      then
+        move_to_parent_directory(M.state.moving_item.project)
+        return
+      end
+    end, "Move selected child item to parent directory")
+  end
 
   map("<Down>", function()
     move_cursor(1)
@@ -8363,6 +8495,7 @@ M.prompt_move_project_to_directory = prompt_move_project_to_directory
 M._create_project_directory = create_project_directory
 M._remove_project_directory = remove_project_directory
 M._move_project_to_directory = move_project_to_directory
-M._toggle_project_directory = toggle_project_directory
+M.move_to_parent_directory = move_to_parent_directory
+M._move_to_parent_directory = move_to_parent_directory
 M._startup_project_items = startup_project_items
 return M
