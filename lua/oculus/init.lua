@@ -578,4 +578,8 @@ function M.move_project_to_directory(project, dir_name)
   return require("oculus.window").move_project_to_directory(project, dir_name)
 end
 
+function M.open_project_directory(name)
+  return require("oculus.window").open_project_directory(name)
+end
+
 return M

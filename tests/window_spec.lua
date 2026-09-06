@@ -3446,11 +3446,12 @@ do
   assert(ok, "expected create_project_directory to succeed: " .. tostring(err))
   assert(#window_mod.state.opts.project_directories == 1)
   assert(window_mod.state.opts.project_directories[1] == "Core Tools")
-  -- Verify rendering: directory header with ▾, empty indicator indented
+  -- Verify rendering: directory item appears flat like a list item
   local buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local buf_text = table.concat(buf_lines, "\n")
-  assert(buf_text:find("▾ Core Tools", 1, true), "expected expanded directory header in buffer")
-  assert(buf_text:find("    (empty)", 1, true), "expected empty indicator under directory")
+  assert(buf_text:find("  Core Tools", 1, true), "expected directory item in buffer")
+  assert(not buf_text:find("▾ Core Tools", 1, true), "expected no arrow for directory item")
+  assert(not buf_text:find("▸ Core Tools", 1, true), "expected no arrow for directory item")
   assert(buf_text:find("  org/alpha", 1, true), "expected root project Alpha in buffer")
   -- Test 2: Create second directory and verify duplicate prevention
   local ok_dup, dup_err = window_mod.create_project_directory("core tools")
@@ -3473,7 +3474,8 @@ do
   assert(alpha_proj ~= nil and alpha_proj.directory == "Core Tools")
   buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   buf_text = table.concat(buf_lines, "\n")
-  assert(buf_text:find("    org/alpha", 1, true), "expected Project Alpha indented under Core Tools")
+  assert(not buf_text:find("  org/alpha", 1, true), "expected Project Alpha hidden from startup list")
+  assert(buf_text:find("  Core Tools", 1, true), "expected Core Tools in startup list")
   -- Test 4: Move project into directory via m key / toggle_move_item
   local beta_line = nil
   local libs_dir_line = nil
@@ -3505,7 +3507,7 @@ do
   end
 
   assert(beta_proj ~= nil and beta_proj.directory == "Libraries")
-  -- Test 5: Directory collapse and expand via select_current (<CR>)
+  -- Test 5: Open child items as a new UI screen via select_current (<CR>)
   libs_dir_line = nil
 
   for l, target in pairs(window_mod.state.line_targets) do
@@ -3519,18 +3521,22 @@ do
   local cr_map = vim.fn.maparg("<CR>", "n", false, true)
   assert(cr_map ~= nil and type(cr_map.callback) == "function")
   cr_map.callback()
-  assert(window_mod.state.collapsed_project_directories["Libraries"] == true)
+  assert(window_mod.state.view == "directory", "expected directory view after <CR>")
+  assert(window_mod.state.current_directory == "Libraries")
   buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   buf_text = table.concat(buf_lines, "\n")
-  assert(buf_text:find("▸ Libraries", 1, true), "expected collapsed arrow for Libraries")
-  assert(not buf_text:find("    org/beta", 1, true), "expected Beta hidden while Libraries collapsed")
-  -- Expand again via <CR>
-  cr_map.callback()
-  assert(window_mod.state.collapsed_project_directories["Libraries"] == false)
+  assert(buf_text:find("DIRECTORY", 1, true), "expected DIRECTORY header on child screen")
+  assert(buf_text:find("Libraries", 1, true), "expected Libraries title on child screen")
+  assert(buf_text:find("org/beta", 1, true), "expected Beta visible on child screen")
+  -- Return via left arrow (<Left>)
+  local left_map = vim.fn.maparg("<Left>", "n", false, true)
+  assert(left_map ~= nil and type(left_map.callback) == "function")
+  left_map.callback()
+  assert(window_mod.state.view == "contributors", "expected return to contributors view")
   buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   buf_text = table.concat(buf_lines, "\n")
-  assert(buf_text:find("▾ Libraries", 1, true), "expected expanded arrow for Libraries")
-  assert(buf_text:find("    org/beta", 1, true), "expected Beta visible when expanded")
+  assert(buf_text:find("  Libraries", 1, true), "expected Libraries in startup list")
+  assert(not buf_text:find("  org/beta", 1, true), "expected Beta hidden in startup list")
   -- Test 6: Move project back to root
   ok = window_mod.move_project_to_directory("org/beta", "")
   assert(ok)
@@ -3589,7 +3595,7 @@ do
   end
 
   assert(gamma_proj ~= nil and gamma_proj.directory == "Plugins")
-  -- Test 11: Collapse with left (h/<Left>) and expand with right (l/<Right>)
+  -- Test 11: Open child items with right (l/<Right>) and return with left (h/<Left>)
   local plugins_dir_line = nil
 
   for l, target in pairs(window_mod.state.line_targets) do
@@ -3600,14 +3606,19 @@ do
 
   assert(plugins_dir_line ~= nil)
   vim.api.nvim_win_set_cursor(window_mod.state.win, { plugins_dir_line, 0 })
-  local left_map = vim.fn.maparg("<Left>", "n", false, true)
-  assert(left_map ~= nil and type(left_map.callback) == "function")
-  left_map.callback()
-  assert(window_mod.state.collapsed_project_directories["Plugins"] == true)
   local right_map = vim.fn.maparg("<Right>", "n", false, true)
   assert(right_map ~= nil and type(right_map.callback) == "function")
   right_map.callback()
-  assert(window_mod.state.collapsed_project_directories["Plugins"] == false)
+  assert(window_mod.state.view == "directory", "expected directory view after <Right>")
+  assert(window_mod.state.current_directory == "Plugins")
+  buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  buf_text = table.concat(buf_lines, "\n")
+  assert(buf_text:find("org/gamma", 1, true), "expected gamma visible on Plugins screen")
+  -- Return via left arrow
+  left_map = vim.fn.maparg("<Left>", "n", false, true)
+  assert(left_map ~= nil and type(left_map.callback) == "function")
+  left_map.callback()
+  assert(window_mod.state.view == "contributors", "expected return to contributors")
   -- Test 12: Reorder directories via m
   local dir1_line = nil
   local dir2_line = nil
@@ -3631,6 +3642,55 @@ do
   assert(window_mod.state.moving_item == nil)
   assert(window_mod.state.opts.project_directories[1] == second_before)
   assert(window_mod.state.opts.project_directories[2] == first_before)
+  -- Test 13: Verify highlight group of directory item vs project item in startup list
+  local extmarks = vim.api.nvim_buf_get_extmarks(window_mod.state.buf, -1, 0, -1, { details = true })
+  local found_dir_hl = false
+  local found_proj_hl = false
+
+  for _, em in ipairs(extmarks) do
+    local details = em[4] or {}
+
+    if details.hl_group == "OculusDirectory" then
+      found_dir_hl = true
+    elseif details.hl_group == "Identifier" then
+      found_proj_hl = true
+    end
+  end
+
+  assert(found_dir_hl, "expected OculusDirectory highlight on directory list item")
+  assert(found_proj_hl, "expected Identifier highlight on project list item")
+
+  -- Test 14: Select child project in directory screen -> activity -> back returns to directory screen
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "directory" and target.name == "Plugins" then
+      plugins_dir_line = l
+    end
+  end
+
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { plugins_dir_line, 0 })
+  cr_map.callback()
+  assert(window_mod.state.view == "directory")
+  local child_proj_line = nil
+
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "project" and target.project.repository == "org/gamma" then
+      child_proj_line = l
+    end
+  end
+
+  assert(child_proj_line ~= nil, "expected org/gamma child project line in directory view")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { child_proj_line, 0 })
+  cr_map.callback()
+  assert(window_mod.state.view == "activity", "expected activity view after selecting child project")
+  assert(window_mod.state.directory_return == "Plugins", "expected directory_return set to Plugins")
+  -- Go back from activity -> returns to Plugins directory screen
+  left_map = vim.fn.maparg("<Left>", "n", false, true)
+  left_map.callback()
+  assert(window_mod.state.view == "directory", "expected return to directory view")
+  assert(window_mod.state.current_directory == "Plugins")
+  -- Go back from Plugins directory screen -> returns to startup list
+  left_map.callback()
+  assert(window_mod.state.view == "contributors", "expected return to contributors startup list")
   os.remove(test_state_file)
   vim.o.columns = prev_cols
   vim.o.lines = prev_lines
