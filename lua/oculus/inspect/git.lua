@@ -122,6 +122,10 @@ function M.directory(path)
 end
 
 function M.inspection_directory(repository, file)
+  if not repository or repository == "" then
+    return vim.fn.getcwd()
+  end
+
   if not file then
     return repository
   end
@@ -224,7 +228,7 @@ function M.detect_repository(path, callback)
     local first_match = nil
 
     for line in output:gmatch("[^\r\n]+") do
-      local remote_name, url = line:match("^(%S+)%s+(%S+)%s+%(fetch%)$")
+      local remote_name, url = line:match("^(%S+)%s+(%S+)%s+%(fetch%)")
 
       if url then
         local forge, repository = M.forge_repository(url)
@@ -413,7 +417,7 @@ function M.find_local_repository(info, opts, callback)
   local function matching_remote(output)
     for line in (output or ""):gmatch("[^\r\n]+") do
       local remote, url =
-        line:match("^(%S+)%s+(%S+)%s+%(fetch%)$")
+        line:match("^(%S+)%s+(%S+)%s+%(fetch%)")
 
       local forge, repository = M.forge_repository(url)
 

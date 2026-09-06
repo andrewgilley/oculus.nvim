@@ -368,9 +368,27 @@ function M.render(buf, bundle)
     repo_name = repo_root ~= "" and repo_root or "Repository"
   end
 
-  local target_desc = (type(meta.target) == "string" and meta.target ~= "")
-      and ("Target: " .. meta.target)
-    or "Target: Working tree / HEAD"
+  local target_desc
+
+  if type(bundle.forge_artifact) == "table" and bundle.forge_artifact.id then
+    local kind = bundle.forge_artifact.kind
+
+    local kind_str = kind == "pull_request" and "PR"
+      or (type(kind) == "string" and kind:gsub("^%l", string.upper) or "Artifact")
+
+    local id_str = tostring(bundle.forge_artifact.id)
+    id_str = id_str:match("^#") and id_str or ("#" .. id_str)
+
+    if bundle.forge_artifact.title and bundle.forge_artifact.title ~= "" then
+      target_desc = string.format("Target: %s %s · \"%s\"", kind_str, id_str, bundle.forge_artifact.title)
+    else
+      target_desc = string.format("Target: %s %s", kind_str, id_str)
+    end
+  elseif type(meta.target) == "string" and meta.target ~= "" then
+    target_desc = "Target: " .. meta.target
+  else
+    target_desc = "Target: Working tree / HEAD"
+  end
 
   local engine_ver = type(meta.engine_version) == "string" and meta.engine_version or "0.1.0"
   local analyzed = type(meta.analyzed_at) == "string" and meta.analyzed_at or os.date("!%Y-%m-%dT%H:%M:%SZ")

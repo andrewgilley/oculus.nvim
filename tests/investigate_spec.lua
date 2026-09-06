@@ -422,6 +422,96 @@ do
   assert(window.state.footer_win == nil, "expected investigate footer_win to be cleared on close")
   assert(window.state.footer_buf == nil, "expected investigate footer_buf to be cleared on close")
   assert(oculus_win.state.footer_win ~= nil and vim.api.nvim_win_is_valid(oculus_win.state.footer_win), "expected main footer window to be restored on investigate close")
+  -- Test 14: Target Repository Resolution and Target Header Formatting
+  local inv_mod = require("oculus.investigate")
+  -- 14a. Target repository info resolution from various sources
+  local issue_url = "https://github.com/neovim/neovim/issues/40184"
+  local info_url = inv_mod.resolve_target_repository_info(issue_url, {})
+  assert(info_url ~= nil, "expected info from issue url")
+  assert(info_url.owner == "neovim", "expected owner neovim")
+  assert(info_url.repo == "neovim", "expected repo neovim")
+  assert(info_url.repository == "neovim/neovim", "expected repository neovim/neovim")
+  assert(info_url.forge == "github", "expected forge github")
+  local pr_url = "https://github.com/neovim/neovim/pull/1234"
+  local info_pr = inv_mod.resolve_target_repository_info(pr_url, {})
+  assert(info_pr ~= nil and info_pr.repository == "neovim/neovim")
+  local repo_url = "https://github.com/neovim/neovim"
+  local info_repo = inv_mod.resolve_target_repository_info(repo_url, {})
+  assert(info_repo ~= nil and info_repo.repository == "neovim/neovim")
+
+  local info_ctx = inv_mod.resolve_target_repository_info("#40184", {
+    project = { repository = "neovim/neovim", provider = "github" },
+  })
+
+  assert(info_ctx ~= nil and info_ctx.repository == "neovim/neovim")
+  local info_local = inv_mod.resolve_target_repository_info(nil, { cwd = root })
+  assert(info_local == nil, "expected nil info for local investigation")
+  -- 14b. Target repository root resolution
+  -- Explicit repo_root override in context
+  local done_r1 = false
+
+  inv_mod.resolve_repository_root(info_url, {}, { repo_root = root }, function(p, err)
+    assert(p == root, "expected explicit repo_root override")
+    assert(err == nil)
+    done_r1 = true
+  end)
+
+  assert(done_r1, "expected done_r1")
+  -- Configured project path in opts.projects
+  local done_r2 = false
+
+  inv_mod.resolve_repository_root(info_url, {
+    projects = { { repository = "neovim/neovim", path = root } },
+  }, {}, function(p, err)
+    assert(p == root, "expected root from opts.projects")
+    assert(err == nil)
+    done_r2 = true
+  end)
+
+  assert(done_r2, "expected done_r2")
+  -- Configured inspect_repositories
+  local done_r3 = false
+
+  inv_mod.resolve_repository_root(info_url, {
+    inspect_repositories = { ["neovim/neovim"] = { path = root } },
+  }, {}, function(p, err)
+    assert(p == root, "expected root from opts.inspect_repositories")
+    assert(err == nil)
+    done_r3 = true
+  end)
+
+  assert(done_r3, "expected done_r3")
+  -- Fallback to context.cwd when info is nil
+  local done_r4 = false
+
+  inv_mod.resolve_repository_root(nil, {}, { cwd = root }, function(p, err)
+    assert(p == root, "expected cwd fallback")
+    assert(err == nil)
+    done_r4 = true
+  end)
+
+  assert(done_r4, "expected done_r4")
+  -- 14c. Target description formatting in window
+  window.open(forge_bundle)
+  local forge_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local header_line = forge_lines[1] or ""
+
+  assert(header_line:find("Target: Issue #42 · \"Refactor AstParser and ChangeCouplingMiner\"", 1, true),
+    "expected formatted target description with issue title, got: " .. header_line)
+
+  window.close()
+  local pr_bundle = vim.deepcopy(forge_bundle)
+  pr_bundle.forge_artifact.kind = "pull_request"
+  pr_bundle.forge_artifact.id = "100"
+  pr_bundle.forge_artifact.title = "Enhance TreeSitter parsing"
+  window.open(pr_bundle)
+  local pr_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local pr_header_line = pr_lines[1] or ""
+
+  assert(pr_header_line:find("Target: PR #100 · \"Enhance TreeSitter parsing\"", 1, true),
+    "expected formatted PR target description, got: " .. pr_header_line)
+
+  window.close()
   -- Clean up mock main window
   oculus_win.close_activity_footer()
   pcall(vim.api.nvim_win_close, main_mock_win, true)
