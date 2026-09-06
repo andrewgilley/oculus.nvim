@@ -6120,6 +6120,11 @@ local function investigate_current()
 
   require("oculus").investigate(target, M.state.opts, context, function(bundle, err)
     stop_activity_investigate_spinner()
+    local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
+
+    if ok_inv and inv_win.state and is_valid_win(inv_win.state.win) then
+      pcall(vim.api.nvim_set_current_win, inv_win.state.win)
+    end
   end)
 end
 
@@ -6156,6 +6161,11 @@ local function prompt_investigate_by_id()
 
     require("oculus").investigate(target, M.state.opts, context, function(bundle, err)
       stop_activity_investigate_spinner()
+      local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
+
+      if ok_inv and inv_win.state and is_valid_win(inv_win.state.win) then
+        pcall(vim.api.nvim_set_current_win, inv_win.state.win)
+      end
     end)
   end)
 end
@@ -7306,6 +7316,13 @@ function M.open(opts)
         return
       end
 
+      local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
+
+      local is_inv = ok_inv and (
+        (type(inv_win.is_investigate_win) == "function" and inv_win.is_investigate_win(entered))
+        or (inv_win.state and (entered == inv_win.state.win or entered == inv_win.state.ledger_win or entered == inv_win.state.footer_win))
+      )
+
       if entered == M.state.win
         or entered == M.state.sidebar_win
         or entered == M.state.footer_win
@@ -7316,6 +7333,7 @@ function M.open(opts)
         or is_inspect_input_open()
         or M.state.closing_add_dialog
         or M.state.closing_inspect_input
+        or is_inv
       then
         if entered == M.state.win then
           update_activity_cursorline()

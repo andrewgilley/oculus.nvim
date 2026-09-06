@@ -187,6 +187,19 @@ local function get_target_window_config(opts)
 end
 
 M.window_config = get_target_window_config
+
+function M.is_open()
+  return is_valid_win(M.state.win)
+end
+
+function M.is_investigate_win(win)
+  if not win then
+    return false
+  end
+
+  return win == M.state.win or win == M.state.ledger_win or win == M.state.footer_win
+end
+
 local closing = false
 
 function M.close()
@@ -229,6 +242,8 @@ function M.close()
     if type(oculus_window.render_activity_footer) == "function" then
       pcall(oculus_window.render_activity_footer)
     end
+
+    pcall(vim.api.nvim_set_current_win, oculus_window.state.win)
   end
 
   closing = false
@@ -279,6 +294,7 @@ function M.open(bundle, opts)
     col = col,
     style = "minimal",
     border = border,
+    zindex = 60,
   })
 
   vim.wo[win].cursorline = true
@@ -307,6 +323,7 @@ function M.open(bundle, opts)
       col = col + left_width + 2,
       style = "minimal",
       border = border,
+      zindex = 60,
     })
 
     vim.wo[ledger_win].cursorline = false
@@ -344,6 +361,16 @@ function M.open(bundle, opts)
 
   M.map_keys(buf)
   render_investigate_footer()
+
+  if is_valid_win(win) then
+    pcall(vim.api.nvim_set_current_win, win)
+
+    vim.schedule(function()
+      if is_valid_win(win) and vim.api.nvim_get_current_win() ~= win then
+        pcall(vim.api.nvim_set_current_win, win)
+      end
+    end)
+  end
 
   vim.api.nvim_create_autocmd("WinClosed", {
     pattern = tostring(win),

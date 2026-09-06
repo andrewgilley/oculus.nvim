@@ -143,6 +143,10 @@ function M._execute_investigation(repo_root, target, target_kind, forge_artifact
     if callback then
       callback(bundle, nil)
     end
+
+    if window.state and window.state.win and vim.api.nvim_win_is_valid(window.state.win) then
+      pcall(vim.api.nvim_set_current_win, window.state.win)
+    end
   end)
 end
 
