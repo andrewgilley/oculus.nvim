@@ -6,7 +6,7 @@ end
 
 function M.get_suggested_branch(bundle)
   bundle = bundle or {}
-  local art = bundle.forge_artifact
+  local art = type(bundle.forge_artifact) == "table" and bundle.forge_artifact or nil
 
   if art and string_val(art.id) then
     local kind = string_val(art.kind) or "issue"

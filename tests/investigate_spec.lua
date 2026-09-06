@@ -595,5 +595,15 @@ do
   pcall(vim.api.nvim_buf_delete, main_mock_buf, { force = true })
   oculus_win.state.win = nil
   oculus_win.state.buf = nil
+  -- Test 24: Fact bundle with null/userdata fields (vim.NIL) from vim.json.decode
+  local raw_json = '{"metadata":{"repository_root":"."},"entities":[],"relationships":[],"impact":null,"co_changes":[],"entity_histories":[],"invariants":[],"forge_artifact":null,"traceability_links":[],"dynamics":null,"derived":{"hypotheses":[],"unanswered_questions":[],"candidate_patches":[],"adversarial_verdict":"INCONCLUSIVE"}}'
+  local decoded_bundle = vim.json.decode(raw_json)
+  assert(decoded_bundle.impact == vim.NIL, "expected impact to be vim.NIL prior to window handling")
+  window.open(decoded_bundle)
+  assert(window.state.win ~= nil and vim.api.nvim_win_is_valid(window.state.win), "expected window open with vim.NIL fields to succeed")
+  local decoded_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local decoded_text = table.concat(decoded_lines, "\n")
+  assert(decoded_text:find("EXECUTIVE BRIEF", 1, true), "expected executive brief in rendered text")
+  window.close()
   print("ALL INVESTIGATE TESTS PASSED!")
 end

@@ -72,7 +72,7 @@ function M.build_projection(bundle)
   end
 
   -- Impact Callers & Tests
-  local impact = bundle.impact
+  local impact = type(bundle.impact) == "table" and bundle.impact or nil
 
   if impact then
     local callers = impact.direct_callers or {}
@@ -141,11 +141,11 @@ function M.synthesize(bundle, opts, callback)
   end
 
   -- Construct baseline derived investigation directly if missing
-  local entities = (bundle and bundle.entities) or {}
-  local impact = bundle and bundle.impact
+  local entities = (bundle and type(bundle.entities) == "table" and bundle.entities) or {}
+  local impact = bundle and type(bundle.impact) == "table" and bundle.impact or nil
   local callers = (impact and impact.direct_callers) or {}
   local tests = (impact and impact.affected_tests) or {}
-  local dynamics = bundle and bundle.dynamics
+  local dynamics = bundle and type(bundle.dynamics) == "table" and bundle.dynamics or nil
   local crossings = (dynamics and dynamics.boundary_crossings) or {}
   local hypotheses = {}
   local actions = {}
@@ -338,10 +338,10 @@ function M.generate_candidate_patches(bundle)
     or (bundle.traceability_links and bundle.traceability_links[1] and bundle.traceability_links[1].target_entity)
     or { name = "target_symbol", file_path = "src/lib.rs", start_line = 1 }
 
-  local impact = bundle.impact or {}
+  local impact = (type(bundle.impact) == "table" and bundle.impact) or {}
   local callers = impact.direct_callers or {}
   local tests = impact.affected_tests or {}
-  local dynamics = bundle.dynamics or {}
+  local dynamics = (type(bundle.dynamics) == "table" and bundle.dynamics) or {}
   local crossings = dynamics.boundary_crossings or {}
 
   local lines = {

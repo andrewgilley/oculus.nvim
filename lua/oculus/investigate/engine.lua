@@ -252,6 +252,26 @@ function M.run(request, callback)
         return
       end
 
+      local function sanitize_nil(data)
+        if data == vim.NIL or type(data) == "userdata" then
+          return nil
+        end
+
+        if type(data) == "table" then
+          for k, v in pairs(data) do
+            if v == vim.NIL or type(v) == "userdata" then
+              data[k] = nil
+            elseif type(v) == "table" then
+              data[k] = sanitize_nil(v)
+            end
+          end
+        end
+
+        return data
+      end
+
+      bundle = sanitize_nil(bundle)
+
       if callback then
         callback(bundle, nil)
       end

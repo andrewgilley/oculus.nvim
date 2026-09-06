@@ -21,6 +21,24 @@ local function is_valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
 end
 
+local function sanitize_bundle(data)
+  if data == vim.NIL or type(data) == "userdata" then
+    return nil
+  end
+
+  if type(data) == "table" then
+    for k, v in pairs(data) do
+      if v == vim.NIL or type(v) == "userdata" then
+        data[k] = nil
+      elseif type(v) == "table" then
+        data[k] = sanitize_bundle(v)
+      end
+    end
+  end
+
+  return data
+end
+
 local function close_investigate_footer()
   if is_valid_win(M.state.footer_win) then
     pcall(vim.api.nvim_win_close, M.state.footer_win, true)
@@ -218,6 +236,7 @@ end
 
 function M.open(bundle, opts)
   opts = opts or {}
+  bundle = sanitize_bundle(bundle) or {}
   M.close()
   local ok, oculus_window = pcall(require, "oculus.window")
 
@@ -340,6 +359,7 @@ function M.render(buf, bundle)
     return
   end
 
+  bundle = sanitize_bundle(bundle) or {}
   local lines = {}
   local highlights = {}
   local line_targets = {}
@@ -403,17 +423,17 @@ function M.render(buf, bundle)
   add_line("", nil)
   -- 2. Executive Brief (High-Signal Insights)
   add_line("  ▾ EXECUTIVE BRIEF (High-Signal Insights)", "Special", nil, { kind = "overview" })
-  local trace_links = bundle.traceability_links or {}
-  local entities = bundle.entities or {}
-  local impact = bundle.impact
+  local trace_links = type(bundle.traceability_links) == "table" and bundle.traceability_links or {}
+  local entities = type(bundle.entities) == "table" and bundle.entities or {}
+  local impact = type(bundle.impact) == "table" and bundle.impact or nil
   local callers = (impact and impact.direct_callers) or {}
   local tests = (impact and impact.affected_tests) or {}
   local files = (impact and impact.affected_files) or {}
-  local dynamics = bundle.dynamics
+  local dynamics = type(bundle.dynamics) == "table" and bundle.dynamics or nil
   local crossings = (dynamics and dynamics.boundary_crossings) or {}
   local alerts = (dynamics and dynamics.subsystem_instabilities) or {}
   local precedents = (dynamics and dynamics.historical_precedents) or {}
-  local invariants = bundle.invariants or {}
+  local invariants = type(bundle.invariants) == "table" and bundle.invariants or {}
 
   local surface_desc = #trace_links > 0
       and string.format("    • Surface:    %d symbol(s) linked from context (%s)", #trace_links, (trace_links[1].target_entity and trace_links[1].target_entity.name) or "candidate")
@@ -518,18 +538,18 @@ function M.render(buf, bundle)
   -- Index histories by entity id
   local history_lookup = {}
 
-  for _, h in ipairs(bundle.entity_histories or {}) do
+  for _, h in ipairs(type(bundle.entity_histories) == "table" and bundle.entity_histories or {}) do
     history_lookup[h.entity_id] = h
   end
 
   -- 5. Affected Semantic Entities & Composite Paths (Entity -> Callers -> Tests -> Lineage)
-  local entities = bundle.entities or {}
+  local entities = type(bundle.entities) == "table" and bundle.entities or {}
   add_line(string.format("  ▾ AFFECTED SEMANTIC ENTITIES (%d)", #entities), "Special", nil, { kind = "overview" })
 
   if #entities == 0 then
     add_line("    No specific AST symbol modifications isolated in this change set.", "Comment", nil, { kind = "overview" })
   else
-    local impact = bundle.impact
+    local impact = type(bundle.impact) == "table" and bundle.impact or nil
     local callers = impact and impact.direct_callers or {}
     local tests = impact and impact.affected_tests or {}
 
@@ -587,7 +607,7 @@ function M.render(buf, bundle)
 
   add_line("", nil)
   -- 6. Change Coupling & Implicit Architecture
-  local co_changes = bundle.co_changes or {}
+  local co_changes = type(bundle.co_changes) == "table" and bundle.co_changes or {}
 
   if #co_changes > 0 then
     add_line(string.format("  ▾ CHANGE COUPLING · IMPLICIT ARCHITECTURE (%d pairs)", math.min(10, #co_changes)), "Special", nil, { kind = "overview" })
@@ -607,7 +627,7 @@ function M.render(buf, bundle)
   end
 
   -- 7. Architectural Dynamics (Boundary Crossings, Subsystem Instability, Historical Precedents)
-  local dynamics = bundle.dynamics
+  local dynamics = type(bundle.dynamics) == "table" and bundle.dynamics or nil
 
   if dynamics then
     local crossings = dynamics.boundary_crossings or {}
@@ -671,7 +691,7 @@ function M.render(buf, bundle)
   end
 
   -- 8. Agent Hypotheses & Adversarial Verifications (Layers 25-26)
-  local derived = bundle.derived
+  local derived = type(bundle.derived) == "table" and bundle.derived or nil
 
   if derived then
     local hypotheses = derived.hypotheses or {}
@@ -1129,17 +1149,17 @@ function M.render_ledger(buf, item)
     add_line(string.format("  Engine:     v%s", meta.engine_version or "0.1.0"), "Comment")
     add_line(string.format("  Analyzed:   %s", meta.analyzed_at or ""), "Comment")
     add_line("", nil)
-    local bundle = M.state.bundle or {}
-    local entities_count = #(bundle.entities or {})
-    local rels_count = #(bundle.relationships or {})
-    local invs_count = #(bundle.invariants or {})
-    local trace_count = #(bundle.traceability_links or {})
-    local dynamics = bundle.dynamics or {}
-    local crossings_count = #(dynamics.boundary_crossings or {})
-    local alerts_count = #(dynamics.subsystem_instabilities or {})
-    local precs_count = #(dynamics.historical_precedents or {})
-    local derived = bundle.derived or {}
-    local hyp_count = #(derived.hypotheses or {})
+    local bundle = sanitize_bundle(M.state.bundle or {}) or {}
+    local entities_count = type(bundle.entities) == "table" and #bundle.entities or 0
+    local rels_count = type(bundle.relationships) == "table" and #bundle.relationships or 0
+    local invs_count = type(bundle.invariants) == "table" and #bundle.invariants or 0
+    local trace_count = type(bundle.traceability_links) == "table" and #bundle.traceability_links or 0
+    local dynamics = type(bundle.dynamics) == "table" and bundle.dynamics or {}
+    local crossings_count = type(dynamics.boundary_crossings) == "table" and #dynamics.boundary_crossings or 0
+    local alerts_count = type(dynamics.subsystem_instabilities) == "table" and #dynamics.subsystem_instabilities or 0
+    local precs_count = type(dynamics.historical_precedents) == "table" and #dynamics.historical_precedents or 0
+    local derived = type(bundle.derived) == "table" and bundle.derived or {}
+    local hyp_count = type(derived.hypotheses) == "table" and #derived.hypotheses or 0
     add_line("  EVIDENCE GRAPH INVENTORY:", "Normal")
     add_line(string.format("    • Modified Entities:     %d", entities_count), "DiagnosticInfo")
     add_line(string.format("    • Relationships w/ Prov: %d", rels_count), "DiagnosticInfo")
@@ -1282,8 +1302,8 @@ function M.map_keys(buf)
     end
 
     local agent = require("oculus.investigate.agent")
-    local entity = (bundle.entities and bundle.entities[1]) or { name = "target_function", file_path = "src/main.rs" }
-    local callers = (bundle.impact and bundle.impact.direct_callers) or {}
+    local entity = (type(bundle.entities) == "table" and bundle.entities[1]) or { name = "target_function", file_path = "src/main.rs" }
+    local callers = (type(bundle.impact) == "table" and bundle.impact.direct_callers) or {}
     local scaffold = agent.generate_test_scaffold(entity, callers)
     local s_buf = vim.api.nvim_create_buf(false, true)
     local ext = vim.fn.fnamemodify(entity.file_path or "lua", ":e")
@@ -1319,7 +1339,7 @@ function M.map_keys(buf)
 
     local agent = require("oculus.investigate.agent")
 
-    local crossing = (bundle.dynamics and bundle.dynamics.boundary_crossings and bundle.dynamics.boundary_crossings[1])
+    local crossing = (type(bundle.dynamics) == "table" and type(bundle.dynamics.boundary_crossings) == "table" and bundle.dynamics.boundary_crossings[1])
       or { source_subsystem = "core", target_subsystem = "ui", details = "Direct cross-subsystem call" }
 
     local plan = agent.generate_refactor_plan(crossing)
