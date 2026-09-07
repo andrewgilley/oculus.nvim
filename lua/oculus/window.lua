@@ -710,14 +710,14 @@ local function sidebar_sections_for_view(view)
         } or {
           { "u", "Users" },
           { "a", "Add" },
-          { "d", "Directory" },
+          { "f", "Folder" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
           { nav.investigate, "Investigate" },
           { nav.investigate_id, "Investigate ID" },
           { "r", "Remove" },
           { "m", "Move" },
-          { "f", "Filters" },
+          { "F", "Filters" },
           { "o", "Profile" },
         },
       },
@@ -1038,7 +1038,7 @@ local function footer_commands_text()
 
     return showing_users
         and ("  p projects   %s investigate   m move   ?: help"):format(nav.investigate)
-      or ("  u users   d directory   %s investigate   m move   ?: help"):format(nav.investigate)
+      or ("  u users   f folder   %s investigate   m move   ?: help"):format(nav.investigate)
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   %s investigate   r remove   m move   ?: help"):format(
       nav.left,
@@ -2486,7 +2486,7 @@ local function render_contributors()
 
     footer(lines, showing_users
         and ("p projects  %s investigate  m move  ?: help"):format(nav.investigate)
-      or ("u users  d directory  %s investigate  m move  ?: help"):format(nav.investigate))
+      or ("u users  f folder  %s investigate  m move  ?: help"):format(nav.investigate))
 
     commands_line = #lines
   else
@@ -7967,8 +7967,12 @@ local function map_keys(buf)
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
 
   map("F", function()
-    open_filters(true)
-  end, "Edit global activity types")
+    if M.state.view == "contributors" and M.state.community_view == "projects" then
+      open_filters(false)
+    else
+      open_filters(true)
+    end
+  end, "Edit activity filters")
 
   map("a", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
@@ -7997,6 +8001,11 @@ local function map_keys(buf)
       render_issue_filters(M.state.activity_project)
     elseif M.state.view == "activity" then
       previous_activity_page()
+    elseif
+      (M.state.view == "contributors" and M.state.community_view == "projects")
+      or M.state.view == "directory"
+    then
+      prompt_create_directory()
     else
       open_filters(false)
     end
@@ -8010,16 +8019,7 @@ local function map_keys(buf)
     end
   end, "Remove selected Oculus item or refresh activity")
 
-  map("d", function()
-    if (M.state.view == "contributors" and M.state.community_view == "projects")
-      or M.state.view == "directory"
-    then
-      prompt_create_directory()
-    else
-      reset_filter_types_to_default()
-    end
-  end, "Create project directory or reset defaults")
-
+  map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   local inspect_key = nav.inspect == nav.investigate and "h" or nav.inspect
   local inspect_id_key = nav.inspect_id == nav.investigate_id and "H" or nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")

@@ -2329,13 +2329,13 @@ do
   assert(reopened_project_view.lnum == preserved_project_view.lnum)
   assert(reopened_project_view.col == preserved_project_view.col)
   assert(reopened_project_view.topline == preserved_project_view.topline)
-  local project_filter_mapping = vim.fn.maparg("f", "n", false, true)
-  project_filter_mapping.callback()
+  local activity_forward_mapping = vim.fn.maparg("f", "n", false, true)
+  activity_forward_mapping.callback()
   assert(state.view == "activity")
   assert(state.activity_page == 1)
   vim.fn.maparg("j", "n", false, true).callback()
   assert(state.view == "contributors")
-  project_filter_mapping.callback()
+  vim.fn.maparg("F", "n", false, true).callback()
   assert(state.view == "filters")
   assert(state.filter_scope.project.repository == "neovim/neovim")
 
@@ -2880,7 +2880,8 @@ do
   assert(footer_text:find("u users", 1, true))
   assert(not footer_text:find("a add", 1, true))
   assert(not footer_text:find("r remove", 1, true))
-  assert(footer_text:find("d directory", 1, true), "expected d directory in footer")
+  assert(footer_text:find("f folder", 1, true), "expected f folder in footer")
+  assert(not footer_text:find("d directory", 1, true), "expected no d directory in footer")
   assert(not footer_text:find("K new dir", 1, true), "expected no K new dir in footer")
   assert(footer_text:find("─", 1, true), "expected separator line when sidebar is hidden")
   -- Test 5: Toggle sidebar back on
@@ -3940,17 +3941,18 @@ do
   assert(many_items[last_item_idx][1]:find("more", 1, true), "expected overflow note on last visible preview line")
   assert(many_items[last_item_idx][2] == "Comment")
   window_mod.state.opts.projects = saved_projects
-  -- Test 18: Verify footer command text shows "u users" / "p projects", "d directory", omits add/remove, and u/p switch views
+  -- Test 18: Verify footer command text shows "u users" / "p projects", "f folder", omits add/remove, and u/p switch views
   local startup_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local startup_footer_text = table.concat(startup_footer_lines, "\n")
   assert(startup_footer_text:find("u users", 1, true), "expected 'u users' in startup footer text")
-  assert(startup_footer_text:find("d directory", 1, true), "expected 'd directory' in startup footer text")
+  assert(startup_footer_text:find("f folder", 1, true), "expected 'f folder' in startup footer text")
+  assert(not startup_footer_text:find("d directory", 1, true), "expected no 'd directory' in startup footer text")
   assert(not startup_footer_text:find("v users", 1, true), "expected no 'v users' in startup footer text")
   assert(not startup_footer_text:find("a add", 1, true), "expected no 'a add' in startup footer text")
   assert(not startup_footer_text:find("r remove", 1, true), "expected no 'r remove' in startup footer text")
   assert(not startup_footer_text:find("K new dir", 1, true), "expected 'K new dir' not in startup footer text")
-  local d_map = vim.fn.maparg("d", "n", false, true)
-  assert(d_map ~= nil and type(d_map.callback) == "function")
+  local f_map = vim.fn.maparg("f", "n", false, true)
+  assert(f_map ~= nil and type(f_map.callback) == "function")
   local prompted = false
   local orig_ui_input = vim.ui.input
 
@@ -3959,9 +3961,9 @@ do
     assert(opts.prompt:find("directory", 1, true))
   end
 
-  d_map.callback()
+  f_map.callback()
   vim.ui.input = orig_ui_input
-  assert(prompted, "expected d key to prompt for directory creation in projects view")
+  assert(prompted, "expected f key to prompt for directory creation in projects view")
   -- Test u key switches to users view
   local u_map = vim.fn.maparg("u", "n", false, true)
   assert(u_map ~= nil and type(u_map.callback) == "function")
