@@ -196,18 +196,46 @@ local function contributor_key(contributor)
 end
 
 local function merge_contributors(configured, saved)
-  local result = vim.deepcopy(configured or {})
-  local present = {}
+  if not saved or #saved == 0 then
+    return vim.deepcopy(configured or {})
+  end
 
-  for _, contributor in ipairs(result) do
+  local configured_map = {}
+
+  for _, contributor in ipairs(configured or {}) do
     local key = contributor_key(contributor)
 
     if key then
+      configured_map[key] = contributor
+    end
+  end
+
+  local result = {}
+  local present = {}
+
+  for _, contributor in ipairs(saved) do
+    local key = contributor_key(contributor)
+
+    if key and not present[key] then
+      local cfg = configured_map[key]
+      local merged
+
+      if cfg then
+        merged = vim.tbl_deep_extend(
+          "force",
+          vim.deepcopy(cfg),
+          vim.deepcopy(contributor)
+        )
+      else
+        merged = vim.deepcopy(contributor)
+      end
+
+      result[#result + 1] = merged
       present[key] = true
     end
   end
 
-  for _, contributor in ipairs(saved or {}) do
+  for _, contributor in ipairs(configured or {}) do
     local key = contributor_key(contributor)
 
     if key and not present[key] then

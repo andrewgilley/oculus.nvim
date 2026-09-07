@@ -4267,3 +4267,92 @@ do
   window_mod.close()
   os.remove(state_file)
 end
+
+do
+  -- Test 23: Preservation of arranged user order in users list across sessions
+  local oculus = require("oculus")
+  local window_mod = require("oculus.window")
+  local state_file = vim.fn.tempname() .. ".json"
+
+  local initial_users = {
+    { username = "alice", provider = "github" },
+    { username = "bob", provider = "github" },
+    { username = "charlie", provider = "github" },
+  }
+
+  oculus.setup({
+    state_file = state_file,
+    persist_contributors = true,
+    contributors = initial_users,
+  })
+
+  window_mod.open(oculus.config)
+  -- Switch to users view via 'u' keymap
+  local u_map = vim.tbl_filter(function(k) return k.lhs == "u" end, vim.api.nvim_buf_get_keymap(window_mod.state.buf, "n"))[1]
+  assert(u_map ~= nil and u_map.callback ~= nil, "expected 'u' keymap in main window")
+  u_map.callback()
+  assert(window_mod.state.community_view == "users", "expected community_view == 'users'")
+  -- Locate line targets for charlie (index 3) and alice (index 1)
+  local line_charlie, line_alice
+
+  for l, t in pairs(window_mod.state.line_targets) do
+    if t and t.username == "charlie" then
+      line_charlie = l
+    elseif t and t.username == "alice" then
+      line_alice = l
+    end
+  end
+
+  assert(line_charlie ~= nil and line_alice ~= nil, "expected charlie and alice in line targets")
+  -- Pick up charlie and move to alice's position
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { line_charlie, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item ~= nil, "expected moving_item set for charlie")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { line_alice, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item == nil, "expected moving_item cleared after move")
+  assert(window_mod.state.contributors[1].username == "charlie")
+  assert(window_mod.state.contributors[2].username == "alice")
+  assert(window_mod.state.contributors[3].username == "bob")
+  window_mod.close()
+  -- Verify state_file was saved with new order
+  local saved_data = require("oculus.storage").load(state_file)
+  assert(type(saved_data.contributors) == "table", "expected saved contributors")
+  assert(#saved_data.contributors == 3)
+  assert(saved_data.contributors[1].username == "charlie")
+  assert(saved_data.contributors[2].username == "alice")
+  assert(saved_data.contributors[3].username == "bob")
+
+  -- Simulate restart: call oculus.setup with the original configured users
+  oculus.setup({
+    state_file = state_file,
+    persist_contributors = true,
+    contributors = initial_users,
+  })
+
+  -- Verify oculus.config.contributors preserves the moved order
+  assert(#oculus.config.contributors == 3, "expected 3 contributors after restart")
+  assert(oculus.config.contributors[1].username == "charlie", "expected charlie first")
+  assert(oculus.config.contributors[2].username == "alice", "expected alice second")
+  assert(oculus.config.contributors[3].username == "bob", "expected bob third")
+  -- Open window and switch to users view to verify UI view reflects the order
+  window_mod.open(oculus.config)
+  local u_map2 = vim.tbl_filter(function(k) return k.lhs == "u" end, vim.api.nvim_buf_get_keymap(window_mod.state.buf, "n"))[1]
+  u_map2.callback()
+  local found_order = {}
+
+  for l = 1, vim.api.nvim_buf_line_count(window_mod.state.buf) do
+    local t = window_mod.state.line_targets[l]
+
+    if t and t.username then
+      found_order[#found_order + 1] = t.username
+    end
+  end
+
+  assert(#found_order == 3)
+  assert(found_order[1] == "charlie")
+  assert(found_order[2] == "alice")
+  assert(found_order[3] == "bob")
+  window_mod.close()
+  os.remove(state_file)
+end
