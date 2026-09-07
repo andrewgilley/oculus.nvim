@@ -1995,28 +1995,27 @@ local function directory_preview_items(dir_name, width)
 
   local items = {
     [2] = { "DIRECTORY", "Title" },
-    [4] = { dir_name, "Directory" },
   }
 
   if #child_projects == 0 then
-    items[5] = { "(no projects)", "Comment" }
+    items[4] = { "(no projects)", "Comment" }
   else
     local window_height = is_valid_win(M.state.win) and vim.api.nvim_win_get_height(M.state.win) or 25
-    local max_visible = math.max(1, window_height - 7)
+    local max_visible = math.max(1, window_height - 6)
 
     if #child_projects <= max_visible then
       for index, p in ipairs(child_projects) do
-        items[4 + index] = { project_title(p), "Identifier" }
+        items[3 + index] = { project_title(p), "Identifier" }
       end
     else
       local show_count = math.max(1, max_visible - 1)
 
       for index = 1, show_count do
-        items[4 + index] = { project_title(child_projects[index]), "Identifier" }
+        items[3 + index] = { project_title(child_projects[index]), "Identifier" }
       end
 
       local remaining = #child_projects - show_count
-      items[4 + show_count + 1] = { ("... and %d more"):format(remaining), "Comment" }
+      items[3 + show_count + 1] = { ("... and %d more"):format(remaining), "Comment" }
     end
   end
 

@@ -3890,9 +3890,15 @@ do
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = window_mod.state.buf })
   assert(window_mod.state.preview_items ~= nil, "expected preview_items populated")
   assert(window_mod.state.preview_items[2][1] == "DIRECTORY")
-  assert(window_mod.state.preview_items[4][1] == "Plugins")
-  assert(window_mod.state.preview_items[5][1] == "org/gamma", "expected child project org/gamma on line 5")
-  assert(window_mod.state.preview_items[5][2] == "Identifier", "expected Identifier highlight for child project")
+  assert(window_mod.state.preview_items[4][1] == "org/gamma", "expected child project org/gamma on line 4")
+  assert(window_mod.state.preview_items[4][2] == "Identifier", "expected Identifier highlight for child project")
+  local plugins_has_name = false
+
+  for _, item in pairs(window_mod.state.preview_items) do
+    if item[1] == "Plugins" then plugins_has_name = true end
+  end
+
+  assert(not plugins_has_name, "expected Plugins folder name not in preview pane")
 
   -- Verify no "X projects" or count text in preview_items
   for _, item in pairs(window_mod.state.preview_items) do
@@ -3904,9 +3910,15 @@ do
   vim.api.nvim_win_set_cursor(window_mod.state.win, { libs_empty_line, 0 })
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = window_mod.state.buf })
   assert(window_mod.state.preview_items[2][1] == "DIRECTORY")
-  assert(window_mod.state.preview_items[4][1] == "Libraries")
-  assert(window_mod.state.preview_items[5][1] == "(no projects)", "expected (no projects) on line 5 for empty directory")
-  assert(window_mod.state.preview_items[5][2] == "Comment", "expected Comment highlight for (no projects)")
+  assert(window_mod.state.preview_items[4][1] == "(no projects)", "expected (no projects) on line 4 for empty directory")
+  assert(window_mod.state.preview_items[4][2] == "Comment", "expected Comment highlight for (no projects)")
+  local libs_has_name = false
+
+  for _, it in pairs(window_mod.state.preview_items) do
+    if it[1] == "Libraries" then libs_has_name = true end
+  end
+
+  assert(not libs_has_name, "expected directory name not in preview pane")
   -- Directly test multiple projects and truncation in _directory_preview_items
   local saved_projects = window_mod.state.opts.projects
 
@@ -3918,10 +3930,16 @@ do
 
   local multi_items = window_mod._directory_preview_items("MultiDir", 30)
   assert(multi_items[2][1] == "DIRECTORY")
-  assert(multi_items[4][1] == "MultiDir")
-  assert(multi_items[5][1] == "alpha/p1" and multi_items[5][2] == "Identifier")
-  assert(multi_items[6][1] == "alpha/p2" and multi_items[6][2] == "Identifier")
-  assert(multi_items[7][1] == "alpha/p3" and multi_items[7][2] == "Identifier")
+  assert(multi_items[4][1] == "alpha/p1" and multi_items[4][2] == "Identifier")
+  assert(multi_items[5][1] == "alpha/p2" and multi_items[5][2] == "Identifier")
+  assert(multi_items[6][1] == "alpha/p3" and multi_items[6][2] == "Identifier")
+  local multi_has_name = false
+
+  for _, it in pairs(multi_items) do
+    if it[1] == "MultiDir" then multi_has_name = true end
+  end
+
+  assert(not multi_has_name, "expected MultiDir name not in preview pane")
   -- Test truncation when projects exceed max_visible
   local many_projects = {}
 
@@ -3935,9 +3953,9 @@ do
   window_mod.state.opts.projects = many_projects
   local many_items = window_mod._directory_preview_items("ManyDir", 30)
   local win_h = vim.api.nvim_win_get_height(window_mod.state.win)
-  local max_vis = math.max(1, win_h - 7)
-  assert(many_items[5][1] == "corp/repo-01")
-  local last_item_idx = 4 + max_vis
+  local max_vis = math.max(1, win_h - 6)
+  assert(many_items[4][1] == "corp/repo-01")
+  local last_item_idx = 3 + max_vis
   assert(many_items[last_item_idx][1]:find("more", 1, true), "expected overflow note on last visible preview line")
   assert(many_items[last_item_idx][2] == "Comment")
   window_mod.state.opts.projects = saved_projects
