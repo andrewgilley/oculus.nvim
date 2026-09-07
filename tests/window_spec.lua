@@ -4171,3 +4171,99 @@ do
     vim.api.nvim_buf_delete(fake_overview_buf, { force = true })
   end
 end
+
+do
+  -- Test 22: Preservation of project order in parent folders across restarts with configured projects
+  local oculus = require("oculus")
+  local window_mod = require("oculus.window")
+  local state_file = vim.fn.tempname() .. ".json"
+
+  local initial_projects = {
+    { repository = "alpha/one", provider = "github", directory = "Tools" },
+    { repository = "alpha/two", provider = "github", directory = "Tools" },
+    { repository = "alpha/three", provider = "github", directory = "Tools" },
+  }
+
+  oculus.setup({
+    state_file = state_file,
+    persist_projects = true,
+    project_directories = { "Tools" },
+    projects = initial_projects,
+  })
+
+  window_mod.open(oculus.config)
+  window_mod.open_project_directory("Tools")
+  local line_three, line_one
+
+  for l, t in pairs(window_mod.state.line_targets) do
+    if t.kind == "project" and t.project.repository == "alpha/three" then
+      line_three = l
+    elseif t.kind == "project" and t.project.repository == "alpha/one" then
+      line_one = l
+    end
+  end
+
+  assert(line_three ~= nil and line_one ~= nil, "expected alpha/three and alpha/one in directory targets")
+  -- Pick up alpha/three and move to alpha/one position
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { line_three, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item ~= nil, "expected moving_item set")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { line_one, 0 })
+  window_mod._toggle_move_item()
+  assert(window_mod.state.moving_item == nil, "expected moving_item cleared after move")
+  window_mod.close()
+  -- Verify state_file was saved with new order
+  local saved_data = require("oculus.storage").load(state_file)
+  assert(type(saved_data.projects) == "table", "expected saved projects")
+  local saved_tools = {}
+
+  for _, p in ipairs(saved_data.projects) do
+    if p.directory == "Tools" then
+      saved_tools[#saved_tools + 1] = p.repository
+    end
+  end
+
+  assert(saved_tools[1] == "alpha/three")
+  assert(saved_tools[2] == "alpha/one")
+  assert(saved_tools[3] == "alpha/two")
+
+  -- Simulate restart: call oculus.setup with the original configured projects
+  oculus.setup({
+    state_file = state_file,
+    persist_projects = true,
+    project_directories = { "Tools" },
+    projects = initial_projects,
+  })
+
+  -- Verify oculus.config.projects preserves the moved order in Tools directory
+  local merged_tools = {}
+
+  for _, p in ipairs(oculus.config.projects) do
+    if p.directory == "Tools" then
+      merged_tools[#merged_tools + 1] = p.repository
+    end
+  end
+
+  assert(#merged_tools == 3, "expected 3 projects in Tools after restart")
+  assert(merged_tools[1] == "alpha/three", "expected alpha/three first")
+  assert(merged_tools[2] == "alpha/one", "expected alpha/one second")
+  assert(merged_tools[3] == "alpha/two", "expected alpha/two third")
+  -- Open window and open directory to verify UI view reflects the order
+  window_mod.open(oculus.config)
+  window_mod.open_project_directory("Tools")
+  local found_order = {}
+
+  for l = 1, vim.api.nvim_buf_line_count(window_mod.state.buf) do
+    local t = window_mod.state.line_targets[l]
+
+    if t and t.kind == "project" and t.project then
+      found_order[#found_order + 1] = t.project.repository
+    end
+  end
+
+  assert(found_order[1] == "alpha/three")
+  assert(found_order[2] == "alpha/one")
+  assert(found_order[3] == "alpha/two")
+  window_mod.close()
+  os.remove(state_file)
+end

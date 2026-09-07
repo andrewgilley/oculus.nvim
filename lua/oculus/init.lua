@@ -230,42 +230,59 @@ local function project_key(project)
 end
 
 local function merge_projects(configured, saved)
-  local result = vim.deepcopy(configured or {})
-  local present = {}
+  if not saved or #saved == 0 then
+    return vim.deepcopy(configured or {})
+  end
 
-  for index, project in ipairs(result) do
+  local configured_map = {}
+
+  for _, project in ipairs(configured or {}) do
     local key = project_key(project)
 
     if key then
-      present[key] = index
+      configured_map[key] = project
     end
   end
 
-  for _, project in ipairs(saved or {}) do
+  local result = {}
+  local present = {}
+
+  for _, project in ipairs(saved) do
     local key = project_key(project)
 
-    if key then
-      local existing_index = present[key]
+    if key and not present[key] then
+      local cfg = configured_map[key]
+      local merged
 
-      if existing_index then
-        if
-          project.description
-          and project.description ~= ""
-          and (
-            not result[existing_index].description
-            or result[existing_index].description == ""
-          )
-        then
-          result[existing_index].description = project.description
+      if cfg then
+        merged = vim.tbl_deep_extend("force", vim.deepcopy(cfg), vim.deepcopy(project))
+
+        if project.directory == nil or project.directory == vim.NIL then
+          merged.directory = nil
+        else
+          merged.directory = project.directory
         end
 
-        if project.directory and not result[existing_index].directory then
-          result[existing_index].directory = project.directory
+        if cfg.description and cfg.description ~= "" then
+          merged.description = cfg.description
+        elseif project.description and project.description ~= "" then
+          merged.description = project.description
         end
       else
-        result[#result + 1] = vim.deepcopy(project)
-        present[key] = #result
+        merged = vim.deepcopy(project)
       end
+
+      result[#result + 1] = merged
+      present[key] = true
+    end
+  end
+
+  for _, project in ipairs(configured or {}) do
+    local key = project_key(project)
+
+    if key and not present[key] then
+      result[#result + 1] = vim.deepcopy(project)
+      present[key] = true
     end
   end
 
