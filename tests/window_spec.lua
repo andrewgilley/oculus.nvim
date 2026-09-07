@@ -251,9 +251,9 @@ assert(not initial_project_text:find("COMMUNITY ACTIVITY", 1, true))
 assert(initial_project_text:find("example/project", 1, true))
 assert(not initial_project_text:find("  USERS", 1, true))
 assert(not initial_project_text:find("@mitchellh", 1, true))
-assert(initial_project_text:find("v users", 1, true))
-assert(initial_project_text:find("a add", 1, true))
-assert(initial_project_text:find("r remove", 1, true))
+assert(initial_project_text:find("u users", 1, true))
+assert(not initial_project_text:find("a add", 1, true))
+assert(not initial_project_text:find("r remove", 1, true))
 assert(initial_project_text:find("m move", 1, true))
 
 do
@@ -295,7 +295,7 @@ assert(initial_user_text:find("@andrewrk", 1, true))
 assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(not initial_user_text:find("Andrew Kelley", 1, true))
-assert(initial_user_lines[initial_window_height]:find("v projects", 1, true))
+assert(initial_user_lines[initial_window_height]:find("p projects", 1, true))
 
 local main_down_mapping =
   vim.fn.maparg("<Down>", "n", false, true)
@@ -1639,7 +1639,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 
-assert(returned_user_lines[returned_window_height]:find("v projects", 1, true))
+assert(returned_user_lines[returned_window_height]:find("p projects", 1, true))
 
 do
   vim.cmd("tabnew")
@@ -1929,7 +1929,7 @@ do
   assert(not startpage_text:find("  USERS", 1, true))
   assert(not startpage_text:find("PROJECT ACTIVITY", 1, true))
   assert(startpage_text:find("neovim/neovim", 1, true))
-  assert(startpage_text:find("v users", 1, true))
+  assert(startpage_text:find("u users", 1, true))
   local preview_text = {}
 
   for _, item in pairs(state.preview_items) do
@@ -2866,7 +2866,7 @@ do
   -- Verify main window buffer does NOT contain bottom footer command line or separator line
   local main_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local main_text = table.concat(main_lines, "\n")
-  assert(not main_text:find("v users  a add", 1, true))
+  assert(not main_text:find("u users", 1, true))
   assert(not main_text:find("─", 1, true), "expected no separator line when sidebar is visible")
   local prev_main_width = main_cfg.width
   -- Test 4: Toggle sidebar off via toggle function
@@ -2877,7 +2877,9 @@ do
   -- Verify main window now shows footer commands and separator line
   local footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local footer_text = table.concat(footer_lines, "\n")
-  assert(footer_text:find("v users  a add", 1, true))
+  assert(footer_text:find("u users", 1, true))
+  assert(not footer_text:find("a add", 1, true))
+  assert(not footer_text:find("r remove", 1, true))
   assert(footer_text:find("d directory", 1, true), "expected d directory in footer")
   assert(not footer_text:find("K new dir", 1, true), "expected no K new dir in footer")
   assert(footer_text:find("─", 1, true), "expected separator line when sidebar is hidden")
@@ -3938,10 +3940,14 @@ do
   assert(many_items[last_item_idx][1]:find("more", 1, true), "expected overflow note on last visible preview line")
   assert(many_items[last_item_idx][2] == "Comment")
   window_mod.state.opts.projects = saved_projects
-  -- Test 18: Verify footer command text shows "d directory" instead of "K new dir" and d key prompts directory creation
+  -- Test 18: Verify footer command text shows "u users" / "p projects", "d directory", omits add/remove, and u/p switch views
   local startup_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local startup_footer_text = table.concat(startup_footer_lines, "\n")
+  assert(startup_footer_text:find("u users", 1, true), "expected 'u users' in startup footer text")
   assert(startup_footer_text:find("d directory", 1, true), "expected 'd directory' in startup footer text")
+  assert(not startup_footer_text:find("v users", 1, true), "expected no 'v users' in startup footer text")
+  assert(not startup_footer_text:find("a add", 1, true), "expected no 'a add' in startup footer text")
+  assert(not startup_footer_text:find("r remove", 1, true), "expected no 'r remove' in startup footer text")
   assert(not startup_footer_text:find("K new dir", 1, true), "expected 'K new dir' not in startup footer text")
   local d_map = vim.fn.maparg("d", "n", false, true)
   assert(d_map ~= nil and type(d_map.callback) == "function")
@@ -3956,6 +3962,22 @@ do
   d_map.callback()
   vim.ui.input = orig_ui_input
   assert(prompted, "expected d key to prompt for directory creation in projects view")
+  -- Test u key switches to users view
+  local u_map = vim.fn.maparg("u", "n", false, true)
+  assert(u_map ~= nil and type(u_map.callback) == "function")
+  u_map.callback()
+  assert(window_mod.state.community_view == "users", "expected community_view == 'users' after pressing u")
+  local user_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local user_footer_text = table.concat(user_footer_lines, "\n")
+  assert(user_footer_text:find("p projects", 1, true), "expected 'p projects' in users footer text")
+  assert(not user_footer_text:find("v projects", 1, true), "expected no 'v projects' in users footer text")
+  assert(not user_footer_text:find("a add", 1, true), "expected no 'a add' in users footer text")
+  assert(not user_footer_text:find("r remove", 1, true), "expected no 'r remove' in users footer text")
+  -- Test p key switches back to projects view
+  local p_map = vim.fn.maparg("p", "n", false, true)
+  assert(p_map ~= nil and type(p_map.callback) == "function")
+  p_map.callback()
+  assert(window_mod.state.community_view == "projects", "expected community_view == 'projects' after pressing p")
   -- Test 19: Persistence of project_order across oculus setup
   local oculus = require("oculus")
   local persist_order_state_file = vim.fn.tempname() .. ".json"

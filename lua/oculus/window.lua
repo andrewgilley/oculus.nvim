@@ -697,7 +697,7 @@ local function sidebar_sections_for_view(view)
       {
         title = "ACTIONS",
         items = showing_users and {
-          { "v", "Projects" },
+          { "p", "Projects" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
           { nav.investigate, "Investigate" },
@@ -708,7 +708,7 @@ local function sidebar_sections_for_view(view)
           { "d", "Defaults" },
           { "o", "Profile" },
         } or {
-          { "v", "Users" },
+          { "u", "Users" },
           { "a", "Add" },
           { "d", "Directory" },
           { "M", "Move Dir" },
@@ -1037,8 +1037,8 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and ("  v projects   a add   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
-      or ("  v users   a add   d directory   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
+        and ("  p projects   %s investigate   m move   ?: help"):format(nav.investigate)
+      or ("  u users   d directory   %s investigate   m move   ?: help"):format(nav.investigate)
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   %s investigate   r remove   m move   ?: help"):format(
       nav.left,
@@ -2485,8 +2485,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and ("v projects  a add  %s investigate  r remove  m move  ?: help"):format(nav.investigate)
-      or ("v users  a add  d directory  %s investigate  r remove  m move  ?: help"):format(nav.investigate))
+        and ("p projects  %s investigate  m move  ?: help"):format(nav.investigate)
+      or ("u users  d directory  %s investigate  m move  ?: help"):format(nav.investigate))
 
     commands_line = #lines
   else
@@ -7982,7 +7982,15 @@ local function map_keys(buf)
     set_all_filter_types(false)
   end, "Disable all Oculus activity filters")
 
-  map("p", next_activity_page, "Load past Oculus activity")
+  map("p", function()
+    if M.state.view == "contributors" then
+      if M.state.community_view == "users" then
+        toggle_community_view()
+      end
+    else
+      next_activity_page()
+    end
+  end, "Load past Oculus activity")
 
   map("f", function()
     if M.state.view == "activity" and M.state.activity_issue_page then
@@ -8029,7 +8037,16 @@ local function map_keys(buf)
   end
 
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
-  map("u", open_project_issue_activity, "Open Oculus project issues")
+
+  map("u", function()
+    if M.state.view == "contributors" then
+      if M.state.community_view ~= "users" then
+        toggle_community_view()
+      end
+    else
+      open_project_issue_activity()
+    end
+  end, "Open Oculus project issues")
 
   map(nav.down, function()
     if
