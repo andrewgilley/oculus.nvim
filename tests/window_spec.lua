@@ -4065,3 +4065,109 @@ do
   vim.o.columns = prev_cols
   vim.o.lines = prev_lines
 end
+
+do
+  -- Test 21: Investigate command removed from main Oculus window and moved to inspect overview
+  local window_mod = require("oculus.window")
+  local inspect_mod = require("oculus.inspect")
+  local oculus = require("oculus")
+
+  window_mod.open({
+    projects = { { repository = "org/test-inv", provider = "github" } },
+  })
+
+  assert(window_mod.state.win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.win), "expected oculus window open")
+  -- 1. Check keymaps on main window: 'g' and 'G' must NOT be mapped to investigate
+  local buf = window_mod.state.buf
+  local buf_keymaps = vim.api.nvim_buf_get_keymap(buf, "n")
+
+  for _, k in ipairs(buf_keymaps) do
+    if k.lhs == "g" or k.lhs == "G" then
+      local desc = k.desc or ""
+      assert(not desc:lower():find("investigate", 1, true), "expected 'g'/'G' not mapped to investigate in main window: " .. desc)
+    end
+  end
+
+  -- 2. Check footer lines in main window contributors view (projects)
+  local footer_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local footer_text = table.concat(footer_lines, "\n")
+  assert(not footer_text:lower():find("investigate", 1, true), "expected no investigate in contributors footer")
+  -- 3. Check footer in users view
+  local u_map = vim.tbl_filter(function(k) return k.lhs == "u" end, buf_keymaps)[1]
+
+  if u_map and u_map.callback then
+    u_map.callback()
+    footer_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    footer_text = table.concat(footer_lines, "\n")
+    assert(not footer_text:lower():find("investigate", 1, true), "expected no investigate in users view footer")
+  end
+
+  window_mod.close()
+  -- 4. Check inspect overview window footer and investigate command
+  local fake_overview_buf = vim.api.nvim_create_buf(false, true)
+
+  local fake_overview_win = vim.api.nvim_open_win(fake_overview_buf, true, {
+    relative = "editor",
+    width = 80,
+    height = 24,
+    row = 2,
+    col = 2,
+    style = "minimal",
+  })
+
+  local fake_group = {
+    overview_win = fake_overview_win,
+    overview_buf = fake_overview_buf,
+    overview_content_width = 76,
+    overview = {
+      kind = "pull_request",
+      number = 42,
+      owner = "neovim",
+      repo = "neovim",
+      url = "https://github.com/neovim/neovim/pull/42",
+      html_url = "https://github.com/neovim/neovim/pull/42",
+      title = "Fix feature",
+    },
+    navigation = { investigate = "g" },
+  }
+
+  inspect_mod._overview_ui.render_footer(fake_group)
+  assert(fake_group.overview_footer_buf ~= nil and vim.api.nvim_buf_is_valid(fake_group.overview_footer_buf))
+  local f_lines = vim.api.nvim_buf_get_lines(fake_group.overview_footer_buf, 0, -1, false)
+  local f_text = table.concat(f_lines, "\n")
+  assert(f_text:find("g investigate", 1, true), "expected 'g investigate' in overview footer when opened directly")
+  -- Test pivoting to investigate from overview
+  local investigate_called = false
+  local inv_target = nil
+  local orig_inv = oculus.investigate
+
+  oculus.investigate = function(target, opts, ctx, cb)
+    investigate_called = true
+    inv_target = target
+
+    if cb then
+      cb(nil, nil)
+    end
+  end
+
+  inspect_mod._pivot_to_investigate(fake_group)
+  assert(investigate_called, "expected oculus.investigate to be called from overview")
+  assert(inv_target == "https://github.com/neovim/neovim/pull/42", "expected target url passed to investigate")
+  oculus.investigate = orig_inv
+
+  if fake_group.overview_footer_win and vim.api.nvim_win_is_valid(fake_group.overview_footer_win) then
+    vim.api.nvim_win_close(fake_group.overview_footer_win, true)
+  end
+
+  if fake_group.overview_footer_buf and vim.api.nvim_buf_is_valid(fake_group.overview_footer_buf) then
+    vim.api.nvim_buf_delete(fake_group.overview_footer_buf, { force = true })
+  end
+
+  if vim.api.nvim_win_is_valid(fake_overview_win) then
+    vim.api.nvim_win_close(fake_overview_win, true)
+  end
+
+  if vim.api.nvim_buf_is_valid(fake_overview_buf) then
+    vim.api.nvim_buf_delete(fake_overview_buf, { force = true })
+  end
+end

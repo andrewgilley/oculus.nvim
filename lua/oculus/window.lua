@@ -700,8 +700,6 @@ local function sidebar_sections_for_view(view)
           { "p", "Projects" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
-          { nav.investigate, "Investigate" },
-          { nav.investigate_id, "Investigate ID" },
           { "r", "Remove" },
           { "m", "Move" },
           { "f", "Filters" },
@@ -713,8 +711,6 @@ local function sidebar_sections_for_view(view)
           { "f", "Folder" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
-          { nav.investigate, "Investigate" },
-          { nav.investigate_id, "Investigate ID" },
           { "r", "Remove" },
           { "m", "Move" },
           { "F", "Filters" },
@@ -733,8 +729,6 @@ local function sidebar_sections_for_view(view)
     local actions = {
       { nav.inspect, "Inspect" },
       { nav.inspect_id, "Inspect ID" },
-      { nav.investigate, "Investigate" },
-      { nav.investigate_id, "Investigate ID" },
       { "Tab", "Queue" },
       { "b", "Browser" },
     }
@@ -839,8 +833,6 @@ local function sidebar_sections_for_view(view)
           { "a", "Add" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
-          { nav.investigate, "Investigate" },
-          { nav.investigate_id, "Investigate ID" },
           { "r", "Remove" },
           { "m", "Move" },
           { "F", "Filters" },
@@ -1037,17 +1029,16 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and ("  p projects   %s investigate   m move   ?: help"):format(nav.investigate)
-      or ("  u users   f folder   %s investigate   m move   ?: help"):format(nav.investigate)
+        and "  p projects   m move   ?: help"
+      or "  u users   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
-    return ("  %s/← back   a add   %s investigate   r remove   m move   ?: help"):format(
-      nav.left,
-      nav.investigate
+    return ("  %s/← back   a add   r remove   m move   ?: help"):format(
+      nav.left
     )
   end
 
-  local inspect_key = nav.inspect == nav.investigate and "h" or nav.inspect
-  local activity_commands = ("  %s inspect   %s investigate   b browser"):format(inspect_key, nav.investigate)
+  local inspect_key = nav.inspect
+  local activity_commands = ("  %s inspect   b browser"):format(inspect_key)
 
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
@@ -2484,8 +2475,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and ("p projects  %s investigate  m move  ?: help"):format(nav.investigate)
-      or ("u users  f folder  %s investigate  m move  ?: help"):format(nav.investigate))
+        and "p projects  m move  ?: help"
+      or "u users  f folder  m move  ?: help")
 
     commands_line = #lines
   else
@@ -3092,9 +3083,8 @@ render_directory = function(dir_name)
 
     footer(
       lines,
-      ("%s/← back  a add  %s investigate  r remove  m move  ?: help"):format(
-        nav.left,
-        nav.investigate
+      ("%s/← back  a add  r remove  m move  ?: help"):format(
+        nav.left
       )
     )
 
@@ -4195,8 +4185,6 @@ local function render_shortcuts()
     { "v", "Switch between project and user lists" },
     { "a", "Add a GitHub or Codeberg project or account" },
     { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
-    { nav.investigate, "Investigate the selected project repository" },
-    { nav.investigate_id, "Investigate an issue, PR, commit, or project by ID" },
     { "r", "Remove the selected project or account" },
     { "m", "Move the selected project or account" },
     { "f", "Edit filters for the selected user or project" },
@@ -4207,9 +4195,7 @@ local function render_shortcuts()
 
   section("ACTIVITY", {
     { nav.inspect, "Inspect the selected change or issue" },
-    { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
-    { nav.investigate, "Investigate the selected change, issue, or repository" },
-    { nav.investigate_id, "Investigate an issue, PR, commit, or project by ID" },
+    { nav.inspect_id, "Inspect an issue, PR, commit, or project by ID" },
     { "Tab", "Queue activity for sequential inspection" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Open a project's issue activity" },
@@ -8026,12 +8012,10 @@ local function map_keys(buf)
   end, "Remove selected Oculus item or refresh activity")
 
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
-  local inspect_key = nav.inspect == nav.investigate and "h" or nav.inspect
-  local inspect_id_key = nav.inspect_id == nav.investigate_id and "H" or nav.inspect_id
+  local inspect_key = nav.inspect
+  local inspect_id_key = nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")
   map(inspect_id_key, prompt_inspect_by_id, "Inspect issue, PR, commit, or project by ID")
-  map(nav.investigate, investigate_current, "Investigate Oculus change or project")
-  map(nav.investigate_id, prompt_investigate_by_id, "Investigate issue, PR, commit, or project by ID")
 
   if inspect_id_key ~= "H"
     and nav.left ~= "H"
@@ -8070,11 +8054,9 @@ local function map_keys(buf)
     move_cursor(1)
   end, "Move down in Oculus")
 
-  if nav.up ~= nav.investigate then
-    map(nav.up, function()
-      move_cursor(-1)
-    end, "Move up in Oculus")
-  end
+  map(nav.up, function()
+    move_cursor(-1)
+  end, "Move up in Oculus")
 
   map(nav.left, move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
