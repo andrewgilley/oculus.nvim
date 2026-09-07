@@ -710,7 +710,7 @@ local function sidebar_sections_for_view(view)
         } or {
           { "v", "Users" },
           { "a", "Add" },
-          { "K", "New Dir" },
+          { "d", "Directory" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
           { nav.investigate, "Investigate" },
@@ -718,7 +718,6 @@ local function sidebar_sections_for_view(view)
           { "r", "Remove" },
           { "m", "Move" },
           { "f", "Filters" },
-          { "d", "Defaults" },
           { "o", "Profile" },
         },
       },
@@ -1039,7 +1038,7 @@ local function footer_commands_text()
 
     return showing_users
         and ("  v projects   a add   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
-      or ("  v users   a add   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
+      or ("  v users   a add   d directory   %s investigate   r remove   m move   ?: help"):format(nav.investigate)
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   %s investigate   r remove   m move   ?: help"):format(
       nav.left,
@@ -2487,7 +2486,7 @@ local function render_contributors()
 
     footer(lines, showing_users
         and ("v projects  a add  %s investigate  r remove  m move  ?: help"):format(nav.investigate)
-      or ("v users  a add  K new dir  %s investigate  r remove  m move  ?: help"):format(nav.investigate))
+      or ("v users  a add  d directory  %s investigate  r remove  m move  ?: help"):format(nav.investigate))
 
     commands_line = #lines
   else
@@ -8003,7 +8002,16 @@ local function map_keys(buf)
     end
   end, "Remove selected Oculus item or refresh activity")
 
-  map("d", reset_filter_types_to_default, "Reset Oculus activity types")
+  map("d", function()
+    if (M.state.view == "contributors" and M.state.community_view == "projects")
+      or M.state.view == "directory"
+    then
+      prompt_create_directory()
+    else
+      reset_filter_types_to_default()
+    end
+  end, "Create project directory or reset defaults")
+
   local inspect_key = nav.inspect == nav.investigate and "h" or nav.inspect
   local inspect_id_key = nav.inspect_id == nav.investigate_id and "H" or nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")

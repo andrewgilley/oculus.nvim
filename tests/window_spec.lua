@@ -2878,6 +2878,8 @@ do
   local footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local footer_text = table.concat(footer_lines, "\n")
   assert(footer_text:find("v users  a add", 1, true))
+  assert(footer_text:find("d directory", 1, true), "expected d directory in footer")
+  assert(not footer_text:find("K new dir", 1, true), "expected no K new dir in footer")
   assert(footer_text:find("─", 1, true), "expected separator line when sidebar is hidden")
   -- Test 5: Toggle sidebar back on
   window_mod._toggle_sidebar()
@@ -3936,7 +3938,25 @@ do
   assert(many_items[last_item_idx][1]:find("more", 1, true), "expected overflow note on last visible preview line")
   assert(many_items[last_item_idx][2] == "Comment")
   window_mod.state.opts.projects = saved_projects
-  -- Test 18: Persistence of project_order across oculus setup
+  -- Test 18: Verify footer command text shows "d directory" instead of "K new dir" and d key prompts directory creation
+  local startup_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local startup_footer_text = table.concat(startup_footer_lines, "\n")
+  assert(startup_footer_text:find("d directory", 1, true), "expected 'd directory' in startup footer text")
+  assert(not startup_footer_text:find("K new dir", 1, true), "expected 'K new dir' not in startup footer text")
+  local d_map = vim.fn.maparg("d", "n", false, true)
+  assert(d_map ~= nil and type(d_map.callback) == "function")
+  local prompted = false
+  local orig_ui_input = vim.ui.input
+
+  vim.ui.input = function(opts, cb)
+    prompted = true
+    assert(opts.prompt:find("directory", 1, true))
+  end
+
+  d_map.callback()
+  vim.ui.input = orig_ui_input
+  assert(prompted, "expected d key to prompt for directory creation in projects view")
+  -- Test 19: Persistence of project_order across oculus setup
   local oculus = require("oculus")
   local persist_order_state_file = vim.fn.tempname() .. ".json"
 
