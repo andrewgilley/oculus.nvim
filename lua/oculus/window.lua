@@ -843,7 +843,7 @@ local function sidebar_sections_for_view(view)
           { nav.investigate_id, "Investigate ID" },
           { "r", "Remove" },
           { "m", "Move" },
-          { "f", "Filters" },
+          { "F", "Filters" },
           { "d", "Defaults" },
           { "o", "Profile" },
         },
@@ -5521,7 +5521,7 @@ local function close_inspect_input()
       render_sidebar()
     elseif is_valid_win(M.state.win) and M.state.view == "activity" then
       render_activity_footer()
-    elseif is_valid_win(M.state.win) and M.state.view == "contributors" then
+    elseif is_valid_win(M.state.win) and (M.state.view == "contributors" or M.state.view == "directory") then
       close_activity_footer()
     end
   end
@@ -5608,13 +5608,17 @@ local function update_add_dialog_lines(adding_project, provider, step)
 end
 
 local function open_add_dialog()
-  if M.state.view ~= "contributors" or not is_valid_win(M.state.win) then
+  if
+    (M.state.view ~= "contributors" and M.state.view ~= "directory")
+    or not is_valid_win(M.state.win)
+  then
     return
   end
 
   close_inspect_input()
   close_add_dialog()
-  local adding_project = M.state.community_view == "projects"
+  local current_dir = M.state.view == "directory" and M.state.current_directory or nil
+  local adding_project = current_dir ~= nil or M.state.community_view == "projects"
   local cursor_target = target_on_cursor()
 
   local target_project = adding_project
@@ -5800,7 +5804,7 @@ local function open_add_dialog()
           and add_project({
             repository = val,
             provider = chosen_provider,
-            directory = (M.state.view == "directory" and M.state.current_directory or nil),
+            directory = current_dir,
           }, target_project)
         or add_contributor({
           username = val,
@@ -5810,8 +5814,8 @@ local function open_add_dialog()
       if added and is_valid_win(M.state.win) then
         vim.api.nvim_set_current_win(M.state.win)
 
-        if M.state.view == "directory" and M.state.current_directory then
-          render_directory(M.state.current_directory)
+        if current_dir then
+          render_directory(current_dir)
         else
           render_contributors()
         end
@@ -7967,7 +7971,10 @@ local function map_keys(buf)
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
 
   map("F", function()
-    if M.state.view == "contributors" and M.state.community_view == "projects" then
+    if
+      (M.state.view == "contributors" and M.state.community_view == "projects")
+      or M.state.view == "directory"
+    then
       open_filters(false)
     else
       open_filters(true)

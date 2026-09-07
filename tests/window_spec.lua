@@ -3980,7 +3980,43 @@ do
   assert(p_map ~= nil and type(p_map.callback) == "function")
   p_map.callback()
   assert(window_mod.state.community_view == "projects", "expected community_view == 'projects' after pressing p")
-  -- Test 19: Persistence of project_order across oculus setup
+  -- Test 19: Add command works in a parent folder project list page
+  window_mod.open_project_directory("Plugins")
+  assert(window_mod.state.view == "directory")
+  assert(window_mod.state.current_directory == "Plugins")
+  local dir_a_map = vim.fn.maparg("a", "n", false, true)
+  assert(dir_a_map ~= nil and type(dir_a_map.callback) == "function")
+  dir_a_map.callback()
+  assert(window_mod._is_add_dialog_open(), "expected add dialog to open in directory view")
+  assert(window_mod.state.add_dialog_step == "dropdown")
+  local enter_map = vim.fn.maparg("<CR>", "n", false, true)
+  enter_map.callback()
+  assert(window_mod.state.add_dialog_step == "input")
+  local i_buf = window_mod.state.add_input_buf
+  vim.api.nvim_buf_set_lines(i_buf, 0, -1, false, { "org/plugins-added" })
+  local submit_map = vim.fn.maparg("<CR>", "n", false, true)
+  submit_map.callback()
+  assert(not window_mod._is_add_dialog_open())
+  assert(window_mod.state.view == "directory")
+  assert(window_mod.state.current_directory == "Plugins")
+  local found_child_added = nil
+
+  for _, p in ipairs(window_mod.state.opts.projects) do
+    if p.repository == "org/plugins-added" then
+      found_child_added = p
+      break
+    end
+  end
+
+  assert(found_child_added ~= nil, "expected added project in projects")
+  assert(found_child_added.directory == "Plugins", "expected directory == 'Plugins'")
+  local dir_buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
+  local dir_buf_text = table.concat(dir_buf_lines, "\n")
+  assert(dir_buf_text:find("org/plugins-added", 1, true), "expected org/plugins-added in directory buffer")
+  local left_map = vim.fn.maparg("<Left>", "n", false, true)
+  left_map.callback()
+  assert(window_mod.state.view == "contributors")
+  -- Test 20: Persistence of project_order across oculus setup
   local oculus = require("oculus")
   local persist_order_state_file = vim.fn.tempname() .. ".json"
 
