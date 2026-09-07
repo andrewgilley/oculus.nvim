@@ -3867,8 +3867,76 @@ do
 
   assert(not found_child, "expected project no longer in child directory")
   left_map.callback()
-  assert(window_mod.state.view == "contributors")
-  -- Test 17: Persistence of project_order across oculus setup
+  -- Test 17: Show projects contained in parent folder in description pane instead of "X projects" text
+  window_mod.move_project_to_directory("org/gamma", "Plugins")
+  local plugins_line = nil
+  local libs_empty_line = nil
+
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "directory" and target.name == "Plugins" then
+      plugins_line = l
+    elseif target.kind == "directory" and target.name == "Libraries" then
+      libs_empty_line = l
+    end
+  end
+
+  assert(plugins_line ~= nil, "expected Plugins directory in startup list")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { plugins_line, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = window_mod.state.buf })
+  assert(window_mod.state.preview_items ~= nil, "expected preview_items populated")
+  assert(window_mod.state.preview_items[2][1] == "DIRECTORY")
+  assert(window_mod.state.preview_items[4][1] == "Plugins")
+  assert(window_mod.state.preview_items[5][1] == "org/gamma", "expected child project org/gamma on line 5")
+  assert(window_mod.state.preview_items[5][2] == "Identifier", "expected Identifier highlight for child project")
+
+  -- Verify no "X projects" or count text in preview_items
+  for _, item in pairs(window_mod.state.preview_items) do
+    assert(not item[1]:find("project", 1, true), "expected no project count text in preview")
+  end
+
+  -- Empty directory shows "(no projects)"
+  assert(libs_empty_line ~= nil, "expected Libraries empty directory in startup list")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { libs_empty_line, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = window_mod.state.buf })
+  assert(window_mod.state.preview_items[2][1] == "DIRECTORY")
+  assert(window_mod.state.preview_items[4][1] == "Libraries")
+  assert(window_mod.state.preview_items[5][1] == "(no projects)", "expected (no projects) on line 5 for empty directory")
+  assert(window_mod.state.preview_items[5][2] == "Comment", "expected Comment highlight for (no projects)")
+  -- Directly test multiple projects and truncation in _directory_preview_items
+  local saved_projects = window_mod.state.opts.projects
+
+  window_mod.state.opts.projects = {
+    { repository = "alpha/p1", directory = "MultiDir" },
+    { repository = "alpha/p2", directory = "MultiDir" },
+    { repository = "alpha/p3", directory = "MultiDir" },
+  }
+
+  local multi_items = window_mod._directory_preview_items("MultiDir", 30)
+  assert(multi_items[2][1] == "DIRECTORY")
+  assert(multi_items[4][1] == "MultiDir")
+  assert(multi_items[5][1] == "alpha/p1" and multi_items[5][2] == "Identifier")
+  assert(multi_items[6][1] == "alpha/p2" and multi_items[6][2] == "Identifier")
+  assert(multi_items[7][1] == "alpha/p3" and multi_items[7][2] == "Identifier")
+  -- Test truncation when projects exceed max_visible
+  local many_projects = {}
+
+  for idx = 1, 30 do
+    many_projects[#many_projects + 1] = {
+      repository = ("corp/repo-%02d"):format(idx),
+      directory = "ManyDir",
+    }
+  end
+
+  window_mod.state.opts.projects = many_projects
+  local many_items = window_mod._directory_preview_items("ManyDir", 30)
+  local win_h = vim.api.nvim_win_get_height(window_mod.state.win)
+  local max_vis = math.max(1, win_h - 7)
+  assert(many_items[5][1] == "corp/repo-01")
+  local last_item_idx = 4 + max_vis
+  assert(many_items[last_item_idx][1]:find("more", 1, true), "expected overflow note on last visible preview line")
+  assert(many_items[last_item_idx][2] == "Comment")
+  window_mod.state.opts.projects = saved_projects
+  -- Test 18: Persistence of project_order across oculus setup
   local oculus = require("oculus")
   local persist_order_state_file = vim.fn.tempname() .. ".json"
 

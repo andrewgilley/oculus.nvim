@@ -1981,20 +1981,45 @@ local function project_preview_items(project, width)
 end
 
 local function directory_preview_items(dir_name, width)
+  if not dir_name or dir_name == "" then
+    return {}
+  end
+
   local projects = visible_projects()
-  local count = 0
+  local child_projects = {}
 
   for _, p in ipairs(projects) do
     if p.directory and p.directory:lower() == dir_name:lower() then
-      count = count + 1
+      child_projects[#child_projects + 1] = p
     end
   end
 
   local items = {
     [2] = { "DIRECTORY", "Title" },
     [4] = { dir_name, "Directory" },
-    [5] = { ("%d %s"):format(count, count == 1 and "project" or "projects"), "Comment" },
   }
+
+  if #child_projects == 0 then
+    items[5] = { "(no projects)", "Comment" }
+  else
+    local window_height = is_valid_win(M.state.win) and vim.api.nvim_win_get_height(M.state.win) or 25
+    local max_visible = math.max(1, window_height - 7)
+
+    if #child_projects <= max_visible then
+      for index, p in ipairs(child_projects) do
+        items[4 + index] = { project_title(p), "Identifier" }
+      end
+    else
+      local show_count = math.max(1, max_visible - 1)
+
+      for index = 1, show_count do
+        items[4 + index] = { project_title(child_projects[index]), "Identifier" }
+      end
+
+      local remaining = #child_projects - show_count
+      items[4 + show_count + 1] = { ("... and %d more"):format(remaining), "Comment" }
+    end
+  end
 
   return items
 end
@@ -8343,6 +8368,7 @@ function M.open(opts)
 
       if
         M.state.view ~= "contributors"
+        and M.state.view ~= "directory"
       then
         return
       end
@@ -8498,4 +8524,5 @@ M._move_project_to_directory = move_project_to_directory
 M.move_to_parent_directory = move_to_parent_directory
 M._move_to_parent_directory = move_to_parent_directory
 M._startup_project_items = startup_project_items
+M._directory_preview_items = directory_preview_items
 return M
