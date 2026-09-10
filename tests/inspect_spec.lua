@@ -6790,3 +6790,179 @@ do
   assert(type(inspect.inspect_by_id) == "function", "inspect.inspect_by_id should be exported")
   assert(type(oculus.inspect) == "function", "oculus.inspect should be exported")
 end
+
+do
+  -- 6. Test oculus.inspect accepts lifecycle and forwards to inspect.inspect_by_id
+  local passed_lifecycle = nil
+  local original_inspect_by_id = inspect.inspect_by_id
+
+  inspect.inspect_by_id = function(target, opts, ctx, callback, lifecycle)
+    passed_lifecycle = lifecycle
+    return true
+  end
+
+  local dummy_lifecycle = {
+    on_progress = function() end,
+    on_complete = function() end,
+  }
+
+  oculus.inspect("123", {}, {}, function() end, dummy_lifecycle)
+  assert(passed_lifecycle == dummy_lifecycle, "expected oculus.inspect to forward lifecycle")
+  inspect.inspect_by_id = original_inspect_by_id
+  -- 7. Test target.inspect_by_id notifications for incorrect or not found items
+  local target_mod = require("oculus.inspect.target")
+  local notified = nil
+  local orig_notify = vim.notify
+
+  vim.notify = function(msg, level)
+    notified = { msg = msg, level = level }
+  end
+
+  -- Unparseable target
+  local ok, err = target_mod.inspect_by_id("#", {}, {})
+  assert(not ok)
+
+  assert(
+    notified ~= nil
+      and notified.msg:find(
+        "Searched item was incorrect or not found: '#'",
+        1,
+        true
+      )
+  )
+
+  -- Missing PR/issue in repository
+  local mock_github = require("oculus.github")
+  local original_pr = mock_github.pull_request
+  local original_issue = mock_github.issue
+
+  mock_github.pull_request = function(r, n, o, cb)
+    cb(nil, "404")
+  end
+
+  mock_github.issue = function(r, n, o, cb)
+    cb(nil, "404")
+  end
+
+  notified = nil
+
+  target_mod.inspect_by_id(
+    "88888",
+    {},
+    { project = { repository = "neovim/neovim" } }
+  )
+
+  assert(
+    notified ~= nil
+      and notified.msg:find("Searched item was incorrect or not found", 1, true)
+  )
+
+  mock_github.pull_request = original_pr
+  mock_github.issue = original_issue
+  -- Test lifecycle.on_complete is called on error
+  local completed_err = nil
+
+  local dummy_lifecycle = {
+    on_complete = function(err)
+      completed_err = err
+    end,
+  }
+
+  local ok, err = target_mod.inspect_by_id("#", {}, {}, nil, dummy_lifecycle)
+  assert(not ok)
+
+  assert(
+    completed_err ~= nil
+      and completed_err:find("Searched item was incorrect or not found", 1, true)
+  )
+
+  vim.notify = orig_notify
+end
+
+do
+  -- 8. Test that open_tabs closes the oculus window and displays first tab and chunk
+  local window_mod = require("oculus.window")
+  local inspect_mod = require("oculus.inspect")
+  local tabs_before = vim.api.nvim_list_tabpages()
+
+  window_mod.open({
+    projects = { { repository = "org/repo", provider = "github" } },
+  })
+
+  assert(window_mod.state.win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.win), "expected oculus window open")
+
+  local hunks = {
+    {
+      old_start = 2,
+      old_count = 1,
+      new_start = 2,
+      new_count = 1,
+      lines = { "-line2", "+line2_mod" },
+    },
+  }
+
+  local dummy_inspections = {
+    {
+      kind = "commit",
+      parent = "1111111",
+      commit = "2222222",
+      parent_role = "parent",
+      repository = vim.fn.getcwd(),
+      parent_file = "dummy.lua",
+      change_file = "dummy.lua",
+      parent_lines = { "line1", "line2", "line3" },
+      change_lines = { "line1", "line2_mod", "line3" },
+      hunks = hunks,
+      status = "M",
+    },
+  }
+
+  local opened_result = nil
+  local opened_err = nil
+
+  inspect_mod._open_tabs(
+    dummy_inspections,
+    { lifecycle = {} },
+    nil,
+    { kind = "commit", repository = vim.fn.getcwd() },
+    { number = false, relativenumber = false },
+    {},
+    function(res, e)
+      opened_result = res
+      opened_err = e
+    end
+  )
+
+  assert(not opened_err, tostring(opened_err))
+  assert(opened_result ~= nil, "expected inspections opened")
+  -- Verify Oculus window was closed
+  assert(window_mod.state.win == nil or not vim.api.nvim_win_is_valid(window_mod.state.win), "expected oculus window to be closed")
+  -- Verify active tab is the first inspection tab and chunk is focused
+  local current_tab = vim.api.nvim_get_current_tabpage()
+  assert(current_tab ~= tabs_before[1], "expected switched to new inspection tab")
+  local current_win = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(current_win)
+  assert(cursor[1] == 2, "expected cursor positioned at first chunk line 2, got " .. tostring(cursor[1]))
+  -- Clean up created inspection tabs
+  local tabs_after = vim.api.nvim_list_tabpages()
+
+  for _, t in ipairs(tabs_after) do
+    local is_orig = false
+
+    for _, orig in ipairs(tabs_before) do
+      if orig == t then
+        is_orig = true
+        break
+      end
+    end
+
+    if not is_orig and vim.api.nvim_tabpage_is_valid(t) then
+      vim.api.nvim_set_current_tabpage(t)
+      vim.cmd("tabclose!")
+    end
+  end
+
+  if vim.api.nvim_tabpage_is_valid(tabs_before[1]) then
+    vim.api.nvim_set_current_tabpage(tabs_before[1])
+  end
+end

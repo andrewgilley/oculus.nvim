@@ -1109,8 +1109,8 @@ local function render_activity_footer(force)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, "WinSeparator", 0, 2, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 1, 2, #activity_commands)
+  vim.api.nvim_buf_add_highlight(buf, ns, "OculusNormal", 0, 2, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "OculusNormal", 1, 2, #activity_commands)
 
   if title_start and title_end then
     local trimmed_len = #vim.trim(get_inspect_input_title())

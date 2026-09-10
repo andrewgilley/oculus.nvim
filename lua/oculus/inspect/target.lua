@@ -410,52 +410,74 @@ function M.inspect_by_id(target_input, opts, context, callback, lifecycle)
     return
   end
 
+  local function notify_target_error(err, kind, details)
+    local handled = false
+
+    if lifecycle and type(lifecycle.on_complete) == "function" then
+      lifecycle.on_complete(err)
+      handled = true
+    end
+
+    if not handled then
+      vim.notify("Oculus: " .. err, vim.log.levels.WARN)
+    end
+
+    if callback then
+      callback(nil, kind, details, err)
+    end
+  end
+
   local parsed = M.parse(target_input, opts.projects)
 
   if not parsed then
-    local err = ("invalid inspection target '%s'"):format(tostring(target_input))
-    vim.notify("Oculus: " .. err, vim.log.levels.WARN)
-
-    if callback then
-      callback(nil, nil, nil, err)
-    end
-
+    local err = ("Searched item was incorrect or not found: '%s'"):format(tostring(target_input))
+    notify_target_error(err)
     return false, err
   end
 
   if parsed.url then
     local inspect = require("oculus.inspect")
-    return inspect.open(parsed.url, opts, context, lifecycle)
+    local ok, open_err = inspect.open(parsed.url, opts, context, lifecycle)
+
+    if not ok and open_err then
+      local err = ("Searched item was incorrect or not found: %s"):format(open_err)
+      notify_target_error(err, parsed.kind, parsed.info)
+      return false, err
+    end
+
+    if callback then
+      callback(parsed.url, parsed.kind, parsed.info)
+    end
+
+    return ok, open_err
   end
 
   M.resolve_repository(parsed, context, opts, function(repo_info, repo_err)
     if not repo_info then
-      if repo_err then
-        vim.notify("Oculus: " .. repo_err, vim.log.levels.WARN)
-      end
-
-      if callback then
-        callback(nil, nil, nil, repo_err)
-      end
-
+      local err = ("Searched item was incorrect or not found: %s"):format(
+        repo_err or "could not resolve repository"
+      )
+      notify_target_error(err)
       return
     end
 
     M.resolve_target_url(parsed, repo_info, opts, function(url, kind, details, url_err)
       if not url then
-        if url_err then
-          vim.notify("Oculus: " .. url_err, vim.log.levels.WARN)
-        end
-
-        if callback then
-          callback(nil, nil, nil, url_err)
-        end
-
+        local err = ("Searched item was incorrect or not found: %s"):format(
+          url_err or tostring(parsed.id)
+        )
+        notify_target_error(err, kind, details)
         return
       end
 
       local inspect = require("oculus.inspect")
       local ok, open_err = inspect.open(url, opts, context, lifecycle)
+
+      if not ok and open_err then
+        local err = ("Searched item was incorrect or not found: %s"):format(open_err)
+        notify_target_error(err, kind, details)
+        return
+      end
 
       if callback then
         callback(url, kind, details, open_err)
