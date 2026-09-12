@@ -4932,16 +4932,6 @@ function M._overview_ui.render_footer(group)
     right_commands = "<Space> toggle   <CR> open paths   "
   end
 
-  local lifecycle = group.inspection_lifecycle
-
-  if lifecycle and type(lifecycle.on_tab) == "function" then
-    right_commands = "<Tab> investigate   " .. right_commands
-  else
-    local nav = require("oculus.navigation").resolve(group.navigation)
-    local inv_cmd = ((nav and nav.investigate) or "g") .. " investigate   "
-    right_commands = inv_cmd .. right_commands
-  end
-
   right_commands = right_commands .. "c close"
   local left_display_width = vim.fn.strdisplaywidth(left_commands)
   local right_display_width = vim.fn.strdisplaywidth(right_commands)
@@ -6630,106 +6620,6 @@ function M._overview_ui.open_patch_locations(group, model)
   end
 end
 
-local function pivot_to_investigate(group)
-  local lc = group.inspection_lifecycle
-
-  if lc and type(lc.on_tab) == "function" then
-    lc.on_tab(group)
-    return
-  end
-
-  local target = (group.overview and (group.overview.url or group.overview.sha or group.overview.number))
-    or (group[1] and (group[1].change_commit or group[1].parent_commit))
-
-  if type(target) == "number" then
-    target = tostring(target)
-  end
-
-  local repo = (group[1] and (group[1].change_repository or group[1].parent_repository))
-    or (group.overview and (group.overview.repository or (group.overview.owner and group.overview.repo and (group.overview.owner .. "/" .. group.overview.repo))))
-
-  if not target and repo then
-    target = repo
-  end
-
-  local context = {
-    repository = repo,
-    cwd = (group[1] and group[1].parent_repository) or vim.fn.getcwd(),
-    project = {
-      repository = repo,
-    },
-    launch_origin = {
-      type = "inspect",
-      group = group,
-    },
-  }
-
-  local inv_opts = vim.tbl_deep_extend("force", vim.deepcopy(group.persistence_config or {}), {
-    exact_dimensions = true,
-  })
-
-  if group.overview_win and vim.api.nvim_win_is_valid(group.overview_win) then
-    local pos = vim.api.nvim_win_get_position(group.overview_win)
-    local width = vim.api.nvim_win_get_width(group.overview_win)
-    local height = vim.api.nvim_win_get_height(group.overview_win)
-    local cfg = vim.api.nvim_win_get_config(group.overview_win)
-
-    inv_opts.window_config = {
-      width = width,
-      height = height,
-      row = pos[1],
-      col = pos[2],
-      border = cfg.border or "rounded",
-      exact_dimensions = true,
-    }
-  elseif group.overview_window_config then
-    inv_opts.window_config = vim.deepcopy(group.overview_window_config)
-  end
-
-  local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
-
-  if ok_inv then
-    inv_win.state.active_inspect_group = group
-  end
-
-  if not group.inspection_lifecycle then
-    group.inspection_lifecycle = {}
-  end
-
-  group.inspection_lifecycle.on_tab = function(grp)
-    local inspect = require("oculus.inspect")
-
-    if type(inspect._close_overview_window) == "function" then
-      inspect._close_overview_window(grp)
-    end
-
-    local ok_inv_w, inv_w = pcall(require, "oculus.investigate.window")
-
-    if ok_inv_w and inv_w.state and inv_w.state.bundle then
-      inv_w.open(inv_w.state.bundle, inv_w.state.opts)
-    end
-  end
-
-  close_overview_window(group)
-  local ok_oc, oculus = pcall(require, "oculus")
-
-  if ok_oc and type(oculus.investigate) == "function" then
-    oculus.investigate(target, inv_opts, context, function(bundle, err)
-      if err then
-        vim.notify("Oculus: Investigate failed: " .. tostring(err), vim.log.levels.WARN)
-        show_inspection_overview(group)
-        return
-      end
-
-      local ok_inv_w, inv_w = pcall(require, "oculus.investigate.window")
-
-      if ok_inv_w and inv_w.state then
-        inv_w.state.active_inspect_group = group
-      end
-    end)
-  end
-end
-
 show_inspection_overview = function(group)
   if overview_window_is_open(group) then
     vim.api.nvim_set_current_win(group.overview_win)
@@ -7113,42 +7003,6 @@ show_inspection_overview = function(group)
     silent = true,
     desc = "Toggle Oculus patch location",
   })
-
-  local lifecycle = group.inspection_lifecycle
-
-  if lifecycle and type(lifecycle.on_tab) == "function" then
-    vim.keymap.set("n", "<Tab>", function()
-      lifecycle.on_tab(group)
-    end, {
-      buffer = buf,
-      nowait = true,
-      silent = true,
-      desc = "Switch back to Oculus Investigate",
-    })
-  end
-
-  local nav = require("oculus.navigation").resolve(group.navigation)
-  local inv_key = (nav and nav.investigate) or "g"
-
-  vim.keymap.set("n", inv_key, function()
-    pivot_to_investigate(group)
-  end, {
-    buffer = buf,
-    nowait = true,
-    silent = true,
-    desc = "Investigate Oculus inspect item",
-  })
-
-  if inv_key ~= "g" then
-    vim.keymap.set("n", "g", function()
-      pivot_to_investigate(group)
-    end, {
-      buffer = buf,
-      nowait = true,
-      silent = true,
-      desc = "Investigate Oculus inspect item",
-    })
-  end
 
   if group.overview_view then
     vim.api.nvim_win_call(win, function()
@@ -10231,7 +10085,6 @@ M._ensure_context_window_leftcol = ensure_context_window_leftcol
 M._open_tabs = open_tabs
 M._show_inspection_overview = show_inspection_overview
 M._close_overview_window = close_overview_window
-M._pivot_to_investigate = pivot_to_investigate
 
 function M.restore_group(group)
   if group then

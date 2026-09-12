@@ -460,45 +460,14 @@ function M.load_project_descriptions(config, callback)
 end
 
 function M.open()
-  local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
-
-  if ok_inv and inv_win.is_open and inv_win.is_open() then
-    pcall(vim.api.nvim_set_current_win, inv_win.state.win)
-    return
-  end
-
-  if ok_inv and inv_win.can_restore and inv_win.can_restore() then
-    inv_win.restore()
-    return
-  end
-
   require("oculus.window").open(M.config)
 end
 
 function M.close()
-  local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
-
-  if ok_inv and inv_win.is_open and inv_win.is_open() then
-    inv_win.close(false, false, true)
-    return
-  end
-
   require("oculus.window").close()
 end
 
 function M.toggle()
-  local ok_inv, inv_win = pcall(require, "oculus.investigate.window")
-
-  if ok_inv and inv_win.is_open and inv_win.is_open() then
-    inv_win.close(false, false, true)
-    return
-  end
-
-  if ok_inv and inv_win.can_restore and inv_win.can_restore() then
-    inv_win.restore()
-    return
-  end
-
   require("oculus.window").toggle(M.config)
 end
 
@@ -532,23 +501,6 @@ function M.show_opinion(value, opts)
       vim.deepcopy(M.config.opinion),
       opts or {}
     )
-  )
-end
-
-function M.investigate(target, opts, context, callback)
-  local investigate = require("oculus.investigate")
-
-  local effective_opts = vim.tbl_deep_extend(
-    "force",
-    vim.deepcopy(M.config or {}),
-    opts or {}
-  )
-
-  return investigate.investigate(
-    target,
-    effective_opts,
-    context,
-    callback
   )
 end
 

@@ -14,8 +14,3 @@
   must not appear on the window border (`FloatFooter`), but in a dedicated floating footer
   at the bottom interior of the window as is done in the main Oculus window at startup.
 
-- Sub-windows opened from the investigate window (such as candidate patches, test scaffolds,
-  refactor plans, and experiment UI) must have the exact same dimensions and position as the
-  main Oculus window, be automatically focused upon opening, and the original investigate window
-  must close so that they are unobstructed and restored when closed.
-

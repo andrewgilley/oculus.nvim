@@ -63,21 +63,6 @@ end, {
   complete = complete_target,
 })
 
-vim.api.nvim_create_user_command("OculusInvestigate", function(opts)
-  local target = opts.args ~= "" and opts.args or nil
-  require("oculus").investigate(target)
-end, {
-  nargs = "?",
-  desc = "Investigate an issue, pull request, commit, or project architecture",
-  complete = complete_target,
-})
-
-vim.api.nvim_create_user_command("OculusBuildEngine", function()
-  require("oculus.investigate.engine").build()
-end, {
-  desc = "Build the oculus-engine Rust binary with cargo",
-})
-
 vim.api.nvim_create_user_command("OculusAddDirectory", function(opts)
   local name = opts.args ~= "" and opts.args or nil
 

@@ -8,15 +8,13 @@ local defaults = {
   right = "l",
   inspect = "h",
   inspect_id = "H",
-  investigate = "g",
-  investigate_id = "G",
 }
 
 --- Resolves the navigation configuration from options table or string.
 -- Supports:
---   "ijkl" (default) -> up: i, down: k, left: j, right: l, inspect: h, inspect_id: H, investigate: g, investigate_id: G
---   "hjkl"           -> up: k, down: j, left: h, right: l, inspect: i, inspect_id: I, investigate: g, investigate_id: G
---   { up = ..., down = ..., left = ..., right = ..., inspect = ..., inspect_id = ..., investigate = ..., investigate_id = ... }
+--   "ijkl" (default) -> up: i, down: k, left: j, right: l, inspect: h, inspect_id: H
+--   "hjkl"           -> up: k, down: j, left: h, right: l, inspect: i, inspect_id: I
+--   { up = ..., down = ..., left = ..., right = ..., inspect = ..., inspect_id = ... }
 -- @param opts table|string|nil
 -- @return table
 function M.resolve(opts)
@@ -43,8 +41,6 @@ function M.resolve(opts)
         right = "l",
         inspect = "i",
         inspect_id = "I",
-        investigate = "g",
-        investigate_id = "G",
       }
     else
       return {
@@ -55,8 +51,6 @@ function M.resolve(opts)
         right = "l",
         inspect = "h",
         inspect_id = "H",
-        investigate = "g",
-        investigate_id = "G",
       }
     end
   end
@@ -81,8 +75,6 @@ function M.resolve(opts)
     local right = nav.right or "l"
     local inspect = nav.inspect or (left == "h" and "i" or "h")
     local inspect_id = nav.inspect_id or (inspect == "i" and "I" or "H")
-    local investigate = nav.investigate or "g"
-    local investigate_id = nav.investigate_id or "G"
 
     return {
       style = style,
@@ -92,8 +84,6 @@ function M.resolve(opts)
       right = right,
       inspect = inspect,
       inspect_id = inspect_id,
-      investigate = investigate,
-      investigate_id = investigate_id,
     }
   end
 
