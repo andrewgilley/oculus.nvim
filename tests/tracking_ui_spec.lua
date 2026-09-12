@@ -8,10 +8,22 @@ local function write(tree) vim.fn.writefile({vim.json.encode(tree)}, path) end
 write({version=1,projects={{name='Tools',children={{name='Nested',children={{repository='a/b',provider='github'}}}}}},users={{name='Friends',children={{username='alice',provider='github'}}}}})
 oculus.setup({tracking_file=path,state_file=dir..'/state.json'})
 window.open(oculus.config)
+assert(not vim.wo[window.state.win].cursorline, 'tracking lists must not enable cursorline on open')
+-- Returning from an activity view must also clear its native row highlight.
+vim.wo[window.state.win].cursorline = true
+window.refresh_tracking()
+assert(not vim.wo[window.state.win].cursorline, 'tracking list refresh clears inherited cursorline')
 
 local function key(lhs)
   for _, map in ipairs(vim.api.nvim_buf_get_keymap(window.state.buf,'n')) do
-    if map.lhs == lhs then assert(map.callback, lhs); map.callback(); return end
+    if map.lhs == lhs then
+      assert(map.callback, lhs)
+      map.callback()
+      if window.state.view == 'contributors' then
+        assert(not vim.wo[window.state.win].cursorline, 'list navigation must keep cursorline off: '..lhs)
+      end
+      return
+    end
   end
 
   error('missing mapping '..lhs)

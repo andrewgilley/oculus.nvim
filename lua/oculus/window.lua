@@ -2353,6 +2353,7 @@ local function render_contributors()
     while #lines < vim.api.nvim_win_get_height(M.state.win) - 3 do lines[#lines + 1] = "" end
     footer(lines, "p projects  u users  f group  m move  M to group  r remove")
     set_lines(lines)
+    vim.wo[M.state.win].cursorline = false
     highlight(2, 2, -1, "Title")
     highlight(4, 2, -1, "Title")
     local first
