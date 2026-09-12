@@ -2100,6 +2100,13 @@ local function replace_inspection_lines(endpoint, lines)
 
   vim.bo[endpoint.buf].readonly = false
   vim.bo[endpoint.buf].modifiable = true
+
+  -- Rewriting identical text still bumps changedtick, which forces a full
+  -- re-parse and repaints the tree-sitter context rows on version switches.
+  if vim.deep_equal(vim.api.nvim_buf_get_lines(endpoint.buf, 0, -1, false), lines) then
+    return true
+  end
+
   vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, lines)
   return true
 end

@@ -6303,6 +6303,11 @@ do
   assert(#c_marks >= 1, "expected change marks on change buffer")
   assert(p_marks[1][4].sign_hl_group == "OculusInspectRemoved")
   assert(c_marks[1][4].sign_hl_group == "OculusInspectAdded")
+  -- A version switch re-renders the same chunk. Identical text must not be
+  -- rewritten: a changedtick bump forces a re-parse and repaints context rows.
+  local tick = vim.api.nvim_buf_get_changedtick(c_buf)
+  inspect._render_chunk_for_role(session, "change", 1)
+  assert(vim.api.nvim_buf_get_changedtick(c_buf) == tick, "identical re-render keeps changedtick")
   vim.api.nvim_buf_delete(p_buf, { force = true })
   vim.api.nvim_buf_delete(c_buf, { force = true })
 end
