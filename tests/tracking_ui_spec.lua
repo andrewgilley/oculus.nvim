@@ -167,9 +167,17 @@ assert(oculus.reload_tracking())
 vim.cmd('OculusMoveToDirectory cmd/repo /Outer/Inner/')
 assert(disk().projects[1].name == 'Outer' and disk().projects[1].children[1].children[1].repository == 'cmd/repo', 'public move command persists nested destination')
 -- The actual provider/input dialog feeds the same transactional add path.
+-- Users show their handle even with a display name; an empty users list stays blank.
+write({version=1,projects={},users={{username='carol',provider='github',name='Carol Display'}}})
+assert(oculus.reload_tracking())
+key('u')
+local user_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')
+assert(user_rows:find('@carol', 1, true) and not user_rows:find('Carol Display', 1, true), 'user rows show handles')
 write({version=1,projects={},users={}})
 assert(oculus.reload_tracking())
-key('u'); key('a')
+key('u')
+assert(not table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n'):find('Empty list', 1, true), 'empty users list is blank')
+key('a')
 
 local function dialog_key(buf, lhs)
   for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf,'n')) do

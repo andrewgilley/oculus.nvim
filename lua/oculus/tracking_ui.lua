@@ -17,8 +17,10 @@ local function children(tree, kind, path)
   return nodes
 end
 
+-- Users always show their handle; display names only label groups/projects.
 local function label(node)
-  return node.name or node.repository or ('@' .. node.username)
+  if node.username then return '@' .. node.username end
+  return node.name or node.repository
 end
 
 -- Mirror the legacy directory preview: header, then direct children without
@@ -72,7 +74,7 @@ function M.render(state)
     state.line_targets[#lines] = target
   end
 
-  if #nodes == 0 then lines[#lines + 1] = '  Empty list. a add item · f add group' end
+  if #nodes == 0 and kind == 'projects' then lines[#lines + 1] = '  Empty list. a add item · f add group' end
   return lines
 end
 
