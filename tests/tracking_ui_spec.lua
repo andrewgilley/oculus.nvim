@@ -19,9 +19,11 @@ local function key(lhs)
     if map.lhs == lhs then
       assert(map.callback, lhs)
       map.callback()
+
       if window.state.view == 'contributors' then
         assert(not vim.wo[window.state.win].cursorline, 'list navigation must keep cursorline off: '..lhs)
       end
+
       return
     end
   end
@@ -39,7 +41,19 @@ local function select_label(label)
   error('missing target '..label..' '..vim.inspect(window.state.line_targets))
 end
 
+local function preview_at(label)
+  select_label(label)
+  vim.api.nvim_exec_autocmds('CursorMoved',{buffer=window.state.buf})
+  return window.state.preview_items
+end
+
+local preview = preview_at('Tools')
+assert(preview[2][1] == 'GROUP' and preview[4][1] == 'Nested/' and not preview[5], 'group preview lists direct children')
 select_label('Tools'); key('<CR>')
+preview = preview_at('Nested')
+assert(preview[4][1] == 'a/b', 'nested group preview lists its leaves')
+preview = preview_at('..')
+assert(preview[4][1] == 'Tools/', 'parent row previews the parent group')
 select_label('Nested'); key('<Right>')
 select_label('a/b'); key('<Left>')
 select_label('Nested'); key('<Left>')
@@ -100,12 +114,14 @@ local before_paths = vim.deepcopy(window.state.tracking_paths)
 key('m')
 local before_move = vim.deepcopy(window.state.tracking_move)
 local confirmations = 0
+
 vim.fn.confirm = function(message, choices, default)
   confirmations = confirmations + 1
   assert(message:match('promot'), 'confirmation explains child promotion')
   assert(choices == '&Cancel\n&Remove group' and default == 1, 'Cancel is first/default')
   return 1
 end
+
 key('r')
 assert(confirmations == 1, 'nonempty removal must prompt')
 assert(table.concat(vim.fn.readfile(path, 'b'), '\n') == before_remove, 'cancel preserves exact file bytes')
@@ -180,15 +196,18 @@ vim.api.nvim_exec_autocmds('CursorMoved',{buffer=window.state.buf})
 assert(window.state.preview_items[2][1] == 'USER' and window.state.preview_items[4][1] == '@url-user', 'tracking user preview retained')
 -- Structural edits cancel numeric move sources before another move can retarget them.
 local function project(repository) return {repository=repository,provider='github'} end
+
 local function current_target()
   return window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]]
 end
+
 local scenarios = {
   {name='selected source deletion', earlier=project('a/a'), source='a/a', remove='a/a', expected='b/b'},
   {name='earlier sibling deletion', earlier=project('a/a'), source='b/b', remove='a/a', expected='b/b'},
   {name='earlier empty group removal', earlier={name='Earlier',children={}}, source='b/b', remove='Earlier', expected='b/b'},
   {name='earlier group promotion', earlier={name='Earlier',children={project('x/x'),{name='Child',children={project('y/y')}}}}, source='b/b', remove='Earlier', expected='x/x'},
 }
+
 for _, scenario in ipairs(scenarios) do
   write({version=1,projects={{name='Outer',children={scenario.earlier,project('b/b'),project('c/c')}}},users={}})
   assert(oculus.reload_tracking())
@@ -200,15 +219,18 @@ for _, scenario in ipairs(scenarios) do
   assert(not window.state.tracking_move, scenario.name .. ': cancels pending move')
   assert(vim.deep_equal(window.state.tracking_paths.projects, {1}), scenario.name .. ': keeps group path')
   assert(current_target().project.repository == scenario.expected, scenario.name .. ': selects adjacent surviving child')
+
   if scenario.name == 'earlier group promotion' then
     assert(disk().projects[1].children[2].children[1].repository == 'y/y', 'promotion preserves nested descendants')
   end
+
   local after_remove = table.concat(vim.fn.readfile(path, 'b'), '\n')
   select_label('c/c'); key('m')
   assert(table.concat(vim.fn.readfile(path, 'b'), '\n') == after_remove, scenario.name .. ': next m selects, never moves stale source')
   assert(window.state.tracking_move, scenario.name .. ': new source selected')
   key('<Esc>')
 end
+
 -- Adding a group also cancels a pending source without jumping to ../.
 select_label('b/b'); key('m')
 vim.ui.input = function(_, callback) callback('Added') end

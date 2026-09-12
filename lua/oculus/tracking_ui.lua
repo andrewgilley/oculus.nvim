@@ -17,6 +17,30 @@ local function children(tree, kind, path)
   return nodes
 end
 
+local function label(node)
+  return (node.name or node.repository or ('@' .. node.username)) .. (node.children and '/' or '')
+end
+
+-- Mirror the legacy directory preview: header, then direct children without
+-- repeating the group's own name. The ../ row previews the parent group.
+function M.preview_items(state, target, max_visible)
+  local kind, path = scope(state)
+  local tree = state.opts._tracking and state.opts._tracking.tree
+  local group = vim.deepcopy(path)
+  if target.kind == 'tracking_parent' then table.remove(group) else group[#group + 1] = target.tracking_index end
+  local nodes = tree and children(tree, kind, group) or {}
+  local items = {[2]={'GROUP', 'Title'}}
+  if #nodes == 0 then items[4] = {'(empty group)', 'Comment'}; return items end
+  local shown = #nodes <= max_visible and #nodes or math.max(1, max_visible - 1)
+
+  for index = 1, shown do
+    items[3 + index] = {label(nodes[index]), nodes[index].children and 'Directory' or 'Identifier'}
+  end
+
+  if shown < #nodes then items[4 + shown] = {('... and %d more'):format(#nodes - shown), 'Comment'} end
+  return items
+end
+
 function M.render(state)
   local kind, path = scope(state)
   local tree = state.opts._tracking and state.opts._tracking.tree
@@ -49,7 +73,7 @@ function M.render(state)
     else target = vim.deepcopy(node) end
 
     target.tracking_index = index
-    lines[#lines + 1] = '  ' .. (node.name or node.repository or ('@' .. node.username)) .. (node.children and '/' or '')
+    lines[#lines + 1] = '  ' .. label(node)
     state.line_targets[#lines] = target
   end
 
@@ -60,10 +84,13 @@ end
 local function change(state, edit, completing_move, preserve_failed_view)
   local target = state.win and vim.api.nvim_win_is_valid(state.win)
     and state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
+
   local index = target and target.tracking_index
   local ok, err = require('oculus.tracking').mutate(state.opts, edit)
+
   if ok then state.tracking_move = nil
   else vim.notify('Oculus: ' .. tostring(err), vim.log.levels.ERROR) end
+
   if not ok and preserve_failed_view then return ok, err end
   require('oculus.window').refresh_tracking()
 

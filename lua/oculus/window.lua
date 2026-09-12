@@ -8461,7 +8461,8 @@ function M.open(opts)
 
       if target and (target.kind == "tracking_group" or target.kind == "tracking_parent") then
         M.state.preview_key = nil
-        render_preview_panel({[2]={"GROUP", "Title"}, [4]={target.name, "Directory"}})
+        local max_visible = math.max(1, vim.api.nvim_win_get_height(M.state.win) - 6)
+        render_preview_panel(require("oculus.tracking_ui").preview_items(M.state, target, max_visible))
         update_contributor_selection()
         return
       end
