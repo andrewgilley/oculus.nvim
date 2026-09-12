@@ -4603,16 +4603,11 @@ if integration_root and (integration_sha or integration_url) then
   else
     assert(#parent_marks > 0)
     local parent_sign = vim.trim(parent_marks[1][4].sign_text)
-
-    assert(
-      parent_sign == "－"
-        or parent_sign == "＋"
-        or parent_sign == "-"
-        or parent_sign == "+"
-    )
+    -- Standard single-cell glyphs, not full-width ＋/－ that crowd the column.
+    assert(parent_sign == "-" or parent_sign == "+")
 
     assert(parent_marks[1][4].sign_hl_group
-      == ((parent_sign == "－" or parent_sign == "-")
+      == (parent_sign == "-"
           and "OculusInspectRemoved"
         or "OculusInspectAdded"))
 

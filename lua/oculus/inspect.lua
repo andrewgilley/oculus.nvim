@@ -1699,7 +1699,7 @@ local function apply_change_signs(parent_buf, change_buf, hunks, status)
       parent_buf,
       hunk.old_start,
       hunk.old_count,
-      hunk.old_count == 0 and "＋" or "－",
+      hunk.old_count == 0 and "+" or "-",
       hunk.old_count == 0
           and "OculusInspectAdded"
         or "OculusInspectRemoved"
@@ -1709,7 +1709,7 @@ local function apply_change_signs(parent_buf, change_buf, hunks, status)
       change_buf,
       hunk.new_start,
       hunk.new_count,
-      hunk.new_count == 0 and "－" or "＋",
+      hunk.new_count == 0 and "-" or "+",
       hunk.new_count == 0
           and "OculusInspectRemoved"
         or "OculusInspectAdded"
