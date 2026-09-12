@@ -18,16 +18,16 @@ local function children(tree, kind, path)
 end
 
 local function label(node)
-  return (node.name or node.repository or ('@' .. node.username)) .. (node.children and '/' or '')
+  return node.name or node.repository or ('@' .. node.username)
 end
 
 -- Mirror the legacy directory preview: header, then direct children without
--- repeating the group's own name. The ../ row previews the parent group.
+-- repeating the group's own name.
 function M.preview_items(state, target, max_visible)
   local kind, path = scope(state)
   local tree = state.opts._tracking and state.opts._tracking.tree
   local group = vim.deepcopy(path)
-  if target.kind == 'tracking_parent' then table.remove(group) else group[#group + 1] = target.tracking_index end
+  group[#group + 1] = target.tracking_index
   local nodes = tree and children(tree, kind, group) or {}
   local items = {[2]={'GROUP', 'Title'}}
   if #nodes == 0 then items[4] = {'(empty group)', 'Comment'}; return items end
@@ -60,11 +60,6 @@ function M.render(state)
   local lines = {'', '  ACTIVITY', '', '  ' .. kind:upper() .. (#labels > 0 and ' / ' .. table.concat(labels, ' / ') or '')}
   if state.opts._tracking and state.opts._tracking.error then lines[#lines + 1] = '  Tracking error: :OculusReloadTracking' end
 
-  if #path > 0 then
-    lines[#lines + 1] = '  ../'
-    state.line_targets[#lines] = {kind='tracking_parent', name='..'}
-  end
-
   for index, node in ipairs(nodes) do
     local target
 
@@ -95,7 +90,7 @@ local function change(state, edit, completing_move, preserve_failed_view)
   require('oculus.window').refresh_tracking()
 
   -- Adds append and removals promote in place: retain the current child slot,
-  -- or its preceding sibling when removing the last child, not the ../ row.
+  -- or its preceding sibling when removing the last child.
   if not completing_move and index and state.win and vim.api.nvim_win_is_valid(state.win) then
     local kind, path = scope(state)
     local tree = state.opts._tracking and state.opts._tracking.tree
@@ -307,7 +302,7 @@ function M.handle(state, action, target)
     return true
   end
 
-  if action == 'left' or ((action == 'enter' or action == 'right') and target and target.kind == 'tracking_parent') then
+  if action == 'left' then
     if state.tracking_move and #path > 0 then
       local parent = vim.deepcopy(path)
       table.remove(parent)

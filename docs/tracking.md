@@ -86,7 +86,7 @@ the JSON file itself requires the canonical identifiers above.
 | --- | --- |
 | `p` / `u` / `v` | Projects / Users / switch lists; each remembers its group path |
 | Enter or right-navigation key / Right arrow | Open group or leaf activity |
-| Left-navigation key / Left arrow, or select `../` | Go to parent group |
+| Left-navigation key / Left arrow | Go to parent group |
 | `a` | Add a project/user to the current group through the provider/input dialog |
 | `f`, `K`, `D` | Add a group to the current Projects **or** Users group |
 | `r` | Remove leaf or empty group; nonempty groups require confirmation before **promoting their children in place**, preserving order and nested groups |

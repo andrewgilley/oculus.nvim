@@ -2373,6 +2373,12 @@ local function render_contributors()
     highlight(4, 2, -1, "Title")
     if separator_line then highlight(separator_line, 2, -1, "WinSeparator") end
     if commands_line then highlight(commands_line, 2, -1, "Comment") end
+
+    -- Groups carry no trailing slash; mark them like legacy folders instead.
+    for line, target in pairs(M.state.line_targets) do
+      if target.kind == "tracking_group" then highlight(line, 2, -1, "OculusDirectory") end
+    end
+
     local first
     for line in pairs(M.state.line_targets) do first = math.min(first or line, line) end
 
@@ -8479,7 +8485,7 @@ function M.open(opts)
       local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
       local target = M.state.line_targets[line]
 
-      if target and (target.kind == "tracking_group" or target.kind == "tracking_parent") then
+      if target and target.kind == "tracking_group" then
         M.state.preview_key = nil
         local max_visible = math.max(1, vim.api.nvim_win_get_height(M.state.win) - 6)
         render_preview_panel(require("oculus.tracking_ui").preview_items(M.state, target, max_visible))
