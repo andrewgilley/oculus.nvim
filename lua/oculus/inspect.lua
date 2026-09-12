@@ -5,7 +5,6 @@ local codeberg = require("oculus.codeberg")
 local browser = require("oculus.browser")
 local active = false
 local change_ns = vim.api.nvim_create_namespace("oculus_inspect_changes")
-local change_statuscolumn = "%!v:lua.require'oculus.inspect'._statuscolumn()"
 local oil_ns = vim.api.nvim_create_namespace("oculus_inspect_oil")
 local sidebar_ns = vim.api.nvim_create_namespace("oculus_inspect_sidebar")
 M._virtual_counter_ns = vim.api.nvim_create_namespace("oculus_inspect_virtual_counter")
@@ -1608,40 +1607,6 @@ local function place_range(buf, start, count, text, highlight)
   for line = start, start + count - 1 do
     place_sign(buf, line, text, highlight)
   end
-end
-
--- A two-cell sign column can only left-align a one-cell glyph, so inspect
--- windows draw their change marks centred in a three-cell block instead.
-function M._statuscolumn()
-  local win = vim.g.statusline_winid
-  local buf = vim.api.nvim_win_get_buf(win)
-
-  if type(vim.b[buf].oculus_inspect) ~= "table" then
-    return "%C%s%l "
-  end
-
-  local block = "   "
-
-  if vim.v.virtnum == 0 then
-    local line = vim.v.lnum - 1
-
-    local marks = vim.api.nvim_buf_get_extmarks(
-      buf,
-      change_ns,
-      { line, 0 },
-      { line, -1 },
-      { details = true, limit = 1 }
-    )
-
-    local mark = marks[1] and marks[1][4]
-
-    if mark and mark.sign_text then
-      block = ("%%#%s# %s %%*"):format(mark.sign_hl_group, vim.trim(mark.sign_text))
-    end
-  end
-
-  local numbered = vim.wo[win].number or vim.wo[win].relativenumber
-  return "%C" .. block .. (numbered and "%l " or "")
 end
 
 local function set_change_highlights()
@@ -7031,7 +6996,6 @@ show_sidebar_files = function(group)
     do
       if valid_endpoint(endpoint) then
         vim.wo[endpoint.win].signcolumn = "yes"
-        vim.wo[endpoint.win].statuscolumn = change_statuscolumn
       end
     end
   end
@@ -8306,7 +8270,6 @@ vim.api.nvim_create_autocmd("WinEnter", {
     if type(vim.b[args.buf].oculus_inspect) == "table" then
       set_change_highlights()
       vim.wo[current_win].signcolumn = "yes"
-      vim.wo[current_win].statuscolumn = change_statuscolumn
     end
 
     for _, candidate in ipairs(sidebar_groups) do
@@ -8697,7 +8660,6 @@ local function load_tab(
   }
 
   vim.wo[loaded.win].signcolumn = "yes"
-  vim.wo[loaded.win].statuscolumn = change_statuscolumn
   vim.wo[loaded.win].wrap = false
   return loaded
 end
@@ -8749,7 +8711,6 @@ local function apply_inspection_window_options(win, options)
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
   vim.wo[win].signcolumn = "yes"
-  vim.wo[win].statuscolumn = change_statuscolumn
   prevent_window_dimming(win)
   preserve_cursorline_text_highlighting(win)
 end
@@ -9682,7 +9643,6 @@ local function open_issue_inspection(
     vim.wo[win].wrap = false
     vim.wo[win].linebreak = false
     vim.wo[win].signcolumn = "yes"
-    vim.wo[win].statuscolumn = change_statuscolumn
     vim.wo[win].statusline = inspection_statusline_option
     apply_inspection_window_options(win, number_options)
     session.issue = endpoint
