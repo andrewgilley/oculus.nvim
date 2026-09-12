@@ -125,6 +125,9 @@ function M.rename(state, name)
     return false
   end
 
+  -- Users are listed by handle, so renaming a user edits the username itself.
+  local field = node.username and 'username' or 'name'
+
   local function apply(value)
     if value == nil then return false end
 
@@ -132,12 +135,15 @@ function M.rename(state, name)
       -- A delayed input callback must never rename a replacement at the same index.
       assert(state.opts._tracking.tree == snapshot, 'List changed; select the item and rename again')
       assert(type(value) == 'string', 'name must be a string')
-      children(tree, kind, path)[index].name = vim.trim(value)
+      local text = vim.trim(value)
+      if field == 'username' then text = (text:gsub('^@', '')) end
+      children(tree, kind, path)[index][field] = text
     end, false, true)
   end
 
   if name ~= nil then return apply(name) end
-  vim.ui.input({prompt='Display name: ', default=node.name or node.repository or node.username}, apply)
+  local prompt = field == 'username' and 'Username: ' or 'Display name: '
+  vim.ui.input({prompt=prompt, default=node.username or node.name or node.repository}, apply)
 end
 
 function M.add(state, node, list)

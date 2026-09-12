@@ -73,6 +73,17 @@ end
 
 key('R')
 assert(disk().projects[1].children[1].children[1].name == 'Via Key', 'R renames the selected item')
+-- R on a user edits the username; a leading @ is accepted.
+key('u'); select_label('Friends'); key('<CR>'); select_label('alice')
+
+vim.ui.input = function(opts, callback)
+  assert(opts.prompt == 'Username: ' and opts.default == 'alice', 'user rename prompts for the handle')
+  callback('@alice2')
+end
+
+key('R')
+local renamed = disk().users[1].children[1]
+assert(renamed.username == 'alice2' and renamed.name == nil, 'R renames the username')
 vim.ui.input = input
 vim.notify = notify
 window.close()
