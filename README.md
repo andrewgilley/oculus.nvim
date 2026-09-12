@@ -1,4 +1,6 @@
-# oculus.nvim
+<p align="center">
+  <img src="assets/oculus-banner.png" alt="oculus.nvim" width="820">
+</p>
 
 **See what's happening across the projects and people you follow, and review
 their changes without leaving Neovim.**
