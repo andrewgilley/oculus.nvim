@@ -57,13 +57,14 @@ function M.render(state)
   return lines
 end
 
-local function change(state, edit, completing_move)
+local function change(state, edit, completing_move, preserve_failed_view)
   local target = state.win and vim.api.nvim_win_is_valid(state.win)
     and state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
   local index = target and target.tracking_index
   local ok, err = require('oculus.tracking').mutate(state.opts, edit)
   if ok then state.tracking_move = nil
   else vim.notify('Oculus: ' .. tostring(err), vim.log.levels.ERROR) end
+  if not ok and preserve_failed_view then return ok, err end
   require('oculus.window').refresh_tracking()
 
   -- Adds append and removals promote in place: retain the current child slot,
@@ -84,6 +85,35 @@ local function change(state, edit, completing_move)
   end
 
   return ok, err
+end
+
+function M.rename(state, name)
+  local kind, path = scope(state)
+  path = vim.deepcopy(path)
+  local target = state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
+  local snapshot = state.opts._tracking and state.opts._tracking.tree
+  local nodes = snapshot and children(snapshot, kind, path)
+  local index = target and target.tracking_index
+  local node = nodes and index and nodes[index]
+
+  if not node then
+    vim.notify('Oculus: select a group, project, or user to rename', vim.log.levels.WARN)
+    return false
+  end
+
+  local function apply(value)
+    if value == nil then return false end
+
+    return change(state, function(tree)
+      -- A delayed input callback must never rename a replacement at the same index.
+      assert(state.opts._tracking.tree == snapshot, 'List changed; select the item and rename again')
+      assert(type(value) == 'string', 'name must be a string')
+      children(tree, kind, path)[index].name = vim.trim(value)
+    end, false, true)
+  end
+
+  if name ~= nil then return apply(name) end
+  vim.ui.input({prompt='Display name: ', default=node.name or node.repository or node.username}, apply)
 end
 
 function M.add(state, node, list)

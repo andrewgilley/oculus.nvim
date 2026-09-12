@@ -16,6 +16,10 @@ vim.api.nvim_create_user_command("OculusToggle", function()
   require("oculus").toggle()
 end, { desc = "Toggle Oculus" })
 
+vim.api.nvim_create_user_command("OculusRename", function(opts)
+  require("oculus.window").rename(opts.args ~= "" and opts.args or nil)
+end, { nargs = "?", desc = "Rename the selected Oculus group or item display name" })
+
 vim.api.nvim_create_user_command("OculusReloadTracking", function()
   local ok, err = require("oculus").reload_tracking()
 

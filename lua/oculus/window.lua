@@ -8601,6 +8601,15 @@ M._draw_activity_investigate_spinner = draw_activity_investigate_spinner
 M._investigate_loading_ns = investigate_loading_ns
 M._investigate_current = investigate_current
 
+function M.rename(name)
+  if not is_valid_win(M.state.win) or (M.state.view ~= "contributors" and M.state.view ~= "directory") then
+    vim.notify("Oculus: open a Projects or Users list and select an item to rename", vim.log.levels.WARN)
+    return false
+  end
+
+  if M.state.opts.tracking_file then return require("oculus.tracking_ui").rename(M.state, name) end
+end
+
 function M.refresh_tracking()
   if is_valid_win(M.state.win) then
     M.state.contributors = display_contributors(M.state.opts.contributors)
