@@ -90,6 +90,7 @@ the JSON file itself requires the canonical identifiers above.
 | `a` | Add a project/user to the current group through the provider/input dialog |
 | `f`, `K`, `D` | Add a group to the current Projects **or** Users group |
 | `r` | Remove leaf or empty group; nonempty groups require confirmation before **promoting their children in place**, preserving order and nested groups |
+| `R` | Rename the selected group or item's display name in a text prompt (same as `:OculusRename`) |
 | `m`, navigate to a sibling, `m` | Move selected item/group to that sibling position |
 | `m`, select a group, Enter/right | Move selected item/group into that group (append) |
 | `m`, left | Move selected item/group to its parent group (append), then navigate there |

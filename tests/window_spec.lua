@@ -1626,7 +1626,8 @@ local user_refresh_mapping = vim.fn.maparg("r", "n", false, true)
 assert(user_refresh_mapping.desc
   == "Remove selected Oculus item or refresh activity")
 
-assert(vim.fn.maparg("R", "n", false, true).desc == nil)
+-- R no longer refreshes (r does); it now renames the selected list item.
+assert(vim.fn.maparg("R", "n", false, true).desc == "Rename the selected Oculus group or item")
 user_refresh_mapping.callback()
 assert(requested_force[#requested_force] == true)
 assert(state.activity_page == 1)

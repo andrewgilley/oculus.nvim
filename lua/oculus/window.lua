@@ -8005,6 +8005,7 @@ local function map_keys(buf)
   map("?", toggle_sidebar, "Toggle Oculus command sidebar")
   map("s", toggle_sidebar, "Toggle Oculus command sidebar")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
+  map("R", function() M.rename() end, "Rename the selected Oculus group or item")
 
   map("m", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
@@ -8635,6 +8636,8 @@ function M.rename(name)
   end
 
   if M.state.opts.tracking_file then return require("oculus.tracking_ui").rename(M.state, name) end
+  vim.notify("Oculus: renaming requires a tracking_file", vim.log.levels.WARN)
+  return false
 end
 
 function M.refresh_tracking()
