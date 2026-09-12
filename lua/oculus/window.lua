@@ -2350,12 +2350,27 @@ local function render_contributors()
     local lines = require("oculus.tracking_ui").render(M.state)
     local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
     for index, line in ipairs(lines) do lines[index] = pad_cell(trim_to_width(line, left_width - 1), left_width) end
-    while #lines < vim.api.nvim_win_get_height(M.state.win) - 3 do lines[#lines + 1] = "" end
-    footer(lines, "p projects  u users  f group  m move  M to group  r remove")
+    local window_height = vim.api.nvim_win_get_height(M.state.win)
+    local separator_line, commands_line
+
+    -- Match the legacy list layout: separator and commands on the bottom rows,
+    -- or no footer at all while the sidebar shows the commands.
+    if not is_sidebar_visible() then
+      while #lines < window_height - 2 do lines[#lines + 1] = "" end
+      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
+      separator_line = #lines
+      footer(lines, "p projects  u users  f group  m move  M to group  r remove")
+      commands_line = #lines
+    else
+      while #lines < window_height do lines[#lines + 1] = "" end
+    end
+
     set_lines(lines)
     vim.wo[M.state.win].cursorline = false
     highlight(2, 2, -1, "Title")
     highlight(4, 2, -1, "Title")
+    if separator_line then highlight(separator_line, 2, -1, "WinSeparator") end
+    if commands_line then highlight(commands_line, 2, -1, "Comment") end
     local first
     for line in pairs(M.state.line_targets) do first = math.min(first or line, line) end
 
@@ -2365,7 +2380,10 @@ local function render_contributors()
 
       if target.kind == "project" then queue_project_preview(target.project)
       elseif target.username then queue_preview(target)
-      else render_preview_panel({[2]={"GROUP", "Title"}, [4]={target.name, "Directory"}}) end
+      else
+        local max_visible = math.max(1, window_height - 6)
+        render_preview_panel(require("oculus.tracking_ui").preview_items(M.state, target, max_visible))
+      end
     else render_preview_panel({[2]={"TRACKING", "Title"}}) end
 
     update_contributor_selection()
