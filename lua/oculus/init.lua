@@ -37,74 +37,7 @@ local defaults = {
   navigation = "ijkl",
   project_directories = {},
   project_order = {},
-  projects = {
-    {
-      name = "Neovim",
-      repository = "neovim/neovim",
-      provider = "github",
-      description = "Vim-fork focused on extensibility and usability",
-    },
-    {
-      name = "Ghostty",
-      repository = "ghostty-org/ghostty",
-      provider = "github",
-      description = "👻 Ghostty is a fast, feature-rich, and cross-platform terminal emulator that uses platform-native UI and GPU acceleration.",
-    },
-    {
-      name = "Zig",
-      repository = "ziglang/zig",
-      provider = "codeberg",
-      description = "General-purpose programming language and toolchain for maintaining robust, optimal, and reusable software.",
-    },
-    {
-      name = "Fil-C",
-      repository = "pizlonator/fil-c",
-      provider = "github",
-      description = "Fil-C: completely compatible memory safety for C and C++",
-    },
-    {
-      name = "WebAssembly Component Model",
-      repository = "WebAssembly/component-model",
-      provider = "github",
-      description = "Repository for design and specification of the Component Model",
-    },
-    {
-      name = "Wasmtime",
-      repository = "bytecodealliance/wasmtime",
-      provider = "github",
-      description = "A lightweight WebAssembly runtime that is fast, secure, and standards-compliant",
-    },
-    {
-      name = "lazy.nvim",
-      repository = "folke/lazy.nvim",
-      provider = "github",
-      description = "💤 A modern plugin manager for Neovim",
-    },
-    {
-      name = "oculus.nvim",
-      repository = "andrewgilley/oculus.nvim",
-      provider = "github",
-      description = "Neovim browser for public GitHub activity of community members.",
-    },
-    {
-      name = "Zug",
-      repository = "andrewgilley/zug",
-      provider = "github",
-      description = "WebAssembly runtime.",
-    },
-    {
-      name = "Odin",
-      repository = "odin-lang/Odin",
-      provider = "github",
-      description = "Odin Programming Language",
-    },
-    {
-      name = "Stockfish",
-      repository = "official-stockfish/Stockfish",
-      provider = "github",
-      description = "A free and strong UCI chess engine",
-    },
-  },
+  projects = {},
   persist_filters = true,
   persist_contributors = true,
   persist_projects = true,
@@ -148,38 +81,7 @@ local defaults = {
     filetype = "markdown",
   },
   token = nil,
-  contributors = {
-    {
-      name = "Luke Wagner",
-      username = "lukewagner",
-      provider = "github",
-    },
-    {
-      name = "Alex Crichton",
-      username = "alexcrichton",
-      provider = "github",
-    },
-    {
-      name = "folke",
-      username = "folke",
-      provider = "github",
-    },
-    {
-      name = "Andrew Gilley",
-      username = "andrewgilley",
-      provider = "github",
-    },
-    {
-      name = "Bill Hall",
-      username = "gingerBill",
-      provider = "github",
-    },
-    {
-      name = "vondele",
-      username = "vondele",
-      provider = "github",
-    },
-  },
+  contributors = {},
 }
 
 M.config = vim.deepcopy(defaults)

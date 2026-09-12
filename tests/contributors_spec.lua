@@ -10,47 +10,8 @@ oculus.setup({
   persist_projects = false,
 })
 
-assert(#oculus.config.contributors == 6)
-assert(oculus.config.contributors[1].username == "lukewagner")
-assert(oculus.config.contributors[1].provider == "github")
-assert(oculus.config.contributors[2].username == "alexcrichton")
-assert(oculus.config.contributors[2].provider == "github")
-assert(oculus.config.contributors[2].name == "Alex Crichton")
-assert(oculus.config.contributors[3].username == "folke")
-assert(oculus.config.contributors[3].provider == "github")
-assert(oculus.config.contributors[4].username == "andrewgilley")
-assert(oculus.config.contributors[4].provider == "github")
-assert(oculus.config.contributors[5].username == "gingerBill")
-assert(oculus.config.contributors[5].provider == "github")
-assert(oculus.config.contributors[6].username == "vondele")
-assert(oculus.config.contributors[6].provider == "github")
-assert(#oculus.config.projects == 11)
-
-assert(oculus.config.projects[5].repository
-  == "WebAssembly/component-model")
-
-assert(oculus.config.projects[5].provider == "github")
-
-assert(oculus.config.projects[6].repository
-  == "bytecodealliance/wasmtime")
-
-assert(oculus.config.projects[6].provider == "github")
-assert(oculus.config.projects[7].repository == "folke/lazy.nvim")
-assert(oculus.config.projects[7].provider == "github")
-
-assert(oculus.config.projects[8].repository
-  == "andrewgilley/oculus.nvim")
-
-assert(oculus.config.projects[8].provider == "github")
-assert(oculus.config.projects[9].repository == "andrewgilley/zug")
-assert(oculus.config.projects[9].provider == "github")
-assert(oculus.config.projects[10].repository == "odin-lang/Odin")
-assert(oculus.config.projects[10].provider == "github")
-
-assert(oculus.config.projects[11].repository
-  == "official-stockfish/Stockfish")
-
-assert(oculus.config.projects[11].provider == "github")
+assert(#oculus.config.contributors == 0)
+assert(#oculus.config.projects == 0)
 assert(oculus.config.suggested_contributors == nil)
 assert(oculus.config.persist_projects == false)
 assert(oculus.config.persist_inspect_overviews == true)
@@ -85,14 +46,8 @@ oculus.setup({
   persist_contributors = true,
 })
 
-assert(#oculus.config.contributors == 7)
-assert(oculus.config.contributors[1].username == "lukewagner")
-assert(oculus.config.contributors[2].username == "alexcrichton")
-assert(oculus.config.contributors[3].username == "folke")
-assert(oculus.config.contributors[4].username == "andrewgilley")
-assert(oculus.config.contributors[5].username == "gingerBill")
-assert(oculus.config.contributors[6].username == "vondele")
-assert(oculus.config.contributors[7].username == "saved-user")
+assert(#oculus.config.contributors == 1)
+assert(oculus.config.contributors[1].username == "saved-user")
 
 assert(oculus.config.inspect_overviews[
   "github:example/repository:issue:42"
@@ -127,9 +82,10 @@ local project_start_lines = table.concat(
 
 assert(project_start_lines:find("PROJECTS", 1, true))
 assert(not project_start_lines:find("No users added.", 1, true))
-assert(project_start_lines:find("v users", 1, true))
+assert(project_start_lines:find("u users", 1, true))
 local add_mapping = vim.fn.maparg("a", "n", false, true)
 add_mapping.callback()
+vim.fn.maparg("<CR>", "n", false, true).callback() -- Confirm provider before entering text.
 vim.api.nvim_buf_set_lines(state.add_input_buf, 0, -1, false, { "example/new-project" })
 vim.fn.maparg("<CR>", "n", false, true).callback()
 assert(#state.opts.projects == 1)
@@ -167,6 +123,7 @@ assert(empty_lines:find("a add account", 1, true))
 assert(vim.fn.maparg("g", "n", false, true).desc == nil)
 add_mapping.callback()
 vim.fn.maparg("<Tab>", "n", false, true).callback()
+vim.fn.maparg("<CR>", "n", false, true).callback() -- Confirm provider before entering text.
 vim.api.nvim_buf_set_lines(state.add_input_buf, 0, -1, false, { "@custom-codeberg" })
 vim.fn.maparg("<CR>", "n", false, true).callback()
 assert(#state.contributors == 1)
@@ -187,10 +144,12 @@ oculus.setup({
 window.open(oculus.config)
 vim.fn.maparg("a", "n", false, true).callback()
 vim.fn.maparg("<Tab>", "n", false, true).callback()
+vim.fn.maparg("<CR>", "n", false, true).callback() -- Confirm provider before entering text.
 vim.api.nvim_buf_set_lines(window.state.add_input_buf, 0, -1, false, { "example/persisted-project" })
 vim.fn.maparg("<CR>", "n", false, true).callback()
 vim.fn.maparg("v", "n", false, true).callback()
 vim.fn.maparg("a", "n", false, true).callback()
+vim.fn.maparg("<CR>", "n", false, true).callback() -- Confirm provider before entering text.
 vim.api.nvim_buf_set_lines(window.state.add_input_buf, 0, -1, false, { "@remember-me" })
 vim.fn.maparg("<CR>", "n", false, true).callback()
 assert(#window.state.contributors == 1)

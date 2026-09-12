@@ -2,7 +2,15 @@
 
 Use an external JSON file as the source of truth for the **Projects** and
 **Users** lists. This is opt-in; without `tracking_file`, Oculus keeps its existing
-configured/saved-list behavior.
+configured/saved-list behavior. Fresh installations have no bundled projects or
+users. Add entries manually in Oculus, supply them through setup options, or load
+this JSON file. Previously saved entries and existing tracking files are preserved.
+
+For an empty tracking file, start with:
+
+```json
+{"version": 1, "projects": [], "users": []}
+```
 
 ```lua
 require("oculus").setup({

@@ -2633,6 +2633,13 @@ do
   oculus.setup({
     persist_projects = false,
     persist_contributors = false,
+    projects = {
+      {
+        repository = "neovim/neovim",
+        provider = "github",
+        description = "Vim-fork focused on extensibility and usability",
+      },
+    },
   })
 
   local neovim_project = nil
@@ -3440,6 +3447,7 @@ do
       { name = "Project Beta", repository = "org/beta", provider = "github" },
       { name = "Project Gamma", repository = "org/gamma", provider = "github" },
     },
+    contributors = {{ username = "test-user", provider = "github" }},
     project_directories = {},
   })
 

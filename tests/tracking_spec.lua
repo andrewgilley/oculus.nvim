@@ -4,6 +4,22 @@ local dir = vim.fn.tempname()
 vim.fn.mkdir(dir, 'p')
 local path = dir .. '/tracking.json'
 
+assert(#oculus.config.projects == 0, 'no bundled projects before setup')
+assert(#oculus.config.contributors == 0, 'no bundled users before setup')
+oculus.setup({state_file=dir..'/fresh-state.json'})
+assert(#oculus.config.projects == 0, 'fresh setup starts with no projects')
+assert(#oculus.config.contributors == 0, 'fresh setup starts with no users')
+
+-- Existing manually saved entries survive; only bundled seeds are removed.
+vim.fn.writefile({vim.json.encode({
+  projects={{repository='manual/repo',provider='github'}},
+  contributors={{username='manual-user',provider='github'}},
+})}, dir..'/saved-state.json')
+oculus.load_project_descriptions = function() end
+oculus.setup({state_file=dir..'/saved-state.json'})
+assert(#oculus.config.projects == 1 and oculus.config.projects[1].repository == 'manual/repo')
+assert(#oculus.config.contributors == 1 and oculus.config.contributors[1].username == 'manual-user')
+
 local function write(value)
   vim.fn.writefile({vim.json.encode(value)}, path)
 end
