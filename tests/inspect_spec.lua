@@ -4611,6 +4611,13 @@ if integration_root and (integration_sha or integration_url) then
           and "OculusInspectRemoved"
         or "OculusInspectAdded"))
 
+    -- The status column draws the mark centred in a three-cell block.
+    local column = vim.api.nvim_eval_statusline(vim.wo[parent_win].statuscolumn, {
+      winid = parent_win,
+      use_statuscol_lnum = parent_marks[1][2] + 1,
+    }).str
+
+    assert(column:find(" " .. parent_sign .. " ", 1, true), "change mark is centred: " .. column)
     assert(#change_marks > 0)
 
     assert(vim.api.nvim_win_get_cursor(parent_win)[1] == math.min(
