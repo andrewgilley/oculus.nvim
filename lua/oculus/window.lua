@@ -2359,8 +2359,10 @@ local function render_contributors()
       while #lines < window_height - 2 do lines[#lines + 1] = "" end
       lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
       separator_line = #lines
-      footer(lines, "p projects  u users  f group  m move  M to group  r remove")
+      footer(lines, "p projects  u users  f group  m move  r remove")
       commands_line = #lines
+      -- Keep the commands inside the list pane, clear of the preview.
+      lines[commands_line] = pad_cell(trim_to_width(lines[commands_line], left_width - 1), left_width)
     else
       while #lines < window_height do lines[#lines + 1] = "" end
     end

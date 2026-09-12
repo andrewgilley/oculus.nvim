@@ -54,6 +54,9 @@ local height = vim.api.nvim_win_get_height(window.state.win)
 assert(#rows == height and rows[height]:match('^  p projects') and rows[height - 1]:match('^  ─'),
   'tracking footer sits on the bottom row below a separator, like the legacy list')
 
+assert(vim.fn.strdisplaywidth(rows[height]) <= vim.fn.strdisplaywidth(rows[height - 1])
+  and not rows[height]:find('M to group'), 'tracking footer stays in the list pane without M')
+
 local preview = preview_at('Tools')
 assert(preview[2][1] == 'GROUP' and preview[4][1] == 'Nested/' and not preview[5], 'group preview lists direct children')
 select_label('Tools'); key('<CR>')
