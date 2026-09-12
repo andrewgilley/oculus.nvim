@@ -2237,7 +2237,7 @@ local function update_contributor_selection()
   local visible_text = text:gsub("%s+$", "")
 
   if #visible_text > 2 then
-    local hl_group = M.state.moving_item and "OculusMoveTarget"
+    local hl_group = (M.state.moving_item or M.state.tracking_move) and "OculusMoveTarget"
       or "OculusContributorSelected"
 
     vim.api.nvim_buf_set_extmark(
@@ -2345,6 +2345,33 @@ local function render_contributors()
   M.state.line_targets = {}
   M.state.preview_key = nil
   M.state.preview_project = nil
+
+  if M.state.opts.tracking_file then
+    local lines = require("oculus.tracking_ui").render(M.state)
+    local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
+    for index, line in ipairs(lines) do lines[index] = pad_cell(trim_to_width(line, left_width - 1), left_width) end
+    while #lines < vim.api.nvim_win_get_height(M.state.win) - 3 do lines[#lines + 1] = "" end
+    footer(lines, "p projects  u users  f group  m move  M to group  r remove")
+    set_lines(lines)
+    highlight(2, 2, -1, "Title")
+    highlight(4, 2, -1, "Title")
+    local first
+    for line in pairs(M.state.line_targets) do first = math.min(first or line, line) end
+
+    if first then
+      vim.api.nvim_win_set_cursor(M.state.win, {first, 0})
+      local target = M.state.line_targets[first]
+
+      if target.kind == "project" then queue_project_preview(target.project)
+      elseif target.username then queue_preview(target)
+      else render_preview_panel({[2]={"GROUP", "Title"}, [4]={target.name, "Directory"}}) end
+    else render_preview_panel({[2]={"TRACKING", "Title"}}) end
+
+    update_contributor_selection()
+    render_sidebar()
+    return
+  end
+
   local community_view = M.state.community_view or "projects"
   local showing_users = community_view == "users"
 
@@ -2691,6 +2718,10 @@ local function persist_projects()
 end
 
 local function create_project_directory(name)
+  if M.state.opts.tracking_file then
+    return require("oculus.tracking_ui").add(M.state, {name=name, children={}})
+  end
+
   if type(name) ~= "string" then
     return false, "directory name must be a string"
   end
@@ -2801,6 +2832,10 @@ local function remove_project_directory(name)
 end
 
 local function move_project_to_directory(project_or_key, dir_name)
+  if M.state.opts.tracking_file then
+    return require("oculus.tracking_ui").move_named(M.state, project_or_key, dir_name)
+  end
+
   M.state.opts = M.state.opts or {}
   local projects = M.state.opts.projects or {}
   local target_project = nil
@@ -3191,6 +3226,10 @@ local function prompt_create_directory()
 end
 
 local function prompt_move_project_to_directory(project)
+  if M.state.opts.tracking_file then
+    return require("oculus.tracking_ui").handle(M.state, "destination", target_on_cursor())
+  end
+
   project = project or M.state.selected_project
 
   if not project then
@@ -5288,6 +5327,10 @@ local function add_contributor(contributor, target_contributor)
   added.name = added.name or username
   added.description = nil
 
+  if M.state.opts.tracking_file then
+    return require("oculus.tracking_ui").add(M.state, added, "users")
+  end
+
   if has_contributor(M.state.contributors, added) then
     vim.notify(
       ("Oculus: @%s is already in your %s list"):format(
@@ -5372,6 +5415,10 @@ local function add_project(project, target_project)
   local prov = detected_provider or added.provider
   added.provider = prov == "codeberg" and "codeberg" or "github"
   added.name = added.name or repository:match("([^/]+)$")
+
+  if M.state.opts.tracking_file then
+    return require("oculus.tracking_ui").add(M.state, added, "projects")
+  end
 
   if has_project(M.state.opts.projects, added) then
     vim.notify(
@@ -7515,6 +7562,12 @@ local function move_cursor(direction)
         end
       end
 
+      if M.state.opts.tracking_file then
+        vim.api.nvim_win_set_cursor(M.state.win, {selected, 0})
+        vim.api.nvim_exec_autocmds("CursorMoved", {buffer=M.state.buf})
+        return
+      end
+
       local candidate = M.state.line_targets[selected]
 
       if candidate.kind == "project" then
@@ -7858,6 +7911,8 @@ local function toggle_shortcuts()
 end
 
 local function toggle_community_view()
+  M.state.tracking_move = nil
+
   if M.state.view ~= "contributors" then
     return
   end
@@ -7880,6 +7935,20 @@ local function map_keys(buf)
   local nav = navigation.resolve(M.state.opts)
 
   local map = function(lhs, rhs, desc)
+    local original = rhs
+
+    rhs = function()
+      local actions = { ["<CR>"]="enter", ["<Right>"]="right", [nav.right]="right",
+        ["<Left>"]="left", [nav.left]="left", f="group", K="group", D="group", r="remove", m="move", M="destination", ["<Esc>"]="cancel" }
+
+      if actions[lhs] and require("oculus.tracking_ui").handle(M.state, actions[lhs], target_on_cursor()) then
+        update_contributor_selection()
+        return
+      end
+
+      return original()
+    end
+
     vim.keymap.set("n", lhs, rhs, {
       buffer = buf,
       nowait = true,
@@ -8324,7 +8393,7 @@ function M.open(opts)
     restore_cursor()
   end
 
-  M.load_project_descriptions(M.state.opts)
+  if not M.state.opts.tracking_file then M.load_project_descriptions(M.state.opts) end
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
 
   vim.api.nvim_create_autocmd("VimResized", {
@@ -8388,6 +8457,13 @@ function M.open(opts)
 
       local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
       local target = M.state.line_targets[line]
+
+      if target and (target.kind == "tracking_group" or target.kind == "tracking_parent") then
+        M.state.preview_key = nil
+        render_preview_panel({[2]={"GROUP", "Title"}, [4]={target.name, "Directory"}})
+        update_contributor_selection()
+        return
+      end
 
       if type(target) == "table" then
         if target.kind == "project" then
@@ -8523,6 +8599,14 @@ M.start_activity_investigate_spinner = start_activity_investigate_spinner
 M._draw_activity_investigate_spinner = draw_activity_investigate_spinner
 M._investigate_loading_ns = investigate_loading_ns
 M._investigate_current = investigate_current
+
+function M.refresh_tracking()
+  if is_valid_win(M.state.win) then
+    M.state.contributors = display_contributors(M.state.opts.contributors)
+    render_contributors()
+  end
+end
+
 M.create_project_directory = create_project_directory
 M.remove_project_directory = remove_project_directory
 M.move_project_to_directory = move_project_to_directory

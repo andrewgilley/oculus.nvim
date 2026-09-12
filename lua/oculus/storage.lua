@@ -21,6 +21,17 @@ function M.load(path)
 end
 
 function M.save(path, config)
+  if type(config.tracking_file) == 'string' then
+    local function canonical(value)
+      value = vim.fn.fnamemodify(vim.fn.expand(value), ':p')
+      return vim.uv.fs_realpath(value) or value
+    end
+
+    if canonical(path) == canonical(config.tracking_file) then
+      return false, 'state_file and tracking_file must be different files'
+    end
+  end
+
   local directory = vim.fn.fnamemodify(path, ":h")
 
   if
@@ -44,6 +55,17 @@ function M.save(path, config)
     inspect_overviews = config.inspect_overviews or {},
     search_history = config.search_history or {},
   }
+
+  -- Tracking membership belongs only to its external file. Filter/history
+  -- saves must not replace the user's legacy lists (including after errors).
+  if config.tracking_file then
+    local saved = M.load(path) or {}
+
+    for _, key in ipairs({ 'contributors', 'projects', 'project_directories',
+      'project_order', 'removed_contributors', 'removed_projects' }) do
+      payload[key] = saved[key] or {}
+    end
+  end
 
   local ok_encode, encoded = pcall(vim.json.encode, payload)
 

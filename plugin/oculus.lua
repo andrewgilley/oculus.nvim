@@ -16,6 +16,14 @@ vim.api.nvim_create_user_command("OculusToggle", function()
   require("oculus").toggle()
 end, { desc = "Toggle Oculus" })
 
+vim.api.nvim_create_user_command("OculusReloadTracking", function()
+  local ok, err = require("oculus").reload_tracking()
+
+  if not ok and not require("oculus").config.tracking_file then
+    vim.notify(err, vim.log.levels.ERROR)
+  end
+end, { desc = "Reload the Oculus tracking JSON file" })
+
 local function complete_target(arglead)
   local config = require("oculus").config or {}
   local projects = config.projects or {}

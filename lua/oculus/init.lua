@@ -471,7 +471,37 @@ function M.setup(opts)
     end
   end
 
-  M.load_project_descriptions(M.config)
+  if M.config.tracking_file then
+    local ok, err = require("oculus.tracking").load(M.config)
+    if not ok then vim.notify(err, vim.log.levels.ERROR) end
+    local window = require("oculus.window")
+    window.state.opts = M.config
+    window.state.tracking_paths = nil
+    window.state.tracking_move = nil
+  else
+    M.load_project_descriptions(M.config)
+  end
+end
+
+function M.reload_tracking()
+  if not M.config.tracking_file then
+    return nil, "No tracking_file configured"
+  end
+
+  local ok, err = require("oculus.tracking").load(M.config)
+  local window = require("oculus.window")
+
+  if ok then
+    window.state.tracking_paths = nil
+    window.state.tracking_move = nil
+    window.state.request_id = (window.state.request_id or 0) + 1
+    window.state.opts = M.config
+  else
+    vim.notify(err, vim.log.levels.ERROR)
+  end
+
+  window.refresh_tracking()
+  return ok, err
 end
 
 function M.load_project_descriptions(config, callback)

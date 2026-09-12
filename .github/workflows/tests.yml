@@ -51,6 +51,12 @@ jobs:
       - name: Run telemetry tests
         run: nvim --headless -u NONE -l tests/telemetry_spec.lua
 
+      - name: Run tracking file tests
+        run: nvim --headless -u NONE -l tests/tracking_spec.lua
+
+      - name: Run tracking UI tests
+        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
+
       - name: Run window tests
         run: nvim --headless -u NONE -l tests/window_spec.lua
 
