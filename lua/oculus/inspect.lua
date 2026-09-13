@@ -4562,6 +4562,7 @@ end
 
 local function overview_window_config(config, _)
   config = vim.deepcopy(config or {})
+  config.border = "bold"
 
   if config.exact_dimensions then
     config.footer = nil
