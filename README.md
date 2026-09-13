@@ -3,10 +3,7 @@
 </p>
 
 <p align="center">
-  <video width="820" controls>
-    <source src="assets/oculus.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
+  <img src="assets/oculus.gif" alt="oculus.nvim demo" width="820">
 </p>
 
 **See what's happening across the projects and people you follow, and review
