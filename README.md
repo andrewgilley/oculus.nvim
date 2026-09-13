@@ -9,8 +9,9 @@ their changes without leaving Neovim.**
 
 Oculus is a dashboard for GitHub and Codeberg activity. Keep a
 tracked list of repositories and users, browse their pushes, merged pull
-requests, and issues, then inspect any pull request, issue, or commit. Oculus
-checks the change out in your local clone and opens it as real, editable
+requests, and issues, then inspect any pull request, issue, or commit. 
+
+Oculus checks the change out in your local clone and opens it as real, editable
 buffers with change markers, chunk navigation, and an AI-assisted overview.
 
 [![Tests](https://github.com/andrewgilley/oculus.nvim/actions/workflows/tests.yml/badge.svg)](https://github.com/andrewgilley/oculus.nvim/actions/workflows/tests.yml)
