@@ -3065,7 +3065,7 @@ function M._virtual_counter.refresh_session_virtual_counters(group, session)
   file_index = file_index or 1
   file_count = math.max(1, file_count)
   local active = math.min(math.max(1, session.active_chunk or 1), file_chunks)
-  local is_virtual = (group.chunk_view_mode or "virtual") ~= "sidebar"
+  local is_virtual = (group.chunk_view_mode or "sidebar") ~= "sidebar"
 
   if group.kind == "issue" then
     if valid_endpoint(session.issue) then
@@ -4136,7 +4136,7 @@ close_inspection_sidebar = function(group)
 end
 
 open_inspection_sidebar = function(group, target_tab, restore_only)
-  if group.sidebar_displaced_by_foreign or (group.chunk_view_mode or "virtual") ~= "sidebar" then
+  if group.sidebar_displaced_by_foreign or (group.chunk_view_mode or "sidebar") ~= "sidebar" then
     return
   end
 
@@ -4182,7 +4182,7 @@ ensure_inspection_sidebar_on_tab = function(group, tab)
     sidebar_navigating
     or not group.sidebar_visible
     or group.sidebar_displaced_by_foreign
-    or (group.chunk_view_mode or "virtual") ~= "sidebar"
+    or (group.chunk_view_mode or "sidebar") ~= "sidebar"
   then
     return
   end
@@ -5000,7 +5000,7 @@ function M._overview_ui.render_footer(group)
     "NormalFloat:OculusNormal",
   }, ",")
 
-  require("oculus.window").apply_window_highlights(
+  require("oculus.window").apply_overview_highlights(
     footer_win,
     group.overview_highlight_source_win
   )
@@ -5119,7 +5119,7 @@ function M._overview_ui.schedule_highlight_refresh(group)
       return
     end
 
-    require("oculus.window").apply_window_highlights(
+    require("oculus.window").apply_overview_highlights(
       group.overview_win,
       group.overview_highlight_source_win
     )
@@ -5889,13 +5889,9 @@ function M._overview_ui.open_patch_location(group)
         vim.wo[patch_win].statusline = ""
         vim.wo[patch_win].winfixbuf = false
 
-        local oculus_namespace = vim.api.nvim_get_namespaces()
-          .oculus_window_highlights
-
-        if oculus_namespace
-          and vim.api.nvim_get_hl_ns({ winid = patch_win })
-            == oculus_namespace
-        then
+        if require("oculus.window").is_oculus_highlight_namespace(
+          vim.api.nvim_get_hl_ns({ winid = patch_win })
+        ) then
           vim.api.nvim_win_set_hl_ns(
             patch_win,
             code_options.highlight_namespace or 0
@@ -6747,7 +6743,7 @@ show_inspection_overview = function(group)
     "FloatFooter:OculusBorder",
   }, ",")
 
-  require("oculus.window").apply_window_highlights(
+  require("oculus.window").apply_overview_highlights(
     win,
     group.overview_highlight_source_win
   )
@@ -7047,7 +7043,7 @@ show_sidebar_files = function(group)
   group.sidebar_focus_generation =
     (group.sidebar_focus_generation or 0) + 1
 
-  if (group.chunk_view_mode or "virtual") ~= "sidebar" then
+  if (group.chunk_view_mode or "sidebar") ~= "sidebar" then
     close_inspection_sidebar(group)
     M._refresh_virtual_counters(group)
   end
@@ -7309,7 +7305,7 @@ local function prepare_inspection_sidebar(group)
     end
   end
 
-  group.chunk_view_mode = group.chunk_view_mode or "virtual"
+  group.chunk_view_mode = group.chunk_view_mode or "sidebar"
   group.sidebar_lines = lines
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
@@ -7322,7 +7318,7 @@ local function prepare_inspection_sidebar(group)
 end
 
 local function activate_inspection_sidebar(group, open_immediately)
-  group.chunk_view_mode = group.chunk_view_mode or "virtual"
+  group.chunk_view_mode = group.chunk_view_mode or "sidebar"
   map_inspection_sidebar_toggle(group)
   sidebar_groups[#sidebar_groups + 1] = group
 
@@ -8224,7 +8220,7 @@ vim.api.nvim_create_autocmd("TabEnter", {
 
       refresh_sidebar(group, tab)
 
-      if (group.chunk_view_mode or "virtual") ~= "sidebar" then
+      if (group.chunk_view_mode or "sidebar") ~= "sidebar" then
         M._refresh_virtual_counters(group)
       end
     end
@@ -8769,7 +8765,7 @@ local function open_tabs(
       previous_chunk = opts.inspect_previous_chunk,
       chunk_view_mode = opts.chunk_view_mode
         or opts.inspect_chunk_view_mode
-        or "virtual",
+        or "sidebar",
       overview = inspection_overview(info),
       browser_config = { browser_command = opts.browser_command },
       persist_inspect_overviews = opts.persist_inspect_overviews ~= false,
@@ -9596,7 +9592,7 @@ local function open_issue_inspection(
       previous_chunk = opts.inspect_previous_chunk,
       chunk_view_mode = opts.chunk_view_mode
         or opts.inspect_chunk_view_mode
-        or "virtual",
+        or "sidebar",
       overview = inspection_overview(resolved),
       browser_config = { browser_command = opts.browser_command },
       persist_inspect_overviews = opts.persist_inspect_overviews ~= false,

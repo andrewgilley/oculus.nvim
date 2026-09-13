@@ -408,6 +408,78 @@ function M.refresh_window_highlights(source_win)
   end)
 end
 
+-- The inspect overview gets its own namespace, derived from the code
+-- window's colorscheme, so opening it never rewrites the shared Oculus
+-- namespace or global groups that the inspect tab windows rely on.
+local function overview_highlight_namespace(source_ns)
+  return vim.api.nvim_create_namespace(
+    "oculus_overview_highlights_" .. tostring(source_ns or 0)
+  )
+end
+
+function M.is_oculus_highlight_namespace(namespace)
+  if not namespace or namespace <= 0 then
+    return false
+  end
+
+  for name, id in pairs(vim.api.nvim_get_namespaces()) do
+    if id == namespace then
+      return name == "oculus_window_highlights"
+        or name:find("^oculus_overview_highlights_") ~= nil
+    end
+  end
+
+  return false
+end
+
+function M.apply_overview_highlights(win, source_win)
+  if not is_valid_win(win) then
+    return
+  end
+
+  local source_ns = is_valid_win(source_win)
+      and vim.api.nvim_get_hl_ns({ winid = source_win })
+    or 0
+
+  if M.is_oculus_highlight_namespace(source_ns) then
+    source_ns = 0
+  end
+
+  local namespace = overview_highlight_namespace(source_ns)
+
+  if source_ns > 0 then
+    for name, definition in pairs(vim.api.nvim_get_hl(source_ns, {})) do
+      pcall(vim.api.nvim_set_hl, namespace, name, definition)
+    end
+  end
+
+  local normal = source_highlight(source_win, "Normal")
+  local border = vim.deepcopy(source_highlight(source_win, "FloatBorder"))
+
+  if M.state.custom_border then
+    border.fg = M.state.custom_border.fg
+
+    if M.state.custom_border.bold ~= nil then
+      border.bold = M.state.custom_border.bold
+    end
+  end
+
+  border.fg = border.fg or normal.fg or 0xffffff
+  border.bg = normal.bg
+  border.ctermbg = normal.ctermbg
+
+  for _, group in ipairs({ "Normal", "NormalFloat", "OculusNormal" }) do
+    vim.api.nvim_set_hl(namespace, group, normal)
+  end
+
+  for _, group in ipairs({ "FloatBorder", "OculusBorder" }) do
+    vim.api.nvim_set_hl(namespace, group, border)
+  end
+
+  vim.api.nvim_win_set_hl_ns(win, namespace)
+  return namespace
+end
+
 local highlight_autocmd_group = vim.api.nvim_create_augroup(
   "OculusWindowHighlights",
   { clear = true }

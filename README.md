@@ -246,8 +246,9 @@ change markers, and you can switch it between the parent and the change:
 | `inspect_sidebar_toggle`                   | `<leader>oi` | Toggle the changed-files sidebar    |
 | `inspect_overview_toggle`                  | `<leader>op` | Toggle the [overview](#inspect-overview) (`<C-t>` also works) |
 
-Changed chunks can be counted inline with virtual text (the default) or listed
-in a sidebar. Toggle between these modes in the overview with `v` and `s`.
+Changed chunks can be listed in a sidebar (the default) or counted inline with
+virtual text. Toggle between these modes in the overview with `v` and `s`, or
+set `inspect_chunk_view_mode = "virtual"` to start in virtual mode.
 
 ### Inspect overview
 

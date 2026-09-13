@@ -1982,8 +1982,19 @@ local retained_window_highlight_ns = assert(
   vim.api.nvim_get_namespaces().oculus_window_highlights
 )
 
-assert(vim.api.nvim_get_hl_ns({ winid = overview_win })
-  == retained_window_highlight_ns)
+local function is_overview_highlight_ns(namespace)
+  for name, id in pairs(vim.api.nvim_get_namespaces()) do
+    if id == namespace then
+      return name:find("^oculus_overview_highlights_") ~= nil
+    end
+  end
+
+  return false
+end
+
+assert(is_overview_highlight_ns(
+  vim.api.nvim_get_hl_ns({ winid = overview_win })
+))
 
 assert(vim.b[overview_buf].oculus_inspect_overview == true)
 assert(vim.api.nvim_win_get_config(overview_win).relative == "editor")
@@ -2015,8 +2026,9 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
     overview_footer_buf = candidate
     assert(not vim.api.nvim_win_get_config(win).focusable)
 
-    assert(vim.api.nvim_get_hl_ns({ winid = win })
-      == retained_window_highlight_ns)
+    assert(is_overview_highlight_ns(
+      vim.api.nvim_get_hl_ns({ winid = win })
+    ))
   end
 end
 
@@ -2030,7 +2042,7 @@ assert(overview_footer_lines[1] == "  " .. string.rep(
   math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
 ))
 
-assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   s sidebar   e exit", 1, true))
+assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   v virtual   e exit", 1, true))
 assert(overview_footer_lines[2]:sub(-#("c close")) == "c close")
 assert(issue_overview:find("  Title\n", 1, true))
 
@@ -2752,6 +2764,7 @@ do
 
   local test_grp = {
     test_session,
+    chunk_view_mode = "virtual",
   }
 
   inspect._refresh_virtual_counters(test_grp, test_session)
@@ -3091,16 +3104,19 @@ assert(reopen_issue_overview.desc == "Toggle Oculus Inspect overview")
 reopen_issue_overview.callback()
 local restored_overview_win = vim.api.nvim_get_current_win()
 
-assert(vim.api.nvim_get_hl_ns({ winid = restored_overview_win })
-  == retained_window_highlight_ns)
+local restored_overview_ns = vim.api.nvim_get_hl_ns({
+  winid = restored_overview_win,
+})
+
+assert(is_overview_highlight_ns(restored_overview_ns))
 
 local restored_overview_normal = vim.api.nvim_get_hl(
-  retained_window_highlight_ns,
+  restored_overview_ns,
   { name = "OculusNormal", link = false }
 )
 
 local restored_overview_border = vim.api.nvim_get_hl(
-  retained_window_highlight_ns,
+  restored_overview_ns,
   { name = "OculusBorder", link = false }
 )
 
@@ -3259,6 +3275,7 @@ assert(not vim.wo[patch_win].winhighlight:find(
 assert(vim.wo[patch_win].statusline == vim.o.statusline)
 local patch_highlight_ns = vim.api.nvim_get_hl_ns({ winid = patch_win })
 assert(patch_highlight_ns ~= retained_window_highlight_ns)
+assert(not is_overview_highlight_ns(patch_highlight_ns))
 local selected_patch_cursor = vim.api.nvim_win_get_cursor(patch_win)
 assert(selected_patch_cursor[1] == 25)
 
@@ -3387,6 +3404,22 @@ local patch_overview_mapping = vim.fn.maparg(
 )
 
 assert(patch_overview_mapping.desc == "Toggle Oculus Inspect overview")
+
+local global_normal_before_overview = vim.api.nvim_get_hl(0, {
+  name = "OculusNormal",
+  link = false,
+})
+
+local global_border_before_overview = vim.api.nvim_get_hl(0, {
+  name = "OculusBorder",
+  link = false,
+})
+
+local shared_normal_before_overview = vim.api.nvim_get_hl(
+  retained_window_highlight_ns,
+  { name = "OculusNormal", link = false }
+)
+
 patch_overview_mapping.callback()
 local patch_overview_win = vim.api.nvim_get_current_win()
 local patch_overview_buf = vim.api.nvim_get_current_buf()
@@ -3394,7 +3427,13 @@ assert(vim.b[patch_overview_buf].oculus_inspect_overview == true)
 assert(vim.api.nvim_win_get_config(patch_overview_win).relative == "editor")
 assert(patch_source_bg ~= issue_source_bg)
 
-assert(vim.api.nvim_get_hl(retained_window_highlight_ns, {
+local patch_overview_ns = vim.api.nvim_get_hl_ns({
+  winid = patch_overview_win,
+})
+
+assert(is_overview_highlight_ns(patch_overview_ns))
+
+assert(vim.api.nvim_get_hl(patch_overview_ns, {
   name = "OculusNormal",
   link = false,
 }).bg == patch_source_bg)
@@ -3416,15 +3455,22 @@ vim.api.nvim_win_set_hl_ns(patch_overview_win, overview_override_ns)
 assert(vim.api.nvim_get_hl_ns({ winid = patch_overview_win })
   == overview_override_ns)
 
-assert(vim.api.nvim_get_hl(0, {
+-- Opening the overview must not recolor the inspect tabs, which share the
+-- global and main-window Oculus highlight groups.
+assert(vim.deep_equal(vim.api.nvim_get_hl(0, {
   name = "OculusNormal",
   link = false,
-}).bg == patch_source_bg)
+}), global_normal_before_overview))
 
-assert(vim.api.nvim_get_hl(0, {
+assert(vim.deep_equal(vim.api.nvim_get_hl(0, {
   name = "OculusBorder",
   link = false,
-}).bg == patch_source_bg)
+}), global_border_before_overview))
+
+assert(vim.deep_equal(vim.api.nvim_get_hl(
+  retained_window_highlight_ns,
+  { name = "OculusNormal", link = false }
+), shared_normal_before_overview))
 
 vim.api.nvim_exec_autocmds("WinEnter", {
   buffer = patch_overview_buf,
@@ -3432,10 +3478,10 @@ vim.api.nvim_exec_autocmds("WinEnter", {
 
 assert(vim.wait(1000, function()
   return vim.api.nvim_get_hl_ns({ winid = patch_overview_win })
-    == retained_window_highlight_ns
+    == patch_overview_ns
 end), "overview highlight namespace was not restored")
 
-assert(vim.api.nvim_get_hl(retained_window_highlight_ns, {
+assert(vim.api.nvim_get_hl(patch_overview_ns, {
   name = "OculusNormal",
   link = false,
 }).bg == patch_source_bg)
