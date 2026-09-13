@@ -291,11 +291,23 @@ local function sync_window_highlights(source_win)
   vim.api.nvim_set_hl(0, "OculusNormal", current_normal)
   local custom_oculus = source_highlight(source_win, "OculusBorder")
 
-  if custom_oculus and next(custom_oculus) and custom_oculus.fg and custom_oculus.fg ~= M.state.synced_border_fg then
-    current_border.fg = custom_oculus.fg
+  -- OculusBorder is rewritten below, so only treat it as a new custom
+  -- definition when it differs from what the last sync wrote; otherwise
+  -- keep the remembered one so repeated syncs don't drop it.
+  if not custom_oculus or not custom_oculus.fg then
+    M.state.custom_border = nil
+  elseif custom_oculus.fg ~= M.state.synced_border_fg then
+    M.state.custom_border = {
+      fg = custom_oculus.fg,
+      bold = custom_oculus.bold,
+    }
+  end
 
-    if custom_oculus.bold ~= nil then
-      current_border.bold = custom_oculus.bold
+  if M.state.custom_border then
+    current_border.fg = M.state.custom_border.fg
+
+    if M.state.custom_border.bold ~= nil then
+      current_border.bold = M.state.custom_border.bold
     end
   end
 
@@ -550,7 +562,7 @@ local function make_win_config(opts)
     row = row,
     col = col,
     style = "minimal",
-    border = opts.border or "rounded",
+    border = opts.main_border or opts.border or "rounded",
   }
 end
 
