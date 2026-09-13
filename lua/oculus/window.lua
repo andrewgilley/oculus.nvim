@@ -80,6 +80,7 @@ local load_project_activity
 local load_project_issues
 local target_on_cursor
 local render_directory
+local persist_projects
 
 local default_project_activity_types = {
   "push",
@@ -2726,7 +2727,7 @@ local function persist_contributors()
   end
 end
 
-local function persist_projects()
+function persist_projects()
   if not M.state.opts.persist_projects then
     return
   end

@@ -37,6 +37,7 @@ local ensure_inspection_sidebar_on_tab
 local restore_inspection_sidebar_for_buffer
 local show_inspection_overview
 local show_sidebar_files
+local apply_inspection_filetype
 
 local function ensure_treesitter_safeguards()
   if
@@ -1947,7 +1948,7 @@ function M._synchronize_inspection_highlighting(parent_buf, change_buf)
   return "syntax"
 end
 
-local function apply_inspection_filetype(buf, force_refresh)
+function apply_inspection_filetype(buf, force_refresh)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
@@ -6984,6 +6985,7 @@ show_inspection_overview = function(group)
   end
 
   vim.api.nvim_set_current_win(win)
+  local lifecycle = group.inspection_lifecycle
 
   if lifecycle and type(lifecycle.on_overview_opened) == "function" then
     lifecycle.on_overview_opened(group)
