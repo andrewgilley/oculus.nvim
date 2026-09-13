@@ -7,9 +7,9 @@ https://github.com/user-attachments/assets/18e4cd77-701a-467d-ae3f-c3a7d82b4f19
 **See what's happening across the projects and people you follow, and review
 their changes without leaving Neovim.**
 
-Oculus is a floating dashboard for GitHub and Codeberg activity. Keep a
+Oculus is a dashboard for GitHub and Codeberg activity. Keep a
 tracked list of repositories and users, browse their pushes, merged pull
-requests, and issues, then _inspect_ any pull request, issue, or commit. Oculus
+requests, and issues, then inspect any pull request, issue, or commit. Oculus
 checks the change out in your local clone and opens it as real, editable
 buffers with change markers, chunk navigation, and an AI-assisted overview.
 
@@ -38,23 +38,30 @@ buffers with change markers, chunk navigation, and an AI-assisted overview.
 
 - **One dashboard for two forges.** Track GitHub and Codeberg repositories and
   users side by side in a single floating window.
+
 - **Nested groups.** Organize projects and users into folders, reorder them, and
   move them between groups with a few keystrokes.
+
 - **Filterable activity feeds.** Per-project feeds of pushes, merged pull
   requests, and assigned issues, and per-user feeds of any public event type.
   Filters persist between sessions.
+
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
   or a commit SHA. Oculus finds (or offers to clone) the matching local
   repository and opens the change in a dedicated tab.
+
 - **Real buffers, not diff views.** Changed files open as normal buffers. Switch
   between the old and new version, jump between changed chunks, and browse
   changed files in a sidebar or an [oil.nvim](https://github.com/stevearc/oil.nvim)
   view.
+
 - **AI-assisted overview.** Generate a description of a change, or ask for
   likely patch locations for an issue, then spin up a `git worktree` to start
   the fix.
+
 - **Plain JSON source of truth.** You can keep your tracked lists in a
   hand-editable file that is written back atomically.
+
 - **Optional OpenTelemetry tracing** over OTLP/HTTP.
 
 ## Requirements
