@@ -3420,10 +3420,37 @@ local shared_normal_before_overview = vim.api.nvim_get_hl(
   { name = "OculusNormal", link = false }
 )
 
+-- Mimic reliquary.nvim, which swaps the global colorscheme from these
+-- events whenever it is enabled.
+local original_overview_reliquary = package.loaded.reliquary
+local reliquary_overview_applies = {}
+local reliquary_stub = { config = { enabled = true } }
+package.loaded.reliquary = reliquary_stub
+
+local reliquary_stub_autocmd = vim.api.nvim_create_autocmd(
+  { "FileType", "BufEnter", "BufWinEnter" },
+  {
+    callback = function(args)
+      if reliquary_stub.config.enabled then
+        reliquary_overview_applies[#reliquary_overview_applies + 1] = args.buf
+      end
+    end,
+  }
+)
+
 patch_overview_mapping.callback()
 local patch_overview_win = vim.api.nvim_get_current_win()
 local patch_overview_buf = vim.api.nvim_get_current_buf()
 assert(vim.b[patch_overview_buf].oculus_inspect_overview == true)
+
+assert(
+  #reliquary_overview_applies == 0,
+  "opening the overview let reliquary swap the colorscheme"
+)
+
+assert(reliquary_stub.config.enabled == false)
+vim.api.nvim_del_autocmd(reliquary_stub_autocmd)
+package.loaded.reliquary = original_overview_reliquary
 assert(vim.api.nvim_win_get_config(patch_overview_win).relative == "editor")
 assert(patch_source_bg ~= issue_source_bg)
 

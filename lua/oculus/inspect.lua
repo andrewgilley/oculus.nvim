@@ -4286,6 +4286,57 @@ local function restore_overview_cursor(group)
   vim.o.guicursor = guicursor or ""
 end
 
+-- reliquary.nvim swaps the global colorscheme on BufEnter/FileType, and the
+-- overview's scratch buffers resolve to its fallback scheme. Pause it while
+-- the overview is built or focused so the code's colorscheme stays active.
+local function reliquary_module()
+  local reliquary = package.loaded.reliquary
+
+  if type(reliquary) == "table" and type(reliquary.config) == "table" then
+    return reliquary
+  end
+end
+
+local function suspend_reliquary(group)
+  local reliquary = reliquary_module()
+
+  if not reliquary or group.reliquary_suspended then
+    return
+  end
+
+  group.reliquary_suspended = { enabled = reliquary.config.enabled }
+  reliquary.config.enabled = false
+end
+
+local function resume_reliquary(group)
+  local saved = group.reliquary_suspended
+  local reliquary = reliquary_module()
+  group.reliquary_suspended = nil
+
+  if saved and reliquary then
+    reliquary.config.enabled = saved.enabled
+  end
+end
+
+local function without_reliquary(callback)
+  local reliquary = reliquary_module()
+
+  if not reliquary then
+    return callback()
+  end
+
+  local enabled = reliquary.config.enabled
+  reliquary.config.enabled = false
+  local ok, result = pcall(callback)
+  reliquary.config.enabled = enabled
+
+  if not ok then
+    error(result, 0)
+  end
+
+  return result
+end
+
 local function close_overview_window(group)
   local win = group.overview_win
   local buf = group.overview_buf
@@ -4321,6 +4372,8 @@ local function close_overview_window(group)
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_close(win, true)
   end
+
+  resume_reliquary(group)
 
   if buf and vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_delete(buf, { force = true })
@@ -4860,7 +4913,11 @@ function M._overview_ui.render_footer(group)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = "oculus-inspect-overview-footer"
+
+    without_reliquary(function()
+      vim.bo[buf].filetype = "oculus-inspect-overview-footer"
+    end)
+
     vim.b[buf].oculus_inspect_overview_footer = true
   end
 
@@ -4985,7 +5042,10 @@ function M._overview_ui.render_footer(group)
   if footer_win and vim.api.nvim_win_is_valid(footer_win) then
     vim.api.nvim_win_set_config(footer_win, config)
   else
-    footer_win = vim.api.nvim_open_win(buf, false, config)
+    footer_win = without_reliquary(function()
+      return vim.api.nvim_open_win(buf, false, config)
+    end)
+
     group.overview_footer_win = footer_win
   end
 
@@ -6669,6 +6729,7 @@ show_inspection_overview = function(group)
   group.overview_content_width =
     math.max(12, (config.width or 28) - 4)
 
+  suspend_reliquary(group)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -6714,6 +6775,7 @@ show_inspection_overview = function(group)
       if overview_window_is_open(group)
         and vim.api.nvim_get_current_win() == group.overview_win
       then
+        suspend_reliquary(group)
         hide_overview_cursor(group)
         M._overview_ui.schedule_highlight_refresh(group)
       end
@@ -6725,6 +6787,7 @@ show_inspection_overview = function(group)
     buffer = buf,
     callback = function()
       restore_overview_cursor(group)
+      resume_reliquary(group)
     end,
   })
 
@@ -7344,6 +7407,7 @@ function M._overview_ui.prepare_patch_sidebar(source_group, opened)
 
   group.kind = "issue"
   group.discarded = nil
+  group.reliquary_suspended = nil
   group.overview_win = nil
   group.overview_buf = nil
   group.overview_footer_win = nil
