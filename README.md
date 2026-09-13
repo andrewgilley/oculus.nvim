@@ -2,9 +2,7 @@
   <img src="assets/oculus-banner.png" alt="oculus.nvim" width="860">
 </p>
 
-<p align="center">
-  <img src="assets/oculus.gif" alt="oculus.nvim demo" width="820">
-</p>
+https://github.com/user-attachments/assets/18e4cd77-701a-467d-ae3f-c3a7d82b4f19
 
 **See what's happening across the projects and people you follow, and review
 their changes without leaving Neovim.**
