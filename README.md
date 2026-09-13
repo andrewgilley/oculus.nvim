@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/oculus-banner.png" alt="oculus.nvim" width="860">
-</p>
+## oculus.nvim
 
 https://github.com/user-attachments/assets/18e4cd77-701a-467d-ae3f-c3a7d82b4f19
 
