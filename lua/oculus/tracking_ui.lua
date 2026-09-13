@@ -52,14 +52,7 @@ function M.render(state)
   if not nodes then state.tracking_paths[kind] = {}; path = {}; nodes = tree and tree[kind] or {} end
   state.view = 'contributors'
   state.line_targets = {}
-  local labels, current = {}, tree and tree[kind]
-
-  for _, index in ipairs(path) do
-    labels[#labels + 1] = current[index].name
-    current = current[index].children
-  end
-
-  local lines = {'', '  ACTIVITY', '', '  ' .. kind:upper() .. (#labels > 0 and ' / ' .. table.concat(labels, ' / ') or '')}
+  local lines = {'', '  ACTIVITY', '', '  ' .. kind:upper()}
   if state.opts._tracking and state.opts._tracking.error then lines[#lines + 1] = '  Tracking error: :OculusReloadTracking' end
 
   for index, node in ipairs(nodes) do
