@@ -2197,6 +2197,13 @@ local function queue_project_preview(project)
 
   M.state.preview_key = key
   M.state.preview_project = project
+  local cache = M.state.opts.project_descriptions or {}
+  M.state.opts.project_descriptions = cache
+
+  if not project.description or project.description == "" then
+    project.description = cache[key]
+  end
+
   local window_width = vim.api.nvim_win_get_width(M.state.win)
   local left_width = preview_left_width(window_width)
   local preview_width = math.max(15, window_width - left_width - 5)
@@ -2211,6 +2218,7 @@ local function queue_project_preview(project)
         and is_valid_win(M.state.win)
       then
         project.description = desc
+        cache[key] = desc
         persist_projects()
         render_preview_panel(project_preview_items(project, preview_width))
       end

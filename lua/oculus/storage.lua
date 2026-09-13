@@ -67,6 +67,26 @@ function M.save(path, config)
     end
   end
 
+  -- Descriptions are cached apart from membership so tracking-mode projects
+  -- keep them across sessions instead of refetching from the forge.
+  local descriptions = vim.deepcopy(config.project_descriptions or {})
+
+  for _, project in ipairs(config.projects or {}) do
+    if
+      type(project) == "table"
+      and type(project.repository) == "string"
+      and type(project.description) == "string"
+      and project.description ~= ""
+    then
+      local key = (project.provider == "codeberg" and "codeberg" or "github")
+        .. ":"
+        .. project.repository:lower()
+
+      descriptions[key] = project.description
+    end
+  end
+
+  payload.project_descriptions = descriptions
   local ok_encode, encoded = pcall(vim.json.encode, payload)
 
   if not ok_encode then

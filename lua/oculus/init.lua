@@ -38,6 +38,7 @@ local defaults = {
   project_directories = {},
   project_order = {},
   projects = {},
+  project_descriptions = {},
   persist_filters = true,
   persist_contributors = true,
   persist_projects = true,
@@ -365,6 +366,12 @@ function M.setup(opts)
         and type(saved.inspect_overviews) == "table"
       then
         M.config.inspect_overviews = vim.deepcopy(saved.inspect_overviews)
+      end
+
+      if type(saved.project_descriptions) == "table" then
+        M.config.project_descriptions = vim.deepcopy(
+          saved.project_descriptions
+        )
       end
 
       if type(saved.search_history) == "table" then

@@ -86,6 +86,14 @@ function M.apply(config)
   flatten(tree.projects, config.projects)
   flatten(tree.users, config.contributors)
   config.project_directories, config.project_order = {}, {}
+  local descriptions = config.project_descriptions or {}
+
+  for _, project in ipairs(config.projects) do
+    if not project.description or project.description == '' then
+      local key = (project.provider == 'codeberg' and 'codeberg' or 'github') .. ':' .. project.repository:lower()
+      project.description = descriptions[key]
+    end
+  end
 end
 
 function M.load(config)

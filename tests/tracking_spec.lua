@@ -3,7 +3,6 @@ local oculus = require('oculus')
 local dir = vim.fn.tempname()
 vim.fn.mkdir(dir, 'p')
 local path = dir .. '/tracking.json'
-
 assert(#oculus.config.projects == 0, 'no bundled projects before setup')
 assert(#oculus.config.contributors == 0, 'no bundled users before setup')
 oculus.setup({state_file=dir..'/fresh-state.json'})
@@ -15,6 +14,7 @@ vim.fn.writefile({vim.json.encode({
   projects={{repository='manual/repo',provider='github'}},
   contributors={{username='manual-user',provider='github'}},
 })}, dir..'/saved-state.json')
+
 oculus.load_project_descriptions = function() end
 oculus.setup({state_file=dir..'/saved-state.json'})
 assert(#oculus.config.projects == 1 and oculus.config.projects[1].repository == 'manual/repo')
@@ -99,5 +99,16 @@ for _, username in ipairs({'.','..'}) do
   assert(not tracking.validate({version=1,projects={},users={{username=username,provider='github'}}}), 'dot usernames rejected')
 end
 
+-- Fetched descriptions persist in state_file, not the tracking tree.
+write({version=1,projects={{repository='Desc/Repo',provider='github'}},users={}})
+local desc_state = dir..'/desc-state.json'
+vim.fn.writefile({vim.json.encode({project_descriptions={['github:desc/repo']='Cached text'}})}, desc_state)
+oculus.setup({tracking_file=path,state_file=desc_state})
+assert(oculus.config.projects[1].description == 'Cached text', 'cached description applied to tracked project')
+oculus.config.project_descriptions['codeberg:x/y'] = 'Fetched later'
+assert(storage.save(desc_state, oculus.config))
+local saved_descriptions = storage.load(desc_state).project_descriptions
+assert(saved_descriptions['github:desc/repo'] == 'Cached text' and saved_descriptions['codeberg:x/y'] == 'Fetched later', 'descriptions saved in tracking mode')
+assert(not vim.json.decode(table.concat(vim.fn.readfile(path),'\n')).projects[1].description, 'tracking file stays membership-only')
 vim.fn.delete(dir, 'rf')
 print('tracking_spec: passed')
