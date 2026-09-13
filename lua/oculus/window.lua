@@ -364,6 +364,14 @@ local function sync_window_highlights(source_win)
 
   vim.api.nvim_set_hl(0, "OculusDirectory", { link = "Directory", default = true })
 
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "OculusSectionTitle",
+    { link = "Keyword", default = true }
+  )
+
+  vim.api.nvim_set_hl(0, "OculusSectionTitle", { link = "Keyword", default = true })
+
   vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityQueued", {
     fg = "#fbd38d",
     bold = true,
@@ -2618,11 +2626,11 @@ local function render_contributors()
   highlight(3, 2, -1, "Comment")
 
   if project_heading_line then
-    highlight(project_heading_line, 2, -1, "Title")
+    highlight(project_heading_line, 2, -1, "OculusSectionTitle")
   end
 
   if user_heading_line then
-    highlight(user_heading_line, 2, -1, "Title")
+    highlight(user_heading_line, 2, -1, "OculusSectionTitle")
   end
 
   for line, _ in pairs(M.state.line_targets) do
@@ -3234,7 +3242,7 @@ render_directory = function(dir_name)
   vim.wo[M.state.win].cursorline = false
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "OculusDirectory")
-  highlight(5, 2, -1, "Title")
+  highlight(5, 2, -1, "OculusSectionTitle")
 
   for line, target in pairs(M.state.line_targets) do
     if target.kind == "project" then
@@ -8143,6 +8151,11 @@ function M.open(opts)
 
   vim.api.nvim_set_hl(0, "OculusDirectory", {
     link = "Directory",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "OculusSectionTitle", {
+    link = "Keyword",
     default = true,
   })
 
