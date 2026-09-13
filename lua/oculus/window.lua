@@ -643,7 +643,7 @@ local function make_win_config(opts)
     row = row,
     col = col,
     style = "minimal",
-    border = opts.main_border or "bold",
+    border = opts.main_border or opts.border or "rounded",
   }
 end
 
