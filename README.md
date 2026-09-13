@@ -1,5 +1,12 @@
 <p align="center">
-  <img src="assets/oculus-banner.png" alt="oculus.nvim" width="820">
+  <img src="assets/oculus-banner.png" alt="oculus.nvim" width="860">
+</p>
+
+<p align="center">
+  <video width="820" controls>
+    <source src="assets/oculus.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
 </p>
 
 **See what's happening across the projects and people you follow, and review
