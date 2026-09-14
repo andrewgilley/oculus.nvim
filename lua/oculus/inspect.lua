@@ -2070,7 +2070,12 @@ function apply_inspection_filetype(buf, force_refresh)
     and type(reliquary) == "table"
     and type(reliquary.apply) == "function"
   then
+    -- reliquary ignores non-file buffers, but inspection buffers show real
+    -- source code and should get that code's colorscheme.
+    local buftype = vim.bo[buf].buftype
+    vim.bo[buf].buftype = ""
     pcall(reliquary.apply, buf)
+    vim.bo[buf].buftype = buftype
   end
 
   local window_ok, window = pcall(require, "oculus.window")
@@ -8630,8 +8635,15 @@ local function load_tab(
     pcall(vim.cmd, "tcd " .. vim.fn.fnameescape(working_directory))
   end
 
-  vim.cmd("enew")
-  local buf = vim.api.nvim_get_current_buf()
+  -- Until the filetype is known the buffer resolves to reliquary's empty
+  -- scheme; apply_inspection_filetype picks the right one below.
+  local buf = without_reliquary(function()
+    vim.cmd("enew")
+    local new_buf = vim.api.nvim_get_current_buf()
+    vim.bo[new_buf].buftype = "nofile"
+    return new_buf
+  end)
+
   local initial_undolevels = vim.bo[buf].undolevels
   vim.bo[buf].undolevels = -1
 
@@ -8640,7 +8652,6 @@ local function load_tab(
     or inspection.parent_lines
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines or { "" })
-  vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = true
@@ -8749,7 +8760,10 @@ local function finish_inspection_buffer_initialization(endpoint)
 end
 
 local function make_inspection_tab()
-  vim.cmd("tabnew")
+  -- The empty tab buffer would otherwise switch reliquary to its empty scheme.
+  without_reliquary(function()
+    vim.cmd("tabnew")
+  end)
 
   return {
     tab = vim.api.nvim_get_current_tabpage(),
