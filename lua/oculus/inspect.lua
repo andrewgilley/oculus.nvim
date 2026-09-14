@@ -2069,12 +2069,26 @@ function apply_inspection_filetype(buf, force_refresh)
   if reliquary_ok
     and type(reliquary) == "table"
     and type(reliquary.apply) == "function"
+    and type(reliquary.config) == "table"
   then
-    -- reliquary ignores non-file buffers, but inspection buffers show real
-    -- source code and should get that code's colorscheme.
+    -- reliquary ignores non-file buffers, and the overview suspends it while
+    -- open, but inspection buffers show real source code and should get that
+    -- code's colorscheme.
+    local enabled = reliquary.config.enabled
+    local intended = enabled
+
+    for _, group in ipairs(sidebar_groups or {}) do
+      if group.reliquary_suspended then
+        intended = group.reliquary_suspended.enabled
+        break
+      end
+    end
+
     local buftype = vim.bo[buf].buftype
     vim.bo[buf].buftype = ""
+    reliquary.config.enabled = intended
     pcall(reliquary.apply, buf)
+    reliquary.config.enabled = enabled
     vim.bo[buf].buftype = buftype
   end
 
