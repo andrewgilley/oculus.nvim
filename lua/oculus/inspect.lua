@@ -500,6 +500,29 @@ function M._refresh_inspection_treesitter_context_highlights()
   render._oculus_refresh_inspection_highlights = true
 end
 
+local function set_inspection_context_highlights()
+  -- Context is rendered in a separate floating window. Linking its surface to
+  -- Normal prevents colorschemes with a panel-style TreesitterContext
+  -- background from drawing an apparent divider above inspected code.
+  vim.api.nvim_set_hl(0, "TreesitterContext", { link = "Normal" })
+  -- nvim-treesitter-context applies this group as a high-priority line
+  -- highlight to its final visible row. Keep it background-only: linking it
+  -- to Normal supplies a foreground and masks that row's token highlights.
+  vim.api.nvim_set_hl(0, "TreesitterContextBottom", { bg = "NONE" })
+
+  vim.api.nvim_set_hl(0, "TreesitterContextLineNumber", {
+    link = "Normal",
+  })
+
+  vim.api.nvim_set_hl(0, "TreesitterContextLineNumberBottom", {
+    link = "TreesitterContextLineNumber",
+  })
+
+  vim.api.nvim_set_hl(0, "TreesitterContextSeparator", {
+    link = "TreesitterContext",
+  })
+end
+
 function M._enable_inspection_treesitter_context(opts)
   if opts and opts.inspect_treesitter_context == false then
     return false
@@ -556,29 +579,28 @@ function M._enable_inspection_treesitter_context(opts)
     end
   end
 
-  -- Context is rendered in a separate floating window. Linking its surface to
-  -- Normal prevents colorschemes with a panel-style TreesitterContext
-  -- background from drawing an apparent divider above inspected code.
-  vim.api.nvim_set_hl(0, "TreesitterContext", { link = "Normal" })
-  -- nvim-treesitter-context applies this group as a high-priority line
-  -- highlight to its final visible row. Keep it background-only: linking it
-  -- to Normal supplies a foreground and masks that row's token highlights.
-  vim.api.nvim_set_hl(0, "TreesitterContextBottom", { bg = "NONE" })
-
-  vim.api.nvim_set_hl(0, "TreesitterContextLineNumber", {
-    link = "Normal",
-  })
-
-  vim.api.nvim_set_hl(0, "TreesitterContextLineNumberBottom", {
-    link = "TreesitterContextLineNumber",
-  })
-
-  vim.api.nvim_set_hl(0, "TreesitterContextSeparator", {
-    link = "TreesitterContext",
-  })
-
+  set_inspection_context_highlights()
   return true
 end
+
+-- User configs commonly restore an underlined TreesitterContextBottom from a
+-- scheduled ColorScheme handler, which would redraw the divider whenever the
+-- inspected code's colorscheme loads. Reapply after those handlers run.
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = vim.api.nvim_create_augroup(
+    "OculusInspectTreesitterContext",
+    { clear = true }
+  ),
+  callback = function()
+    vim.schedule(function()
+      vim.schedule(function()
+        if #sidebar_groups > 0 then
+          set_inspection_context_highlights()
+        end
+      end)
+    end)
+  end,
+})
 
 local git = require("oculus.inspect.git")
 local patch = require("oculus.inspect.patch")
