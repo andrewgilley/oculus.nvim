@@ -2418,13 +2418,13 @@ normalize_inspection_view = function(win)
     local line_count = vim.api.nvim_buf_line_count(buf)
     cursor_line = math.min(math.max(1, cursor_line), line_count)
 
-    if cursor_line < 10 then
+    if cursor_line < 8 then
       vim.cmd("normal! ^")
       return
     end
 
     local keys = vim.api.nvim_replace_termcodes(
-      "zt10<C-y>^",
+      "zt8<C-y>^",
       true,
       false,
       true
@@ -2447,7 +2447,7 @@ normalize_inspection_view = function(win)
     )
 
     local view = vim.fn.winsaveview()
-    view.topline = math.max(1, cursor_line - 10)
+    view.topline = math.max(1, cursor_line - 8)
     view.lnum = cursor_line
     view.col = col
     view.curswant = col
@@ -6020,10 +6020,10 @@ function M._overview_ui.open_patch_location(group)
           { target_line, target_column }
         )
 
-        if target_line > 10 then
+        if target_line > 8 then
           vim.api.nvim_win_call(patch_win, function()
             local keys = vim.api.nvim_replace_termcodes(
-              "zt10<C-y>",
+              "zt8<C-y>",
               true,
               false,
               true
