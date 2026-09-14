@@ -5046,7 +5046,7 @@ function M._overview_ui.render_footer(group)
     2,
     {
       end_col = #footer_lines[1],
-      hl_group = "OculusNormal",
+      hl_group = "Comment",
       priority = 100,
     }
   )
