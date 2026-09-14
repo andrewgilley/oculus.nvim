@@ -2461,7 +2461,7 @@ local function render_contributors()
     highlight(2, 2, -1, "Title")
     highlight(4, 2, -1, "Title")
     if separator_line then highlight(separator_line, 2, -1, "WinSeparator") end
-    if commands_line then highlight(commands_line, 2, -1, "Comment") end
+    if commands_line then highlight(commands_line, 2, -1, "OculusNormal") end
 
     -- Groups carry no trailing slash; mark them like legacy folders instead.
     for line, target in pairs(M.state.line_targets) do
@@ -2660,7 +2660,7 @@ local function render_contributors()
   end
 
   if commands_line then
-    highlight(commands_line, 2, -1, "Comment")
+    highlight(commands_line, 2, -1, "OculusNormal")
   end
 
   local selected_line
@@ -3265,7 +3265,7 @@ render_directory = function(dir_name)
   end
 
   if commands_line then
-    highlight(commands_line, 2, -1, "Comment")
+    highlight(commands_line, 2, -1, "OculusNormal")
   end
 
   local selected_line = nil
@@ -3497,7 +3497,7 @@ local function render_filters(scope, selected_type)
   end
 
   if commands_line then
-    highlight(commands_line, 2, -1, "Comment")
+    highlight(commands_line, 2, -1, "OculusNormal")
   end
 
   render_sidebar()
@@ -4375,7 +4375,7 @@ local function render_shortcuts()
   highlight(3, 2, -1, "Comment")
 
   if commands_line then
-    highlight(commands_line, 2, -1, "Comment")
+    highlight(commands_line, 2, -1, "OculusNormal")
   end
 
   render_sidebar()
