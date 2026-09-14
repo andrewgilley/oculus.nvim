@@ -5046,7 +5046,7 @@ function M._overview_ui.render_footer(group)
     2,
     {
       end_col = #footer_lines[1],
-      hl_group = "WinSeparator",
+      hl_group = "OculusNormal",
       priority = 100,
     }
   )
@@ -5058,7 +5058,7 @@ function M._overview_ui.render_footer(group)
     2,
     {
       end_col = #footer_lines[2],
-      hl_group = "Comment",
+      hl_group = "OculusNormal",
       priority = 100,
     }
   )
