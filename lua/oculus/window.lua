@@ -8424,6 +8424,43 @@ function M.refresh_tracking()
   end
 end
 
+-- Open the Oculus window straight on one project's activity feed. `target` is
+-- "owner/repo", "github:owner/repo" or "codeberg:owner/repo"; untracked
+-- repositories open too.
+function M.open_project(target, opts)
+  local provider, repository = tostring(target or ""):match("^(%a+):(.+)$")
+  repository = vim.trim(repository or tostring(target or ""))
+
+  if not repository:match("^[%w_.%-]+/[%w_.%-]+$") then
+    return false, "expected owner/repo, github:owner/repo or codeberg:owner/repo"
+  end
+
+  if provider and provider ~= "github" and provider ~= "codeberg" then
+    return false, "provider must be github or codeberg"
+  end
+
+  M.open(opts)
+  local project = nil
+
+  for _, candidate in ipairs(M.state.opts.projects or {}) do
+    if
+      type(candidate.repository) == "string"
+      and candidate.repository:lower() == repository:lower()
+      and (not provider or (candidate.provider or "github") == provider)
+    then
+      project = candidate
+      break
+    end
+  end
+
+  load_project_activity(project or {
+    repository = repository,
+    provider = provider or "github",
+  })
+
+  return true
+end
+
 M.create_project_directory = create_project_directory
 M.remove_project_directory = remove_project_directory
 M.move_project_to_directory = move_project_to_directory

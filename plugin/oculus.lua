@@ -4,9 +4,34 @@ end
 
 vim.g.loaded_oculus = true
 
-vim.api.nvim_create_user_command("OculusOpen", function()
-  require("oculus").open()
-end, { desc = "Open Oculus" })
+vim.api.nvim_create_user_command("OculusOpen", function(opts)
+  if opts.args == "" then
+    require("oculus").open()
+    return
+  end
+
+  local ok, err = require("oculus").open_project(opts.args)
+
+  if not ok then
+    vim.notify("Oculus: " .. err, vim.log.levels.ERROR)
+  end
+end, {
+  nargs = "?",
+  desc = "Open Oculus, optionally on a project's activity feed",
+  complete = function(arglead)
+    local matches = {}
+
+    for _, p in ipairs((require("oculus").config or {}).projects or {}) do
+      local repository = type(p.repository) == "string" and p.repository or ""
+
+      if repository ~= "" and repository:lower():sub(1, #arglead) == arglead:lower() then
+        matches[#matches + 1] = repository
+      end
+    end
+
+    return matches
+  end,
+})
 
 vim.api.nvim_create_user_command("OculusClose", function()
   require("oculus").close()

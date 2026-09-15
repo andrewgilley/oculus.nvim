@@ -281,7 +281,7 @@ Worktrees are created next to the repository as `<repo>-<branch>`.
 
 | Command                                  | Description                                            |
 | ---------------------------------------- | ------------------------------------------------------ |
-| `:OculusOpen`                            | Open the Oculus window                                 |
+| `:OculusOpen [project]`                  | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) |
 | `:OculusClose`                           | Close it                                               |
 | `:OculusToggle`                          | Toggle it                                              |
 | `:OculusInspect [target]`                | Inspect an issue, PR, or commit (prompts if no target) |
@@ -515,6 +515,9 @@ oculus.setup(opts)
 oculus.open()
 oculus.close()
 oculus.toggle()
+
+-- Open straight on a project's activity feed (untracked repositories work too)
+local ok, err = oculus.open_project("github:neovim/neovim")
 
 -- Target syntax matches :OculusInspect
 oculus.inspect("neovim/neovim#30000")
