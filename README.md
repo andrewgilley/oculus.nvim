@@ -36,7 +36,7 @@ change markers, chunk navigation, and an AI-assisted overview.
 
 ## Features
 
-- **One dashboard for multiple forges.** Track GitHub and Codeberg repositories and
+- **One interface for multiple forges.** Track GitHub and Codeberg repositories and
   users side by side in a single floating window.
 
 - **Nested groups.** Organize projects and users into folders, reorder them, and
