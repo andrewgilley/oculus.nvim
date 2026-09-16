@@ -652,6 +652,7 @@ oculus.show_opinion("Some **markdown**", { title = " Notes " })
 | `OculusNormal`              | derived from your window   | Window background             |
 | `OculusBorder`              | derived from your window   | Window border                 |
 | `OculusDirectory`           | links to `Directory`       | Groups in the lists           |
+| `OculusAccounts`            | links to `Special`         | Signed-in accounts            |
 | `OculusActivityIcon`        | `#fbd38d`                  | Event icons                   |
 | `OculusActivityPreview`     | `#9ae6b4`                  | Activity previews             |
 | `OculusContributorSelected` | `#ffffff`                  | The selected list entry       |

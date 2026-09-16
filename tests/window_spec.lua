@@ -289,7 +289,7 @@ local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 
 local initial_user_text = table.concat(initial_user_lines, "\n")
-assert(initial_user_lines[5]:find("USERS", 1, true))
+assert(initial_user_lines[6]:find("USERS", 1, true))
 assert(initial_user_text:find("@mitchellh", 1, true))
 assert(initial_user_text:find("@andrewrk", 1, true))
 assert(not initial_user_text:find("HANDLE", 1, true))

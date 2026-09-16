@@ -339,7 +339,7 @@ assert(buffer_text():find("w work", 1, true))
 local function account_text()
   local ns = vim.api.nvim_get_namespaces().oculus_accounts
   local marks = vim.api.nvim_buf_get_extmarks(state.buf, ns, 0, -1, { details = true })
-  return marks[1] and marks[1][2] == 2 and marks[1][4].virt_text[1][1] or nil
+  return marks[1] and marks[1][2] == 3 and marks[1][4].virt_text[1][1] or nil
 end
 
 wait_for("signed-in account not shown", function()
