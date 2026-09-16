@@ -225,6 +225,22 @@ function M.move_named(state, project, name)
   return M.move(state, destinations[1])
 end
 
+-- The footer confirmation question for removing `target`; nonempty groups
+-- explain that their children are promoted rather than deleted.
+function M.removal_question(state, target)
+  if not target or not target.tracking_index then return nil end
+  local kind, path = scope(state)
+  local tree = state.opts._tracking and state.opts._tracking.tree
+  local nodes = tree and children(tree, kind, path)
+  local node = nodes and nodes[target.tracking_index] or target.project or target
+
+  if node.children and #node.children > 0 then
+    return ('Remove group "%s"? Its children will be promoted'):format(node.name)
+  end
+
+  return ('Remove %s"%s"?'):format(node.children and 'group ' or '', label(node))
+end
+
 function M.handle(state, action, target)
   if not state.opts.tracking_file or state.view ~= 'contributors' then return false end
   local kind, path = scope(state)
@@ -280,14 +296,6 @@ function M.handle(state, action, target)
   elseif action == 'remove' then
     if target and target.tracking_index then
       local index = target.tracking_index
-      local tree = state.opts._tracking and state.opts._tracking.tree
-      local nodes = tree and children(tree, kind, path)
-      local node = nodes and nodes[index]
-
-      if node and node.children and #node.children > 0 then
-        local answer = vim.fn.confirm('Remove group "' .. node.name .. '"? Its children will be promoted to this list; descendants are preserved.', '&Cancel\n&Remove group', 1)
-        if answer ~= 2 then return true end
-      end
 
       change(state, function(tree)
         local nodes = children(tree, kind, path)

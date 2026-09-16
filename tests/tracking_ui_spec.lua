@@ -80,9 +80,9 @@ assert(disk().users[1].children[2].name == 'Colleagues', 'group added in current
 select_label('Colleagues'); key('<CR>')
 assert(window._add_contributor({username='bob',provider='github'}))
 assert(disk().users[1].children[2].children[1].username == 'bob', 'UI user add persisted inside nested group')
-select_label('bob'); key('r')
+select_label('bob'); key('r'); key('y')
 assert(#disk().users[1].children[2].children == 0, 'UI removal persisted')
-key('<Left>'); select_label('Colleagues'); key('r')
+key('<Left>'); select_label('Colleagues'); key('r'); key('y')
 assert(#disk().users[1].children == 1, 'UI group removal persisted')
 key('p'); select_label('Tools'); key('<CR>'); select_label('Nested'); key('<CR>')
 assert(window._add_project({repository='c/d',provider='github'}))
@@ -118,35 +118,23 @@ vim.ui.select = select
 assert(disk().users[2].username == 'alice', 'M destination picker moves users')
 -- Nonempty removal requires consent; cancellation preserves exact bytes/tree/UI.
 key('p'); select_label('Nested')
-local confirm = vim.fn.confirm
 local before_remove = table.concat(vim.fn.readfile(path, 'b'), '\n')
 local before_tree = vim.deepcopy(oculus.config._tracking.tree)
 local before_cursor = vim.api.nvim_win_get_cursor(window.state.win)
 local before_paths = vim.deepcopy(window.state.tracking_paths)
 key('m')
 local before_move = vim.deepcopy(window.state.tracking_move)
-local confirmations = 0
-
-vim.fn.confirm = function(message, choices, default)
-  confirmations = confirmations + 1
-  assert(message:match('promot'), 'confirmation explains child promotion')
-  assert(choices == '&Cancel\n&Remove group' and default == 1, 'Cancel is first/default')
-  return 1
-end
-
 key('r')
-assert(confirmations == 1, 'nonempty removal must prompt')
+assert(window.state.footer_prompt and window.state.footer_prompt.question:match('promot'), 'confirmation explains child promotion')
+key('n')
 assert(table.concat(vim.fn.readfile(path, 'b'), '\n') == before_remove, 'cancel preserves exact file bytes')
 assert(vim.deep_equal(oculus.config._tracking.tree, before_tree), 'cancel preserves tree')
 assert(vim.deep_equal(vim.api.nvim_win_get_cursor(window.state.win), before_cursor), 'cancel preserves cursor')
 assert(vim.deep_equal(window.state.tracking_paths, before_paths), 'cancel preserves browsing paths')
 assert(vim.deep_equal(window.state.tracking_move, before_move), 'cancel preserves pending move')
-vim.fn.confirm = function() return 0 end
-key('r')
+key('r'); key('<Esc>')
 assert(table.concat(vim.fn.readfile(path, 'b'), '\n') == before_remove, 'dismiss preserves file')
-vim.fn.confirm = function() return 2 end
-key('r')
-vim.fn.confirm = confirm
+key('r'); key('y')
 assert(disk().projects[1].repository == 'a/b' and disk().projects[2].repository == 'c/d', 'group removal retains descendants in order')
 write({version=1,projects={{repository='fresh/repo',provider='github'}},users={}})
 vim.cmd('runtime plugin/oculus.lua')
@@ -157,7 +145,7 @@ vim.fn.writefile({'invalid json'}, path)
 local notify = vim.notify
 vim.notify = function() end
 assert(not oculus.reload_tracking())
-select_label('fresh/repo'); key('r')
+select_label('fresh/repo'); key('r'); key('y')
 assert(oculus.config.projects[1].repository == 'fresh/repo')
 assert(table.concat(vim.fn.readfile(path),'\n') == 'invalid json')
 vim.notify = notify
@@ -233,9 +221,7 @@ for _, scenario in ipairs(scenarios) do
   assert(oculus.reload_tracking())
   key('p'); select_label('Outer'); key('<CR>')
   select_label(scenario.source); key('m'); select_label(scenario.remove)
-  vim.fn.confirm = function() return 2 end
-  key('r')
-  vim.fn.confirm = confirm
+  key('r'); key('y')
   assert(not window.state.tracking_move, scenario.name .. ': cancels pending move')
   assert(vim.deep_equal(window.state.tracking_paths.projects, {1}), scenario.name .. ': keeps group path')
   assert(current_target().project.repository == scenario.expected, scenario.name .. ': selects adjacent surviving child')

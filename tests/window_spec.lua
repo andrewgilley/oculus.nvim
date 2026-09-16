@@ -3589,6 +3589,8 @@ do
   local r_map = vim.fn.maparg("r", "n", false, true)
   assert(r_map ~= nil and type(r_map.callback) == "function")
   r_map.callback()
+  assert(window_mod.state.footer_prompt, "remove asks for confirmation first")
+  vim.fn.maparg("y", "n", false, true).callback()
   local has_core = false
 
   for _, d in ipairs(window_mod.state.opts.project_directories) do

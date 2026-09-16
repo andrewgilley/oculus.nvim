@@ -104,6 +104,21 @@ assert(remove_mapping.desc
 
 assert(vim.fn.maparg("x", "n", false, true).desc == nil)
 remove_mapping.callback()
+assert(#state.opts.projects == 1, "remove waits for confirmation")
+
+local function footer_row()
+  return vim.api.nvim_buf_get_lines(state.buf, state.list_footer_line - 1, state.list_footer_line, false)[1]
+end
+
+assert(footer_row():find('Remove "', 1, true), footer_row())
+assert(footer_row():find("y remove", 1, true), footer_row())
+assert(not footer_row():find("?: help", 1, true), "prompt replaces the footer commands")
+vim.fn.maparg("n", "n", false, true).callback()
+assert(#state.opts.projects == 1, "n cancels removal")
+assert(footer_row():find("?: help", 1, true), "cancel restores the footer commands")
+assert(not state.footer_prompt)
+remove_mapping.callback()
+vim.fn.maparg("y", "n", false, true).callback()
 assert(#state.opts.projects == 0)
 
 assert(not table.concat(
@@ -130,6 +145,7 @@ assert(#state.contributors == 1)
 assert(state.contributors[1].username == "custom-codeberg")
 assert(state.contributors[1].provider == "codeberg")
 remove_mapping.callback()
+vim.fn.maparg("y", "n", false, true).callback()
 assert(#state.contributors == 0)
 window.close()
 local restart_state_file = vim.fn.tempname()
@@ -212,9 +228,11 @@ oculus.setup({
 
 window.open(oculus.config)
 vim.fn.maparg("r", "n", false, true).callback()
+vim.fn.maparg("y", "n", false, true).callback()
 assert(#window.state.opts.projects == 0)
 vim.fn.maparg("v", "n", false, true).callback()
 vim.fn.maparg("r", "n", false, true).callback()
+vim.fn.maparg("y", "n", false, true).callback()
 assert(#window.state.contributors == 0)
 window.close()
 local removal_state = assert(storage.load(removal_state_file))

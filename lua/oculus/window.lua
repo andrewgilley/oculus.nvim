@@ -1167,8 +1167,15 @@ local function footer_win_config()
   }
 end
 
+-- Confirmation prompts that temporarily replace the list footer commands.
+local footer_prompt = { keys = "y remove  n cancel" }
+
 local function footer_commands_text()
   local nav = navigation.resolve(M.state.opts)
+
+  if M.state.footer_prompt then
+    return ("  %s  %s"):format(M.state.footer_prompt.question, footer_prompt.keys)
+  end
 
   if M.state.view == "contributors" then
     local showing_users = M.state.community_view == "users"
@@ -1263,6 +1270,11 @@ local function render_activity_footer(force)
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 0, 2, -1)
   vim.api.nvim_buf_add_highlight(buf, ns, "OculusNormal", 1, 2, #activity_commands)
+
+  if M.state.footer_prompt then
+    local question_end = 2 + #M.state.footer_prompt.question
+    vim.api.nvim_buf_add_highlight(buf, ns, "WarningMsg", 1, 2, question_end)
+  end
 
   if title_start and title_end then
     local trimmed_len = #vim.trim(get_inspect_input_title())
@@ -1519,6 +1531,10 @@ local function set_lines(lines)
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, saved_view.ns, 0, -1)
   M.state.preview_items = nil
+  -- A redraw replaces the list footer, so any pending prompt is abandoned.
+  M.state.footer_prompt = nil
+  M.state.list_footer_line = nil
+  M.state.list_footer_text = nil
 end
 
 local function highlight(line, start_col, end_col, group)
@@ -1719,6 +1735,78 @@ end
 local function preview_left_width(window_width)
   local preferred = math.max(40, math.floor(window_width * 0.52))
   return math.max(30, math.min(preferred, window_width - 22))
+end
+
+-- Draw the list footer row: the pending prompt when one is open, otherwise
+-- the commands it temporarily replaced. With the sidebar visible the list
+-- has no commands row, so the prompt uses the floating footer instead.
+function footer_prompt.paint()
+  local prompt = M.state.footer_prompt
+  local line = M.state.list_footer_line
+
+  if not line then
+    if prompt then
+      render_activity_footer(true)
+    else
+      close_activity_footer()
+    end
+
+    return
+  end
+
+  if not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
+    return
+  end
+
+  local text = M.state.list_footer_text or ""
+  local question_end = nil
+
+  if prompt then
+    local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 1
+    -- Shorten the question rather than the keys so the answers stay visible.
+    local question = trim_to_width("  " .. prompt.question, math.max(3, width - #footer_prompt.keys - 2))
+    text = question .. "  " .. footer_prompt.keys
+    question_end = #question
+  end
+
+  local current = vim.api.nvim_buf_get_lines(M.state.buf, line - 1, line, false)[1] or ""
+  vim.bo[M.state.buf].modifiable = true
+  -- Replace the text in place so preview extmarks on this row survive.
+  vim.api.nvim_buf_set_text(M.state.buf, line - 1, 0, line - 1, #current, { text })
+  vim.bo[M.state.buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(M.state.buf, ns, line - 1, line)
+  highlight(line, 2, -1, "OculusNormal")
+
+  if question_end then
+    highlight(line, 2, question_end, "WarningMsg")
+  end
+end
+
+function footer_prompt.show(prompt)
+  M.state.footer_prompt = prompt
+  footer_prompt.paint()
+end
+
+function footer_prompt.dismiss()
+  if not M.state.footer_prompt then
+    return false
+  end
+
+  M.state.footer_prompt = nil
+  footer_prompt.paint()
+  return true
+end
+
+function footer_prompt.confirm()
+  local prompt = M.state.footer_prompt
+
+  if not prompt then
+    return false
+  end
+
+  footer_prompt.dismiss()
+  prompt.confirm()
+  return true
 end
 
 local function is_formatted_preview(text)
@@ -2550,6 +2638,8 @@ local function render_contributors()
     end
 
     set_lines(lines)
+    M.state.list_footer_line = commands_line
+    M.state.list_footer_text = commands_line and lines[commands_line]
     vim.wo[M.state.win].cursorline = false
     highlight(2, 2, -1, "Title")
     highlight(4, 2, -1, "Title")
@@ -2722,6 +2812,8 @@ local function render_contributors()
   end
 
   set_lines(lines)
+  M.state.list_footer_line = commands_line
+  M.state.list_footer_text = commands_line and lines[commands_line]
   vim.wo[M.state.win].cursorline = false
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
@@ -3340,6 +3432,8 @@ render_directory = function(dir_name)
   end
 
   set_lines(lines)
+  M.state.list_footer_line = commands_line
+  M.state.list_footer_text = commands_line and lines[commands_line]
   vim.wo[M.state.win].cursorline = false
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "OculusDirectory")
@@ -7892,6 +7986,42 @@ local function remove_current_item()
   render_contributors()
 end
 
+function footer_prompt.removal_question(target)
+  if M.state.opts.tracking_file and M.state.view == "contributors" then
+    return require("oculus.tracking_ui").removal_question(M.state, target)
+  elseif target.kind == "directory" or target.kind == "directory_empty" then
+    local name = target.name or target.directory
+    return name and ('Remove folder "%s"?'):format(name)
+  elseif target.kind == "project" then
+    return ('Remove "%s"?'):format(project_title(target.project))
+  elseif target.username then
+    return ('Remove "@%s"?'):format(target.username)
+  end
+end
+
+-- Removal waits for a y/n answer in the footer; moving the cursor or pressing
+-- any other key dismisses the prompt without removing anything.
+local function request_removal()
+  local target = target_on_cursor()
+  local question = type(target) == "table" and footer_prompt.removal_question(target)
+
+  if not question then
+    return
+  end
+
+  footer_prompt.show({
+    question = question,
+    cursor = vim.api.nvim_win_get_cursor(M.state.win),
+    confirm = function()
+      if not require("oculus.tracking_ui").handle(M.state, "remove", target_on_cursor()) then
+        remove_current_item()
+      end
+
+      update_contributor_selection()
+    end,
+  })
+end
+
 local function toggle_move_item()
   if M.state.view ~= "contributors" and M.state.view ~= "directory" then
     return
@@ -9754,7 +9884,20 @@ local function map_keys(buf)
 
     rhs = function()
       local actions = { ["<CR>"]="enter", ["<Right>"]="right", [nav.right]="right",
-        ["<Left>"]="left", [nav.left]="left", f="group", K="group", D="group", r="remove", m="move", M="destination", ["<Esc>"]="cancel" }
+        ["<Left>"]="left", [nav.left]="left", f="group", K="group", D="group", m="move", M="destination", ["<Esc>"]="cancel" }
+
+      if M.state.footer_prompt then
+        if lhs == "y" then
+          footer_prompt.confirm()
+          return
+        end
+
+        footer_prompt.dismiss()
+
+        if lhs == "n" or lhs == "<Esc>" then
+          return
+        end
+      end
 
       if actions[lhs] and require("oculus.tracking_ui").handle(M.state, actions[lhs], target_on_cursor()) then
         update_contributor_selection()
@@ -9893,9 +10036,11 @@ local function map_keys(buf)
     end
   end, "Move forward or edit Oculus activity categories")
 
+  map("y", function() end, "Confirm Oculus footer prompt")
+
   map("r", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
-      remove_current_item()
+      request_removal()
     else
       refresh_activity()
     end
@@ -10293,6 +10438,12 @@ function M.open(opts)
     callback = function()
       if not is_valid_win(M.state.win) then
         return
+      end
+
+      if M.state.footer_prompt
+        and not vim.deep_equal(vim.api.nvim_win_get_cursor(M.state.win), M.state.footer_prompt.cursor)
+      then
+        footer_prompt.dismiss()
       end
 
       clamp_list_cursor()
