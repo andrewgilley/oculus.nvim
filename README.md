@@ -179,7 +179,7 @@ window with `a`, list them in `setup()`, or load them from a
 ### The Oculus window
 
 Oculus uses `ijkl` movement by default: `i` is up, `k` down, `j` left, and
-`l` right. That frees `h` for **inspect**. If you prefer Vim's layout, set
+`l` right. If you prefer Vim's layout, set
 `navigation = "hjkl"`, which moves inspect to `i`/`I`. The arrow keys work in
 both layouts. Press `?` to show every command in a sidebar.
 
@@ -640,32 +640,6 @@ oculus.show_opinion("Some **markdown**", { title = " Notes " })
 | `OculusActivityPreview`     | `#9ae6b4`                  | Activity previews             |
 | `OculusContributorSelected` | `#ffffff`                  | The selected list entry       |
 | `OculusMoveTarget`          | `#ff9e3b`                  | The item being moved          |
-
-## FAQ
-
-**Why doesn't `h` move left?**
-
-Oculus defaults to `ijkl` movement so that `h` can inspect. Set
-`navigation = "hjkl"` to use Vim's movement keys. Inspect then moves to `i` and
-`I`.
-
-**`:OculusInspect` shows only part of each file.**
-
-Oculus didn't find a local clone, so it inspected the change remotely with
-`inspect_remote_context` lines around each change. It only uses clones whose
-remote points at the target repository, or clones that already contain the
-target commits. To use your clone, add the directory that holds it to
-`inspect_search_paths`, or map the repository to its path in
-`inspect_repositories`.
-
-**I'm getting `API rate limit exceeded`.**
-
-Set `GITHUB_TOKEN`. See [Authentication](#authentication).
-
-**Where is my state stored?**
-
-In `stdpath("state")/oculus.json`, or in `state_file` if you set it. If you use
-a tracking file, it must be a different file from `state_file`.
 
 ## Contributing
 
