@@ -8461,6 +8461,42 @@ function M.open_project(target, opts)
   return true
 end
 
+function M.open_user(target, opts)
+  local provider, username = tostring(target or ""):match("^(%a+):(.+)$")
+  username = vim.trim(username or tostring(target or "")):gsub("^@", "")
+
+  if not username:match("^[%w][%w_.%-]*$") then
+    return false, "expected login, github:login or codeberg:login"
+  end
+
+  if provider and provider ~= "github" and provider ~= "codeberg" then
+    return false, "provider must be github or codeberg"
+  end
+
+  M.open(opts)
+  local contributor = nil
+
+  for _, candidate in ipairs(M.state.contributors or M.state.opts.contributors or {}) do
+    if
+      type(candidate.username) == "string"
+      and candidate.username:lower() == username:lower()
+      and (not provider or (candidate.provider or "github") == provider)
+    then
+      contributor = candidate
+      break
+    end
+  end
+
+  contributor = contributor or {
+    username = username,
+    provider = provider or "github",
+  }
+
+  M.state.selected_username = contributor.username
+  load_activity(contributor)
+  return true
+end
+
 M.create_project_directory = create_project_directory
 M.remove_project_directory = remove_project_directory
 M.move_project_to_directory = move_project_to_directory

@@ -10,14 +10,22 @@ vim.api.nvim_create_user_command("OculusOpen", function(opts)
     return
   end
 
-  local ok, err = require("oculus").open_project(opts.args)
+  -- "@login" or "@codeberg:login" opens a user's feed; anything else is a project.
+  local user = opts.args:match("^@(.+)$")
+  local ok, err
+
+  if user then
+    ok, err = require("oculus").open_user(user)
+  else
+    ok, err = require("oculus").open_project(opts.args)
+  end
 
   if not ok then
     vim.notify("Oculus: " .. err, vim.log.levels.ERROR)
   end
 end, {
   nargs = "?",
-  desc = "Open Oculus, optionally on a project's activity feed",
+  desc = "Open Oculus, optionally on a project's or @user's activity feed",
   complete = function(arglead)
     local matches = {}
 

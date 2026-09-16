@@ -482,6 +482,10 @@ function M.open_project(target)
   return require("oculus.window").open_project(target, M.config)
 end
 
+function M.open_user(target)
+  return require("oculus.window").open_user(target, M.config)
+end
+
 function M.inspect(target, opts, context, callback, lifecycle)
   local inspect = require("oculus.inspect")
 
