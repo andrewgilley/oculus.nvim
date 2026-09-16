@@ -2897,7 +2897,7 @@ do
   assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win))
   local narrowed_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
   assert(narrowed_cfg.width == prev_main_width, "expected main window width to return to narrowed state")
-  -- Test 6: Verify '?' and 's' mappings exist on buffer and toggle sidebar
+  -- Test 6: Verify '?' mapping exists on buffer and toggles sidebar
   local q_map = vim.fn.maparg("?", "n", false, true)
   assert(q_map ~= nil and type(q_map.callback) == "function", "expected '?' keymap callback")
   assert(q_map.desc == "Toggle Oculus command sidebar")
@@ -2905,13 +2905,6 @@ do
   assert(window_mod.state.sidebar_win == nil, "expected sidebar to toggle off via ? mapping")
   q_map.callback()
   assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to toggle on via ? mapping")
-  local s_map = vim.fn.maparg("s", "n", false, true)
-  assert(s_map ~= nil and type(s_map.callback) == "function", "expected 's' keymap callback")
-  assert(s_map.desc == "Toggle Oculus command sidebar")
-  s_map.callback()
-  assert(window_mod.state.sidebar_win == nil, "expected sidebar to toggle off via s mapping")
-  s_map.callback()
-  assert(window_mod.state.sidebar_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.sidebar_win), "expected sidebar to toggle on via s mapping")
   -- Test 7: Verify render_error omits footer when sidebar is visible and includes it when hidden
   window_mod._render_error("test error")
   local err_lines_visible = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)

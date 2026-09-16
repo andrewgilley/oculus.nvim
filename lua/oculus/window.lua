@@ -815,7 +815,7 @@ local function sidebar_sections_for_view(view)
         items = showing_users and {
           { "p", "Projects" },
           { "w", "My work" },
-          { "S", "Saved" },
+          { "s", "Saved" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
           { "r", "Remove" },
@@ -826,7 +826,7 @@ local function sidebar_sections_for_view(view)
         } or {
           { "u", "Users" },
           { "w", "My work" },
-          { "S", "Saved" },
+          { "s", "Saved" },
           { "a", "Add" },
           { "f", "Folder" },
           { "M", "Move Dir" },
@@ -863,7 +863,7 @@ local function sidebar_sections_for_view(view)
     end
 
     actions[#actions + 1] = {
-      "S",
+      "s",
       M.state.activity_saved and "Unsave" or "Save",
     }
 
@@ -983,7 +983,7 @@ local function sidebar_sections_for_view(view)
         title = "PROJECTS",
         items = {
           { "w", "My work" },
-          { "S", "Saved" },
+          { "s", "Saved" },
           { "a", "Add" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
@@ -1191,8 +1191,8 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  p projects   w work   S saved   m move   ?: help"
-      or "  u users   w work   S saved   f folder   m move   ?: help"
+        and "  p projects   w work   s saved   m move   ?: help"
+      or "  u users   w work   s saved   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   r remove   m move   ?: help"):format(
       nav.left
@@ -1217,7 +1217,7 @@ local function footer_commands_text()
   end
 
   activity_commands = activity_commands
-    .. (M.state.activity_saved and "   S unsave" or "   S save")
+    .. (M.state.activity_saved and "   s unsave" or "   s save")
 
   return activity_commands
 end
@@ -2705,7 +2705,7 @@ local function render_contributors()
       while #lines < window_height - 2 do lines[#lines + 1] = "" end
       lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
       separator_line = #lines
-      footer(lines, "p projects  u users  w work  S saved  f folder  m move")
+      footer(lines, "p projects  u users  w work  s saved  f folder  m move")
       commands_line = #lines
       -- Keep the commands inside the list pane, clear of the preview.
       lines[commands_line] = pad_cell(trim_to_width(lines[commands_line], left_width - 1), left_width)
@@ -2878,8 +2878,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and "p projects  w work  S saved  m move  ?: help"
-      or "u users  w work  S saved  f folder  m move  ?: help")
+        and "p projects  w work  s saved  m move  ?: help"
+      or "u users  w work  s saved  f folder  m move  ?: help")
 
     commands_line = #lines
   else
@@ -4704,7 +4704,6 @@ local function render_shortcuts()
   })
 
   section("GENERAL", {
-    { "s", "Toggle command sidebar" },
     { "?", "Open or close this shortcut page" },
     { "q / <Esc> / <C-c>", "Close Oculus" },
   })
@@ -10015,7 +10014,6 @@ local function map_keys(buf)
   end, "Close Oculus")
 
   map("?", toggle_sidebar, "Toggle Oculus command sidebar")
-  map("s", toggle_sidebar, "Toggle Oculus command sidebar")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
   map("R", function() M.rename() end, "Rename the selected Oculus group or item")
 
@@ -10147,7 +10145,7 @@ local function map_keys(buf)
     end
   end, "Open your Oculus work: review requests, pull requests, assignments, mentions")
 
-  map("S", function()
+  map("s", function()
     if M.state.view == "activity" then
       saved_view.toggle()
     elseif M.state.view == "contributors" or M.state.view == "directory" then

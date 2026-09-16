@@ -399,7 +399,7 @@ for line, title in pairs(state.activity_title_lines) do
 end
 
 vim.api.nvim_win_set_cursor(state.win, { second_line, 0 })
-press("S")
+press("s")
 assert(store.items()[1].source.repository == "b/two", vim.inspect(store.items()[1]))
 assert(store.items()[1].source.provider == "github")
 store.load({})

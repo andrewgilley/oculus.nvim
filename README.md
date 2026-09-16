@@ -193,7 +193,7 @@ The keys below use the default `ijkl` layout.
 | `j` / `<Left>`        | Go to the parent group                                     |
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
 | `w`                   | Open [my work](#my-work)                                   |
-| `S`                   | Open [saved items](#saved-items)                           |
+| `s`                   | Open [saved items](#saved-items)                           |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Remove the selected item or group                          |
@@ -203,7 +203,7 @@ The keys below use the default `ijkl` layout.
 | `o`                   | Open the selected profile or repository in your browser    |
 | `F`                   | Edit activity filters                                      |
 | `H`                   | Inspect by ID                                              |
-| `?` / `s`             | Toggle the command sidebar                                 |
+| `?`                   | Toggle the command sidebar                                 |
 | `<Esc>`               | Cancel a pending move, go back, or close                   |
 | `q` / `<C-c>`         | Close                                                      |
 
@@ -218,7 +218,7 @@ The keys below use the default `ijkl` layout.
 | `u`             | Show the project's issues                                      |
 | `f`             | Issue filters (in the issues view) or newer activity           |
 | `m`             | Milestones (in the issues view)                                |
-| `S`             | Save the item under the cursor, or remove it from saved items  |
+| `s`             | Save the item under the cursor, or remove it from saved items  |
 | `p`             | Load older activity                                            |
 | `r`             | Refresh                                                        |
 | `F`             | Choose activity types                                          |
@@ -240,12 +240,12 @@ in the overview.
 
 **Saved items**
 
-Press `S` on any activity item (in a project or user feed, the issues view, a
+Press `s` on any activity item (in a project or user feed, the issues view, a
 milestone, or an expanded push or pull request) to save it. Saved items are
-marked with `★`, and pressing `S` again removes them. Press `S` on the start
+marked with `★`, and pressing `s` again removes them. Press `s` on the start
 screen to open the saved feed: every saved item, newest save first, rendered
 like any other feed, so `h` inspects, `b` opens the browser, `Tab` queues, and
-`p`/`f` page. `S` there removes the item under the cursor.
+`p`/`f` page. `s` there removes the item under the cursor.
 
 Items are stored as snapshots in `state_file`, so they survive restarts and
 stay available offline, but they don't refresh (an issue saved while open still
@@ -266,7 +266,7 @@ each with a count of open items:
 
 The preview lists the most recently updated items. Select a category to open
 its items as an activity feed spanning every repository, where `h` inspects,
-`b` opens the browser, `Tab` queues and `S` saves as usual. Press `b` on the
+`b` opens the browser, `Tab` queues and `s` saves as usual. Press `b` on the
 list to open the forge's own page for that category, `r` to refresh, and
 `j`/`←` to go back. GitHub archived repositories are left out.
 
