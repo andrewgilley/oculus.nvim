@@ -2612,31 +2612,26 @@ local function startup_project_items()
   return ordered_items
 end
 
--- The accounts signed in on each forge with a token, e.g. "@octocat on GitHub",
--- leaving out the "signed in as" prefix when it would not fit in `width`.
-function work_view.accounts.text(width)
+-- One line per forge signed in with a token, e.g. "signed in as @octocat on
+-- GitHub", in GitHub, Codeberg order.
+function work_view.accounts.lines()
   local auth = require("oculus.auth")
-  local accounts = {}
+  local lines = {}
 
   for _, provider in ipairs({ "github", "codeberg" }) do
     local viewer = auth.cached_viewer(provider, M.state.opts)
 
     if viewer then
-      accounts[#accounts + 1] = ("@%s on %s"):format(viewer.login, provider_name(viewer))
+      lines[#lines + 1] = ("signed in as @%s on %s"):format(viewer.login, provider_name(viewer))
     end
   end
 
-  if #accounts == 0 then
-    return nil
-  end
-
-  local text = table.concat(accounts, " · ")
-  return vim.fn.strdisplaywidth("signed in as " .. text) <= width and ("signed in as " .. text) or text
+  return lines
 end
 
--- Draw the signed-in accounts on the bottom row of the startup list, just
--- above the footer separator, or on the last row when the sidebar replaces
--- the footer. A list long enough to fill that row leaves the accounts out.
+-- Draw the signed-in accounts on the bottom rows of the startup list, just
+-- above the footer separator, or at the end when the sidebar replaces the
+-- footer. Rows the list already fills are left out.
 function work_view.accounts.paint()
   if M.state.view ~= "contributors" or not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
     return
@@ -2644,18 +2639,20 @@ function work_view.accounts.paint()
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
   local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 3
-  local text = work_view.accounts.text(width)
-  local row = M.state.list_footer_line and M.state.list_footer_line - 3 or vim.api.nvim_buf_line_count(M.state.buf) - 1
-  local line = row >= 0 and vim.api.nvim_buf_get_lines(M.state.buf, row, row + 1, false)[1]
+  local texts = work_view.accounts.lines()
+  local last = M.state.list_footer_line and M.state.list_footer_line - 3 or vim.api.nvim_buf_line_count(M.state.buf) - 1
 
-  if not text or not line or not line:match("^%s*$") then
-    return
+  for index, text in ipairs(texts) do
+    local row = last - #texts + index
+    local line = row >= 0 and vim.api.nvim_buf_get_lines(M.state.buf, row, row + 1, false)[1]
+
+    if line and line:match("^%s*$") then
+      vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, row, 0, {
+        virt_text = { { trim_to_width(text, width), "OculusAccounts" } },
+        virt_text_win_col = 2,
+      })
+    end
   end
-
-  vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, row, 0, {
-    virt_text = { { trim_to_width(text, width), "OculusAccounts" } },
-    virt_text_win_col = 2,
-  })
 end
 
 -- Paint the known accounts, then look each signed-in forge up once per window;

@@ -494,7 +494,7 @@ installed, Oculus uses the token from `gh auth token`, so signing in with
 `gh auth login` is enough. Set `gh_token_fallback = false` to turn this off.
 
 The start screen shows the account behind each token at the bottom of the
-list, for example `signed in as @octocat on GitHub · @octocat on Codeberg`.
+list, one line per forge, for example `signed in as @octocat on Codeberg`.
 
 Tokens are optional for browsing, but [my work](#my-work) and `@me` need one,
 and unauthenticated GitHub requests are limited to 60
