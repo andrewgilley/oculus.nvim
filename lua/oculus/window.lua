@@ -394,10 +394,10 @@ local function sync_window_highlights(source_win)
   vim.api.nvim_set_hl(
     window_highlight_ns,
     "OculusAccounts",
-    { link = "Special", default = true }
+    { link = "DiagnosticOk", default = true }
   )
 
-  vim.api.nvim_set_hl(0, "OculusAccounts", { link = "Special", default = true })
+  vim.api.nvim_set_hl(0, "OculusAccounts", { link = "DiagnosticOk", default = true })
 
   vim.api.nvim_set_hl(
     window_highlight_ns,
@@ -2634,23 +2634,25 @@ function work_view.accounts.text(width)
   return vim.fn.strdisplaywidth("signed in as " .. text) <= width and ("signed in as " .. text) or text
 end
 
--- Draw the signed-in accounts under the ACTIVITY heading of the startup list.
+-- Draw the signed-in accounts on the ACTIVITY heading row of the startup list,
+-- one tabstop past the heading.
 function work_view.accounts.paint()
   if M.state.view ~= "contributors" or not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
     return
   end
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
-  local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 3
-  local text = work_view.accounts.text(width)
+  local col = 2 + #"ACTIVITY" + vim.bo[M.state.buf].tabstop
+  local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 1 - col
+  local text = width > 0 and work_view.accounts.text(width)
 
-  if not text or vim.api.nvim_buf_line_count(M.state.buf) < 4 then
+  if not text or vim.api.nvim_buf_line_count(M.state.buf) < 2 then
     return
   end
 
-  vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, 3, 0, {
+  vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, 1, 0, {
     virt_text = { { trim_to_width(text, width), "OculusAccounts" } },
-    virt_text_win_col = 2,
+    virt_text_win_col = col,
   })
 end
 
@@ -2718,7 +2720,7 @@ local function render_contributors()
     M.state.list_footer_text = commands_line and lines[commands_line]
     vim.wo[M.state.win].cursorline = false
     highlight(2, 2, -1, "Title")
-    highlight(5, 2, -1, "Title")
+    highlight(4, 2, -1, "Title")
     if separator_line then highlight(separator_line, 2, -1, "WinSeparator") end
     if commands_line then highlight(commands_line, 2, -1, "OculusNormal") end
 
@@ -2750,11 +2752,9 @@ local function render_contributors()
   local community_view = M.state.community_view or "projects"
   local showing_users = community_view == "users"
 
-  -- The signed-in accounts are painted on the blank row between the headings.
   local lines = {
     "",
     "  ACTIVITY",
-    "",
     "",
     "",
   }
@@ -2832,7 +2832,7 @@ local function render_contributors()
 
   list_limit = math.min(
     list_limit,
-    math.max(1, window_height - 8 - #project_lines - footer_space)
+    math.max(1, window_height - 7 - #project_lines - footer_space)
   )
 
   local max_offset = math.max(1, #contributors - list_limit + 1)
@@ -10395,7 +10395,7 @@ function M.open(opts)
   })
 
   vim.api.nvim_set_hl(0, "OculusAccounts", {
-    link = "Special",
+    link = "DiagnosticOk",
     default = true,
   })
 
