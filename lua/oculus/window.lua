@@ -1169,7 +1169,7 @@ end
 
 -- Confirmation prompts that temporarily replace the list footer commands.
 -- Removing is the default answer, so Enter confirms like y.
-local footer_prompt = { keys = "⏎/y remove  n cancel" }
+local footer_prompt = { keys = "y remove  n cancel" }
 
 local function footer_commands_text()
   local nav = navigation.resolve(M.state.opts)

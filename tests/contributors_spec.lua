@@ -111,7 +111,8 @@ local function footer_row()
 end
 
 assert(footer_row():find('Remove "', 1, true), footer_row())
-assert(footer_row():find("⏎/y remove", 1, true), footer_row())
+assert(footer_row():find("y remove", 1, true), footer_row())
+assert(not footer_row():find("⏎", 1, true), footer_row())
 assert(not footer_row():find("?: help", 1, true), "prompt replaces the footer commands")
 vim.fn.maparg("n", "n", false, true).callback()
 assert(#state.opts.projects == 1, "n cancels removal")
