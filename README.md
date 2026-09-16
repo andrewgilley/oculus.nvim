@@ -211,11 +211,22 @@ The keys below use the default `ijkl` layout.
 | `b`             | Open the item in your browser                                  |
 | `u`             | Show the project's issues                                      |
 | `f`             | Issue filters (in the issues view) or newer activity           |
+| `m`             | Milestones (in the issues view)                                |
 | `p`             | Load older activity                                            |
 | `r`             | Refresh                                                        |
 | `F`             | Choose activity types                                          |
 | `<Space>` / `a` / `n` / `d` | Toggle one filter / enable all / disable all / reset to defaults |
 | `j` / `<Left>`  | Back to the list                                               |
+
+**Milestones**
+
+Press `m` in a project's issues view to list its milestones. The list works
+like the Projects and Users lists: open milestones come first (nearest due date
+first), then closed ones, and the preview shows the due date, progress, and
+description. Select a milestone to see its issues and pull requests as an
+activity feed, where `h` inspects and `b` opens items as usual. Press `b` on
+the list to open a milestone in your browser, `r` to refresh it, and `j`/`←` to
+go back.
 
 ### Inspecting changes
 
@@ -611,6 +622,7 @@ nvim --headless -u NONE -l tests/tracking_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
 nvim --headless -u NONE -l tests/window_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/milestones_spec.lua
 ```
 
 The inspect suite needs a checkout of oil.nvim and some environment variables.

@@ -8,6 +8,7 @@ local pull_request_cache = {}
 local pull_request_commits_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
+local repository_milestone_cache = {}
 
 local function decode_response(stdout)
   local body, status = stdout:match("^(.*)\n(%d%d%d)%s*$")
@@ -190,34 +191,55 @@ function M.repository_events(repository, opts, callback)
   end)
 end
 
-local function project_issue_event(repository, issue)
-  if type(issue) ~= "table" or issue.pull_request or not issue.number then
+-- JSON null decodes to vim.NIL, which is truthy; treat it as absent.
+local function json_value(value)
+  if value == vim.NIL then
+    return nil
+  end
+
+  return value
+end
+
+local function project_issue_event(repository, issue, include_pull_requests)
+  local pull_request = type(issue) == "table"
+      and json_value(issue.pull_request)
+    or nil
+
+  if type(issue) ~= "table"
+    or not issue.number
+    or (pull_request and not include_pull_requests)
+  then
     return nil
   end
 
   local state = issue.state == "closed" and "closed" or "open"
+  local assignee = json_value(issue.assignee)
 
   return {
     id = ("project-issue:%s:%s"):format(repository, issue.number),
     type = "IssuesEvent",
-    actor = issue.user,
+    actor = json_value(issue.user),
     repo = { name = repository },
-    created_at = issue.updated_at or issue.created_at,
-    url = issue.html_url,
+    created_at = json_value(issue.updated_at) or json_value(issue.created_at),
+    url = json_value(issue.html_url),
     payload = {
       action = state == "closed" and "closed" or "opened",
       issue = {
         number = issue.number,
-        title = issue.title,
-        body = issue.body,
-        user = issue.user,
-        assignee = issue.assignee,
-        assignees = issue.assignees or {},
-        labels = issue.labels or {},
+        title = json_value(issue.title),
+        body = json_value(issue.body),
+        user = json_value(issue.user),
+        assignee = assignee,
+        assignees = json_value(issue.assignees) or {},
+        labels = json_value(issue.labels) or {},
         state = state,
-        html_url = issue.html_url,
-        created_at = issue.created_at,
-        updated_at = issue.updated_at,
+        html_url = json_value(issue.html_url),
+        created_at = json_value(issue.created_at),
+        updated_at = json_value(issue.updated_at),
+        pull_request = pull_request and {
+          merged = json_value(pull_request.merged) == true
+            or json_value(pull_request.merged_at) ~= nil,
+        } or nil,
       },
     },
   }
@@ -277,6 +299,157 @@ function M.repository_issues(repository, opts, callback)
 
     for _, issue in ipairs(issues) do
       local normalized = project_issue_event(repository, issue)
+
+      if normalized then
+        events[#events + 1] = normalized
+      end
+    end
+
+    local complete = #issues < per_page
+
+    repository_issue_cache[cache_key] = {
+      events = vim.deepcopy(events),
+      fetched_at = os.time(),
+      complete = complete,
+    }
+
+    callback(events, nil, false, complete)
+  end)
+end
+
+local function project_milestone(milestone, html_url)
+  if type(milestone) ~= "table" or not json_value(milestone.number) then
+    return nil
+  end
+
+  local id = milestone.number
+
+  return {
+    id = id,
+    title = json_value(milestone.title) or ("Milestone " .. tostring(id)),
+    description = json_value(milestone.description),
+    state = milestone.state == "closed" and "closed" or "open",
+    open_issues = tonumber(json_value(milestone.open_issues)) or 0,
+    closed_issues = tonumber(json_value(milestone.closed_issues)) or 0,
+    due_on = json_value(milestone.due_on),
+    closed_at = json_value(milestone.closed_at),
+    html_url = html_url,
+  }
+end
+
+function M.repository_milestones(repository, opts, callback)
+  opts = opts or {}
+  local ttl = opts.cache_ttl or 300
+  local cache_key = repository:lower()
+  local cached = repository_milestone_cache[cache_key]
+
+  if cached
+    and not opts.force
+    and os.time() - cached.fetched_at < ttl
+  then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.milestones), nil, true)
+    end)
+
+    return
+  end
+
+  local milestones = {}
+  local page = 1
+  local max_pages = 10
+
+  local function load_page()
+    local url = (
+      "https://api.github.com/repos/%s/milestones"
+        .. "?state=all&sort=due_on&direction=asc&per_page=100&page=%d"
+    ):format(repository, page)
+
+    request_json(url, opts, function(results, err)
+      if not results then
+        callback(nil, err)
+        return
+      end
+
+      for _, milestone in ipairs(results) do
+        local normalized = project_milestone(milestone, json_value(milestone.html_url))
+
+        if normalized then
+          milestones[#milestones + 1] = normalized
+        end
+      end
+
+      if #results == 100 and page < max_pages then
+        page = page + 1
+        load_page()
+        return
+      end
+
+      repository_milestone_cache[cache_key] = {
+        milestones = vim.deepcopy(milestones),
+        fetched_at = os.time(),
+      }
+
+      callback(vim.deepcopy(milestones), nil, false)
+    end)
+  end
+
+  load_page()
+end
+
+-- Returns the issues and pull requests in a milestone as issue events, in the
+-- same shape as M.repository_issues.
+function M.milestone_issues(repository, milestone_id, opts, callback)
+  opts = opts or {}
+  local ttl = opts.cache_ttl or 300
+  local page = math.max(1, math.floor(opts.page or 1))
+
+  local per_page = math.min(
+    100,
+    math.max(1, math.floor(opts.per_page or 100))
+  )
+
+  local cache_key = table.concat({
+    repository:lower(),
+    "milestone",
+    tostring(milestone_id),
+    tostring(page),
+    tostring(per_page),
+  }, ":")
+
+  local cached = repository_issue_cache[cache_key]
+
+  if cached
+    and not opts.force
+    and os.time() - cached.fetched_at < ttl
+  then
+    vim.schedule(function()
+      callback(
+        vim.deepcopy(cached.events),
+        nil,
+        true,
+        cached.complete
+      )
+    end)
+
+    return
+  end
+
+  local url = (
+    "https://api.github.com/repos/%s/issues"
+      .. "?milestone=%s&state=all&sort=updated&direction=desc"
+      .. "&per_page=%d&page=%d"
+  ):format(repository, tostring(milestone_id), per_page, page)
+
+  request_json(url, opts, function(issues, err)
+    if not issues then
+      callback(nil, err)
+      return
+    end
+
+    local events = {}
+
+    for _, issue in ipairs(issues) do
+      local normalized = project_issue_event(repository, issue, true)
 
       if normalized then
         events[#events + 1] = normalized

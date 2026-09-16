@@ -78,6 +78,7 @@ local window_highlight_groups = {
 local commit_activity_url
 local load_project_activity
 local load_project_issues
+local milestone_view = {}
 local target_on_cursor
 local render_directory
 local persist_projects
@@ -168,6 +169,12 @@ M.state = {
   activity_return = nil,
   project_issue_return = nil,
   project_issue_feed = nil,
+  project_milestones = nil,
+  selected_milestone = nil,
+  milestone_offset = 1,
+  milestone_return = nil,
+  milestone_items_feed = nil,
+  activity_milestone = nil,
   activity_inspect_queue = {},
   activity_inspect_queue_active = nil,
   activity_inspect_queue_batch = nil,
@@ -817,7 +824,8 @@ local function sidebar_sections_for_view(view)
     if not M.state.activity_commit_page then
       if M.state.activity_issue_page then
         actions[#actions + 1] = { "f", "Filters" }
-      elseif M.state.activity_project then
+        actions[#actions + 1] = { "m", "Milestones" }
+      elseif M.state.activity_project and not M.state.activity_milestone then
         actions[#actions + 1] = { "u", "Issues" }
       end
     end
@@ -863,6 +871,32 @@ local function sidebar_sections_for_view(view)
           { "a", "All on" },
           { "n", "All off" },
           { "d", "Defaults" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "?", "Sidebar" },
+          { "q", "Close" },
+        },
+      },
+    }
+  elseif view == "milestones" then
+    return {
+      {
+        title = "NAVIGATION",
+        items = {
+          { nav_down, "Down" },
+          { nav_up, "Up" },
+          { nav_left, "Back" },
+          { nav_right, "Open" },
+        },
+      },
+      {
+        title = "ACTIONS",
+        items = {
+          { "b", "Browser" },
+          { "r", "Refresh" },
         },
       },
       {
@@ -1116,6 +1150,10 @@ local function footer_commands_text()
     return ("  %s/← back   a add   r remove   m move   ?: help"):format(
       nav.left
     )
+  elseif M.state.view == "milestones" then
+    return ("  %s/← back   ⏎ open   b browser   r refresh   ?: help"):format(
+      nav.left
+    )
   end
 
   local inspect_key = nav.inspect
@@ -1123,9 +1161,9 @@ local function footer_commands_text()
 
   if not M.state.activity_commit_page then
     if M.state.activity_issue_page then
-      activity_commands = activity_commands .. "   f filters"
+      activity_commands = activity_commands .. "   f filters   m milestones"
     else
-      if M.state.activity_project then
+      if M.state.activity_project and not M.state.activity_milestone then
         activity_commands = activity_commands .. "   u issues"
       end
     end
@@ -1302,7 +1340,10 @@ local function clamp_list_cursor()
     return
   end
 
-  if M.state.view == "contributors" or M.state.view == "directory" then
+  if M.state.view == "contributors"
+    or M.state.view == "directory"
+    or M.state.view == "milestones"
+  then
     local selectable = {}
     local selected_line
 
@@ -1323,6 +1364,10 @@ local function clamp_list_cursor()
           end
         elseif target.kind == "directory" or target.kind == "directory_empty" then
           if (target.name or target.directory) == M.state.selected_directory then
+            selected_line = line
+          end
+        elseif target.kind == "milestone" then
+          if target.milestone.id == M.state.selected_milestone then
             selected_line = line
           end
         elseif target.username == M.state.selected_username then
@@ -1960,7 +2005,11 @@ M._project_pull_request_title = project_pull_request_title
 
 local function render_preview_panel(items)
   if
-    (M.state.view ~= "contributors" and M.state.view ~= "directory")
+    (
+      M.state.view ~= "contributors"
+      and M.state.view ~= "directory"
+      and M.state.view ~= "milestones"
+    )
     or not is_valid_buf(M.state.buf)
     or not is_valid_win(M.state.win)
   then
@@ -2304,7 +2353,11 @@ local function update_contributor_selection()
   )
 
   if
-    (M.state.view ~= "contributors" and M.state.view ~= "directory")
+    (
+      M.state.view ~= "contributors"
+      and M.state.view ~= "directory"
+      and M.state.view ~= "milestones"
+    )
     or not is_valid_win(M.state.win)
   then
     return
@@ -2430,6 +2483,7 @@ local function render_contributors()
   M.state.contributor = nil
   M.state.activity_scope = nil
   M.state.activity_project = nil
+  M.state.activity_milestone = nil
   M.state.events = nil
   M.state.line_targets = {}
   M.state.preview_key = nil
@@ -3722,6 +3776,7 @@ local function render_loading(target)
   M.state.view = "activity"
   M.state.activity_commit_page = false
   M.state.activity_issue_page = target.issues == true
+  M.state.activity_milestone = target.milestone
   M.state.activity_return = nil
   M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
@@ -3734,8 +3789,14 @@ local function render_loading(target)
   local lines = project
       and {
         "",
-        target.issues and "  ISSUES" or "  PROJECT",
-        "  " .. project_title(project),
+        target.milestone and "  MILESTONE"
+          or target.issues and "  ISSUES"
+          or "  PROJECT",
+        "  " .. (
+          target.milestone
+              and (target.milestone.title .. " · " .. project_title(project))
+            or project_title(project)
+        ),
       }
     or {
       "",
@@ -3760,12 +3821,18 @@ local function render_error(message)
   M.state.activity_loaded = false
   M.state.activity_error = message
   local project = M.state.activity_project
+  local milestone = M.state.activity_milestone
 
   local lines = project
       and {
         "",
-        M.state.activity_issue_page and "  ISSUES" or "  PROJECT",
-        "  " .. project_title(project),
+        milestone and "  MILESTONE"
+          or M.state.activity_issue_page and "  ISSUES"
+          or "  PROJECT",
+        "  " .. (
+          milestone and (milestone.title .. " · " .. project_title(project))
+            or project_title(project)
+        ),
         "",
         "  Could not load activity",
         "  " .. message,
@@ -3802,7 +3869,10 @@ local function set_activity_inspect_queue_scope()
       "project",
       project.provider == "codeberg" and "codeberg" or "github",
       project.repository:lower(),
-      M.state.activity_issue_page and "issues" or "activity",
+      M.state.activity_milestone
+          and ("milestone:" .. tostring(M.state.activity_milestone.id))
+        or M.state.activity_issue_page and "issues"
+        or "activity",
     }, ":")
   elseif M.state.contributor then
     local contributor = M.state.contributor
@@ -3884,13 +3954,17 @@ local function render_activity(events, cached, notice, opts)
       )
     or ""
 
+  local milestone = project and M.state.activity_milestone or nil
+
   local lines = project
       and {
         "",
-        M.state.activity_issue_page and "  ISSUES" or "  PROJECT",
+        milestone and "  MILESTONE"
+          or M.state.activity_issue_page and "  ISSUES"
+          or "  PROJECT",
         ("  %s · %s%s"):format(
-          project_title(project),
-          provider_name(project),
+          milestone and milestone.title or project_title(project),
+          milestone and project_title(project) or provider_name(project),
           context_suffix
         ),
       }
@@ -3919,7 +3993,7 @@ local function render_activity(events, cached, notice, opts)
     })
 
     if project
-      and M.state.activity_issue_page
+      and (M.state.activity_issue_page or milestone)
       and event.type == "IssuesEvent"
     then
       local issue = event.payload and event.payload.issue or {}
@@ -3927,9 +4001,14 @@ local function render_activity(events, cached, notice, opts)
       local author = actor.login or actor.username or actor.name
       local state = issue.state == "closed" and "closed" or "open"
 
-      item.text = ("%s%s issue #%s"):format(
+      if type(issue.pull_request) == "table" then
+        state = issue.pull_request.merged and "merged" or state
+      end
+
+      item.text = ("%s%s %s #%s"):format(
         author and ("@" .. author .. " · ") or "",
         state,
+        type(issue.pull_request) == "table" and "pull request" or "issue",
         tostring(issue.number or "?")
       )
 
@@ -4038,7 +4117,9 @@ local function render_activity(events, cached, notice, opts)
   end
 
   if #events == 0 then
-    lines[#lines + 1] = M.state.activity_page > 1
+    lines[#lines + 1] = milestone
+        and "  This milestone has no issues or pull requests."
+      or M.state.activity_page > 1
         and "  No past public activity was returned."
       or "  No recent public activity was returned."
 
@@ -4749,6 +4830,7 @@ load_project_activity = function(project, force, page)
   M.state.activity_scope = "project"
   M.state.activity_project = project
   M.state.activity_issue_page = false
+  M.state.activity_milestone = nil
   M.state.contributor = nil
 
   if page == nil then
@@ -5056,6 +5138,7 @@ load_project_issues = function(project, force, page)
   M.state.activity_scope = "project"
   M.state.activity_project = project
   M.state.activity_issue_page = true
+  M.state.activity_milestone = nil
   M.state.activity_commit_page = false
   M.state.contributor = nil
 
@@ -5223,6 +5306,563 @@ load_project_issues = function(project, force, page)
   ensure_issue_page()
 end
 
+function milestone_view.date(timestamp)
+  return type(timestamp) == "string"
+      and timestamp:match("^(%d%d%d%d%-%d%d%-%d%d)")
+    or nil
+end
+
+function milestone_view.sort(milestones)
+  table.sort(milestones, function(left, right)
+    if left.state ~= right.state then
+      return left.state == "open"
+    end
+
+    -- Open milestones lead with the nearest due date; closed ones with the
+    -- most recently finished.
+    local left_date = left.state == "open"
+        and (left.due_on or "")
+      or (left.closed_at or left.due_on or "")
+
+    local right_date = right.state == "open"
+        and (right.due_on or "")
+      or (right.closed_at or right.due_on or "")
+
+    if left_date ~= right_date then
+      if left.state == "open" and (left_date == "" or right_date == "") then
+        return right_date == ""
+      end
+
+      if left.state == "open" then
+        return left_date < right_date
+      end
+
+      return left_date > right_date
+    end
+
+    return tostring(left.title):lower() < tostring(right.title):lower()
+  end)
+
+  return milestones
+end
+
+function milestone_view.preview_items(milestone, width)
+  local open_count = milestone.open_issues or 0
+  local closed_count = milestone.closed_issues or 0
+  local total = open_count + closed_count
+
+  local percent = total > 0
+      and math.floor(closed_count * 100 / total + 0.5)
+    or 0
+
+  local status
+
+  if milestone.state == "closed" then
+    local closed = milestone_view.date(milestone.closed_at)
+    status = closed and ("Closed " .. closed) or "Closed"
+  else
+    local due = milestone_view.date(milestone.due_on)
+    status = due and ("Open · due " .. due) or "Open · no due date"
+  end
+
+  local items = {
+    [2] = { "MILESTONE", "Title" },
+    [4] = { milestone.title, "Identifier" },
+    [5] = { status, "Comment" },
+    [6] = {
+      ("%d open · %d closed · %d%% complete"):format(
+        open_count,
+        closed_count,
+        percent
+      ),
+      "Comment",
+    },
+  }
+
+  for index, line in ipairs(wrapped_preview_text(
+    milestone.description,
+    width,
+    6
+  )) do
+    items[7 + index] = { line, "Comment" }
+  end
+
+  return items
+end
+
+function milestone_view.queue_preview(milestone)
+  if M.state.view ~= "milestones" or not milestone then
+    return
+  end
+
+  local key = "milestone:" .. tostring(milestone.id)
+
+  if M.state.preview_key == key then
+    return
+  end
+
+  M.state.preview_key = key
+  local window_width = vim.api.nvim_win_get_width(M.state.win)
+  local left_width = preview_left_width(window_width)
+  local preview_width = math.max(15, window_width - left_width - 5)
+  render_preview_panel(milestone_view.preview_items(milestone, preview_width))
+end
+
+function milestone_view.selected_index(milestones)
+  for index, milestone in ipairs(milestones or {}) do
+    if milestone.id == M.state.selected_milestone then
+      return index
+    end
+  end
+
+  return milestones and milestones[1] and 1 or nil
+end
+
+function milestone_view.render()
+  local list = M.state.project_milestones
+
+  if not list or not is_valid_win(M.state.win) then
+    return
+  end
+
+  stop_activity_page_loading()
+  close_activity_footer()
+  M.state.view = "milestones"
+  M.state.activity_milestone = nil
+  M.state.line_targets = {}
+  M.state.preview_key = nil
+  local project = list.project
+  local window_width = vim.api.nvim_win_get_width(M.state.win)
+  local left_width = preview_left_width(window_width)
+  local window_height = vim.api.nvim_win_get_height(M.state.win)
+  local sidebar_visible = is_sidebar_visible()
+
+  local lines = {
+    "",
+    "  MILESTONES",
+    ("  %s · %s"):format(project_title(project), provider_name(project)),
+    "",
+  }
+
+  local headings = {}
+  local comment_lines = {}
+  local error_line
+  local milestones = list.milestones or {}
+
+  if list.loading then
+    lines[#lines + 1] = "  Loading milestones…"
+    comment_lines[#comment_lines + 1] = #lines
+  elseif list.error then
+    lines[#lines + 1] = "  Could not load milestones"
+    error_line = #lines
+    lines[#lines + 1] = "  " .. list.error
+    comment_lines[#comment_lines + 1] = #lines
+  elseif #milestones == 0 then
+    lines[#lines + 1] = "  No milestones."
+    comment_lines[#comment_lines + 1] = #lines
+  else
+    local rows = {}
+    local counts = { open = 0, closed = 0 }
+
+    for _, milestone in ipairs(milestones) do
+      counts[milestone.state] = counts[milestone.state] + 1
+    end
+
+    for _, section in ipairs({
+      { state = "open", heading = "OPEN" },
+      { state = "closed", heading = "CLOSED" },
+    }) do
+      if counts[section.state] > 0 then
+        if #rows > 0 then
+          rows[#rows + 1] = { kind = "blank" }
+        end
+
+        rows[#rows + 1] = {
+          kind = "heading",
+          text = ("%s (%d)"):format(section.heading, counts[section.state]),
+        }
+
+        for _, milestone in ipairs(milestones) do
+          if milestone.state == section.state then
+            rows[#rows + 1] = { kind = "milestone", milestone = milestone }
+          end
+        end
+      end
+    end
+
+    local selected_index = milestone_view.selected_index(milestones)
+    local selected = milestones[selected_index]
+    M.state.selected_milestone = selected.id
+    local selected_row = 1
+
+    for index, row in ipairs(rows) do
+      if row.milestone == selected then
+        selected_row = index
+        break
+      end
+    end
+
+    -- Render only the rows that fit, like the user list, so the preview
+    -- panel and the footer stay anchored while the selection scrolls.
+    local capacity = math.max(
+      3,
+      window_height - #lines - (sidebar_visible and 0 or 2)
+    )
+
+    local offset = math.min(
+      math.max(1, M.state.milestone_offset or 1),
+      math.max(1, #rows - capacity + 1)
+    )
+
+    if selected_row < offset then
+      offset = selected_row
+    elseif selected_row >= offset + capacity then
+      offset = selected_row - capacity + 1
+    end
+
+    if offset > 1
+      and offset == selected_row
+      and rows[offset - 1].kind == "heading"
+    then
+      offset = offset - 1
+    end
+
+    M.state.milestone_offset = offset
+
+    for index = offset, math.min(#rows, offset + capacity - 1) do
+      local row = rows[index]
+
+      if row.kind == "blank" then
+        lines[#lines + 1] = ""
+      elseif row.kind == "heading" then
+        lines[#lines + 1] = "  " .. row.text
+        headings[#headings + 1] = #lines
+      else
+        lines[#lines + 1] = pad_cell(
+          "  " .. trim_to_width(row.milestone.title, left_width - 3),
+          left_width
+        )
+
+        M.state.line_targets[#lines] = {
+          kind = "milestone",
+          milestone = row.milestone,
+        }
+      end
+    end
+  end
+
+  local separator_line
+  local commands_line
+
+  if not sidebar_visible then
+    while #lines < window_height - 2 do
+      lines[#lines + 1] = ""
+    end
+
+    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
+    separator_line = #lines
+    local nav = navigation.resolve(M.state.opts)
+
+    footer(
+      lines,
+      ("%s/← back  ⏎ open  b browser  r refresh  ?: help"):format(nav.left)
+    )
+
+    commands_line = #lines
+
+    lines[commands_line] = pad_cell(
+      trim_to_width(lines[commands_line], left_width - 1),
+      left_width
+    )
+  else
+    while #lines < window_height do
+      lines[#lines + 1] = ""
+    end
+  end
+
+  set_lines(lines)
+  vim.wo[M.state.win].cursorline = false
+  highlight(2, 2, -1, "Title")
+  highlight(3, 2, -1, "Comment")
+
+  for _, line in ipairs(headings) do
+    highlight(line, 2, -1, "OculusSectionTitle")
+  end
+
+  for _, line in ipairs(comment_lines) do
+    highlight(line, 2, -1, "Comment")
+  end
+
+  if error_line then
+    highlight(error_line, 2, -1, "DiagnosticError")
+  end
+
+  local selected_line
+
+  for line, target in pairs(M.state.line_targets) do
+    highlight(line, 2, -1, "Identifier")
+
+    if target.milestone.id == M.state.selected_milestone then
+      selected_line = line
+    end
+  end
+
+  if separator_line then
+    highlight(separator_line, 2, -1, "WinSeparator")
+  end
+
+  if commands_line then
+    highlight(commands_line, 2, -1, "OculusNormal")
+  end
+
+  if selected_line then
+    vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
+    milestone_view.queue_preview(M.state.line_targets[selected_line].milestone)
+  else
+    render_preview_panel({ [2] = { "MILESTONE", "Title" } })
+  end
+
+  update_contributor_selection()
+  render_sidebar()
+end
+
+function milestone_view.select_adjacent(direction)
+  local list = M.state.project_milestones
+  local milestones = list and list.milestones or {}
+  local index = milestone_view.selected_index(milestones)
+
+  if not index then
+    return
+  end
+
+  index = ((index - 1 + direction) % #milestones) + 1
+  M.state.selected_milestone = milestones[index].id
+  milestone_view.render()
+end
+
+function milestone_view.load(project, force)
+  M.state.request_id = M.state.request_id + 1
+  local request_id = M.state.request_id
+  local key = project_issue_filter_key(project)
+  local previous = M.state.project_milestones
+
+  if not previous or previous.key ~= key then
+    M.state.selected_milestone = nil
+    M.state.milestone_offset = 1
+  end
+
+  M.state.project_milestones = {
+    key = key,
+    project = project,
+    loading = true,
+    milestones = previous and previous.key == key
+        and previous.milestones
+      or nil,
+  }
+
+  milestone_view.render()
+  local provider = project.provider == "codeberg" and codeberg or github
+
+  if type(provider.repository_milestones) ~= "function" then
+    M.state.project_milestones.loading = false
+
+    M.state.project_milestones.error =
+      "this provider does not support milestones"
+
+    milestone_view.render()
+    return
+  end
+
+  local request_opts = vim.tbl_extend(
+    "force",
+    M.state.opts,
+    { force = force or false }
+  )
+
+  provider.repository_milestones(project.repository, request_opts, function(
+    milestones,
+    err
+  )
+    if request_id ~= M.state.request_id
+      or M.state.view ~= "milestones"
+      or not is_valid_win(M.state.win)
+    then
+      return
+    end
+
+    M.state.project_milestones = {
+      key = key,
+      project = project,
+      loading = false,
+      error = err and tostring(err) or nil,
+      milestones = milestones and milestone_view.sort(milestones) or {},
+    }
+
+    milestone_view.render()
+  end)
+end
+
+function milestone_view.load_items(project, milestone, force, page)
+  local previous_page = M.state.activity_page or 1
+
+  local preserve_activity_page = page ~= nil
+    and M.state.view == "activity"
+    and M.state.activity_milestone == milestone
+    and M.state.activity_loaded
+    and is_valid_buf(M.state.buf)
+
+  if page == nil then
+    M.state.activity_loaded_pages = 1
+  end
+
+  local requested_page = math.max(1, page or 1)
+  M.state.activity_page = requested_page
+
+  M.state.activity_page_size = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.results_limit) or 8)
+  )
+
+  M.state.request_id = M.state.request_id + 1
+  local request_id = M.state.request_id
+
+  if preserve_activity_page then
+    M.state.activity_error = nil
+    start_activity_page_loading()
+  else
+    render_loading({
+      kind = "project",
+      project = project,
+      milestone = milestone,
+    })
+  end
+
+  local provider = project.provider == "codeberg" and codeberg or github
+
+  local request_opts = vim.tbl_extend(
+    "force",
+    M.state.opts,
+    { force = force or false }
+  )
+
+  request_opts.per_page = project.provider == "codeberg" and 50 or 100
+
+  local feed_key = table.concat({
+    project_issue_filter_key(project),
+    tostring(milestone.id),
+  }, ":")
+
+  local feed = M.state.milestone_items_feed
+
+  if force or not feed or feed.key ~= feed_key then
+    feed = {
+      key = feed_key,
+      events = {},
+      seen = {},
+      next_page = 1,
+      complete = false,
+      cached = true,
+    }
+
+    M.state.milestone_items_feed = feed
+  end
+
+  local required_events = requested_page * M.state.activity_page_size
+  local max_source_pages = 10
+
+  local function render_items()
+    local items = deduplicate_activity(feed.events)
+
+    local first_event =
+      (requested_page - 1) * M.state.activity_page_size + 1
+
+    if requested_page > 1 and #items < first_event then
+      M.state.activity_page = math.max(1, previous_page)
+    else
+      M.state.activity_page = requested_page
+    end
+
+    M.state.activity_source_events = items
+
+    M.state.activity_loaded_pages = math.max(
+      M.state.activity_loaded_pages or 1,
+      M.state.activity_page
+    )
+
+    local page_end = M.state.activity_page * M.state.activity_page_size
+    M.state.activity_has_past = #items > page_end or not feed.complete
+
+    render_activity(
+      activity_page(
+        items,
+        M.state.activity_page,
+        M.state.activity_page_size
+      ),
+      feed.cached,
+      nil,
+      { issue_page = false }
+    )
+  end
+
+  local function ensure_items_page()
+    if #feed.events >= required_events or feed.complete then
+      render_items()
+      return
+    end
+
+    if feed.next_page > max_source_pages then
+      feed.complete = true
+      render_items()
+      return
+    end
+
+    local source_page = feed.next_page
+    request_opts.page = source_page
+
+    provider.milestone_issues(
+      project.repository,
+      milestone.id,
+      request_opts,
+      function(events, err, cached, complete)
+        if request_id ~= M.state.request_id
+          or M.state.view ~= "activity"
+          or M.state.activity_milestone ~= milestone
+          or not is_valid_win(M.state.win)
+        then
+          return
+        end
+
+        if err then
+          render_error(err)
+          return
+        end
+
+        local source = events or {}
+
+        for _, event in ipairs(source) do
+          add_project_issue(feed, event)
+        end
+
+        table.sort(feed.events, function(left, right)
+          return tostring(left.created_at or "")
+            > tostring(right.created_at or "")
+        end)
+
+        feed.next_page = source_page + 1
+        feed.cached = feed.cached and cached == true
+
+        if complete == true or (complete == nil and #source == 0) then
+          feed.complete = true
+        end
+
+        ensure_items_page()
+      end
+    )
+  end
+
+  ensure_items_page()
+end
+
 local function load_activity(contributor, force, page)
   local preserve_activity_page = page ~= nil
     and M.state.view == "activity"
@@ -5232,6 +5872,7 @@ local function load_activity(contributor, force, page)
   M.state.view = "activity"
   M.state.activity_scope = "user"
   M.state.activity_project = nil
+  M.state.activity_milestone = nil
   M.state.activity_has_past = nil
   M.state.contributor = contributor
 
@@ -5337,7 +5978,14 @@ local function next_activity_page()
       return
     end
 
-    if M.state.activity_issue_page then
+    if M.state.activity_milestone then
+      milestone_view.load_items(
+        M.state.activity_project,
+        M.state.activity_milestone,
+        false,
+        page
+      )
+    elseif M.state.activity_issue_page then
       load_project_issues(M.state.activity_project, false, page)
     else
       load_project_activity(M.state.activity_project, false, page)
@@ -5360,7 +6008,14 @@ local function previous_activity_page()
   local page = (M.state.activity_page or 1) - 1
 
   if M.state.activity_project then
-    if M.state.activity_issue_page then
+    if M.state.activity_milestone then
+      milestone_view.load_items(
+        M.state.activity_project,
+        M.state.activity_milestone,
+        false,
+        page
+      )
+    elseif M.state.activity_issue_page then
       load_project_issues(M.state.activity_project, false, page)
     else
       load_project_activity(M.state.activity_project, false, page)
@@ -5371,6 +6026,11 @@ local function previous_activity_page()
 end
 
 local function refresh_activity()
+  if M.state.view == "milestones" and M.state.project_milestones then
+    milestone_view.load(M.state.project_milestones.project, true)
+    return
+  end
+
   if M.state.view ~= "activity" or M.state.activity_commit_page then
     return
   end
@@ -5378,7 +6038,14 @@ local function refresh_activity()
   local page = M.state.activity_page or 1
 
   if M.state.activity_project then
-    if M.state.activity_issue_page then
+    if M.state.activity_milestone then
+      milestone_view.load_items(
+        M.state.activity_project,
+        M.state.activity_milestone,
+        true,
+        page
+      )
+    elseif M.state.activity_issue_page then
       load_project_issues(M.state.activity_project, true, page)
     else
       load_project_activity(M.state.activity_project, true, page)
@@ -6391,6 +7058,17 @@ local function select_current()
     toggle_filter_type()
   elseif M.state.view == "issue_filters" then
     select_project_issue_filter()
+  elseif M.state.view == "milestones"
+    and type(target) == "table"
+    and target.kind == "milestone"
+  then
+    M.state.selected_milestone = target.milestone.id
+
+    milestone_view.load_items(
+      M.state.project_milestones.project,
+      target.milestone,
+      false
+    )
   end
 end
 
@@ -6398,6 +7076,7 @@ local function open_project_issue_activity()
   if M.state.view ~= "activity"
     or M.state.activity_commit_page
     or M.state.activity_issue_page
+    or M.state.activity_milestone
     or not M.state.activity_project
   then
     return
@@ -6417,6 +7096,32 @@ local function open_project_issue_activity()
   }
 
   load_project_issues(M.state.activity_project, false)
+end
+
+function milestone_view.open()
+  if M.state.view ~= "activity"
+    or M.state.activity_commit_page
+    or not M.state.activity_issue_page
+    or not M.state.activity_project
+  then
+    return
+  end
+
+  M.state.milestone_return = {
+    project = M.state.activity_project,
+    events = M.state.events,
+    cached = M.state.activity_cached,
+    notice = M.state.activity_notice,
+    page = M.state.activity_page,
+    loaded_pages = M.state.activity_loaded_pages,
+    source_events = M.state.activity_source_events,
+    has_past = M.state.activity_has_past,
+    cursor = is_valid_win(M.state.win)
+        and vim.api.nvim_win_get_cursor(M.state.win)
+      or nil,
+  }
+
+  milestone_view.load(M.state.activity_project, false)
 end
 
 local function open_filters(global)
@@ -6462,6 +7167,19 @@ local function open_current()
 end
 
 local function open_activity_in_browser()
+  if M.state.view == "milestones" then
+    local target = target_on_cursor()
+
+    if type(target) == "table"
+      and target.kind == "milestone"
+      and target.milestone.html_url
+    then
+      open_url(target.milestone.html_url)
+    end
+
+    return
+  end
+
   if M.state.view ~= "activity" then
     return
   end
@@ -7001,7 +7719,10 @@ local function active_list_key()
         or M.state.activity_project.name
         or "project"
 
-      if M.state.activity_issue_page then
+      if M.state.activity_milestone then
+        return "milestone:" .. repo .. ":"
+          .. tostring(M.state.activity_milestone.id)
+      elseif M.state.activity_issue_page then
         return "issues:" .. repo
       elseif M.state.activity_commit_page then
         return "commits:" .. repo
@@ -7033,6 +7754,9 @@ local function active_list_key()
     return "community:projects"
   elseif M.state.view == "directory" then
     return "directory:" .. (M.state.current_directory or "default")
+  elseif M.state.view == "milestones" and M.state.project_milestones then
+    local project = M.state.project_milestones.project
+    return "milestones:" .. (project.repository or project.name or "project")
   elseif M.state.view == "issue_filters" and M.state.activity_project then
     local repo = M.state.activity_project.repository
       or M.state.activity_project.name
@@ -7348,6 +8072,8 @@ local function toggle_sidebar()
     render_filters(M.state.filter_scope)
   elseif M.state.view == "issue_filters" and M.state.activity_project then
     render_issue_filters(M.state.activity_project)
+  elseif M.state.view == "milestones" then
+    milestone_view.render()
   elseif M.state.view == "shortcuts" then
     render_shortcuts()
   end
@@ -7360,8 +8086,14 @@ local function move_cursor(direction)
     and M.state.view ~= "filters"
     and M.state.view ~= "issue_filters"
     and M.state.view ~= "activity"
+    and M.state.view ~= "milestones"
   then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
+    return
+  end
+
+  if M.state.view == "milestones" then
+    milestone_view.select_adjacent(direction)
     return
   end
 
@@ -7498,6 +8230,55 @@ local function move_cursor(direction)
 end
 
 local function go_back()
+  if M.state.view == "activity" and M.state.activity_milestone then
+    M.state.request_id = M.state.request_id + 1
+    M.state.activity_milestone = nil
+    milestone_view.render()
+    return
+  end
+
+  if M.state.view == "milestones" then
+    local return_state = M.state.milestone_return
+    local list = M.state.project_milestones
+    M.state.milestone_return = nil
+    M.state.request_id = M.state.request_id + 1
+
+    local project = return_state and return_state.project
+      or (list and list.project)
+
+    if not project then
+      render_contributors()
+      return
+    end
+
+    if not return_state or not return_state.events then
+      load_project_issues(project, false, return_state and return_state.page)
+      return
+    end
+
+    M.state.activity_scope = "project"
+    M.state.activity_project = project
+    M.state.contributor = nil
+    M.state.activity_page = return_state.page
+    M.state.activity_loaded_pages = return_state.loaded_pages
+    M.state.activity_source_events = return_state.source_events
+    M.state.activity_has_past = return_state.has_past
+
+    render_activity(
+      return_state.events,
+      return_state.cached,
+      return_state.notice,
+      { issue_page = true }
+    )
+
+    if return_state.cursor and is_valid_win(M.state.win) then
+      pcall(vim.api.nvim_win_set_cursor, M.state.win, return_state.cursor)
+      update_activity_cursorline()
+    end
+
+    return
+  end
+
   if M.state.view == "issue_filters" and M.state.activity_project then
     M.state.request_id = M.state.request_id + 1
     load_project_issues(M.state.activity_project, false, 1)
@@ -7584,6 +8365,8 @@ local function go_back()
       end
     elseif return_state.view == "filters" and M.state.filter_scope then
       render_filters(M.state.filter_scope, return_state.selected_type)
+    elseif return_state.view == "milestones" and M.state.project_milestones then
+      milestone_view.render()
     elseif return_state.view == "issue_filters"
       and M.state.activity_project
     then
@@ -7645,7 +8428,7 @@ local function move_left()
     return
   end
 
-  if M.state.view == "directory" then
+  if M.state.view == "directory" or M.state.view == "milestones" then
     go_back()
     return
   end
@@ -7694,7 +8477,14 @@ local function move_right()
       local page = M.state.activity_page or 1
 
       if page < (M.state.activity_loaded_pages or 1) then
-        if M.state.activity_issue_page then
+        if M.state.activity_milestone then
+          milestone_view.load_items(
+            M.state.activity_project,
+            M.state.activity_milestone,
+            false,
+            page + 1
+          )
+        elseif M.state.activity_issue_page then
           load_project_issues(M.state.activity_project, false, page + 1)
         else
           load_project_activity(M.state.activity_project, false, page + 1)
@@ -7799,7 +8589,7 @@ local function map_keys(buf)
       return
     end
 
-    if M.state.view == "directory" then
+    if M.state.view == "directory" or M.state.view == "milestones" then
       go_back()
       return
     end
@@ -7815,8 +8605,10 @@ local function map_keys(buf)
   map("m", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
       toggle_move_item()
+    elseif M.state.view == "activity" and M.state.activity_issue_page then
+      milestone_view.open()
     end
-  end, "Move selected Oculus project or user")
+  end, "Move selected Oculus project or user, or open project milestones")
 
   map("M", function()
     if (M.state.view == "contributors" and M.state.community_view == "projects")
@@ -8184,6 +8976,8 @@ function M.open(opts)
   if M.state.view == "issue_filters" and M.state.activity_project then
     render_issue_filters(M.state.activity_project)
     restore_cursor()
+  elseif M.state.view == "milestones" and M.state.project_milestones then
+    milestone_view.render()
   elseif
     M.state.view == "activity"
     and (M.state.contributor or M.state.activity_project)
@@ -8256,6 +9050,8 @@ function M.open(opts)
           render_filters(M.state.filter_scope)
         elseif M.state.view == "issue_filters" and M.state.activity_project then
           render_issue_filters(M.state.activity_project)
+        elseif M.state.view == "milestones" then
+          milestone_view.render()
         elseif M.state.view == "shortcuts" then
           render_shortcuts()
         end
@@ -8275,6 +9071,20 @@ function M.open(opts)
 
       if M.state.view == "activity" then
         update_activity_cursorline()
+        return
+      end
+
+      if M.state.view == "milestones" then
+        local target = M.state.line_targets[
+          vim.api.nvim_win_get_cursor(M.state.win)[1]
+        ]
+
+        if type(target) == "table" and target.kind == "milestone" then
+          M.state.selected_milestone = target.milestone.id
+          milestone_view.queue_preview(target.milestone)
+        end
+
+        update_contributor_selection()
         return
       end
 
