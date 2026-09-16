@@ -386,6 +386,12 @@ function M.setup(opts)
     end
   end
 
+  -- Saved items always load, whatever the persist_* options, so later state
+  -- writes never replace the list on disk with a partial one.
+  require("oculus.saved").load(
+    (require("oculus.storage").load(M.config.state_file) or {}).saved_items
+  )
+
   if M.config.tracking_file then
     local ok, err = require("oculus.tracking").load(M.config)
     if not ok then vim.notify(err, vim.log.levels.ERROR) end

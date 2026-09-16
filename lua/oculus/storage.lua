@@ -56,6 +56,16 @@ function M.save(path, config)
     search_history = config.search_history or {},
   }
 
+  local saved = require("oculus.saved")
+
+  -- Until setup() loads the saved items, keep the ones already on disk rather
+  -- than overwriting them with an empty list.
+  if saved.loaded() then
+    payload.saved_items = saved.items()
+  else
+    payload.saved_items = (M.load(path) or {}).saved_items or {}
+  end
+
   -- Tracking membership belongs only to its external file. Filter/history
   -- saves must not replace the user's legacy lists (including after errors).
   if config.tracking_file then

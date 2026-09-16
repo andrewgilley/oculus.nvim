@@ -188,6 +188,7 @@ The keys below use the default `ijkl` layout.
 | `<CR>` / `l` / `<Right>` | Open the selected group or activity feed               |
 | `j` / `<Left>`        | Go to the parent group                                     |
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
+| `S`                   | Open [saved items](#saved-items)                           |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Remove the selected item or group                          |
@@ -212,11 +213,25 @@ The keys below use the default `ijkl` layout.
 | `u`             | Show the project's issues                                      |
 | `f`             | Issue filters (in the issues view) or newer activity           |
 | `m`             | Milestones (in the issues view)                                |
+| `S`             | Save the item under the cursor, or remove it from saved items  |
 | `p`             | Load older activity                                            |
 | `r`             | Refresh                                                        |
 | `F`             | Choose activity types                                          |
 | `<Space>` / `a` / `n` / `d` | Toggle one filter / enable all / disable all / reset to defaults |
 | `j` / `<Left>`  | Back to the list                                               |
+
+**Saved items**
+
+Press `S` on any activity item (in a project or user feed, the issues view, a
+milestone, or an expanded push or pull request) to save it. Saved items are
+marked with `★`, and pressing `S` again removes them. Press `S` on the start
+screen to open the saved feed: every saved item, newest save first, rendered
+like any other feed, so `h` inspects, `b` opens the browser, `Tab` queues, and
+`p`/`f` page. `S` there removes the item under the cursor.
+
+Items are stored as snapshots in `state_file`, so they survive restarts and
+stay available offline, but they don't refresh (an issue saved while open still
+shows as open).
 
 **Milestones**
 
@@ -420,8 +435,8 @@ require("oculus").setup({
 })
 ```
 
-Filters, search history, list edits, and inspect overviews are saved to
-`state_file` and restored the next time `setup()` runs. Entries you pass in
+Filters, search history, list edits, inspect overviews, and saved items are
+stored in `state_file` and restored the next time `setup()` runs. Entries you pass in
 `projects` and `contributors` are merged with the saved lists. Entries you
 remove in the UI stay removed.
 
@@ -623,6 +638,7 @@ nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
 nvim --headless -u NONE -l tests/window_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/milestones_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/saved_spec.lua
 ```
 
 The inspect suite needs a checkout of oil.nvim and some environment variables.

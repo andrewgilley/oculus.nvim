@@ -79,6 +79,7 @@ local commit_activity_url
 local load_project_activity
 local load_project_issues
 local milestone_view = {}
+local saved_view = { ns = vim.api.nvim_create_namespace("oculus_saved_items") }
 local target_on_cursor
 local render_directory
 local persist_projects
@@ -175,6 +176,9 @@ M.state = {
   milestone_return = nil,
   milestone_items_feed = nil,
   activity_milestone = nil,
+  activity_saved = false,
+  saved_entries = nil,
+  saved_expanded_source = nil,
   activity_inspect_queue = {},
   activity_inspect_queue_active = nil,
   activity_inspect_queue_batch = nil,
@@ -378,6 +382,14 @@ local function sync_window_highlights(source_win)
   )
 
   vim.api.nvim_set_hl(0, "OculusSectionTitle", { link = "Keyword", default = true })
+
+  vim.api.nvim_set_hl(
+    window_highlight_ns,
+    "OculusSaved",
+    { link = "DiagnosticWarn", default = true }
+  )
+
+  vim.api.nvim_set_hl(0, "OculusSaved", { link = "DiagnosticWarn", default = true })
 
   vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityQueued", {
     fg = "#fbd38d",
@@ -786,6 +798,7 @@ local function sidebar_sections_for_view(view)
         title = "ACTIONS",
         items = showing_users and {
           { "p", "Projects" },
+          { "S", "Saved" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
           { "r", "Remove" },
@@ -795,6 +808,7 @@ local function sidebar_sections_for_view(view)
           { "o", "Profile" },
         } or {
           { "u", "Users" },
+          { "S", "Saved" },
           { "a", "Add" },
           { "f", "Folder" },
           { "M", "Move Dir" },
@@ -829,6 +843,11 @@ local function sidebar_sections_for_view(view)
         actions[#actions + 1] = { "u", "Issues" }
       end
     end
+
+    actions[#actions + 1] = {
+      "S",
+      M.state.activity_saved and "Unsave" or "Save",
+    }
 
     actions[#actions + 1] = { "r", "Refresh" }
     actions[#actions + 1] = { "p", "Older" }
@@ -945,6 +964,7 @@ local function sidebar_sections_for_view(view)
       {
         title = "PROJECTS",
         items = {
+          { "S", "Saved" },
           { "a", "Add" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
@@ -1144,8 +1164,8 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  p projects   m move   ?: help"
-      or "  u users   f folder   m move   ?: help"
+        and "  p projects   S saved   m move   ?: help"
+      or "  u users   S saved   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   r remove   m move   ?: help"):format(
       nav.left
@@ -1168,6 +1188,9 @@ local function footer_commands_text()
       end
     end
   end
+
+  activity_commands = activity_commands
+    .. (M.state.activity_saved and "   S unsave" or "   S save")
 
   return activity_commands
 end
@@ -1483,6 +1506,7 @@ local function set_lines(lines)
     -1
   )
 
+  vim.api.nvim_buf_clear_namespace(M.state.buf, saved_view.ns, 0, -1)
   M.state.preview_items = nil
 end
 
@@ -2484,6 +2508,7 @@ local function render_contributors()
   M.state.activity_scope = nil
   M.state.activity_project = nil
   M.state.activity_milestone = nil
+  M.state.activity_saved = false
   M.state.events = nil
   M.state.line_targets = {}
   M.state.preview_key = nil
@@ -2502,7 +2527,7 @@ local function render_contributors()
       while #lines < window_height - 2 do lines[#lines + 1] = "" end
       lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
       separator_line = #lines
-      footer(lines, "p projects  u users  f folder  m move")
+      footer(lines, "p projects  u users  S saved  f folder  m move")
       commands_line = #lines
       -- Keep the commands inside the list pane, clear of the preview.
       lines[commands_line] = pad_cell(trim_to_width(lines[commands_line], left_width - 1), left_width)
@@ -2672,8 +2697,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and "p projects  m move  ?: help"
-      or "u users  f folder  m move  ?: help")
+        and "p projects  S saved  m move  ?: help"
+      or "u users  S saved  f folder  m move  ?: help")
 
     commands_line = #lines
   else
@@ -3777,6 +3802,7 @@ local function render_loading(target)
   M.state.activity_commit_page = false
   M.state.activity_issue_page = target.issues == true
   M.state.activity_milestone = target.milestone
+  M.state.activity_saved = false
   M.state.activity_return = nil
   M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
@@ -3874,6 +3900,8 @@ local function set_activity_inspect_queue_scope()
         or M.state.activity_issue_page and "issues"
         or "activity",
     }, ":")
+  elseif M.state.activity_saved then
+    scope = "saved"
   elseif M.state.contributor then
     local contributor = M.state.contributor
 
@@ -3955,8 +3983,23 @@ local function render_activity(events, cached, notice, opts)
     or ""
 
   local milestone = project and M.state.activity_milestone or nil
+  local saved_page = M.state.activity_saved == true
 
-  local lines = project
+  local saved_count = saved_page
+      and #require("oculus.saved").items()
+    or 0
+
+  local lines = saved_page
+      and {
+        "",
+        "  SAVED",
+        ("  %d saved item%s%s"):format(
+          saved_count,
+          saved_count == 1 and "" or "s",
+          context_suffix
+        ),
+      }
+    or project
       and {
         "",
         milestone and "  MILESTONE"
@@ -3992,8 +4035,20 @@ local function render_activity(events, cached, notice, opts)
       omit_single_commit_count = true,
     })
 
-    if project
-      and (M.state.activity_issue_page or milestone)
+    local event_project = project
+    local saved_project_issue = false
+
+    if saved_page then
+      local source = saved_view.source_for(event)
+      event_project = source and source.kind == "project" and source or nil
+
+      saved_project_issue = event_project ~= nil
+        and type(event.id) == "string"
+        and event.id:match("^project%-issue:") ~= nil
+    end
+
+    if event_project
+      and (M.state.activity_issue_page or milestone or saved_project_issue)
       and event.type == "IssuesEvent"
     then
       local issue = event.payload and event.payload.issue or {}
@@ -4012,9 +4067,13 @@ local function render_activity(events, cached, notice, opts)
         tostring(issue.number or "?")
       )
 
+      if saved_project_issue then
+        item.text = item.text .. " in " .. event_project.repository
+      end
+
       item.detail = tostring(issue.title or "Untitled issue")
       item.summary = nil
-    elseif project and event.type == "PushEvent" then
+    elseif event_project and event.type == "PushEvent" then
       local author = project_push_author(event)
 
       if author then
@@ -4117,7 +4176,9 @@ local function render_activity(events, cached, notice, opts)
   end
 
   if #events == 0 then
-    lines[#lines + 1] = milestone
+    lines[#lines + 1] = saved_page
+        and "  No saved items. Press S on an activity item to save it."
+      or milestone
         and "  This milestone has no issues or pull requests."
       or M.state.activity_page > 1
         and "  No past public activity was returned."
@@ -4176,6 +4237,7 @@ local function render_activity(events, cached, notice, opts)
     M.state.activity_cursor_min_line = 2
   end
 
+  saved_view.mark()
   render_sidebar()
   update_activity_cursorline()
 end
@@ -4191,8 +4253,7 @@ commit_activity_url = function(event, sha)
   local repo = event.repo and event.repo.name
 
   if repo then
-    local activity_source = M.state.activity_project
-      or M.state.contributor
+    local activity_source = saved_view.source_for(event)
 
     local host = provider_name(activity_source) == "Codeberg"
         and "https://codeberg.org/"
@@ -4309,6 +4370,10 @@ local function show_commit_activity(commits)
 end
 
 local function open_commit_activity(event)
+  M.state.saved_expanded_source = M.state.activity_saved
+      and saved_view.source_for(event)
+    or nil
+
   return show_commit_activity(commit_activity_events(event))
 end
 
@@ -4317,8 +4382,9 @@ local function open_pull_request_activity(event)
   local pull_request = payload.pull_request or {}
   local repo = event.repo and event.repo.name
   local number = pull_request.number or payload.number
-  local source = M.state.activity_project or M.state.contributor
+  local source = saved_view.source_for(event)
   local provider = activity_provider(source)
+  M.state.saved_expanded_source = M.state.activity_saved and source or nil
 
   if not repo
     or not number
@@ -4831,6 +4897,7 @@ load_project_activity = function(project, force, page)
   M.state.activity_project = project
   M.state.activity_issue_page = false
   M.state.activity_milestone = nil
+  M.state.activity_saved = false
   M.state.contributor = nil
 
   if page == nil then
@@ -5139,6 +5206,7 @@ load_project_issues = function(project, force, page)
   M.state.activity_project = project
   M.state.activity_issue_page = true
   M.state.activity_milestone = nil
+  M.state.activity_saved = false
   M.state.activity_commit_page = false
   M.state.contributor = nil
 
@@ -5863,6 +5931,216 @@ function milestone_view.load_items(project, milestone, force, page)
   ensure_items_page()
 end
 
+function saved_view.key(event)
+  local key = activity_dedupe_key(event)
+
+  -- The last-resort dedupe key embeds a table address, which changes once a
+  -- saved item is reloaded, so identify such items by their content instead.
+  if key:find("table: 0x", 1, true) then
+    local ok, encoded = pcall(vim.json.encode, event)
+    key = ok and ("event:" .. vim.fn.sha256(encoded)) or key
+  end
+
+  return key
+end
+
+function saved_view.source(value)
+  if type(value) ~= "table" then
+    return nil
+  end
+
+  if value.kind == "project" or value.kind == "user" then
+    return value
+  end
+
+  local provider = value.provider == "codeberg" and "codeberg" or "github"
+
+  if type(value.repository) == "string" then
+    return {
+      kind = "project",
+      provider = provider,
+      repository = value.repository,
+      name = value.name,
+    }
+  end
+
+  if type(value.username) == "string" then
+    return { kind = "user", provider = provider, username = value.username }
+  end
+end
+
+-- The project or user an activity item came from: its recorded source on the
+-- saved page, otherwise the feed being viewed.
+function saved_view.source_for(event)
+  if M.state.activity_saved then
+    local entry = M.state.saved_entries and M.state.saved_entries[event]
+
+    if entry then
+      return entry.source
+    end
+
+    if M.state.saved_expanded_source then
+      return M.state.saved_expanded_source
+    end
+  end
+
+  return saved_view.source(M.state.activity_project or M.state.contributor)
+end
+
+function saved_view.persist()
+  local state_file = M.state.opts.state_file
+
+  if type(state_file) ~= "string" or state_file == "" then
+    return
+  end
+
+  local ok, err = require("oculus.storage").save(state_file, M.state.opts)
+
+  if not ok then
+    vim.notify(
+      "Oculus could not save saved items: " .. tostring(err),
+      vim.log.levels.ERROR
+    )
+  end
+end
+
+function saved_view.mark()
+  if not is_valid_buf(M.state.buf) then
+    return
+  end
+
+  vim.api.nvim_buf_clear_namespace(M.state.buf, saved_view.ns, 0, -1)
+
+  if M.state.view ~= "activity" then
+    return
+  end
+
+  local store = require("oculus.saved")
+
+  for line, title_line in pairs(M.state.activity_title_lines or {}) do
+    local event = line == title_line
+      and M.state.activity_events
+      and M.state.activity_events[line]
+
+    if type(event) == "table" then
+      local entry = M.state.activity_saved
+        and M.state.saved_entries
+        and M.state.saved_entries[event]
+
+      if entry or store.index(saved_view.key(event)) then
+        pcall(vim.api.nvim_buf_set_extmark, M.state.buf, saved_view.ns, line - 1, 0, {
+          virt_text = { { "★", "OculusSaved" } },
+          virt_text_pos = "overlay",
+          priority = 10001,
+        })
+      end
+    end
+  end
+end
+
+function saved_view.open(page, cursor)
+  if not is_valid_win(M.state.win) then
+    return
+  end
+
+  if M.state.view == "directory" then
+    M.state.directory_return = M.state.current_directory
+  elseif M.state.view == "contributors" then
+    M.state.directory_return = nil
+  end
+
+  stop_activity_page_loading()
+  M.state.request_id = M.state.request_id + 1
+  M.state.view = "activity"
+  M.state.activity_saved = true
+  M.state.activity_scope = "saved"
+  M.state.activity_project = nil
+  M.state.contributor = nil
+  M.state.activity_issue_page = false
+  M.state.activity_milestone = nil
+  M.state.activity_commit_page = false
+  M.state.activity_return = nil
+  M.state.saved_expanded_source = nil
+  local items = require("oculus.saved").items()
+
+  local size = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.results_limit) or 8)
+  )
+
+  local pages = math.max(1, math.ceil(#items / size))
+  page = math.min(math.max(1, page or 1), pages)
+  M.state.activity_page_size = size
+  M.state.activity_page = page
+  M.state.activity_loaded_pages = pages
+  M.state.activity_has_past = page < pages
+  M.state.saved_entries = {}
+  local events = {}
+  local all_events = {}
+
+  for index, entry in ipairs(items) do
+    all_events[#all_events + 1] = entry.event
+    M.state.saved_entries[entry.event] = entry
+
+    if index > (page - 1) * size and index <= page * size then
+      events[#events + 1] = entry.event
+    end
+  end
+
+  M.state.activity_source_events = all_events
+  render_activity(events, true, nil, { issue_page = false })
+
+  if cursor and is_valid_win(M.state.win) then
+    local line_count = vim.api.nvim_buf_line_count(M.state.buf)
+
+    pcall(vim.api.nvim_win_set_cursor, M.state.win, {
+      math.min(cursor[1], line_count),
+      0,
+    })
+
+    update_activity_cursorline()
+  end
+end
+
+function saved_view.toggle()
+  if M.state.view ~= "activity" or not is_valid_win(M.state.win) then
+    return
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(M.state.win)
+  local event = M.state.activity_events and M.state.activity_events[cursor[1]]
+
+  if type(event) ~= "table" then
+    vim.notify("Oculus: select an activity item to save", vim.log.levels.WARN)
+    return
+  end
+
+  local store = require("oculus.saved")
+
+  local entry = M.state.activity_saved
+    and M.state.saved_entries
+    and M.state.saved_entries[event]
+
+  local key = entry and entry.key or saved_view.key(event)
+
+  if not store.remove(key) then
+    store.add({
+      key = key,
+      saved_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+      source = vim.deepcopy(saved_view.source_for(event)),
+      event = vim.deepcopy(event),
+    })
+  end
+
+  saved_view.persist()
+
+  if M.state.activity_saved and not M.state.activity_commit_page then
+    saved_view.open(M.state.activity_page, cursor)
+  else
+    saved_view.mark()
+  end
+end
+
 local function load_activity(contributor, force, page)
   local preserve_activity_page = page ~= nil
     and M.state.view == "activity"
@@ -5873,6 +6151,7 @@ local function load_activity(contributor, force, page)
   M.state.activity_scope = "user"
   M.state.activity_project = nil
   M.state.activity_milestone = nil
+  M.state.activity_saved = false
   M.state.activity_has_past = nil
   M.state.contributor = contributor
 
@@ -5963,6 +6242,17 @@ local function load_activity(contributor, force, page)
 end
 
 local function next_activity_page()
+  if M.state.view == "activity"
+    and M.state.activity_saved
+    and not M.state.activity_commit_page
+  then
+    if M.state.activity_has_past then
+      saved_view.open((M.state.activity_page or 1) + 1)
+    end
+
+    return
+  end
+
   if
     M.state.view ~= "activity"
     or M.state.activity_commit_page
@@ -5996,6 +6286,17 @@ local function next_activity_page()
 end
 
 local function previous_activity_page()
+  if M.state.view == "activity"
+    and M.state.activity_saved
+    and not M.state.activity_commit_page
+  then
+    if (M.state.activity_page or 1) > 1 then
+      saved_view.open((M.state.activity_page or 1) - 1)
+    end
+
+    return
+  end
+
   if
     M.state.view ~= "activity"
     or M.state.activity_commit_page
@@ -6037,7 +6338,9 @@ local function refresh_activity()
 
   local page = M.state.activity_page or 1
 
-  if M.state.activity_project then
+  if M.state.activity_saved then
+    saved_view.open(page, vim.api.nvim_win_get_cursor(M.state.win))
+  elseif M.state.activity_project then
     if M.state.activity_milestone then
       milestone_view.load_items(
         M.state.activity_project,
@@ -7714,7 +8017,9 @@ end
 
 local function active_list_key()
   if M.state.view == "activity" then
-    if M.state.activity_project then
+    if M.state.activity_saved then
+      return "saved"
+    elseif M.state.activity_project then
       local repo = M.state.activity_project.repository
         or M.state.activity_project.name
         or "project"
@@ -8344,6 +8649,11 @@ local function go_back()
     M.state.shortcut_return = nil
 
     if return_state.view == "activity"
+      and M.state.activity_saved
+      and not M.state.activity_commit_page
+    then
+      saved_view.open(M.state.activity_page)
+    elseif return_state.view == "activity"
       and (M.state.contributor or M.state.activity_project)
     then
       if M.state.activity_error then
@@ -8722,6 +9032,14 @@ local function map_keys(buf)
 
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
 
+  map("S", function()
+    if M.state.view == "activity" then
+      saved_view.toggle()
+    elseif M.state.view == "contributors" or M.state.view == "directory" then
+      saved_view.open()
+    end
+  end, "Save or unsave an Oculus activity item, or open saved items")
+
   map("u", function()
     if M.state.view == "contributors" then
       if M.state.community_view ~= "users" then
@@ -8978,6 +9296,12 @@ function M.open(opts)
     restore_cursor()
   elseif M.state.view == "milestones" and M.state.project_milestones then
     milestone_view.render()
+  elseif M.state.view == "activity"
+    and M.state.activity_saved
+    and not M.state.activity_commit_page
+  then
+    saved_view.open(M.state.activity_page)
+    restore_cursor()
   elseif
     M.state.view == "activity"
     and (M.state.contributor or M.state.activity_project)

@@ -63,6 +63,9 @@ jobs:
       - name: Run milestone tests
         run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/milestones_spec.lua
 
+      - name: Run saved item tests
+        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/saved_spec.lua
+
       - name: Run window tests
         run: nvim --headless -u NONE -l tests/window_spec.lua
 
