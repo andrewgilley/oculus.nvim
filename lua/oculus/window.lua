@@ -1168,7 +1168,8 @@ local function footer_win_config()
 end
 
 -- Confirmation prompts that temporarily replace the list footer commands.
-local footer_prompt = { keys = "y remove  n cancel" }
+-- Removing is the default answer, so Enter confirms like y.
+local footer_prompt = { keys = "⏎/y remove  n cancel" }
 
 local function footer_commands_text()
   local nav = navigation.resolve(M.state.opts)
@@ -7999,7 +8000,7 @@ function footer_prompt.removal_question(target)
   end
 end
 
--- Removal waits for a y/n answer in the footer; moving the cursor or pressing
+-- Removal waits for an answer in the footer (Enter or y removes); moving the cursor or pressing
 -- any other key dismisses the prompt without removing anything.
 local function request_removal()
   local target = target_on_cursor()
@@ -9887,7 +9888,7 @@ local function map_keys(buf)
         ["<Left>"]="left", [nav.left]="left", f="group", K="group", D="group", m="move", M="destination", ["<Esc>"]="cancel" }
 
       if M.state.footer_prompt then
-        if lhs == "y" then
+        if lhs == "y" or lhs == "<CR>" then
           footer_prompt.confirm()
           return
         end

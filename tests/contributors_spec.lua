@@ -111,15 +111,15 @@ local function footer_row()
 end
 
 assert(footer_row():find('Remove "', 1, true), footer_row())
-assert(footer_row():find("y remove", 1, true), footer_row())
+assert(footer_row():find("⏎/y remove", 1, true), footer_row())
 assert(not footer_row():find("?: help", 1, true), "prompt replaces the footer commands")
 vim.fn.maparg("n", "n", false, true).callback()
 assert(#state.opts.projects == 1, "n cancels removal")
 assert(footer_row():find("?: help", 1, true), "cancel restores the footer commands")
 assert(not state.footer_prompt)
 remove_mapping.callback()
-vim.fn.maparg("y", "n", false, true).callback()
-assert(#state.opts.projects == 0)
+vim.fn.maparg("<CR>", "n", false, true).callback()
+assert(#state.opts.projects == 0, "Enter confirms the default removal")
 
 assert(not table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
