@@ -172,7 +172,7 @@ window with `a`, list them in `setup()`, or load them from a
 
 > [!TIP]
 > Set `GITHUB_TOKEN` in your environment. Unauthenticated GitHub requests are
-> heavily rate-limited. See [Authentication](#authentication).
+> rate-limited. See [Authentication](#authentication).
 
 ## Usage
 
