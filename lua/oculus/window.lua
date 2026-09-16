@@ -80,6 +80,7 @@ local load_project_activity
 local load_project_issues
 local milestone_view = {}
 local saved_view = { ns = vim.api.nvim_create_namespace("oculus_saved_items") }
+local work_view = {}
 local target_on_cursor
 local render_directory
 local persist_projects
@@ -179,6 +180,12 @@ M.state = {
   activity_saved = false,
   saved_entries = nil,
   saved_expanded_source = nil,
+  work_lists = nil,
+  selected_work = nil,
+  work_offset = 1,
+  work_return = nil,
+  work_items_feed = nil,
+  activity_work = nil,
   activity_inspect_queue = {},
   activity_inspect_queue_active = nil,
   activity_inspect_queue_batch = nil,
@@ -798,6 +805,7 @@ local function sidebar_sections_for_view(view)
         title = "ACTIONS",
         items = showing_users and {
           { "p", "Projects" },
+          { "w", "My work" },
           { "S", "Saved" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
@@ -808,6 +816,7 @@ local function sidebar_sections_for_view(view)
           { "o", "Profile" },
         } or {
           { "u", "Users" },
+          { "w", "My work" },
           { "S", "Saved" },
           { "a", "Add" },
           { "f", "Folder" },
@@ -900,7 +909,7 @@ local function sidebar_sections_for_view(view)
         },
       },
     }
-  elseif view == "milestones" then
+  elseif view == "milestones" or view == "work" then
     return {
       {
         title = "NAVIGATION",
@@ -964,6 +973,7 @@ local function sidebar_sections_for_view(view)
       {
         title = "PROJECTS",
         items = {
+          { "w", "My work" },
           { "S", "Saved" },
           { "a", "Add" },
           { "M", "Move Dir" },
@@ -1164,13 +1174,13 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  p projects   S saved   m move   ?: help"
-      or "  u users   S saved   f folder   m move   ?: help"
+        and "  p projects   w work   S saved   m move   ?: help"
+      or "  u users   w work   S saved   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   r remove   m move   ?: help"):format(
       nav.left
     )
-  elseif M.state.view == "milestones" then
+  elseif M.state.view == "milestones" or M.state.view == "work" then
     return ("  %s/← back   ⏎ open   b browser   r refresh   ?: help"):format(
       nav.left
     )
@@ -1366,6 +1376,7 @@ local function clamp_list_cursor()
   if M.state.view == "contributors"
     or M.state.view == "directory"
     or M.state.view == "milestones"
+    or M.state.view == "work"
   then
     local selectable = {}
     local selected_line
@@ -2033,6 +2044,7 @@ local function render_preview_panel(items)
       M.state.view ~= "contributors"
       and M.state.view ~= "directory"
       and M.state.view ~= "milestones"
+      and M.state.view ~= "work"
     )
     or not is_valid_buf(M.state.buf)
     or not is_valid_win(M.state.win)
@@ -2381,6 +2393,7 @@ local function update_contributor_selection()
       M.state.view ~= "contributors"
       and M.state.view ~= "directory"
       and M.state.view ~= "milestones"
+      and M.state.view ~= "work"
     )
     or not is_valid_win(M.state.win)
   then
@@ -2509,6 +2522,7 @@ local function render_contributors()
   M.state.activity_project = nil
   M.state.activity_milestone = nil
   M.state.activity_saved = false
+  M.state.activity_work = nil
   M.state.events = nil
   M.state.line_targets = {}
   M.state.preview_key = nil
@@ -2527,7 +2541,7 @@ local function render_contributors()
       while #lines < window_height - 2 do lines[#lines + 1] = "" end
       lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
       separator_line = #lines
-      footer(lines, "p projects  u users  S saved  f folder  m move")
+      footer(lines, "p projects  u users  w work  S saved  f folder  m move")
       commands_line = #lines
       -- Keep the commands inside the list pane, clear of the preview.
       lines[commands_line] = pad_cell(trim_to_width(lines[commands_line], left_width - 1), left_width)
@@ -2697,8 +2711,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and "p projects  S saved  m move  ?: help"
-      or "u users  S saved  f folder  m move  ?: help")
+        and "p projects  w work  S saved  m move  ?: help"
+      or "u users  w work  S saved  f folder  m move  ?: help")
 
     commands_line = #lines
   else
@@ -3803,16 +3817,20 @@ local function render_loading(target)
   M.state.activity_issue_page = target.issues == true
   M.state.activity_milestone = target.milestone
   M.state.activity_saved = false
+  M.state.activity_work = nil
   M.state.activity_return = nil
   M.state.activity_expansion_targets = {}
   M.state.activity_loaded = false
   M.state.activity_error = nil
+  local work = target.kind == "work" and target.work or nil
+  M.state.activity_work = work
   local project = target.kind == "project" and target.project or nil
-  M.state.activity_scope = project and "project" or "user"
+  M.state.activity_scope = work and "work" or project and "project" or "user"
   M.state.activity_project = project
-  M.state.contributor = project and nil or target
+  M.state.contributor = (project or work) and nil or target
 
-  local lines = project
+  local lines = work and work_view.header(work)
+    or project
       and {
         "",
         target.milestone and "  MILESTONE"
@@ -3848,8 +3866,15 @@ local function render_error(message)
   M.state.activity_error = message
   local project = M.state.activity_project
   local milestone = M.state.activity_milestone
+  local work = M.state.activity_work
 
-  local lines = project
+  local lines = work
+      and vim.list_extend(work_view.header(work), {
+        "",
+        "  Could not load activity",
+        "  " .. message,
+      })
+    or project
       and {
         "",
         milestone and "  MILESTONE"
@@ -3902,6 +3927,8 @@ local function set_activity_inspect_queue_scope()
     }, ":")
   elseif M.state.activity_saved then
     scope = "saved"
+  elseif M.state.activity_work then
+    scope = "work:" .. M.state.activity_work.key
   elseif M.state.contributor then
     local contributor = M.state.contributor
 
@@ -3989,7 +4016,11 @@ local function render_activity(events, cached, notice, opts)
       and #require("oculus.saved").items()
     or 0
 
-  local lines = saved_page
+  local work = M.state.activity_work
+
+  local lines = work
+      and work_view.header(work, context_suffix)
+    or saved_page
       and {
         "",
         "  SAVED",
@@ -4038,7 +4069,7 @@ local function render_activity(events, cached, notice, opts)
     local event_project = project
     local saved_project_issue = false
 
-    if saved_page then
+    if saved_page or work then
       local source = saved_view.source_for(event)
       event_project = source and source.kind == "project" and source or nil
 
@@ -4176,7 +4207,9 @@ local function render_activity(events, cached, notice, opts)
   end
 
   if #events == 0 then
-    lines[#lines + 1] = saved_page
+    lines[#lines + 1] = work
+        and "  Nothing here right now."
+      or saved_page
         and "  No saved items. Press S on an activity item to save it."
       or milestone
         and "  This milestone has no issues or pull requests."
@@ -4898,6 +4931,7 @@ load_project_activity = function(project, force, page)
   M.state.activity_issue_page = false
   M.state.activity_milestone = nil
   M.state.activity_saved = false
+  M.state.activity_work = nil
   M.state.contributor = nil
 
   if page == nil then
@@ -5207,6 +5241,7 @@ load_project_issues = function(project, force, page)
   M.state.activity_issue_page = true
   M.state.activity_milestone = nil
   M.state.activity_saved = false
+  M.state.activity_work = nil
   M.state.activity_commit_page = false
   M.state.contributor = nil
 
@@ -5931,6 +5966,655 @@ function milestone_view.load_items(project, milestone, force, page)
   ensure_items_page()
 end
 
+work_view.categories = {
+  {
+    key = "review_requested",
+    label = "Review requests",
+    description = "Open pull requests waiting for your review",
+    github_url = "https://github.com/pulls/review-requested",
+    codeberg_url = "https://codeberg.org/pulls?type=review_requested",
+  },
+  {
+    key = "authored",
+    label = "Your pull requests",
+    description = "Open pull requests you opened",
+    github_url = "https://github.com/pulls",
+    codeberg_url = "https://codeberg.org/pulls?type=created_by",
+  },
+  {
+    key = "assigned",
+    label = "Assigned to you",
+    description = "Open issues and pull requests assigned to you",
+    github_url = "https://github.com/issues/assigned",
+    codeberg_url = "https://codeberg.org/issues?type=assigned",
+  },
+  {
+    key = "mentioned",
+    label = "Mentions",
+    description = "Open issues and pull requests that mention you",
+    github_url = "https://github.com/issues/mentioned",
+    codeberg_url = "https://codeberg.org/issues?type=mentioned",
+  },
+}
+
+-- GitHub always shows, with a sign-in hint when there is no token; Codeberg
+-- shows once it has a token or a tracked project or user.
+function work_view.providers()
+  local auth = require("oculus.auth")
+  local providers = { "github" }
+  local uses_codeberg = auth.codeberg_token(M.state.opts) ~= nil
+
+  for _, list in ipairs({
+    M.state.opts.projects or {},
+    M.state.contributors or M.state.opts.contributors or {},
+  }) do
+    for _, entry in ipairs(list) do
+      uses_codeberg = uses_codeberg
+        or (type(entry) == "table" and entry.provider == "codeberg")
+    end
+  end
+
+  if uses_codeberg then
+    providers[#providers + 1] = "codeberg"
+  end
+
+  return providers
+end
+
+function work_view.header(work, suffix)
+  local viewer = work.viewer and ("@" .. work.viewer.login .. " · ") or ""
+
+  return {
+    "",
+    "  MY WORK",
+    ("  %s · %s%s%s"):format(
+      work.label,
+      viewer,
+      provider_name(work),
+      suffix or ""
+    ),
+  }
+end
+
+function work_view.web_url(entry)
+  return entry.provider == "codeberg"
+      and entry.category.codeberg_url
+    or entry.category.github_url
+end
+
+function work_view.count_text(entry)
+  if entry.error then
+    return "!"
+  elseif entry.loading or not entry.loaded then
+    return "…"
+  elseif entry.total then
+    return tostring(entry.total)
+  end
+
+  return tostring(#entry.events) .. (entry.complete and "" or "+")
+end
+
+function work_view.entries()
+  local entries = {}
+
+  for _, forge in ipairs(M.state.work_lists and M.state.work_lists.forges or {}) do
+    for _, entry in ipairs(forge.entries) do
+      entries[#entries + 1] = entry
+    end
+  end
+
+  return entries
+end
+
+function work_view.preview_items(entry, width)
+  local forge = entry.forge
+
+  local items = {
+    [2] = { entry.category.label:upper(), "Title" },
+    [4] = { entry.category.description, "Identifier" },
+    [5] = {
+      forge.viewer
+          and ("@%s on %s"):format(forge.viewer.login, provider_name(entry))
+        or provider_name(entry),
+      "Comment",
+    },
+  }
+
+  if entry.error then
+    items[7] = { entry.error, "DiagnosticError" }
+    return items
+  elseif entry.loading or not entry.loaded then
+    items[7] = { "Loading…", "Comment" }
+    return items
+  end
+
+  local count = work_view.count_text(entry)
+
+  items[7] = {
+    count == "0" and "Nothing open"
+      or (count .. " open"),
+    "Comment",
+  }
+
+  local line = 9
+  local limit = math.max(0, vim.api.nvim_win_get_height(M.state.win) - line - 1)
+
+  for index, event in ipairs(entry.events) do
+    if index > limit then
+      break
+    end
+
+    local issue = event.payload and event.payload.issue or {}
+
+    items[line] = {
+      trim_to_width(
+        ("%s#%s %s"):format(
+          event.repo and event.repo.name or "",
+          tostring(issue.number or "?"),
+          tostring(issue.title or "")
+        ),
+        width
+      ),
+      "OculusActivityPreview",
+    }
+
+    line = line + 1
+  end
+
+  return items
+end
+
+function work_view.queue_preview(entry)
+  if M.state.view ~= "work" or not entry then
+    return
+  end
+
+  local window_width = vim.api.nvim_win_get_width(M.state.win)
+  local left_width = preview_left_width(window_width)
+  local preview_width = math.max(15, window_width - left_width - 5)
+  M.state.preview_key = "work:" .. entry.key
+  render_preview_panel(work_view.preview_items(entry, preview_width))
+end
+
+function work_view.selected_index(entries)
+  for index, entry in ipairs(entries) do
+    if entry.key == M.state.selected_work then
+      return index
+    end
+  end
+
+  return entries[1] and 1 or nil
+end
+
+function work_view.render()
+  local list = M.state.work_lists
+
+  if not list or not is_valid_win(M.state.win) then
+    return
+  end
+
+  stop_activity_page_loading()
+  close_activity_footer()
+  M.state.view = "work"
+  M.state.activity_work = nil
+  M.state.line_targets = {}
+  M.state.preview_key = nil
+  local window_width = vim.api.nvim_win_get_width(M.state.win)
+  local left_width = preview_left_width(window_width)
+  local window_height = vim.api.nvim_win_get_height(M.state.win)
+  local sidebar_visible = is_sidebar_visible()
+
+  local lines = {
+    "",
+    "  MY WORK",
+    "  Open issues and pull requests that involve you",
+    "",
+  }
+
+  local headings = {}
+  local comment_lines = {}
+  local error_lines = {}
+  local rows = {}
+
+  for _, forge in ipairs(list.forges) do
+    if #rows > 0 then
+      rows[#rows + 1] = { kind = "blank" }
+    end
+
+    rows[#rows + 1] = {
+      kind = "heading",
+      text = provider_name(forge):upper()
+        .. (forge.viewer and (" · @" .. forge.viewer.login) or ""),
+    }
+
+    for _, text in ipairs(wrapped_preview_text(forge.message, left_width - 3, 3)) do
+      rows[#rows + 1] = {
+        kind = forge.signed_in and "error" or "comment",
+        text = text,
+      }
+    end
+
+    for _, entry in ipairs(forge.entries) do
+      rows[#rows + 1] = { kind = "entry", entry = entry }
+    end
+  end
+
+  local entries = work_view.entries()
+  local selected_index = work_view.selected_index(entries)
+  local selected = selected_index and entries[selected_index] or nil
+  M.state.selected_work = selected and selected.key or nil
+  local selected_row = 1
+
+  for index, row in ipairs(rows) do
+    if row.entry and row.entry == selected then
+      selected_row = index
+      break
+    end
+  end
+
+  local capacity = math.max(
+    3,
+    window_height - #lines - (sidebar_visible and 0 or 2)
+  )
+
+  local offset = math.min(
+    math.max(1, M.state.work_offset or 1),
+    math.max(1, #rows - capacity + 1)
+  )
+
+  if selected_row < offset then
+    offset = selected_row
+  elseif selected_row >= offset + capacity then
+    offset = selected_row - capacity + 1
+  end
+
+  -- Keep a forge's heading (and sign-in message) in view above its first
+  -- category while the selection still fits.
+  while offset > 1
+    and rows[offset - 1].kind ~= "blank"
+    and rows[offset - 1].kind ~= "entry"
+    and selected_row < offset + capacity - 1
+  do
+    offset = offset - 1
+  end
+
+  M.state.work_offset = offset
+
+  for index = offset, math.min(#rows, offset + capacity - 1) do
+    local row = rows[index]
+
+    if row.kind == "blank" then
+      lines[#lines + 1] = ""
+    elseif row.kind == "heading" then
+      lines[#lines + 1] = "  " .. row.text
+      headings[#headings + 1] = #lines
+    elseif row.kind == "comment" or row.kind == "error" then
+      lines[#lines + 1] = "  " .. trim_to_width(row.text, left_width - 3)
+
+      if row.kind == "error" then
+        error_lines[#error_lines + 1] = #lines
+      else
+        comment_lines[#comment_lines + 1] = #lines
+      end
+    else
+      local count = work_view.count_text(row.entry)
+      local label_width = math.max(4, left_width - 3 - #count - 2)
+
+      lines[#lines + 1] = pad_cell(
+        "  " .. pad_cell(trim_to_width(row.entry.category.label, label_width), label_width)
+          .. " " .. count,
+        left_width
+      )
+
+      M.state.line_targets[#lines] = { kind = "work", entry = row.entry }
+    end
+  end
+
+  local separator_line
+  local commands_line
+
+  if not sidebar_visible then
+    while #lines < window_height - 2 do
+      lines[#lines + 1] = ""
+    end
+
+    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
+    separator_line = #lines
+    local nav = navigation.resolve(M.state.opts)
+
+    footer(
+      lines,
+      ("%s/← back  ⏎ open  b browser  r refresh  ?: help"):format(nav.left)
+    )
+
+    commands_line = #lines
+
+    lines[commands_line] = pad_cell(
+      trim_to_width(lines[commands_line], left_width - 1),
+      left_width
+    )
+  else
+    while #lines < window_height do
+      lines[#lines + 1] = ""
+    end
+  end
+
+  set_lines(lines)
+  vim.wo[M.state.win].cursorline = false
+  highlight(2, 2, -1, "Title")
+  highlight(3, 2, -1, "Comment")
+
+  for _, line in ipairs(headings) do
+    highlight(line, 2, -1, "OculusSectionTitle")
+  end
+
+  for _, line in ipairs(comment_lines) do
+    highlight(line, 2, -1, "Comment")
+  end
+
+  for _, line in ipairs(error_lines) do
+    highlight(line, 2, -1, "DiagnosticError")
+  end
+
+  local selected_line
+
+  for line, target in pairs(M.state.line_targets) do
+    highlight(line, 2, -1, "Identifier")
+
+    if target.entry == selected then
+      selected_line = line
+    end
+  end
+
+  if separator_line then
+    highlight(separator_line, 2, -1, "WinSeparator")
+  end
+
+  if commands_line then
+    highlight(commands_line, 2, -1, "OculusNormal")
+  end
+
+  if selected_line then
+    vim.api.nvim_win_set_cursor(M.state.win, { selected_line, 0 })
+    work_view.queue_preview(selected)
+  else
+    render_preview_panel({ [2] = { "MY WORK", "Title" } })
+  end
+
+  update_contributor_selection()
+  render_sidebar()
+end
+
+function work_view.select_adjacent(direction)
+  local entries = work_view.entries()
+  local index = work_view.selected_index(entries)
+
+  if not index then
+    return
+  end
+
+  index = ((index - 1 + direction) % #entries) + 1
+  M.state.selected_work = entries[index].key
+  work_view.render()
+end
+
+-- Rerender the list after a request finishes, unless the user has moved on.
+function work_view.refresh(list)
+  if M.state.work_lists == list
+    and M.state.view == "work"
+    and is_valid_win(M.state.win)
+  then
+    work_view.render()
+  end
+end
+
+function work_view.load(force)
+  local auth = require("oculus.auth")
+  M.state.request_id = M.state.request_id + 1
+  local list = { forges = {} }
+  M.state.work_lists = list
+
+  local request_opts = vim.tbl_extend(
+    "force",
+    M.state.opts,
+    { force = force or false }
+  )
+
+  for _, provider in ipairs(work_view.providers()) do
+    local forge = {
+      provider = provider,
+      entries = {},
+      signed_in = auth.token(provider, M.state.opts) ~= nil,
+      viewer = auth.cached_viewer(provider, M.state.opts),
+    }
+
+    list.forges[#list.forges + 1] = forge
+
+    if not forge.signed_in then
+      forge.message = "Not signed in: " .. auth.sign_in_hint(provider)
+    else
+      auth.viewer(provider, request_opts, function(viewer, err)
+        forge.viewer = viewer or forge.viewer
+        forge.message = not viewer and err and tostring(err) or nil
+        work_view.refresh(list)
+      end)
+
+      local client = provider == "codeberg" and codeberg or github
+
+      for _, category in ipairs(work_view.categories) do
+        local entry = {
+          key = provider .. ":" .. category.key,
+          provider = provider,
+          category = category,
+          forge = forge,
+          loading = true,
+          events = {},
+        }
+
+        forge.entries[#forge.entries + 1] = entry
+
+        client.work_items(category.key, request_opts, function(
+          events,
+          err,
+          _,
+          complete,
+          total
+        )
+          entry.loading = false
+          entry.loaded = events ~= nil
+          entry.error = err and tostring(err) or nil
+          entry.events = events or {}
+          entry.complete = complete == true
+          entry.total = total
+          work_view.refresh(list)
+        end)
+      end
+    end
+  end
+
+  work_view.render()
+end
+
+function work_view.open()
+  if not is_valid_win(M.state.win) then
+    return
+  end
+
+  M.state.work_return = M.state.view == "directory"
+      and M.state.current_directory
+    or nil
+
+  work_view.load(false)
+end
+
+-- One work category as an activity feed, paged like the milestone feed.
+function work_view.load_items(entry, force, page)
+  local previous_page = M.state.activity_page or 1
+
+  local work = {
+    key = entry.key,
+    provider = entry.provider,
+    category = entry.category,
+    label = entry.category.label,
+    viewer = entry.forge and entry.forge.viewer or entry.viewer,
+  }
+
+  local preserve_activity_page = page ~= nil
+    and M.state.view == "activity"
+    and M.state.activity_work
+    and M.state.activity_work.key == work.key
+    and M.state.activity_loaded
+    and is_valid_buf(M.state.buf)
+
+  if page == nil then
+    M.state.activity_loaded_pages = 1
+  end
+
+  local requested_page = math.max(1, page or 1)
+  M.state.activity_page = requested_page
+
+  M.state.activity_page_size = math.max(
+    1,
+    math.floor(tonumber(M.state.opts.results_limit) or 8)
+  )
+
+  M.state.request_id = M.state.request_id + 1
+  local request_id = M.state.request_id
+
+  if preserve_activity_page then
+    M.state.activity_work = work
+    M.state.activity_error = nil
+    start_activity_page_loading()
+  else
+    render_loading({ kind = "work", work = work })
+  end
+
+  local client = work.provider == "codeberg" and codeberg or github
+
+  local request_opts = vim.tbl_extend(
+    "force",
+    M.state.opts,
+    { force = force or false, per_page = 50 }
+  )
+
+  local feed = M.state.work_items_feed
+
+  if force or not feed or feed.key ~= work.key then
+    feed = {
+      key = work.key,
+      events = {},
+      seen = {},
+      next_page = 1,
+      complete = false,
+      cached = true,
+    }
+
+    M.state.work_items_feed = feed
+  end
+
+  local required_events = requested_page * M.state.activity_page_size
+  local max_source_pages = 10
+
+  local function render_items()
+    local items = deduplicate_activity(feed.events)
+
+    local first_event =
+      (requested_page - 1) * M.state.activity_page_size + 1
+
+    if requested_page > 1 and #items < first_event then
+      M.state.activity_page = math.max(1, previous_page)
+    else
+      M.state.activity_page = requested_page
+    end
+
+    M.state.activity_source_events = items
+
+    M.state.activity_loaded_pages = math.max(
+      M.state.activity_loaded_pages or 1,
+      M.state.activity_page
+    )
+
+    local page_end = M.state.activity_page * M.state.activity_page_size
+    M.state.activity_has_past = #items > page_end or not feed.complete
+
+    render_activity(
+      activity_page(
+        items,
+        M.state.activity_page,
+        M.state.activity_page_size
+      ),
+      feed.cached,
+      nil,
+      { issue_page = false }
+    )
+  end
+
+  local function ensure_items_page()
+    if #feed.events >= required_events or feed.complete then
+      render_items()
+      return
+    end
+
+    if feed.next_page > max_source_pages then
+      feed.complete = true
+      render_items()
+      return
+    end
+
+    local source_page = feed.next_page
+    request_opts.page = source_page
+
+    client.work_items(work.category.key, request_opts, function(
+      events,
+      err,
+      cached,
+      complete
+    )
+      if request_id ~= M.state.request_id
+        or M.state.view ~= "activity"
+        or not M.state.activity_work
+        or M.state.activity_work.key ~= work.key
+        or not is_valid_win(M.state.win)
+      then
+        return
+      end
+
+      if err then
+        render_error(err)
+        return
+      end
+
+      local source = events or {}
+
+      -- Items span repositories, so issue numbers alone are not unique.
+      for _, event in ipairs(source) do
+        local key = tostring(event.id)
+
+        if not feed.seen[key] then
+          feed.seen[key] = true
+          feed.events[#feed.events + 1] = event
+        end
+      end
+
+      table.sort(feed.events, function(left, right)
+        return tostring(left.created_at or "")
+          > tostring(right.created_at or "")
+      end)
+
+      feed.next_page = source_page + 1
+      feed.cached = feed.cached and cached == true
+
+      if complete == true or (complete == nil and #source == 0) then
+        feed.complete = true
+      end
+
+      ensure_items_page()
+    end)
+  end
+
+  ensure_items_page()
+end
+
 function saved_view.key(event)
   local key = activity_dedupe_key(event)
 
@@ -5972,6 +6656,16 @@ end
 -- The project or user an activity item came from: its recorded source on the
 -- saved page, otherwise the feed being viewed.
 function saved_view.source_for(event)
+  local work = M.state.activity_work
+
+  if work and type(event) == "table" and event.repo and event.repo.name then
+    return {
+      kind = "project",
+      provider = work.provider,
+      repository = event.repo.name,
+    }
+  end
+
   if M.state.activity_saved then
     local entry = M.state.saved_entries and M.state.saved_entries[event]
 
@@ -6053,6 +6747,7 @@ function saved_view.open(page, cursor)
   M.state.request_id = M.state.request_id + 1
   M.state.view = "activity"
   M.state.activity_saved = true
+  M.state.activity_work = nil
   M.state.activity_scope = "saved"
   M.state.activity_project = nil
   M.state.contributor = nil
@@ -6152,6 +6847,7 @@ local function load_activity(contributor, force, page)
   M.state.activity_project = nil
   M.state.activity_milestone = nil
   M.state.activity_saved = false
+  M.state.activity_work = nil
   M.state.activity_has_past = nil
   M.state.contributor = contributor
 
@@ -6243,6 +6939,21 @@ end
 
 local function next_activity_page()
   if M.state.view == "activity"
+    and M.state.activity_work
+    and not M.state.activity_commit_page
+  then
+    if M.state.activity_has_past ~= false then
+      work_view.load_items(
+        M.state.activity_work,
+        false,
+        (M.state.activity_page or 1) + 1
+      )
+    end
+
+    return
+  end
+
+  if M.state.view == "activity"
     and M.state.activity_saved
     and not M.state.activity_commit_page
   then
@@ -6286,6 +6997,21 @@ local function next_activity_page()
 end
 
 local function previous_activity_page()
+  if M.state.view == "activity"
+    and M.state.activity_work
+    and not M.state.activity_commit_page
+  then
+    if (M.state.activity_page or 1) > 1 then
+      work_view.load_items(
+        M.state.activity_work,
+        false,
+        (M.state.activity_page or 1) - 1
+      )
+    end
+
+    return
+  end
+
   if M.state.view == "activity"
     and M.state.activity_saved
     and not M.state.activity_commit_page
@@ -6332,6 +7058,11 @@ local function refresh_activity()
     return
   end
 
+  if M.state.view == "work" then
+    work_view.load(true)
+    return
+  end
+
   if M.state.view ~= "activity" or M.state.activity_commit_page then
     return
   end
@@ -6340,6 +7071,8 @@ local function refresh_activity()
 
   if M.state.activity_saved then
     saved_view.open(page, vim.api.nvim_win_get_cursor(M.state.win))
+  elseif M.state.activity_work then
+    work_view.load_items(M.state.activity_work, true, page)
   elseif M.state.activity_project then
     if M.state.activity_milestone then
       milestone_view.load_items(
@@ -7372,6 +8105,12 @@ local function select_current()
       target.milestone,
       false
     )
+  elseif M.state.view == "work"
+    and type(target) == "table"
+    and target.kind == "work"
+  then
+    M.state.selected_work = target.entry.key
+    work_view.load_items(target.entry, false)
   end
 end
 
@@ -7470,6 +8209,16 @@ local function open_current()
 end
 
 local function open_activity_in_browser()
+  if M.state.view == "work" then
+    local target = target_on_cursor()
+
+    if type(target) == "table" and target.kind == "work" then
+      open_url(work_view.web_url(target.entry))
+    end
+
+    return
+  end
+
   if M.state.view == "milestones" then
     local target = target_on_cursor()
 
@@ -8019,6 +8768,8 @@ local function active_list_key()
   if M.state.view == "activity" then
     if M.state.activity_saved then
       return "saved"
+    elseif M.state.activity_work then
+      return "work:" .. M.state.activity_work.key
     elseif M.state.activity_project then
       local repo = M.state.activity_project.repository
         or M.state.activity_project.name
@@ -8062,6 +8813,8 @@ local function active_list_key()
   elseif M.state.view == "milestones" and M.state.project_milestones then
     local project = M.state.project_milestones.project
     return "milestones:" .. (project.repository or project.name or "project")
+  elseif M.state.view == "work" then
+    return "work"
   elseif M.state.view == "issue_filters" and M.state.activity_project then
     local repo = M.state.activity_project.repository
       or M.state.activity_project.name
@@ -8379,6 +9132,8 @@ local function toggle_sidebar()
     render_issue_filters(M.state.activity_project)
   elseif M.state.view == "milestones" then
     milestone_view.render()
+  elseif M.state.view == "work" then
+    work_view.render()
   elseif M.state.view == "shortcuts" then
     render_shortcuts()
   end
@@ -8392,6 +9147,7 @@ local function move_cursor(direction)
     and M.state.view ~= "issue_filters"
     and M.state.view ~= "activity"
     and M.state.view ~= "milestones"
+    and M.state.view ~= "work"
   then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
     return
@@ -8399,6 +9155,11 @@ local function move_cursor(direction)
 
   if M.state.view == "milestones" then
     milestone_view.select_adjacent(direction)
+    return
+  end
+
+  if M.state.view == "work" then
+    work_view.select_adjacent(direction)
     return
   end
 
@@ -8535,6 +9296,30 @@ local function move_cursor(direction)
 end
 
 local function go_back()
+  if M.state.view == "activity"
+    and M.state.activity_work
+    and not M.state.activity_commit_page
+  then
+    M.state.request_id = M.state.request_id + 1
+    M.state.activity_work = nil
+    work_view.render()
+    return
+  end
+
+  if M.state.view == "work" then
+    M.state.request_id = M.state.request_id + 1
+    local dir_name = M.state.work_return
+    M.state.work_return = nil
+
+    if dir_name then
+      render_directory(dir_name)
+    else
+      render_contributors()
+    end
+
+    return
+  end
+
   if M.state.view == "activity" and M.state.activity_milestone then
     M.state.request_id = M.state.request_id + 1
     M.state.activity_milestone = nil
@@ -8654,7 +9439,11 @@ local function go_back()
     then
       saved_view.open(M.state.activity_page)
     elseif return_state.view == "activity"
-      and (M.state.contributor or M.state.activity_project)
+      and (
+        M.state.contributor
+        or M.state.activity_project
+        or M.state.activity_work
+      )
     then
       if M.state.activity_error then
         render_error(M.state.activity_error)
@@ -8668,11 +9457,15 @@ local function go_back()
             issue_page = M.state.activity_issue_page,
           }
         )
+      elseif M.state.activity_work then
+        work_view.load_items(M.state.activity_work, false)
       elseif M.state.activity_project then
         load_project_activity(M.state.activity_project, false)
       else
         load_activity(M.state.contributor, false)
       end
+    elseif return_state.view == "work" and M.state.work_lists then
+      work_view.render()
     elseif return_state.view == "filters" and M.state.filter_scope then
       render_filters(M.state.filter_scope, return_state.selected_type)
     elseif return_state.view == "milestones" and M.state.project_milestones then
@@ -8738,7 +9531,10 @@ local function move_left()
     return
   end
 
-  if M.state.view == "directory" or M.state.view == "milestones" then
+  if M.state.view == "directory"
+    or M.state.view == "milestones"
+    or M.state.view == "work"
+  then
     go_back()
     return
   end
@@ -8783,6 +9579,14 @@ local function move_right()
   if M.state.view == "activity"
     and not M.state.activity_commit_page
   then
+    if M.state.activity_work then
+      if (M.state.activity_page or 1) < (M.state.activity_loaded_pages or 1) then
+        next_activity_page()
+      end
+
+      return
+    end
+
     if M.state.activity_project then
       local page = M.state.activity_page or 1
 
@@ -8899,7 +9703,10 @@ local function map_keys(buf)
       return
     end
 
-    if M.state.view == "directory" or M.state.view == "milestones" then
+    if M.state.view == "directory"
+      or M.state.view == "milestones"
+      or M.state.view == "work"
+    then
       go_back()
       return
     end
@@ -9031,6 +9838,12 @@ local function map_keys(buf)
   end
 
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
+
+  map("w", function()
+    if M.state.view == "contributors" or M.state.view == "directory" then
+      work_view.open()
+    end
+  end, "Open your Oculus work: review requests, pull requests, assignments, mentions")
 
   map("S", function()
     if M.state.view == "activity" then
@@ -9296,6 +10109,16 @@ function M.open(opts)
     restore_cursor()
   elseif M.state.view == "milestones" and M.state.project_milestones then
     milestone_view.render()
+  elseif M.state.view == "work" and M.state.work_lists then
+    work_view.render()
+  elseif M.state.view == "activity"
+    and M.state.activity_work
+    and not M.state.activity_commit_page
+  then
+    -- The new buffer is empty, so draw the feed from scratch.
+    M.state.activity_loaded = false
+    work_view.load_items(M.state.activity_work, false, M.state.activity_page)
+    restore_cursor()
   elseif M.state.view == "activity"
     and M.state.activity_saved
     and not M.state.activity_commit_page
@@ -9376,6 +10199,8 @@ function M.open(opts)
           render_issue_filters(M.state.activity_project)
         elseif M.state.view == "milestones" then
           milestone_view.render()
+        elseif M.state.view == "work" then
+          work_view.render()
         elseif M.state.view == "shortcuts" then
           render_shortcuts()
         end
@@ -9395,6 +10220,20 @@ function M.open(opts)
 
       if M.state.view == "activity" then
         update_activity_cursorline()
+        return
+      end
+
+      if M.state.view == "work" then
+        local target = M.state.line_targets[
+          vim.api.nvim_win_get_cursor(M.state.win)[1]
+        ]
+
+        if type(target) == "table" and target.kind == "work" then
+          M.state.selected_work = target.entry.key
+          work_view.queue_preview(target.entry)
+        end
+
+        update_contributor_selection()
         return
       end
 
@@ -9608,6 +10447,22 @@ function M.open_user(target, opts)
   end
 
   M.open(opts)
+
+  -- "me" is the signed-in account, as in forge search queries.
+  if username:lower() == "me" then
+    provider = provider or "github"
+
+    require("oculus.auth").viewer(provider, M.state.opts, function(viewer, err)
+      if not viewer then
+        vim.notify("Oculus: " .. tostring(err), vim.log.levels.ERROR)
+      elseif is_valid_win(M.state.win) then
+        M.open_user(provider .. ":" .. viewer.login, M.state.opts)
+      end
+    end)
+
+    return true
+  end
+
   local contributor = nil
 
   for _, candidate in ipairs(M.state.contributors or M.state.opts.contributors or {}) do
@@ -9628,6 +10483,14 @@ function M.open_user(target, opts)
 
   M.state.selected_username = contributor.username
   load_activity(contributor)
+  return true
+end
+
+-- Open the Oculus window on your work: review requests, your pull requests,
+-- and issues and pull requests assigned to you or mentioning you.
+function M.open_work(opts)
+  M.open(opts)
+  work_view.open()
   return true
 end
 

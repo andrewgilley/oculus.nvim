@@ -10,7 +10,8 @@ vim.api.nvim_create_user_command("OculusOpen", function(opts)
     return
   end
 
-  -- "@login" or "@codeberg:login" opens a user's feed; anything else is a project.
+  -- "@login" or "@codeberg:login" opens a user's feed ("@me" is the signed-in
+  -- account); anything else is a project.
   local user = opts.args:match("^@(.+)$")
   local ok, err
 
@@ -40,6 +41,10 @@ end, {
     return matches
   end,
 })
+
+vim.api.nvim_create_user_command("OculusWork", function()
+  require("oculus").open_work()
+end, { desc = "Open Oculus on your review requests, pull requests, assignments and mentions" })
 
 vim.api.nvim_create_user_command("OculusClose", function()
   require("oculus").close()

@@ -88,6 +88,7 @@ local defaults = {
     filetype = "markdown",
   },
   token = nil,
+  gh_token_fallback = true,
   contributors = {},
 }
 
@@ -496,6 +497,20 @@ end
 
 function M.open_user(target)
   return require("oculus.window").open_user(target, M.config)
+end
+
+function M.open_work()
+  return require("oculus.window").open_work(M.config)
+end
+
+-- Look up the account signed in on "github" (the default) or "codeberg".
+-- `callback(viewer, err)` gets { provider, login, name?, html_url?, avatar_url? }.
+function M.viewer(provider, callback)
+  if type(provider) == "function" then
+    provider, callback = nil, provider
+  end
+
+  require("oculus.auth").viewer(provider or "github", M.config, callback)
 end
 
 function M.inspect(target, opts, context, callback, lifecycle)

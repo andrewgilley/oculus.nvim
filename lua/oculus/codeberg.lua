@@ -77,7 +77,7 @@ local function request_json(url, opts, callback)
     "\n%{http_code}",
   }
 
-  local token = opts.codeberg_token or vim.env.CODEBERG_TOKEN
+  local token = require("oculus.auth").codeberg_token(opts)
   local stdin
 
   if token and token ~= "" then
@@ -1488,6 +1488,116 @@ function M.repository_info(repository, opts, callback)
     }
 
     callback(vim.deepcopy(info))
+  end)
+end
+
+function M.viewer(opts, callback)
+  request_json(base_url .. "/api/v1/user", opts or {}, function(user, err)
+    local login = account_login(user)
+
+    if not login then
+      callback(nil, err or "Codeberg returned no signed-in user")
+      return
+    end
+
+    local name = json_value(user.full_name)
+
+    callback({
+      provider = "codeberg",
+      login = login,
+      name = type(name) == "string" and name ~= "" and name or nil,
+      html_url = json_value(user.html_url) or (base_url .. "/" .. login),
+      avatar_url = json_value(user.avatar_url),
+    })
+  end)
+end
+
+local work_filters = {
+  review_requested = "type=pulls&review_requested=true",
+  authored = "type=pulls&created=true",
+  assigned = "assigned=true",
+  mentioned = "mentioned=true",
+}
+
+-- Open issues and pull requests that involve the signed-in user, as issue
+-- events in the shape of M.repository_issues. Codeberg reports no total, so
+-- the callback's fifth argument is always nil.
+function M.work_items(category, opts, callback)
+  opts = opts or {}
+  local filter = work_filters[category]
+  local token = require("oculus.auth").codeberg_token(opts)
+
+  if not filter or not token then
+    vim.schedule(function()
+      callback(nil, filter and ("Not signed in to Codeberg: " .. require("oculus.auth").sign_in_hint("codeberg"))
+        or ("unknown work category " .. tostring(category)))
+    end)
+
+    return
+  end
+
+  local ttl = opts.cache_ttl or 300
+  local page = math.max(1, math.floor(opts.page or 1))
+  local per_page = math.min(50, math.max(1, math.floor(opts.per_page or 50)))
+
+  local cache_key = table.concat({
+    "work",
+    vim.fn.sha256(token):sub(1, 16),
+    category,
+    tostring(page),
+    tostring(per_page),
+  }, ":")
+
+  local cached = repository_issue_cache[cache_key]
+
+  if cached and not opts.force and os.time() - cached.fetched_at < ttl then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.events), nil, true, cached.complete)
+    end)
+
+    return
+  end
+
+  local url = ("%s/api/v1/repos/issues/search?state=open&%s&limit=%d&page=%d"):format(
+    base_url,
+    filter,
+    per_page,
+    page
+  )
+
+  request_json(url, opts, function(issues, err)
+    if not issues then
+      callback(nil, err)
+      return
+    end
+
+    local events = {}
+
+    for _, issue in ipairs(issues) do
+      local repository = type(issue) == "table" and json_value(issue.repository)
+      local repository_name = type(repository) == "table" and json_value(repository.full_name)
+
+      local normalized = type(repository_name) == "string"
+        and project_issue_event(repository_name, issue, true)
+
+      if normalized then
+        events[#events + 1] = normalized
+      end
+    end
+
+    table.sort(events, function(left, right)
+      return tostring(left.created_at or "") > tostring(right.created_at or "")
+    end)
+
+    local complete = #issues < per_page
+
+    repository_issue_cache[cache_key] = {
+      events = vim.deepcopy(events),
+      fetched_at = os.time(),
+      complete = complete,
+    }
+
+    callback(events, nil, false, complete)
   end)
 end
 

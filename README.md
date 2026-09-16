@@ -42,6 +42,10 @@ change markers, chunk navigation, and an AI-assisted overview.
 - **Nested groups.** Organize projects and users into folders, reorder them, and
   move them between groups with a few keystrokes.
 
+- **Your work in one place.** See the pull requests waiting for your review,
+  your own open pull requests, and the issues and pull requests assigned to you
+  or mentioning you, across every repository, on GitHub and Codeberg.
+
 - **Filterable activity feeds.** Per-project feeds of pushes, merged pull
   requests, and assigned issues, and per-user feeds of any public event type.
   Filters persist between sessions.
@@ -188,6 +192,7 @@ The keys below use the default `ijkl` layout.
 | `<CR>` / `l` / `<Right>` | Open the selected group or activity feed               |
 | `j` / `<Left>`        | Go to the parent group                                     |
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
+| `w`                   | Open [my work](#my-work)                                   |
 | `S`                   | Open [saved items](#saved-items)                           |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
 | `f` / `K` / `D`       | Create a group in the current location                     |
@@ -232,6 +237,28 @@ like any other feed, so `h` inspects, `b` opens the browser, `Tab` queues, and
 Items are stored as snapshots in `state_file`, so they survive restarts and
 stay available offline, but they don't refresh (an issue saved while open still
 shows as open).
+
+**My work**
+
+Press `w` on the start screen, or run `:OculusWork`, to see what needs you. The
+list shows the account you're signed in as on each forge and four categories,
+each with a count of open items:
+
+| Category           | GitHub search                         | Codeberg filter             |
+| ------------------ | ------------------------------------- | --------------------------- |
+| Review requests    | `is:open is:pr review-requested:@me`  | `type=pulls&review_requested` |
+| Your pull requests | `is:open is:pr author:@me`            | `type=pulls&created`        |
+| Assigned to you    | `is:open assignee:@me`                | `assigned`                  |
+| Mentions           | `is:open mentions:@me`                | `mentioned`                 |
+
+The preview lists the most recently updated items. Select a category to open
+its items as an activity feed spanning every repository, where `h` inspects,
+`b` opens the browser, `Tab` queues and `S` saves as usual. Press `b` on the
+list to open the forge's own page for that category, `r` to refresh, and
+`j`/`←` to go back. GitHub archived repositories are left out.
+
+My work needs a token (see [Authentication](#authentication)). Codeberg is
+listed once you set a Codeberg token or track a Codeberg project or user.
 
 **Milestones**
 
@@ -324,7 +351,8 @@ Worktrees are created next to the repository as `<repo>-<branch>`.
 
 | Command                                  | Description                                            |
 | ---------------------------------------- | ------------------------------------------------------ |
-| `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`) |
+| `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
+| `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
 | `:OculusClose`                           | Close it                                               |
 | `:OculusToggle`                          | Toggle it                                              |
 | `:OculusInspect [target]`                | Inspect an issue, PR, or commit (prompts if no target) |
@@ -379,7 +407,8 @@ require("oculus").setup({
   persist_inspect_overviews = true,
 
   -- Authentication (environment variables are used when these are nil)
-  token = nil, -- falls back to $GITHUB_TOKEN
+  token = nil, -- falls back to $GITHUB_TOKEN, then `gh auth token`
+  gh_token_fallback = true, -- set to false to never ask the gh CLI
   codeberg_token = nil, -- falls back to $CODEBERG_TOKEN
 
   -- How to open URLs: nil (vim.ui.open; Microsoft Edge on Windows), a list such as
@@ -447,7 +476,12 @@ remove in the UI stay removed.
 | GitHub   | `token`          | `GITHUB_TOKEN`       |
 | Codeberg | `codeberg_token` | `CODEBERG_TOKEN`     |
 
-Tokens are optional, but unauthenticated GitHub requests are limited to 60
+If neither is set for GitHub and the [GitHub CLI](https://cli.github.com) is
+installed, Oculus uses the token from `gh auth token`, so signing in with
+`gh auth login` is enough. Set `gh_token_fallback = false` to turn this off.
+
+Tokens are optional for browsing, but [my work](#my-work) and `@me` need one,
+and unauthenticated GitHub requests are limited to 60
 per hour. A classic or fine-grained token with read access to public
 repositories is enough.
 
@@ -570,6 +604,14 @@ local ok, err = oculus.open_project("github:neovim/neovim")
 -- Same for a user's activity feed (untracked users work too)
 local ok, err = oculus.open_user("github:folke")
 
+-- Open on your review requests, pull requests, assignments and mentions
+oculus.open_work()
+
+-- The signed-in account: { provider, login, name?, html_url?, avatar_url? }
+oculus.viewer("github", function(viewer, err)
+  print(viewer and viewer.login or err)
+end)
+
 -- Target syntax matches :OculusInspect
 oculus.inspect("neovim/neovim#30000")
 
@@ -635,10 +677,11 @@ nvim --headless -u NONE -l tests/opinion_spec.lua
 nvim --headless -u NONE -l tests/telemetry_spec.lua
 nvim --headless -u NONE -l tests/tracking_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
-nvim --headless -u NONE -l tests/window_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/window_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/milestones_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/saved_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/work_spec.lua
 ```
 
 The inspect suite needs a checkout of oil.nvim and some environment variables.

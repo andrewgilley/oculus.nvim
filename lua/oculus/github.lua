@@ -55,7 +55,7 @@ local function request_json(url, opts, callback)
     "\n%{http_code}",
   }
 
-  local token = opts.token or vim.env.GITHUB_TOKEN
+  local token = require("oculus.auth").github_token(opts)
   local stdin
 
   if token and token ~= "" then
@@ -1155,6 +1155,112 @@ function M.repository_info(repository, opts, callback)
     }
 
     callback(vim.deepcopy(info))
+  end)
+end
+
+function M.viewer(opts, callback)
+  request_json("https://api.github.com/user", opts or {}, function(user, err)
+    local login = type(user) == "table" and json_value(user.login) or nil
+
+    if type(login) ~= "string" or login == "" then
+      callback(nil, err or "GitHub returned no signed-in user")
+      return
+    end
+
+    callback({
+      provider = "github",
+      login = login,
+      name = json_value(user.name),
+      html_url = json_value(user.html_url),
+      avatar_url = json_value(user.avatar_url),
+    })
+  end)
+end
+
+local work_queries = {
+  review_requested = "is:open is:pr archived:false review-requested:@me",
+  authored = "is:open is:pr archived:false author:@me",
+  assigned = "is:open archived:false assignee:@me",
+  mentioned = "is:open archived:false mentions:@me",
+}
+
+-- Open issues and pull requests that involve the signed-in user, as issue
+-- events in the shape of M.repository_issues, most recently updated first. The
+-- callback's fifth argument is the total number of matches.
+function M.work_items(category, opts, callback)
+  opts = opts or {}
+  local query = work_queries[category]
+  local token = require("oculus.auth").github_token(opts)
+
+  if not query or not token then
+    vim.schedule(function()
+      callback(nil, query and ("Not signed in to GitHub: " .. require("oculus.auth").sign_in_hint("github"))
+        or ("unknown work category " .. tostring(category)))
+    end)
+
+    return
+  end
+
+  local ttl = opts.cache_ttl or 300
+  local page = math.max(1, math.floor(opts.page or 1))
+  local per_page = math.min(100, math.max(1, math.floor(opts.per_page or 50)))
+
+  -- Results belong to the account behind the token, so key them by it.
+  local cache_key = table.concat({
+    "work",
+    vim.fn.sha256(token):sub(1, 16),
+    category,
+    tostring(page),
+    tostring(per_page),
+  }, ":")
+
+  local cached = repository_issue_cache[cache_key]
+
+  if cached and not opts.force and os.time() - cached.fetched_at < ttl then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.events), nil, true, cached.complete, cached.total)
+    end)
+
+    return
+  end
+
+  local url = (
+    "https://api.github.com/search/issues"
+      .. "?q=%s&sort=updated&order=desc&per_page=%d&page=%d&advanced_search=true"
+  ):format(vim.uri_encode(query), per_page, page)
+
+  request_json(url, opts, function(result, err)
+    if type(result) ~= "table" or type(json_value(result.items)) ~= "table" then
+      callback(nil, err or "GitHub returned no search results")
+      return
+    end
+
+    local events = {}
+
+    for _, issue in ipairs(result.items) do
+      local repository = type(issue) == "table"
+          and type(json_value(issue.repository_url)) == "string"
+          and issue.repository_url:match("/repos/([^/]+/[^/]+)$")
+        or nil
+
+      local normalized = repository and project_issue_event(repository, issue, true)
+
+      if normalized then
+        events[#events + 1] = normalized
+      end
+    end
+
+    local total = tonumber(json_value(result.total_count))
+    local complete = #result.items < per_page or (total ~= nil and page * per_page >= total)
+
+    repository_issue_cache[cache_key] = {
+      events = vim.deepcopy(events),
+      fetched_at = os.time(),
+      complete = complete,
+      total = total,
+    }
+
+    callback(events, nil, false, complete, total)
   end)
 end
 

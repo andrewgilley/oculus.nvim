@@ -66,8 +66,11 @@ jobs:
       - name: Run saved item tests
         run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/saved_spec.lua
 
+      - name: Run work tests
+        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/work_spec.lua
+
       - name: Run window tests
-        run: nvim --headless -u NONE -l tests/window_spec.lua
+        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/window_spec.lua
 
       - name: Run inspect tests
         env:
