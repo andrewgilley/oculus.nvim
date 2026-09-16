@@ -1178,6 +1178,11 @@ do
     file = "lua/oculus/inspect.lua",
   }) == vim.fs.basename(root) .. "/lua/oculus/inspect.lua")
 
+  assert(inspect._inspection_statusline_path({
+    kind = "issue",
+    repository = root,
+  }) == nil)
+
   assert(inspect._inspection_buffer_name({
     source_path = vim.fs.joinpath(root, "lua", "oculus", "inspect.lua"),
     commit = "0123456789abcdef",
@@ -3038,6 +3043,16 @@ assert(vim.deep_equal(
 
 assert(vim.fs.normalize(vim.fn.getcwd()) == vim.fs.normalize(root))
 assert(vim.wo[issue_main_win].number)
+
+assert(vim.b[vim.api.nvim_win_get_buf(issue_main_win)].oculus_inspect_statusline_path
+  == nil)
+
+assert(not inspect._inspection_statusline(issue_main_win):find(
+  vim.fs.basename(vim.b[vim.api.nvim_win_get_buf(issue_main_win)].oculus_inspect_repository),
+  1,
+  true
+))
+
 assert(vim.wo[issue_main_win].relativenumber)
 local close_issue_overview = vim.fn.maparg("q", "n", false, true)
 assert(close_issue_overview.desc == "Close Oculus Inspect overview")

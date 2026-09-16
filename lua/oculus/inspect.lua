@@ -702,6 +702,7 @@ end
 
 local function inspection_statusline_path(state)
   if type(state) ~= "table"
+    or state.kind == "issue"
     or type(state.repository) ~= "string"
     or state.repository == ""
   then
@@ -9905,7 +9906,6 @@ local function open_issue_inspection(
     vim.b[buf].oculus_inspect = vim.deepcopy(state)
     vim.b[buf].oculus_inspect_repository = repository
     vim.b[buf].oculus_inspect_directory = repository
-    vim.b[buf].oculus_inspect_statusline_path = vim.fs.basename(repository)
     vim.bo[buf].buftype = ""
     vim.bo[buf].modifiable = true
     vim.bo[buf].readonly = false
