@@ -334,6 +334,18 @@ window.open({
 
 state = window.state
 assert(buffer_text():find("w work", 1, true))
+
+-- The start screen names the signed-in account under its heading.
+local function account_text()
+  local ns = vim.api.nvim_get_namespaces().oculus_accounts
+  local marks = vim.api.nvim_buf_get_extmarks(state.buf, ns, 0, -1, { details = true })
+  return marks[1] and marks[1][2] == 2 and marks[1][4].virt_text[1][1] or nil
+end
+
+wait_for("signed-in account not shown", function()
+  return account_text() == "signed in as @octo on GitHub"
+end)
+
 press("w")
 assert(state.view == "work", state.view)
 local text = buffer_text()

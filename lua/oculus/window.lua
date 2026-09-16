@@ -80,7 +80,8 @@ local load_project_activity
 local load_project_issues
 local milestone_view = {}
 local saved_view = { ns = vim.api.nvim_create_namespace("oculus_saved_items") }
-local work_view = {}
+-- `accounts` draws the signed-in accounts on the start screen.
+local work_view = { accounts = { ns = vim.api.nvim_create_namespace("oculus_accounts"), requested = {} } }
 local target_on_cursor
 local render_directory
 local persist_projects
@@ -1531,6 +1532,7 @@ local function set_lines(lines)
   )
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, saved_view.ns, 0, -1)
+  vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
   M.state.preview_items = nil
   -- A redraw replaces the list footer, so any pending prompt is abandoned.
   M.state.footer_prompt = nil
@@ -2602,6 +2604,70 @@ local function startup_project_items()
   return ordered_items
 end
 
+-- The accounts signed in on each forge with a token, e.g. "@octocat on GitHub",
+-- leaving out the "signed in as" prefix when it would not fit in `width`.
+function work_view.accounts.text(width)
+  local auth = require("oculus.auth")
+  local accounts = {}
+
+  for _, provider in ipairs({ "github", "codeberg" }) do
+    local viewer = auth.cached_viewer(provider, M.state.opts)
+
+    if viewer then
+      accounts[#accounts + 1] = ("@%s on %s"):format(viewer.login, provider_name(viewer))
+    end
+  end
+
+  if #accounts == 0 then
+    return nil
+  end
+
+  local text = table.concat(accounts, " · ")
+  return vim.fn.strdisplaywidth("signed in as " .. text) <= width and ("signed in as " .. text) or text
+end
+
+-- Draw the signed-in accounts under the ACTIVITY heading of the startup list.
+function work_view.accounts.paint()
+  if M.state.view ~= "contributors" or not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
+    return
+  end
+
+  vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
+  local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 3
+  local text = work_view.accounts.text(width)
+
+  if not text or vim.api.nvim_buf_line_count(M.state.buf) < 3 then
+    return
+  end
+
+  vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, 2, 0, {
+    virt_text = { { trim_to_width(text, width), "Comment" } },
+    virt_text_win_col = 2,
+  })
+end
+
+-- Paint the known accounts, then look each signed-in forge up once per window;
+-- a failed lookup waits for the next time the window opens.
+function work_view.accounts.render()
+  local auth = require("oculus.auth")
+  work_view.accounts.paint()
+
+  for _, provider in ipairs({ "github", "codeberg" }) do
+    if not work_view.accounts.requested[provider]
+      and not auth.cached_viewer(provider, M.state.opts)
+      and auth.token(provider, M.state.opts)
+    then
+      work_view.accounts.requested[provider] = true
+
+      auth.viewer(provider, M.state.opts, function(viewer)
+        if viewer then
+          work_view.accounts.paint()
+        end
+      end)
+    end
+  end
+end
+
 local function render_contributors()
   stop_activity_page_loading()
   close_activity_footer()
@@ -2639,6 +2705,7 @@ local function render_contributors()
     end
 
     set_lines(lines)
+    work_view.accounts.render()
     M.state.list_footer_line = commands_line
     M.state.list_footer_text = commands_line and lines[commands_line]
     vim.wo[M.state.win].cursorline = false
@@ -2813,6 +2880,7 @@ local function render_contributors()
   end
 
   set_lines(lines)
+  work_view.accounts.render()
   M.state.list_footer_line = commands_line
   M.state.list_footer_text = commands_line and lines[commands_line]
   vim.wo[M.state.win].cursorline = false
@@ -10280,6 +10348,7 @@ function M.open(opts)
 
   local buf = make_buf()
   local win = vim.api.nvim_open_win(buf, true, M.window_config(M.state.opts))
+  work_view.accounts.requested = {}
   M.state.buf = buf
   M.state.win = win
   M.state.contributors = display_contributors(M.state.opts.contributors)
