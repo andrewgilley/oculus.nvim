@@ -493,8 +493,8 @@ If neither is set for GitHub and the [GitHub CLI](https://cli.github.com) is
 installed, Oculus uses the token from `gh auth token`, so signing in with
 `gh auth login` is enough. Set `gh_token_fallback = false` to turn this off.
 
-The start screen shows the account behind each token beside its heading, for
-example `signed in as @octocat on GitHub · @octocat on Codeberg`.
+The start screen shows the account behind each token at the bottom of the
+list, for example `signed in as @octocat on GitHub · @octocat on Codeberg`.
 
 Tokens are optional for browsing, but [my work](#my-work) and `@me` need one,
 and unauthenticated GitHub requests are limited to 60

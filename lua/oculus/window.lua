@@ -2634,25 +2634,27 @@ function work_view.accounts.text(width)
   return vim.fn.strdisplaywidth("signed in as " .. text) <= width and ("signed in as " .. text) or text
 end
 
--- Draw the signed-in accounts on the ACTIVITY heading row of the startup list,
--- one tabstop past the heading.
+-- Draw the signed-in accounts on the bottom row of the startup list, just
+-- above the footer separator, or on the last row when the sidebar replaces
+-- the footer. A list long enough to fill that row leaves the accounts out.
 function work_view.accounts.paint()
   if M.state.view ~= "contributors" or not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
     return
   end
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
-  local col = 2 + #"ACTIVITY" + vim.bo[M.state.buf].tabstop
-  local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 1 - col
-  local text = width > 0 and work_view.accounts.text(width)
+  local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 3
+  local text = work_view.accounts.text(width)
+  local row = M.state.list_footer_line and M.state.list_footer_line - 3 or vim.api.nvim_buf_line_count(M.state.buf) - 1
+  local line = row >= 0 and vim.api.nvim_buf_get_lines(M.state.buf, row, row + 1, false)[1]
 
-  if not text or vim.api.nvim_buf_line_count(M.state.buf) < 2 then
+  if not text or not line or not line:match("^%s*$") then
     return
   end
 
-  vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, 1, 0, {
+  vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, row, 0, {
     virt_text = { { trim_to_width(text, width), "OculusAccounts" } },
-    virt_text_win_col = col,
+    virt_text_win_col = 2,
   })
 end
 
@@ -2715,9 +2717,9 @@ local function render_contributors()
     end
 
     set_lines(lines)
-    work_view.accounts.render()
     M.state.list_footer_line = commands_line
     M.state.list_footer_text = commands_line and lines[commands_line]
+    work_view.accounts.render()
     vim.wo[M.state.win].cursorline = false
     highlight(2, 2, -1, "Title")
     highlight(4, 2, -1, "Title")
@@ -2890,9 +2892,9 @@ local function render_contributors()
   end
 
   set_lines(lines)
-  work_view.accounts.render()
   M.state.list_footer_line = commands_line
   M.state.list_footer_text = commands_line and lines[commands_line]
+  work_view.accounts.render()
   vim.wo[M.state.win].cursorline = false
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
