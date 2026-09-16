@@ -495,6 +495,8 @@ installed, Oculus uses the token from `gh auth token`, so signing in with
 
 The start screen shows the account behind each token at the bottom of the
 list, one line per forge, for example `signed in as @octocat on Codeberg`.
+While the command sidebar is open, the accounts move to the bottom of the
+sidebar instead.
 
 Tokens are optional for browsing, but [my work](#my-work) and `@me` need one,
 and unauthenticated GitHub requests are limited to 60

@@ -1082,6 +1082,26 @@ local function render_sidebar()
     end
   end
 
+  -- On the start screen the signed-in accounts sit at the bottom of the
+  -- sidebar, in place of the lines the list draws while the sidebar is hidden.
+  local accounts = M.state.view == "contributors" and work_view.accounts.lines() or {}
+
+  if #accounts > 0 then
+    lines[#lines + 1] = ""
+
+    while #lines < config.height - #accounts - 2 do
+      lines[#lines + 1] = ""
+    end
+
+    lines[#lines + 1] = "  SIGNED IN AS"
+    highlights[#highlights + 1] = { line = #lines, col_start = 2, col_end = -1, hl = "Title" }
+
+    for _, account in ipairs(accounts) do
+      lines[#lines + 1] = "  " .. account
+      highlights[#highlights + 1] = { line = #lines, col_start = 2, col_end = -1, hl = "OculusAccounts" }
+    end
+  end
+
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -2612,8 +2632,8 @@ local function startup_project_items()
   return ordered_items
 end
 
--- One line per forge signed in with a token, e.g. "signed in as @octocat on
--- GitHub", in GitHub, Codeberg order.
+-- One entry per forge signed in with a token, e.g. "@octocat on GitHub", in
+-- GitHub, Codeberg order.
 function work_view.accounts.lines()
   local auth = require("oculus.auth")
   local lines = {}
@@ -2622,7 +2642,7 @@ function work_view.accounts.lines()
     local viewer = auth.cached_viewer(provider, M.state.opts)
 
     if viewer then
-      lines[#lines + 1] = ("signed in as @%s on %s"):format(viewer.login, provider_name(viewer))
+      lines[#lines + 1] = ("@%s on %s"):format(viewer.login, provider_name(viewer))
     end
   end
 
@@ -2630,17 +2650,22 @@ function work_view.accounts.lines()
 end
 
 -- Draw the signed-in accounts on the bottom rows of the startup list, just
--- above the footer separator, or at the end when the sidebar replaces the
--- footer. Rows the list already fills are left out.
+-- above the footer separator. Rows the list already fills are left out. While
+-- the sidebar is open it shows the accounts instead.
 function work_view.accounts.paint()
   if M.state.view ~= "contributors" or not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
     return
   end
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
+
+  if is_sidebar_visible() or not M.state.list_footer_line then
+    return
+  end
+
   local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 3
   local texts = work_view.accounts.lines()
-  local last = M.state.list_footer_line and M.state.list_footer_line - 3 or vim.api.nvim_buf_line_count(M.state.buf) - 1
+  local last = M.state.list_footer_line - 3
 
   for index, text in ipairs(texts) do
     local row = last - #texts + index
@@ -2648,7 +2673,7 @@ function work_view.accounts.paint()
 
     if line and line:match("^%s*$") then
       vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, row, 0, {
-        virt_text = { { trim_to_width(text, width), "OculusAccounts" } },
+        virt_text = { { trim_to_width("signed in as " .. text, width), "OculusAccounts" } },
         virt_text_win_col = 2,
       })
     end
@@ -2669,8 +2694,9 @@ function work_view.accounts.render()
       work_view.accounts.requested[provider] = true
 
       auth.viewer(provider, M.state.opts, function(viewer)
-        if viewer then
+        if viewer and M.state.view == "contributors" then
           work_view.accounts.paint()
+          render_sidebar()
         end
       end)
     end

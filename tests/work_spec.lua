@@ -346,6 +346,16 @@ wait_for("signed-in account not shown", function()
   return account_text() == "signed in as @octo on GitHub"
 end)
 
+-- With the sidebar open, the accounts move from the list to the sidebar.
+press("?")
+assert(window._is_sidebar_visible())
+local sidebar_lines = vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)
+assert(sidebar_lines[#sidebar_lines - 1] == "  SIGNED IN AS", vim.inspect(sidebar_lines))
+assert(sidebar_lines[#sidebar_lines] == "  @octo on GitHub", vim.inspect(sidebar_lines))
+assert(#vim.api.nvim_buf_get_extmarks(state.buf, vim.api.nvim_get_namespaces().oculus_accounts, 0, -1, {}) == 0)
+press("?")
+assert(not window._is_sidebar_visible())
+assert(account_text() == "signed in as @octo on GitHub")
 press("w")
 assert(state.view == "work", state.view)
 local text = buffer_text()
