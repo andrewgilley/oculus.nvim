@@ -69,6 +69,9 @@ jobs:
       - name: Run work tests
         run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/work_spec.lua
 
+      - name: Run local activity tests
+        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/local_activity_spec.lua
+
       - name: Run window tests
         run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/window_spec.lua
 

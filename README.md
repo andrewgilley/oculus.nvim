@@ -225,6 +225,19 @@ The keys below use the default `ijkl` layout.
 | `<Space>` / `a` / `n` / `d` | Toggle one filter / enable all / disable all / reset to defaults |
 | `j` / `<Left>`  | Back to the list                                               |
 
+**Local commits**
+
+GitHub and Codeberg can take a while to report new pushes. When pushes are
+shown and a local clone of the project is found (the same search that
+inspection uses, but only clones with a remote pointing at the project count),
+a project feed also lists recent commits from the clone's `HEAD` and its
+remote-tracking branches that are newer than the forge's latest push. These
+read `committed to owner/repo · local`, or `· local, not pushed` when no
+remote-tracking branch contains the commit. When the forge reports the same
+commit, its entry replaces the local one. Inspecting a local commit shows
+`Source: Local clone, not yet listed by GitHub` (or `Local clone, not pushed`)
+in the overview.
+
 **Saved items**
 
 Press `S` on any activity item (in a project or user feed, the issues view, a

@@ -4871,13 +4871,36 @@ local function add_project_feed_event(feed, event)
 
     if #shas > 0 then
       for _, sha in ipairs(shas) do
-        if feed.seen_commits[sha] then
+        if feed.seen_commits[sha]
+          and (event.oculus_local or not feed.local_commits[sha])
+        then
           return false
         end
       end
 
+      -- The forge has now reported a commit that was shown from the local
+      -- clone, so its version replaces the local one.
+      local replaced = {}
+
       for _, sha in ipairs(shas) do
+        if not event.oculus_local and feed.local_commits[sha] then
+          replaced[feed.local_commits[sha]] = true
+          feed.local_commits[sha] = nil
+        end
+
         feed.seen_commits[sha] = true
+      end
+
+      if next(replaced) then
+        feed.events = vim.tbl_filter(function(candidate)
+          return not replaced[candidate]
+        end, feed.events)
+      end
+
+      if event.oculus_local then
+        for _, sha in ipairs(shas) do
+          feed.local_commits[sha] = event
+        end
       end
     end
   elseif event.type == "PullRequestEvent" then
@@ -4916,6 +4939,8 @@ local function add_project_feed_event(feed, event)
 
   return true
 end
+
+M._add_project_feed_event = add_project_feed_event
 
 load_project_activity = function(project, force, page)
   local previous_page = M.state.activity_page or 1
@@ -4986,6 +5011,8 @@ load_project_activity = function(project, force, page)
       seen = {},
       seen_commits = {},
       seen_pull_requests = {},
+      local_commits = {},
+      local_loaded = not vim.tbl_contains(activity_types, "push"),
       next_page = 1,
       using_updates = project.provider == "codeberg"
         and type(provider.repository_updates) == "function",
@@ -4995,6 +5022,17 @@ load_project_activity = function(project, force, page)
     }
 
     M.state.project_activity_feed = feed
+  end
+
+  local request_pending = false
+  local local_activity = require("oculus.local_activity")
+
+  local function remote_project_event_count()
+    local remote = vim.tbl_filter(function(event)
+      return not event.oculus_local
+    end, feed.events)
+
+    return #filter_project_events(remote, project)
   end
 
   local required_events = requested_page * M.state.activity_page_size
@@ -5028,6 +5066,7 @@ load_project_activity = function(project, force, page)
   end
 
   local function render_project_results()
+    local_activity.prune(feed)
     local filtered = filter_project_events(feed.events, project)
 
     local first_event =
@@ -5081,9 +5120,14 @@ load_project_activity = function(project, force, page)
   end
 
   local function ensure_project_page()
+    local_activity.prune(feed)
     local filtered = filter_project_events(feed.events, project)
 
-    if #filtered >= required_events or feed.complete then
+    -- Local commits alone never satisfy a page: the forge's first page decides
+    -- which of them are still missing from its feed.
+    if feed.complete
+      or (feed.remote_loaded and #filtered >= required_events)
+    then
       render_project_results()
       return
     end
@@ -5106,12 +5150,16 @@ load_project_activity = function(project, force, page)
         and provider.repository_updates
       or provider.repository_events
 
+    request_pending = true
+
     request(project.repository, request_opts, function(
       events,
       err,
       cached,
       notice
     )
+      request_pending = false
+
       if request_id ~= M.state.request_id
         or M.state.view ~= "activity"
         or M.state.activity_project ~= project
@@ -5126,7 +5174,7 @@ load_project_activity = function(project, force, page)
       end
 
       local source = events or {}
-      local allowed_before = #filter_project_events(feed.events, project)
+      local allowed_before = remote_project_event_count()
       local added = 0
 
       for _, event in ipairs(source) do
@@ -5135,7 +5183,7 @@ load_project_activity = function(project, force, page)
         end
       end
 
-      local allowed_added = #filter_project_events(feed.events, project)
+      local allowed_added = remote_project_event_count()
         - allowed_before
 
       table.sort(feed.events, function(left, right)
@@ -5144,6 +5192,7 @@ load_project_activity = function(project, force, page)
       end)
 
       feed.next_page = source_page + 1
+      feed.remote_loaded = true
       feed.cached = feed.cached and cached == true
       feed.notice = feed.notice or notice
 
@@ -5160,6 +5209,36 @@ load_project_activity = function(project, force, page)
   if type(provider.repository_events) ~= "function" then
     render_error("this provider does not support project activity")
     return
+  end
+
+  if not feed.local_loaded then
+    feed.local_loaded = true
+
+    local_activity.commits(project, M.state.opts, function(local_events)
+      if M.state.project_activity_feed ~= feed or #local_events == 0 then
+        return
+      end
+
+      for _, event in ipairs(local_events) do
+        add_project_feed_event(feed, event)
+      end
+
+      table.sort(feed.events, function(left, right)
+        return tostring(left.created_at or "")
+          > tostring(right.created_at or "")
+      end)
+
+      -- A pending forge request renders once it returns; otherwise show the
+      -- local commits now.
+      if request_id == M.state.request_id
+        and M.state.view == "activity"
+        and M.state.activity_project == project
+        and is_valid_win(M.state.win)
+        and not request_pending
+      then
+        ensure_project_page()
+      end
+    end)
   end
 
   ensure_project_page()

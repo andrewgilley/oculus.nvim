@@ -237,6 +237,18 @@ function M.activity_context(event)
     return comment
   end
 
+  if type(event) == "table"
+    and event.type == "PushEvent"
+    and type(event.oculus_local) == "table"
+  then
+    return {
+      local_commit = {
+        forge = event.oculus_local.forge,
+        pushed = event.oculus_local.pushed,
+      },
+    }
+  end
+
   if type(event) ~= "table"
     or (
       event.type ~= "IssuesEvent"
