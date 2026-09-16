@@ -1250,6 +1250,28 @@ function M.issue(repo, number, opts, callback)
   end)
 end
 
+function M.commit_sha(repo, sha, opts, callback)
+  opts = opts or {}
+
+  local url = (
+    "%s/api/v1/repos/%s/git/commits/%s"
+      .. "?stat=false&verification=false&files=false"
+  ):format(base_url, repo, sha)
+
+  request_json(url, opts, function(commit, err)
+    local full = type(commit) == "table" and commit.sha or nil
+
+    if type(full) ~= "string"
+      or full:sub(1, #sha):lower() ~= sha:lower()
+    then
+      callback(nil, err or ("Codeberg: no commit matches " .. sha))
+      return
+    end
+
+    callback(full:lower())
+  end)
+end
+
 local repository_info_cache = {}
 
 function M.repository_info(repository, opts, callback)

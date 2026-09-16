@@ -9,8 +9,9 @@ Oculus is a dashboard for GitHub and Codeberg activity. Keep a
 tracked list of repositories and users, browse their pushes, merged pull
 requests, and issues, then inspect any pull request, issue, or commit. 
 
-Oculus checks the change out in your local clone and opens it as real, editable
-buffers with change markers, chunk navigation, and an AI-assisted overview.
+Oculus checks the change out in your local clone (or fetches just the changed
+files when you don't have one) and opens it as real, editable buffers with
+change markers, chunk navigation, and an AI-assisted overview.
 
 [![Tests](https://github.com/andrewgilley/oculus.nvim/actions/workflows/tests.yml/badge.svg)](https://github.com/andrewgilley/oculus.nvim/actions/workflows/tests.yml)
 
@@ -46,8 +47,9 @@ buffers with change markers, chunk navigation, and an AI-assisted overview.
   Filters persist between sessions.
 
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
-  or a commit SHA. Oculus finds (or offers to clone) the matching local
-  repository and opens the change in a dedicated tab.
+  or a commit SHA. Oculus finds the matching local clone, or fetches only the
+  changed files into a small cache when there isn't one, and opens the change
+  in a dedicated tab.
 
 - **Real buffers, not diff views.** Changed files open as normal buffers. Switch
   between the old and new version, jump between changed chunks, and browse
@@ -239,8 +241,23 @@ order:
 2. The current working directory
 3. Each directory in `inspect_search_paths` and its immediate children
 
-If no clone is found, Oculus offers to clone the repository into the first
-`inspect_search_paths` entry.
+If no clone is found, Oculus inspects the change remotely instead:
+
+- It keeps a shallow, blob-free Git repository per project under
+  `inspect_remote_cache` and fetches only the inspected commits plus the
+  contents of the changed files. A typical commit costs a few hundred kilobytes.
+- Each changed file is trimmed to its changed lines plus
+  `inspect_remote_context` lines of surrounding code (20 by default). Hidden
+  stretches are replaced by a single `⋯ 94 unchanged lines ⋯` marker, written
+  as a comment in the file's language. The sidebar's chunk list keeps the real
+  line numbers, while buffer line numbers count excerpt lines.
+- The overview shows `Source: Remote, ±20 lines around changes`. For issues,
+  `p` (patch locations) and `w` (worktree) are unavailable because there is no
+  checkout to search or branch from.
+- Fetching uses your Git credentials, so private repositories work when `git
+  fetch` does. Resolving an abbreviated commit SHA uses the forge API.
+
+Set `inspect_remote_context = math.huge` to load whole files.
 
 The change opens in a new tab. Every changed file is a normal buffer with
 change markers, and you can switch it between the parent and the change:
@@ -347,8 +364,13 @@ require("oculus").setup({
   inspect_cache_ttl = 60,
   -- List of paths, or a map of { ["owner/repo"] = "/path/to/clone" }
   inspect_repositories = {},
-  -- Directories that contain your clones. The first one is the clone target
+  -- Directories that contain your clones
   inspect_search_paths = {},
+  -- Lines of surrounding code kept around each change when no local clone
+  -- exists (math.huge keeps whole files)
+  inspect_remote_context = 20,
+  -- Where shallow, blob-free repositories for remote inspections are kept
+  inspect_remote_cache = vim.fn.stdpath("cache") .. "/oculus/remote",
   inspect_sidebar_width = 28 / vim.o.columns,
   inspect_sidebar_toggle = "<leader>oi",
   inspect_overview_toggle = "<leader>op",
@@ -559,11 +581,13 @@ Oculus defaults to `ijkl` movement so that `h` can inspect. Set
 `navigation = "hjkl"` to use Vim's movement keys. Inspect then moves to `i` and
 `I`.
 
-**`:OculusInspect` says it can't find a repository.**
+**`:OculusInspect` shows only part of each file.**
 
-Oculus only uses clones whose remote points at the target repository, or clones
-that already contain the target commits. Add the directory that holds your
-clones to `inspect_search_paths`, or map the repository to its path in
+Oculus didn't find a local clone, so it inspected the change remotely with
+`inspect_remote_context` lines around each change. It only uses clones whose
+remote points at the target repository, or clones that already contain the
+target commits. To use your clone, add the directory that holds it to
+`inspect_search_paths`, or map the repository to its path in
 `inspect_repositories`.
 
 **I'm getting `API rate limit exceeded`.**
@@ -586,6 +610,7 @@ nvim --headless -u NONE -l tests/telemetry_spec.lua
 nvim --headless -u NONE -l tests/tracking_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
 nvim --headless -u NONE -l tests/window_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
 ```
 
 The inspect suite needs a checkout of oil.nvim and some environment variables.

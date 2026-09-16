@@ -22,6 +22,7 @@ local default_version_keys = { old = "<C-s>", new = "<C-d>" }
 local default_next_chunk = "<C-Tab>"
 local default_previous_chunk = "<S-Tab>"
 local changed_file_read_concurrency = 8
+local default_remote_context = 20
 local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
 local inspection_statusline_option = "%!v:lua.require('oculus.inspect')._inspection_statusline()"
 local inspection_sidebar_statusline_option = "[oculus] "
@@ -3530,7 +3531,7 @@ end
 
 local function sidebar_chunk_row(hunk, last)
   local branch = last and "└─" or "├─"
-  local first = hunk.new_start
+  local first = hunk.source_new_start or hunk.new_start
   local last_line = first + math.max(0, (hunk.new_count or 0) - 1)
   local delta = (hunk.new_count or 0) - (hunk.old_count or 0)
   local delta_text = delta > 0 and ("+" .. delta) or tostring(delta)
@@ -3796,6 +3797,14 @@ local function sidebar_overview_lines(overview, width)
     "Date",
     overview_date(overview.created_at or details.authored_at)
   )
+
+  if overview.remote then
+    local context = tonumber(overview.remote_context)
+
+    field("Source", is_issue and "Remote, no local clone"
+      or context == math.huge and "Remote, whole changed files"
+      or ("Remote, ±%d lines around changes"):format(context or 0))
+  end
 
   if lines[#lines] == "" then
     table.remove(lines)
@@ -8544,6 +8553,10 @@ local function setup_inspection_comment(group, comment)
     return
   end
 
+  if session.excerpt then
+    comment.line = patch.excerpt_line(session.excerpt[role], comment.line)
+  end
+
   local chunk_index =
     patch.revision_hunk_index_at_line(session, role, comment.line)
 
@@ -8911,6 +8924,8 @@ local function open_tabs(
         change_content = vim.deepcopy(paths.change_lines),
         patch = paths.patch,
         status = paths.status,
+        remote = paths.remote,
+        excerpt = paths.excerpt,
         parent_lines = patch.change_lines(hunks, "parent"),
         change_lines = patch.change_lines(hunks),
         active_chunk = hunks[1] and 1 or nil,
@@ -9268,6 +9283,26 @@ local function read_revision_file(repository, revision, file, missing, callback)
   end)
 end
 
+local function excerpt_commentstring(file)
+  if type(file) ~= "string" or file == "" then
+    return nil
+  end
+
+  local ok, filetype = pcall(vim.filetype.match, { filename = file })
+
+  if not ok or type(filetype) ~= "string" or filetype == "" then
+    return nil
+  end
+
+  local option_ok, commentstring = pcall(
+    vim.filetype.get_option,
+    filetype,
+    "commentstring"
+  )
+
+  return option_ok and commentstring or nil
+end
+
 local function read_revision_diff(
   repository,
   info,
@@ -9398,7 +9433,7 @@ local function read_revision_diff(
         for file_index, read in ipairs(reads) do
           local changed_file = read.changed_file
 
-          inspections[file_index] = {
+          local inspection = {
             kind = info.kind,
             parent = pair.parent,
             commit = pair.commit,
@@ -9416,7 +9451,36 @@ local function read_revision_diff(
             file_index = file_index,
             file_count = #changed_files,
             status = changed_file.status,
+            remote = info.remote,
           }
+
+          if info.remote then
+            local excerpt = patch.excerpt(
+              read.parent_lines,
+              read.change_lines,
+              patch.parse_hunks(read.patch),
+              info.remote_context,
+              {
+                commentstring = excerpt_commentstring(
+                  read.change_file or read.parent_file
+                ),
+              }
+            )
+
+            if excerpt then
+              inspection.parent_lines = excerpt.parent_lines
+              inspection.change_lines = excerpt.change_lines
+              inspection.hunks = excerpt.hunks
+
+              inspection.excerpt = {
+                parent = excerpt.parent_ranges,
+                change = excerpt.change_ranges,
+                hidden = excerpt.hidden,
+              }
+            end
+          end
+
+          inspections[file_index] = inspection
         end
 
         callback(inspections)
@@ -9461,11 +9525,93 @@ local function load_commit_overview(repository, info, commit, callback)
   end)
 end
 
+local function remote_context(opts)
+  local context = tonumber(opts.inspect_remote_context)
+
+  if not context or context < 0 then
+    return default_remote_context
+  end
+
+  return context == math.huge and context or math.floor(context)
+end
+
+local function expand_commit_sha(info, opts, callback)
+  if info.kind ~= "commit"
+    or type(info.sha) ~= "string"
+    or #info.sha >= 40
+  then
+    callback(true)
+    return
+  end
+
+  local provider = info.forge == "codeberg" and codeberg or github
+
+  provider.commit_sha(
+    info.owner .. "/" .. info.repo,
+    info.sha,
+    opts,
+    function(sha, err)
+      if not sha then
+        callback(nil, "could not resolve commit " .. info.sha .. ": "
+          .. tostring(err))
+
+        return
+      end
+
+      info.sha = sha
+      callback(true)
+    end
+  )
+end
+
+local function fetch_revision_pairs(
+  repository,
+  fetch_source,
+  remote,
+  info,
+  opts,
+  callback
+)
+  if not remote then
+    git.fetch_pair(repository, fetch_source, info, function(commits, commit_err)
+      if commit_err then
+        callback(nil, nil, commit_err)
+        return
+      end
+
+      git.revision_pairs(repository, info, commits, function(pairs, pairs_err)
+        callback(commits, pairs, pairs_err)
+      end)
+    end)
+
+    return
+  end
+
+  expand_commit_sha(info, opts, function(_, expand_err)
+    if expand_err then
+      callback(nil, nil, expand_err)
+      return
+    end
+
+    git.fetch_remote_revisions(repository, info, function(commits, pairs, err)
+      if err then
+        callback(nil, nil, err)
+        return
+      end
+
+      git.prefetch_remote_blobs(repository, pairs, function(_, prefetch_err)
+        callback(commits, pairs, prefetch_err)
+      end)
+    end)
+  end)
+end
+
 local function prepare(info, opts, callback)
   git.ensure_repository(info, opts, function(
     repository,
     repository_err,
-    fetch_source
+    fetch_source,
+    remote
   )
     if repository_err then
       callback(nil, repository_err)
@@ -9477,19 +9623,24 @@ local function prepare(info, opts, callback)
       return
     end
 
-    git.fetch_pair(repository, fetch_source, info, function(commits, commit_err)
-      if commit_err then
-        callback(nil, commit_err)
-        return
-      end
+    if remote then
+      info.remote = true
+      info.remote_context = remote_context(opts)
+    end
 
-      load_commit_overview(repository, info, commits.commit, function()
-        git.revision_pairs(repository, info, commits, function(pairs, pairs_err)
-          if pairs_err then
-            callback(nil, pairs_err)
-            return
-          end
+    fetch_revision_pairs(
+      repository,
+      fetch_source,
+      remote,
+      info,
+      opts,
+      function(commits, pairs, pairs_err)
+        if pairs_err then
+          callback(nil, pairs_err)
+          return
+        end
 
+        load_commit_overview(repository, info, commits.commit, function()
           local inspections = {}
           local index = 1
 
@@ -9533,8 +9684,8 @@ local function prepare(info, opts, callback)
 
           prepare_next()
         end)
-      end)
-    end)
+      end
+    )
   end)
 end
 
@@ -9851,11 +10002,18 @@ local function open_issue(
       return
     end
 
-    git.ensure_repository(info, opts, function(repository, repository_err)
+    git.ensure_repository(info, opts, function(
+      repository,
+      repository_err,
+      _,
+      remote
+    )
       if not repository then
         done(nil, repository_err or "could not find the issue repository")
         return
       end
+
+      info.remote = remote or nil
 
       open_issue_inspection(
         info,
@@ -9896,11 +10054,18 @@ M.preload = function(url, opts, context)
         return
       end
 
-      git.ensure_repository(info, opts or {}, function(repository, repo_err)
+      git.ensure_repository(info, opts or {}, function(
+        repository,
+        repo_err,
+        _,
+        remote
+      )
         if not repository then
           failed(repo_err)
           return
         end
+
+        info.remote = remote or nil
 
         M._preload_cache[key] = {
           status = "ready",
@@ -10105,9 +10270,12 @@ M._parse_changed_files = patch.parse_changed_files
 M._inspection_directory = git.inspection_directory
 M._github_repository = git.github_repository
 M._forge_repository = git.forge_repository
-M._download_destination = git.download_destination
-M._offer_repository_download = git.offer_repository_download
 M._find_local_repository = git.find_local_repository
+M._ensure_repository = git.ensure_repository
+M._remote_repository_path = git.remote_repository_path
+M._excerpt = patch.excerpt
+M._excerpt_line = patch.excerpt_line
+M._prepare = prepare
 M._parse_hunks = patch.parse_hunks
 M._parse_revision_pairs = patch.parse_revision_pairs
 M._blob_lines = blob_lines

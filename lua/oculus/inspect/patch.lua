@@ -502,6 +502,254 @@ function M.focused_change_lines(parent_lines, change_lines_value, hunk)
   return #result > 0 and result or { "" }, math.max(1, before_count + 1)
 end
 
+function M.excerpt_marker(hidden, indent, commentstring)
+  local text = ("⋯ %d unchanged lines ⋯"):format(hidden)
+  local left, right
+
+  if type(commentstring) == "string" then
+    left, right = commentstring:match("^(.-)%%s(.-)$")
+  end
+
+  if left then
+    left = vim.trim(left)
+    right = vim.trim(right)
+
+    text = (left ~= "" and (left .. " ") or "")
+      .. text
+      .. (right ~= "" and (" " .. right) or "")
+  end
+
+  return (indent or "") .. text
+end
+
+local function excerpt_line_count(lines, hunks, other_lines, other_key)
+  local count = #lines
+
+  if count ~= 1 or lines[1] ~= "" then
+    return count
+  end
+
+  local own_key = other_key == "new_count" and "old_count" or "new_count"
+  local own_total = 0
+  local other_total = 0
+
+  for _, hunk in ipairs(hunks) do
+    own_total = own_total + (hunk[own_key] or 0)
+    other_total = other_total + (hunk[other_key] or 0)
+  end
+
+  -- An empty side is loaded as a single blank line; it holds no source lines
+  -- when the other side's unchanged lines are fully consumed by the hunks.
+  if #other_lines - other_total == 0 and own_total == 0 then
+    return 0
+  end
+
+  return count
+end
+
+-- Trims both sides of a file to the changed lines plus `context` unchanged
+-- lines around each hunk. Hidden runs become one marker line on each side, so
+-- both excerpts keep the same unchanged-line alignment as the full files.
+function M.excerpt(parent_lines, change_lines, hunks, context, options)
+  options = options or {}
+  parent_lines = parent_lines or { "" }
+  change_lines = change_lines or { "" }
+  context = math.max(0, tonumber(context) or 0)
+
+  if type(hunks) ~= "table" or #hunks == 0 then
+    return nil
+  end
+
+  local parent_count = excerpt_line_count(
+    parent_lines,
+    hunks,
+    change_lines,
+    "new_count"
+  )
+
+  local change_count = excerpt_line_count(
+    change_lines,
+    hunks,
+    parent_lines,
+    "old_count"
+  )
+
+  local result = {
+    parent_lines = {},
+    change_lines = {},
+    hunks = {},
+    parent_ranges = {},
+    change_ranges = {},
+    hidden = 0,
+  }
+
+  local function track(ranges, source, excerpt, count)
+    if count > 0 then
+      ranges[#ranges + 1] = {
+        source = source,
+        excerpt = excerpt,
+        count = count,
+      }
+    end
+  end
+
+  local function copy(target, ranges, source_lines, first, count)
+    track(ranges, first, #target + 1, count)
+
+    for index = first, first + count - 1 do
+      target[#target + 1] = source_lines[index]
+    end
+  end
+
+  local function keep(parent_first, change_first, count)
+    copy(
+      result.parent_lines,
+      result.parent_ranges,
+      parent_lines,
+      parent_first,
+      count
+    )
+
+    copy(
+      result.change_lines,
+      result.change_ranges,
+      change_lines,
+      change_first,
+      count
+    )
+  end
+
+  local function unchanged(parent_first, change_first, count, leading, trailing)
+    if count <= 0 then
+      return
+    end
+
+    local head = leading and 0 or context
+    local tail = trailing and 0 or context
+    local hidden = count - head - tail
+
+    if hidden <= 1 then
+      keep(parent_first, change_first, count)
+      return
+    end
+
+    keep(parent_first, change_first, head)
+    local indent = (parent_lines[parent_first + head] or ""):match("^%s*")
+
+    local marker = M.excerpt_marker(
+      hidden,
+      indent,
+      options.commentstring
+    )
+
+    result.parent_lines[#result.parent_lines + 1] = marker
+    result.change_lines[#result.change_lines + 1] = marker
+    result.hidden = result.hidden + hidden
+
+    keep(
+      parent_first + count - tail,
+      change_first + count - tail,
+      tail
+    )
+  end
+
+  local parent_next = 1
+  local change_next = 1
+
+  for index, hunk in ipairs(hunks) do
+    local old_count = hunk.old_count or 0
+    local new_count = hunk.new_count or 0
+
+    local parent_before = old_count == 0
+        and hunk.old_start
+      or hunk.old_start - 1
+
+    local change_before = new_count == 0
+        and hunk.new_start
+      or hunk.new_start - 1
+
+    local run = parent_before - parent_next + 1
+
+    if run < 0 or run ~= change_before - change_next + 1 then
+      return nil
+    end
+
+    unchanged(parent_next, change_next, run, index == 1, false)
+
+    local remapped = {
+      old_start = old_count == 0
+          and #result.parent_lines
+        or #result.parent_lines + 1,
+      old_count = old_count,
+      new_start = new_count == 0
+          and #result.change_lines
+        or #result.change_lines + 1,
+      new_count = new_count,
+      source_old_start = hunk.old_start,
+      source_new_start = hunk.new_start,
+    }
+
+    copy(
+      result.parent_lines,
+      result.parent_ranges,
+      parent_lines,
+      hunk.old_start,
+      old_count
+    )
+
+    copy(
+      result.change_lines,
+      result.change_ranges,
+      change_lines,
+      hunk.new_start,
+      new_count
+    )
+
+    result.hunks[index] = remapped
+    parent_next = parent_before + old_count + 1
+    change_next = change_before + new_count + 1
+  end
+
+  local trailing = parent_count - parent_next + 1
+
+  if trailing < 0 or trailing ~= change_count - change_next + 1 then
+    return nil
+  end
+
+  unchanged(parent_next, change_next, trailing, false, true)
+
+  if #result.parent_lines == 0 then
+    result.parent_lines = { "" }
+  end
+
+  if #result.change_lines == 0 then
+    result.change_lines = { "" }
+  end
+
+  return result
+end
+
+-- Maps a source file line onto an excerpt built by M.excerpt. Hidden lines
+-- resolve to the marker line that stands in for them.
+function M.excerpt_line(ranges, line)
+  if type(ranges) ~= "table" or #ranges == 0 or not line then
+    return line
+  end
+
+  for _, range in ipairs(ranges) do
+    if line < range.source then
+      return math.max(1, range.excerpt - 1)
+    end
+
+    if line < range.source + range.count then
+      return range.excerpt + line - range.source
+    end
+  end
+
+  local last = ranges[#ranges]
+  return last.excerpt + last.count
+end
+
 function M.parse_revision_pairs(output)
   local pairs = {}
 

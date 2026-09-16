@@ -3927,13 +3927,13 @@ if missing_root then
   local original_select = vim.ui.select
   local prompted = false
 
-  vim.ui.select = function(items, select_opts, on_choice)
+  vim.ui.select = function(...)
     prompted = true
-    assert(select_opts.prompt:match("Download it to"))
-    on_choice(items[2])
+    return original_select(...)
   end
 
   local source_root = vim.fs.joinpath(missing_root, "source")
+  local remote_cache = vim.fs.joinpath(missing_root, "cache")
   local tabs_before_missing = #vim.api.nvim_list_tabpages()
   local missing_error
   local missing_progress = 0
@@ -3944,6 +3944,7 @@ if missing_root then
     {
       inspect_search_paths = { source_root },
       inspect_repositories = {},
+      inspect_remote_cache = remote_cache,
     },
     nil,
     {
@@ -3958,72 +3959,20 @@ if missing_root then
 
   assert(ok, err)
 
-  assert(vim.wait(10000, function()
+  assert(vim.wait(30000, function()
     return missing_error ~= nil
-  end), "missing local repository did not stop inspection")
+  end), "missing remote repository did not stop inspection")
 
   vim.ui.select = original_select
-  assert(prompted)
+  assert(not prompted)
   assert(missing_progress > 0)
   assert(#vim.api.nvim_list_tabpages() == tabs_before_missing)
-  assert(missing_error:match("download was declined"))
+  assert(missing_error:match("could not fetch commit"), missing_error)
   assert(vim.uv.fs_stat(vim.fs.joinpath(source_root, "missing")) == nil)
-  assert(vim.uv.fs_stat(vim.fs.joinpath(missing_root, "repositories")) == nil)
-end
 
-local download_root = vim.env.OCULUS_INSPECT_TEST_DOWNLOAD_ROOT
-local download_source = vim.env.OCULUS_INSPECT_TEST_DOWNLOAD_SOURCE
-local existing_repository = vim.fs.normalize(vim.fn.getcwd())
-local existing_repository_result
-local existing_repository_error
-
-inspect._offer_repository_download({
-  owner = "andrewgilley",
-  repo = vim.fs.basename(existing_repository),
-  remote_url = "https://github.com/andrewgilley/oculus.nvim.git",
-}, {
-  inspect_search_paths = { vim.fs.dirname(existing_repository) },
-}, function(path, err)
-  existing_repository_result = path
-  existing_repository_error = err
-end)
-
-assert(existing_repository_result, existing_repository_error)
-assert(vim.fs.normalize(existing_repository_result) == existing_repository)
-
-if download_root and download_source then
-  local original_select = vim.ui.select
-  local prompted = false
-
-  vim.ui.select = function(items, select_opts, on_choice)
-    prompted = true
-    assert(select_opts.prompt:match("Download it to"))
-    on_choice(items[1])
-  end
-
-  local downloaded
-  local download_err
-
-  inspect._offer_repository_download({
-    owner = "oculus",
-    repo = "downloaded",
-    remote_url = download_source,
-  }, {
-    inspect_search_paths = { download_root },
-  }, function(path, err)
-    downloaded = path
-    download_err = err
-  end)
-
-  assert(vim.wait(30000, function()
-    return downloaded ~= nil or download_err ~= nil
-  end), "repository download prompt did not finish")
-
-  vim.ui.select = original_select
-  assert(prompted)
-  assert(downloaded, download_err)
-  assert(downloaded == vim.fs.joinpath(download_root, "downloaded"))
-  assert(vim.uv.fs_stat(vim.fs.joinpath(downloaded, ".git")))
+  assert(vim.uv.fs_stat(
+    vim.fs.joinpath(remote_cache, "github", "oculus", "missing", ".git")
+  ))
 end
 
 local integration_root = vim.env.OCULUS_INSPECT_TEST_ROOT

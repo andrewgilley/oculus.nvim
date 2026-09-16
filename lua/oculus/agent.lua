@@ -22,6 +22,11 @@ function M.needs_patch_locations(group)
     return false
   end
 
+  -- Patch locations and worktrees need a checked-out repository.
+  if overview.remote then
+    return false
+  end
+
   for _, session in ipairs(group or {}) do
     local file = session.change_file or session.parent_file
 
@@ -135,7 +140,9 @@ local function prompt(group, purpose)
           and (overview.owner .. "/" .. overview.repo)
         or vim.fs.basename(repository)
     ),
-    "Local repository root: " .. repository,
+    overview.remote
+        and "Local repository: none; only the supplied patches are available"
+      or ("Local repository root: " .. repository),
     "URL: " .. tostring(overview.url or "Unknown"),
     "Title: " .. tostring(title or "Untitled"),
     "Description: " .. tostring(description or "No description provided."),

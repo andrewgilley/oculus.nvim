@@ -574,6 +574,7 @@ local function pull_request_key(event)
   local author = type(pull_request.user) == "table" and pull_request.user
     or (type(pull_request.author) == "table" and pull_request.author)
     or nil
+
   local merger = type(pull_request.merged_by) == "table" and pull_request.merged_by or nil
 
   if pull_request.title
@@ -916,6 +917,27 @@ function M.issue(repo, number, opts, callback)
     }
 
     callback(vim.deepcopy(details))
+  end)
+end
+
+function M.commit_sha(repo, sha, opts, callback)
+  opts = opts or {}
+
+  local url = ("https://api.github.com/repos/%s/commits?sha=%s&per_page=1")
+    :format(repo, sha)
+
+  request_json(url, opts, function(commits, err)
+    local commit = type(commits) == "table" and commits[1] or nil
+    local full = type(commit) == "table" and commit.sha or nil
+
+    if type(full) ~= "string"
+      or full:sub(1, #sha):lower() ~= sha:lower()
+    then
+      callback(nil, err or ("GitHub: no commit matches " .. sha))
+      return
+    end
+
+    callback(full:lower())
   end)
 end
 

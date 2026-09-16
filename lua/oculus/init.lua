@@ -51,6 +51,12 @@ local defaults = {
   inspect_cache_ttl = 60,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
+  inspect_remote_context = 20,
+  inspect_remote_cache = vim.fs.joinpath(
+    vim.fn.stdpath("cache"),
+    "oculus",
+    "remote"
+  ),
   inspect_sidebar_toggle = "<leader>oi",
   inspect_sidebar_width = default_inspect_sidebar_width,
   inspect_overview_toggle = "<leader>op",

@@ -1,4 +1,7 @@
 local M = {}
+local remote_repositories = {}
+local repository_queues = {}
+local default_remote_pull_request_depth = 250
 
 function M.git_error(result, fallback)
   local message = vim.trim(result.stderr or "")
@@ -10,8 +13,31 @@ function M.git_error(result, fallback)
   return message
 end
 
+local function path_key(path)
+  local normalized = vim.fs.normalize(path)
+
+  return vim.uv.os_uname().sysname == "Windows_NT"
+      and normalized:lower()
+    or normalized
+end
+
+local function command_options(command)
+  local options = { text = true }
+
+  -- Remote cache repositories hold only the objects Oculus fetched. A missing
+  -- commit must fail instead of lazily downloading its entire history.
+  if command[2] == "-C"
+    and type(command[3]) == "string"
+    and remote_repositories[path_key(command[3])]
+  then
+    options.env = { GIT_NO_LAZY_FETCH = "1" }
+  end
+
+  return options
+end
+
 function M.run(command, callback)
-  vim.system(command, { text = true }, function(result)
+  vim.system(command, command_options(command), function(result)
     vim.schedule(function()
       if result.code ~= 0 then
         callback(nil, M.git_error(result, "git command failed"))
@@ -24,7 +50,7 @@ function M.run(command, callback)
 end
 
 function M.run_raw(command, callback)
-  vim.system(command, { text = true }, function(result)
+  vim.system(command, command_options(command), function(result)
     vim.schedule(function()
       if result.code ~= 0 then
         callback(nil, M.git_error(result, "git command failed"))
@@ -262,6 +288,31 @@ function M.detect_repository(path, callback)
   end)
 end
 
+function M.remote_cache_root(opts)
+  local root = type(opts) == "table" and opts.inspect_remote_cache or nil
+
+  if type(root) ~= "string" or root == "" then
+    root = vim.fs.joinpath(vim.fn.stdpath("cache"), "oculus", "remote")
+  end
+
+  return vim.fs.normalize(root)
+end
+
+function M.remote_repository_path(info, opts)
+  return vim.fs.joinpath(
+    M.remote_cache_root(opts),
+    info.forge or "github",
+    info.owner:lower(),
+    info.repo:lower()
+  )
+end
+
+function M.in_remote_cache(path, opts)
+  local root = path_key(M.remote_cache_root(opts))
+  local key = path_key(path)
+  return key == root or key:sub(1, #root + 1) == root .. "/"
+end
+
 function M.local_candidates(info, opts)
   local candidates = {}
   local seen = {}
@@ -274,6 +325,12 @@ function M.local_candidates(info, opts)
     end
 
     root = vim.fs.normalize(root)
+
+    -- Remote cache repositories are shallow and blob-free; treating one as a
+    -- local clone would run full-history fetches against it.
+    if M.in_remote_cache(root, opts) then
+      return
+    end
 
     local key = vim.uv.os_uname().sysname == "Windows_NT"
         and root:lower()
@@ -508,83 +565,105 @@ function M.find_local_repository(info, opts, callback)
   inspect_next()
 end
 
-function M.download_destination(info, opts)
-  local source_root = (opts.inspect_search_paths or {})[1]
+function M.with_repository_lock(path, task)
+  local key = path_key(path)
+  local queue = repository_queues[key]
 
-  if type(source_root) ~= "string" or source_root == "" then
-    return nil, "no default source directory is configured"
-  end
+  local function run(next_task)
+    local released = false
 
-  return vim.fs.joinpath(vim.fs.normalize(source_root), info.repo)
-end
-
-function M.offer_repository_download(info, opts, callback)
-  local destination, destination_err = M.download_destination(info, opts)
-
-  if not destination then
-    callback(nil, destination_err)
-    return
-  end
-
-  if M.repository_root(destination) then
-    callback(destination)
-    return
-  end
-
-  if M.directory(destination) then
-    callback(
-      nil,
-      "cannot use the existing destination because it is not a Git "
-        .. "repository: "
-        .. destination
-    )
-
-    return
-  end
-
-  local choices = {
-    {
-      download = true,
-      label = "Download repository",
-    },
-    {
-      download = false,
-      label = "Do not download",
-    },
-  }
-
-  vim.ui.select(choices, {
-    prompt = ("No local clone of %s/%s was found. Download it to %s?")
-      :format(info.owner, info.repo, destination),
-    format_item = function(choice)
-      return choice.label
-    end,
-  }, function(choice)
-    if not choice or not choice.download then
-      callback(nil, "repository download was declined")
-      return
-    end
-
-    local source_root = vim.fs.dirname(destination)
-    local made_root = vim.fn.mkdir(source_root, "p")
-
-    if made_root == 0 and not M.directory(source_root) then
-      callback(nil, "could not create source directory: " .. source_root)
-      return
-    end
-
-    M.run({
-      "git",
-      "clone",
-      info.remote_url,
-      destination,
-    }, function(_, clone_err)
-      if clone_err then
-        callback(nil, "could not download repository: " .. clone_err)
+    next_task(function()
+      if released then
         return
       end
 
-      callback(destination)
+      released = true
+      local pending = repository_queues[key]
+      local following = pending and table.remove(pending, 1)
+
+      if following then
+        run(following)
+      else
+        repository_queues[key] = nil
+      end
+    end)
+  end
+
+  if queue then
+    queue[#queue + 1] = task
+    return
+  end
+
+  repository_queues[key] = {}
+  run(task)
+end
+
+local function run_steps(steps, callback)
+  local index = 1
+
+  local function step()
+    local command = steps[index]
+    index = index + 1
+
+    if not command then
+      callback(true)
+      return
+    end
+
+    M.run(command, function(_, err)
+      if err then
+        callback(nil, err)
+        return
+      end
+
+      step()
+    end)
+  end
+
+  step()
+end
+
+function M.ensure_remote_repository(info, opts, callback)
+  local path = M.remote_repository_path(info, opts)
+
+  M.with_repository_lock(path, function(release)
+    local function finish(repository, err)
+      release()
+      callback(repository, err)
+    end
+
+    local steps = {}
+
+    if not vim.uv.fs_stat(vim.fs.joinpath(path, ".git")) then
+      if vim.fn.mkdir(path, "p") == 0 and not M.directory(path) then
+        finish(nil, "could not create remote cache directory: " .. path)
+        return
+      end
+
+      steps[#steps + 1] = { "git", "-C", path, "init", "--quiet" }
+
+      steps[#steps + 1] = {
+        "git", "-C", path, "config", "remote.origin.promisor", "true",
+      }
+
+      steps[#steps + 1] = {
+        "git", "-C", path, "config", "remote.origin.partialclonefilter",
+        "blob:none",
+      }
+    end
+
+    steps[#steps + 1] = {
+      "git", "-C", path, "config", "remote.origin.url", info.remote_url,
+    }
+
+    run_steps(steps, function(_, err)
+      if err then
+        finish(nil, "could not prepare remote cache repository: " .. err)
+        return
+      end
+
+      remote_repositories[path_key(path)] = true
+      finish(path)
     end)
   end)
 end
@@ -592,17 +671,215 @@ end
 function M.ensure_repository(info, opts, callback)
   M.find_local_repository(info, opts, function(repository, fetch_source)
     if repository then
-      callback(repository, nil, fetch_source or info.remote_url)
+      callback(repository, nil, fetch_source or info.remote_url, false)
       return
     end
 
-    M.offer_repository_download(info, opts, function(downloaded, download_err)
-      if not downloaded then
-        callback(nil, download_err)
+    M.ensure_remote_repository(info, opts, function(remote, remote_err)
+      if not remote then
+        callback(nil, remote_err)
         return
       end
 
-      callback(downloaded, nil, info.remote_url)
+      callback(remote, nil, "origin", true)
+    end)
+  end)
+end
+
+local function fetch_remote(repository, arguments, stdin, callback)
+  local command = {
+    "git",
+    "-C",
+    repository,
+    "fetch",
+    "--quiet",
+    "--no-tags",
+    "--no-write-fetch-head",
+    "--recurse-submodules=no",
+    "--filter=blob:none",
+  }
+
+  vim.list_extend(command, arguments)
+
+  vim.system(command, {
+    text = true,
+    stdin = stdin,
+    env = { GIT_TERMINAL_PROMPT = "0" },
+  }, function(result)
+    vim.schedule(function()
+      if result.code ~= 0 then
+        callback(nil, M.git_error(result, "git fetch failed"))
+        return
+      end
+
+      callback(true)
+    end)
+  end)
+end
+
+-- Shallow fetches can mark commits other inspections rely on as history
+-- boundaries, so revision pairs are resolved while the repository is locked.
+function M.fetch_remote_revisions(repository, info, callback)
+  M.with_repository_lock(repository, function(release)
+    local function finish(commits, pairs, err)
+      release()
+      callback(commits, pairs, err)
+    end
+
+    local target = info.kind == "pull_request"
+        and ("pull request #" .. tostring(info.number))
+      or ("commit " .. tostring(info.sha))
+
+    local function resolve()
+      M.resolve_pair(repository, info, function(commits, resolve_err)
+        if not commits then
+          finish(nil, nil, "could not resolve " .. target .. ": " .. resolve_err)
+          return
+        end
+
+        if info.kind ~= "pull_request" then
+          finish(commits, { commits })
+          return
+        end
+
+        M.revision_pairs(repository, info, commits, function(pairs, pairs_err)
+          if not pairs then
+            finish(nil, nil, pairs_err)
+            return
+          end
+
+          local included = {}
+
+          for _, commit in ipairs(type(info.commits) == "table" and info.commits or {}) do
+            if type(commit) == "table" and type(commit.sha) == "string" then
+              included[commit.sha:lower()] = true
+            end
+          end
+
+          -- Shallow history cannot tell base-branch commits merged into the
+          -- pull request apart from its own, so keep the forge's commit list.
+          local filtered = vim.tbl_filter(function(pair)
+            return included[pair.commit:lower()] == true
+          end, pairs)
+
+          finish(commits, #filtered > 0 and filtered or pairs)
+        end)
+      end)
+    end
+
+    local function fetch(arguments, done)
+      fetch_remote(repository, arguments, nil, function(_, err)
+        if err then
+          finish(nil, nil, "could not fetch " .. target .. ": " .. err)
+          return
+        end
+
+        done()
+      end)
+    end
+
+    if info.kind == "pull_request" then
+      local depth = math.max(
+        tonumber(info.commit_count) or 0,
+        type(info.commits) == "table" and #info.commits or 0
+      )
+
+      if depth == 0 then
+        depth = default_remote_pull_request_depth
+      end
+
+      fetch({ "--depth=1", "origin", info.base_sha }, function()
+        fetch({
+          "--depth=" .. tostring(depth + 1),
+          "origin",
+          info.head_sha,
+        }, resolve)
+      end)
+
+      return
+    end
+
+    M.resolve_pair(repository, info, function(commits)
+      if commits then
+        finish(commits, { commits })
+        return
+      end
+
+      fetch({ "--depth=2", "origin", info.sha }, resolve)
+    end)
+  end)
+end
+
+function M.prefetch_remote_blobs(repository, pairs, callback)
+  local objects = {}
+  local seen = {}
+
+  M.map_concurrently(pairs, 4, function(pair, _, done)
+    M.run({
+      "git",
+      "-C",
+      repository,
+      "diff",
+      "--raw",
+      "--no-abbrev",
+      "--no-renames",
+      pair.parent,
+      pair.commit,
+      "--",
+    }, function(output, err)
+      if err then
+        done(nil, "could not list changed files: " .. err)
+        return
+      end
+
+      for line in (output or ""):gmatch("[^\r\n]+") do
+        local old_mode, new_mode, old_object, new_object =
+          line:match("^:(%d+) (%d+) (%x+) (%x+) ")
+
+        for _, entry in ipairs({
+          { mode = old_mode, object = old_object },
+          { mode = new_mode, object = new_object },
+        }) do
+          if entry.object
+            and entry.mode ~= "160000"
+            and not entry.object:match("^0+$")
+            and not seen[entry.object]
+          then
+            seen[entry.object] = true
+            objects[#objects + 1] = entry.object
+          end
+        end
+      end
+
+      done(true)
+    end)
+  end, function(_, list_err)
+    if list_err then
+      callback(nil, list_err)
+      return
+    end
+
+    if #objects == 0 then
+      callback(true)
+      return
+    end
+
+    M.with_repository_lock(repository, function(release)
+      fetch_remote(
+        repository,
+        { "--stdin", "origin" },
+        table.concat(objects, "\n") .. "\n",
+        function(_, fetch_err)
+          release()
+
+          if fetch_err then
+            callback(nil, "could not fetch changed files: " .. fetch_err)
+            return
+          end
+
+          callback(true)
+        end
+      )
     end)
   end)
 end
