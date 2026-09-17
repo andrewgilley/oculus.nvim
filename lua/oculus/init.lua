@@ -58,6 +58,7 @@ local defaults = {
   inspect_cache_ttl = 60,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
+  inspect_discovery_roots = { vim.uv.os_homedir() },
   inspect_remote_context = 20,
   inspect_remote_cache = vim.fs.joinpath(
     vim.fn.stdpath("cache"),

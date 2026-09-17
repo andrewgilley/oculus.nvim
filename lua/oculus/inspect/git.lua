@@ -313,6 +313,164 @@ function M.in_remote_cache(path, opts)
   return key == root or key:sub(1, #root + 1) == root .. "/"
 end
 
+local discovery_depth = 4
+local discovery_ttl = 60
+local discovery_cache = {}
+
+local skipped_discovery_directories = {
+  node_modules = true,
+  target = true,
+  vendor = true,
+}
+
+-- Git repositories below root, without descending into repositories or
+-- hidden directories. Scans are cached briefly because activity feeds and
+-- inspections look up clones for many projects at once.
+local function discovered_repositories(root)
+  local key = path_key(root)
+  local cached = discovery_cache[key]
+  local now = vim.uv.now()
+
+  if cached and now - cached.time < discovery_ttl * 1000 then
+    return cached.repositories
+  end
+
+  local repositories = {}
+  local pending = { { path = root, depth = 0 } }
+  local next_directory = 1
+
+  while pending[next_directory] do
+    local current = pending[next_directory]
+    next_directory = next_directory + 1
+
+    if vim.uv.fs_stat(vim.fs.joinpath(current.path, ".git")) then
+      repositories[#repositories + 1] = {
+        path = current.path,
+        depth = current.depth,
+      }
+    elseif current.depth < discovery_depth then
+      local scanner = vim.uv.fs_scandir(current.path)
+
+      while scanner do
+        local name, kind = vim.uv.fs_scandir_next(scanner)
+
+        if not name then
+          break
+        end
+
+        local child = vim.fs.joinpath(current.path, name)
+
+        if not name:match("^%.")
+          and not skipped_discovery_directories[name]
+          and (kind == "directory" or (kind == "link" and M.directory(child)))
+        then
+          pending[#pending + 1] = { path = child, depth = current.depth + 1 }
+        end
+      end
+    end
+  end
+
+  discovery_cache[key] = { time = now, repositories = repositories }
+  return repositories
+end
+
+-- The name of a remote in the repository's config whose URL points at the
+-- project, read directly so discovery does not spawn git for every clone.
+local function configured_remote(path, info)
+  local config = vim.fs.joinpath(path, ".git", "config")
+
+  if not M.directory(vim.fs.joinpath(path, ".git")) then
+    return nil
+  end
+
+  local ok, lines = pcall(vim.fn.readfile, config)
+
+  if not ok then
+    return nil
+  end
+
+  local slug = (info.owner .. "/" .. info.repo):lower()
+  local section
+
+  for _, line in ipairs(lines) do
+    local name = line:match('^%s*%[remote%s+"([^"]+)"%]')
+
+    if name then
+      section = name
+    elseif line:match("^%s*%[") then
+      section = nil
+    elseif section then
+      local url = line:match("^%s*url%s*=%s*(%S+)")
+      local forge, repository = M.forge_repository(url)
+
+      if forge == info.forge and repository == slug then
+        return section
+      end
+    end
+  end
+end
+
+function M.discovery_roots(opts)
+  local roots = {}
+
+  for _, root in ipairs(type(opts) == "table" and opts.inspect_discovery_roots or {}) do
+    if type(root) == "string" and root ~= "" then
+      root = vim.fs.normalize(vim.fn.expand(root))
+
+      if M.directory(root) then
+        roots[#roots + 1] = root
+      end
+    end
+  end
+
+  return roots
+end
+
+-- Looks for a clone of the project anywhere below inspect_discovery_roots.
+-- This is the last local lookup before inspecting remotely, so a clone kept
+-- outside inspect_search_paths still loads whole files.
+function M.discover_local_repository(info, opts)
+  if not info or not info.owner or not info.repo then
+    return nil
+  end
+
+  local matches = {}
+
+  for _, root in ipairs(M.discovery_roots(opts)) do
+    for _, repository in ipairs(discovered_repositories(root)) do
+      if not M.in_remote_cache(repository.path, opts) then
+        local remote = configured_remote(repository.path, info)
+
+        if remote then
+          matches[#matches + 1] = {
+            path = repository.path,
+            depth = repository.depth,
+            remote = remote,
+          }
+        end
+      end
+    end
+  end
+
+  table.sort(matches, function(left, right)
+    local left_named = vim.fs.basename(left.path):lower() == info.repo:lower()
+    local right_named = vim.fs.basename(right.path):lower() == info.repo:lower()
+
+    if left_named ~= right_named then
+      return left_named
+    end
+
+    if left.depth ~= right.depth then
+      return left.depth < right.depth
+    end
+
+    return left.path < right.path
+  end)
+
+  local match = matches[1]
+  return match and match.path, match and match.remote
+end
+
 function M.local_candidates(info, opts)
   local candidates = {}
   local seen = {}
@@ -534,7 +692,7 @@ function M.find_local_repository(info, opts, callback)
     index = index + 1
 
     if not candidate then
-      callback()
+      callback(M.discover_local_repository(info, opts))
       return
     end
 

@@ -337,6 +337,46 @@ end)
 vim.api.nvim_set_current_dir(workspace)
 assert(found_local == nil, "remote cache repositories must not count as clones")
 
+do
+  local discovery_root = vim.fs.joinpath(workspace, "home")
+  local clone = vim.fs.joinpath(discovery_root, "Dev", "lua", "upstream")
+  local hidden = vim.fs.joinpath(discovery_root, ".local", "upstream")
+  local unrelated = vim.fs.joinpath(discovery_root, "other")
+
+  for _, path in ipairs({ clone, hidden, unrelated }) do
+    vim.fn.mkdir(path, "p")
+    git_command("-C", path, "init", "--quiet")
+  end
+
+  git_command("-C", clone, "remote", "add", "fork", "git@github.com:someone/upstream.git")
+  git_command("-C", clone, "remote", "add", "upstream", "https://github.com/oculus/upstream.git")
+  git_command("-C", hidden, "remote", "add", "origin", "https://github.com/oculus/upstream.git")
+  git_command("-C", unrelated, "remote", "add", "origin", "https://github.com/oculus/other.git")
+  local discovered
+  local discovered_remote
+
+  inspect._find_local_repository(commit_info(feature_sha), {
+    inspect_repositories = {},
+    inspect_search_paths = {},
+    inspect_discovery_roots = { discovery_root },
+    inspect_remote_cache = cache,
+  }, function(path, remote)
+    discovered = path or false
+    discovered_remote = remote
+  end)
+
+  wait_for("clone discovery did not finish", function()
+    return discovered ~= nil
+  end)
+
+  assert(
+    discovered and vim.fs.normalize(discovered) == vim.fs.normalize(clone),
+    "a clone below inspect_discovery_roots must be used instead of remote inspection"
+  )
+
+  assert(discovered_remote == "upstream")
+end
+
 local pull_request = {
   kind = "pull_request",
   forge = "github",

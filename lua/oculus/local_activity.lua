@@ -59,7 +59,7 @@ function M.find_repository(project, opts, callback)
     index = index + 1
 
     if not candidate then
-      callback(nil)
+      callback(git.discover_local_repository(info, opts or {}))
       return
     end
 
