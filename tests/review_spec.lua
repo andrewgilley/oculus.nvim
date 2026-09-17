@@ -582,8 +582,10 @@ do
       { details = true }
     )) do
       if mark[4].virt_lines then
+        assert(mark[4].virt_lines_leftcol, "inline threads own the gutter")
+
         result[mark[2] + 1] = vim.tbl_map(function(virt_line)
-          return virt_line[1][1]
+          return virt_line[#virt_line][1]
         end, mark[4].virt_lines)
       end
     end
@@ -612,6 +614,50 @@ do
     { "  ◆ @bob", "    Old side" }
   ), vim.inspect(inline_marks(parent)))
 
+  -- A line runs down the number column from the code line to the last comment.
+  local gutter = {}
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    change.buf,
+    inspect._review.ns,
+    0,
+    -1,
+    { details = true }
+  )) do
+    if mark[4].virt_lines and mark[2] + 1 == 8 then
+      gutter = vim.tbl_map(function(virt_line)
+        return virt_line[1]
+      end, mark[4].virt_lines)
+    end
+  end
+
+  assert(#gutter == 2, vim.inspect(gutter))
+  assert(gutter[1][1]:find("│", 1, true), vim.inspect(gutter))
+  assert(gutter[1][2] == "OculusInspectThreadGutter", vim.inspect(gutter))
+  assert(gutter[2][1]:find("└", 1, true), vim.inspect(gutter))
+
+  assert(
+    vim.fn.strdisplaywidth(gutter[1][1])
+      == inspect._review.gutter_width(change.win),
+    vim.inspect(gutter)
+  )
+
+  -- Resolved threads dim their line too.
+  local resolved_gutter
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    change.buf,
+    inspect._review.ns,
+    0,
+    -1,
+    { details = true }
+  )) do
+    if mark[4].virt_lines and mark[2] + 1 == 5 then
+      resolved_gutter = mark[4].virt_lines[1][1]
+    end
+  end
+
+  assert(resolved_gutter[2] == "OculusInspectThreadResolved", vim.inspect(resolved_gutter))
   -- Inline threads replace the end-of-line labels and the hover float.
   assert(marks(change)[5] == nil and marks(change)[8] == nil, vim.inspect(marks(change)))
   vim.api.nvim_set_current_win(change.win)

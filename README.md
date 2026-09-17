@@ -388,7 +388,8 @@ When you inspect a pull request, Oculus loads its reviews in the background:
   open, resolved and outdated.
 - Pressing `r` on the [overview](#inspect-overview) loads the threads into the
   files: every comment is shown under the code line it was written on, with
-  replies indented, in place of the end-of-line label and the float. Files
+  replies indented and a line down the number column tying the comments to
+  that code line, in place of the end-of-line label and the float. Files
   whose threads sit in other chunks are shown whole while the threads are
   loaded, so each one lands on its own line; `r` again puts the threads away
   and brings back the chunk each file was showing.
@@ -743,6 +744,7 @@ oculus.show_opinion("Some **markdown**", { title = " Notes " })
 | `OculusInspectThreadResolved` | links to `Comment`        | Resolved review thread labels |
 | `OculusInspectThreadHeader`   | links to `Title`          | Comment authors in threads    |
 | `OculusInspectThreadBody`     | links to `Comment`        | Comment text of threads loaded into the files |
+| `OculusInspectThreadGutter`   | links to `LineNr`         | The line drawn beside that comment text |
 
 ## Contributing
 

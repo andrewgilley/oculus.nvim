@@ -8869,6 +8869,11 @@ function M._review.set_review_highlights()
     link = "Comment",
     default = true,
   })
+
+  vim.api.nvim_set_hl(0, "OculusInspectThreadGutter", {
+    link = "LineNr",
+    default = true,
+  })
 end
 
 function M._review.display_rows(lines, width)
@@ -8897,24 +8902,46 @@ function M._review.close_float(endpoint)
   end
 end
 
+-- The columns a window spends on its fold, sign and number columns.
+function M._review.gutter_width(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return 0
+  end
+
+  local info = vim.fn.getwininfo(win)[1]
+  return info and tonumber(info.textoff) or 0
+end
+
 -- The width available for inline thread text in a window.
 function M._review.inline_width(win)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return 60
   end
 
-  local width = vim.api.nvim_win_get_width(win)
+  return math.max(
+    20,
+    vim.api.nvim_win_get_width(win)
+      - M._review.gutter_width(win)
+      - 4
+  )
+end
 
-  if vim.wo[win].number or vim.wo[win].relativenumber then
-    width = width - math.max(tonumber(vim.wo[win].numberwidth) or 0, 4)
+-- The line drawn down the number column beside inline thread text, so the
+-- comments stay tied to the code line they were written on.
+function M._review.inline_gutter(win, last)
+  local width = M._review.gutter_width(win)
+
+  if width < 1 then
+    return nil
   end
 
-  if vim.wo[win].signcolumn ~= "no" then
-    width = width - 2
+  local glyph = last and "└" or "│"
+
+  if width == 1 then
+    return glyph
   end
 
-  width = width - (tonumber(vim.wo[win].foldcolumn) or 0)
-  return math.max(20, width - 4)
+  return string.rep(" ", width - 2) .. glyph .. " "
 end
 
 -- Threads are shown inline for the chunk a file is on, or for the whole file
@@ -8988,9 +9015,26 @@ function M._review.render_marks(session)
           if inline and not entry.chunk_index then
             inline_lines = inline_lines or {}
             inline_lines[line] = true
+            local virt_lines = review.inline_lines(entry.threads, width)
+
+            local gutter_group = review.all_resolved(entry.threads)
+                and "OculusInspectThreadResolved"
+              or "OculusInspectThreadGutter"
+
+            for index, virt_line in ipairs(virt_lines) do
+              local gutter = M._review.inline_gutter(
+                endpoint.win,
+                index == #virt_lines
+              )
+
+              if gutter then
+                table.insert(virt_line, 1, { gutter, gutter_group })
+              end
+            end
 
             vim.api.nvim_buf_set_extmark(endpoint.buf, M._review.ns, line - 1, 0, {
-              virt_lines = review.inline_lines(entry.threads, width),
+              virt_lines = virt_lines,
+              virt_lines_leftcol = true,
               priority = 120,
             })
           else
