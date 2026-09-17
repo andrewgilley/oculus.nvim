@@ -334,28 +334,35 @@ window.open({
 
 state = window.state
 assert(buffer_text():find("w work", 1, true))
-
--- The start screen names the signed-in account on the row above the footer.
-local function account_text()
-  local ns = vim.api.nvim_get_namespaces().oculus_accounts
-  local marks = vim.api.nvim_buf_get_extmarks(state.buf, ns, 0, -1, { details = true })
-  return marks[1] and marks[1][2] == state.list_footer_line - 3 and marks[1][4].virt_text[1][1] or nil
-end
-
-wait_for("signed-in account not shown", function()
-  return account_text() == "signed in as @octo on GitHub"
-end)
-
--- With the sidebar open, the accounts move from the list to the sidebar.
+-- The signed-in accounts appear only in the sidebar, never on the list.
 press("?")
 assert(window._is_sidebar_visible())
-local sidebar_lines = vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)
-assert(sidebar_lines[#sidebar_lines - 1] == "  SIGNED IN AS", vim.inspect(sidebar_lines))
-assert(sidebar_lines[#sidebar_lines] == "  @octo on GitHub", vim.inspect(sidebar_lines))
-assert(#vim.api.nvim_buf_get_extmarks(state.buf, vim.api.nvim_get_namespaces().oculus_accounts, 0, -1, {}) == 0)
+
+wait_for("signed-in account not shown", function()
+  local sidebar_lines = vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)
+
+  return sidebar_lines[#sidebar_lines - 1] == "  SIGNED IN AS"
+    and sidebar_lines[#sidebar_lines] == "  GitHub: @octo"
+end)
+
+local function list_mentions_account()
+  if buffer_text():find("@octo", 1, true) then
+    return true
+  end
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.buf, -1, 0, -1, { details = true })) do
+    for _, chunk in ipairs(mark[4].virt_text or {}) do
+      if chunk[1]:find("@octo", 1, true) then
+        return true
+      end
+    end
+  end
+end
+
+assert(not list_mentions_account())
 press("?")
 assert(not window._is_sidebar_visible())
-assert(account_text() == "signed in as @octo on GitHub")
+assert(not list_mentions_account())
 press("w")
 assert(state.view == "work", state.view)
 local text = buffer_text()

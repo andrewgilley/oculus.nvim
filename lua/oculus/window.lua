@@ -80,8 +80,8 @@ local load_project_activity
 local load_project_issues
 local milestone_view = {}
 local saved_view = { ns = vim.api.nvim_create_namespace("oculus_saved_items") }
--- `accounts` draws the signed-in accounts on the start screen.
-local work_view = { accounts = { ns = vim.api.nvim_create_namespace("oculus_accounts"), requested = {} } }
+-- `accounts` lists the signed-in accounts in the start screen's sidebar.
+local work_view = { accounts = { requested = {} } }
 local target_on_cursor
 local render_directory
 local persist_projects
@@ -1082,8 +1082,7 @@ local function render_sidebar()
     end
   end
 
-  -- On the start screen the signed-in accounts sit at the bottom of the
-  -- sidebar, in place of the lines the list draws while the sidebar is hidden.
+  -- On the start screen the signed-in accounts sit at the bottom of the sidebar.
   local accounts = M.state.view == "contributors" and work_view.accounts.lines() or {}
 
   if #accounts > 0 then
@@ -1560,7 +1559,6 @@ local function set_lines(lines)
   )
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, saved_view.ns, 0, -1)
-  vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
   M.state.preview_items = nil
   -- A redraw replaces the list footer, so any pending prompt is abandoned.
   M.state.footer_prompt = nil
@@ -2632,7 +2630,7 @@ local function startup_project_items()
   return ordered_items
 end
 
--- One entry per forge signed in with a token, e.g. "@octocat on GitHub", in
+-- One entry per forge signed in with a token, e.g. "GitHub: @octocat", in
 -- GitHub, Codeberg order.
 function work_view.accounts.lines()
   local auth = require("oculus.auth")
@@ -2642,49 +2640,17 @@ function work_view.accounts.lines()
     local viewer = auth.cached_viewer(provider, M.state.opts)
 
     if viewer then
-      lines[#lines + 1] = ("@%s on %s"):format(viewer.login, provider_name(viewer))
+      lines[#lines + 1] = ("%s: @%s"):format(provider_name(viewer), viewer.login)
     end
   end
 
   return lines
 end
 
--- Draw the signed-in accounts on the bottom rows of the startup list, just
--- above the footer separator. Rows the list already fills are left out. While
--- the sidebar is open it shows the accounts instead.
-function work_view.accounts.paint()
-  if M.state.view ~= "contributors" or not is_valid_buf(M.state.buf) or not is_valid_win(M.state.win) then
-    return
-  end
-
-  vim.api.nvim_buf_clear_namespace(M.state.buf, work_view.accounts.ns, 0, -1)
-
-  if is_sidebar_visible() or not M.state.list_footer_line then
-    return
-  end
-
-  local width = preview_left_width(vim.api.nvim_win_get_width(M.state.win)) - 3
-  local texts = work_view.accounts.lines()
-  local last = M.state.list_footer_line - 3
-
-  for index, text in ipairs(texts) do
-    local row = last - #texts + index
-    local line = row >= 0 and vim.api.nvim_buf_get_lines(M.state.buf, row, row + 1, false)[1]
-
-    if line and line:match("^%s*$") then
-      vim.api.nvim_buf_set_extmark(M.state.buf, work_view.accounts.ns, row, 0, {
-        virt_text = { { trim_to_width("signed in as " .. text, width), "OculusAccounts" } },
-        virt_text_win_col = 2,
-      })
-    end
-  end
-end
-
--- Paint the known accounts, then look each signed-in forge up once per window;
--- a failed lookup waits for the next time the window opens.
+-- Look each signed-in forge up once per window, redrawing the sidebar when an
+-- account arrives; a failed lookup waits for the next time the window opens.
 function work_view.accounts.render()
   local auth = require("oculus.auth")
-  work_view.accounts.paint()
 
   for _, provider in ipairs({ "github", "codeberg" }) do
     if not work_view.accounts.requested[provider]
@@ -2695,7 +2661,6 @@ function work_view.accounts.render()
 
       auth.viewer(provider, M.state.opts, function(viewer)
         if viewer and M.state.view == "contributors" then
-          work_view.accounts.paint()
           render_sidebar()
         end
       end)
