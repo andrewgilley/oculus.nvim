@@ -316,6 +316,9 @@ function M.handle(state, action, target)
       local parent = vim.deepcopy(path)
       table.remove(parent)
       if not M.move(state, parent) then return true end
+    else
+      -- Place the cursor back on the group being left.
+      state.tracking_selected = path[#path]
     end
 
     table.remove(path)

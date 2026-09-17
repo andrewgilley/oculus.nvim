@@ -102,6 +102,11 @@ select_label('Nested'); key('m'); key('<Left>')
 assert(disk().projects[2].name == 'Nested', 'move group to parent persisted')
 select_label('Nested'); key('m'); select_label('Tools'); key('m')
 assert(disk().projects[1].name == 'Nested', 'group reorder persisted')
+select_label('Tools'); key('<CR>'); key('<Left>')
+
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].name == 'Tools',
+  'leaving a group places the cursor on that group rather than the first row')
+
 key('u'); select_label('alice'); key('m'); key('<Left>')
 assert(disk().users[2].username == 'alice', 'users move to parent persisted')
 select_label('alice'); key('m'); select_label('Friends'); key('<Right>')

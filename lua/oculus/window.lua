@@ -2716,12 +2716,20 @@ local function render_contributors()
       if target.kind == "tracking_group" then highlight(line, 2, -1, "OculusDirectory") end
     end
 
-    local first
-    for line in pairs(M.state.line_targets) do first = math.min(first or line, line) end
+    -- Leaving a group lands on that group's row; otherwise start at the top.
+    local first, selected
 
-    if first then
-      vim.api.nvim_win_set_cursor(M.state.win, {first, 0})
-      local target = M.state.line_targets[first]
+    for line, target in pairs(M.state.line_targets) do
+      first = math.min(first or line, line)
+      if M.state.tracking_selected and target.tracking_index == M.state.tracking_selected then selected = line end
+    end
+
+    M.state.tracking_selected = nil
+    local cursor_line = selected or first
+
+    if cursor_line then
+      vim.api.nvim_win_set_cursor(M.state.win, {cursor_line, 0})
+      local target = M.state.line_targets[cursor_line]
 
       if target.kind == "project" then queue_project_preview(target.project)
       elseif target.username then queue_preview(target)
