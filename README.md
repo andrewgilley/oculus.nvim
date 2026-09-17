@@ -179,29 +179,27 @@ window with `a`, list them in `setup()`, or load them from a
 ### The Oculus window
 
 Oculus uses Vim's `hjkl` movement by default: `k` is up, `j` down, `h` left,
-and `l` right, and `i`/`I` inspect. Set `navigation = "ijkl"` for the
-alternative layout, where `i` is up, `k` down, `j` left, and inspect moves to
-`h`/`H`. The arrow keys work in both layouts. Press `?` to show every command
-in a sidebar.
+and `l` right, and `i`/`I` inspect. The arrow keys always work too. Press `?`
+to show every command in a sidebar.
 
-Each key can also be set on its own. Keys you leave out come from `style`
-(`"hjkl"` when omitted):
+Bind each navigation command to the key you want with `navigation`. Commands
+you leave out keep their default key. For example, to move with `ijkl` and
+inspect with `h`/`H`:
 
 ```lua
 require("oculus").setup({
   navigation = {
-    style = "hjkl",
-    up = "k",
-    down = "j",
-    left = "h",
+    up = "i",
+    down = "k",
+    left = "j",
     right = "l",
-    inspect = "i",
-    inspect_id = "I",
+    inspect = "h",
+    inspect_id = "H",
   },
 })
 ```
 
-The keys below use the default `hjkl` layout.
+The keys below are the defaults.
 
 **Projects and Users lists**
 
@@ -406,9 +404,15 @@ require("oculus").setup({
   height = 0.80,
   row = 1,
   border = "rounded",
-  -- "hjkl", "ijkl", or a table of keys layered over a style:
-  -- { style = "hjkl", up = "k", down = "j", left = "h", right = "l", inspect = "i", inspect_id = "I" }
-  navigation = "hjkl",
+  -- The key for each navigation command
+  navigation = {
+    up = "k",
+    down = "j",
+    left = "h",
+    right = "l",
+    inspect = "i", -- inspect the item under the cursor
+    inspect_id = "I", -- inspect by ID
+  },
   -- Show the command sidebar when the window opens
   sidebar = false,
   sidebar_width = 26,

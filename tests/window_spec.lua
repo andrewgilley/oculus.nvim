@@ -84,7 +84,14 @@ vim.api.nvim_win_set_hl_ns(origin_win, source_highlight_ns)
 vim.wo[origin_win].winhighlight = "Normal:OculusTestSourceNormal"
 
 window.open({
-  navigation = "ijkl",
+  navigation = {
+    up = "i",
+    down = "k",
+    left = "j",
+    right = "l",
+    inspect = "h",
+    inspect_id = "H",
+  },
   width = 0.8,
   height = 0.8,
   border = "rounded",
@@ -1890,7 +1897,14 @@ do
   end
 
   window.open({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     width = 0.8,
     height = 0.8,
     border = "rounded",
@@ -2415,7 +2429,14 @@ do
   end
 
   window.open({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     width = 0.8,
     height = 0.8,
     border = "rounded",
@@ -2541,7 +2562,14 @@ do
   state.project_activity_feed = nil
 
   window.open({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     width = 0.8,
     height = 0.8,
     border = "rounded",
@@ -2636,7 +2664,14 @@ do
   local oculus = require("oculus")
 
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     persist_projects = false,
     persist_contributors = false,
     projects = {
@@ -2841,7 +2876,14 @@ do
   window_mod.state.sidebar_visible = nil
 
   window_mod.open({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     sidebar = true,
     sidebar_width = 26,
     projects = {
@@ -2940,7 +2982,14 @@ do
 
   -- Test 10: Sidebar is initially hidden by default and toggles with '?'
   window_mod.open({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     projects = {
       {
         name = "TestProject",
@@ -2968,53 +3017,21 @@ do
   local window_mod = require("oculus.window")
   -- Test 1: Navigation resolution
   local default_nav = nav_mod.resolve()
-  assert(default_nav.style == "hjkl")
-  assert(default_nav.up == "k")
-  assert(default_nav.down == "j")
-  assert(default_nav.left == "h")
-  assert(default_nav.right == "l")
-  assert(default_nav.inspect == "i")
-  assert(default_nav.inspect_id == "I")
-  local ijkl_nav = nav_mod.resolve("ijkl")
-  assert(ijkl_nav.style == "ijkl")
-  assert(ijkl_nav.up == "i")
-  assert(ijkl_nav.down == "k")
-  assert(ijkl_nav.left == "j")
-  assert(ijkl_nav.right == "l")
-  assert(ijkl_nav.inspect == "h")
-  assert(ijkl_nav.inspect_id == "H")
-  assert(nav_mod.resolve("unknown").style == "hjkl")
-  -- A table overrides single keys on top of its style preset.
-  local override_nav = nav_mod.resolve({ navigation = { inspect = "e" } })
-  assert(override_nav.style == "custom")
-  assert(override_nav.up == "k" and override_nav.left == "h")
-  assert(override_nav.inspect == "e" and override_nav.inspect_id == "I")
 
-  local ijkl_override = nav_mod.resolve({
-    navigation = { style = "ijkl", inspect_id = "E" },
-  })
+  assert(vim.deep_equal(default_nav, {
+    up = "k",
+    down = "j",
+    left = "h",
+    right = "l",
+    inspect = "i",
+    inspect_id = "I",
+  }))
 
-  assert(ijkl_override.style == "custom")
-  assert(ijkl_override.up == "i" and ijkl_override.left == "j")
-  assert(ijkl_override.inspect == "h" and ijkl_override.inspect_id == "E")
-
-  assert(nav_mod.resolve({
-    navigation = { up = "i", down = "k", left = "j", inspect = "h", inspect_id = "H" },
-  }).style == "ijkl")
-
-  local hjkl_nav = nav_mod.resolve("hjkl")
-  assert(hjkl_nav.style == "hjkl")
-  assert(hjkl_nav.up == "k")
-  assert(hjkl_nav.down == "j")
-  assert(hjkl_nav.left == "h")
-  assert(hjkl_nav.right == "l")
-  assert(hjkl_nav.inspect == "i")
-  assert(hjkl_nav.inspect_id == "I")
-  local hjkl_upper = nav_mod.resolve({ navigation_keys = "HJKL" })
-  assert(hjkl_upper.style == "hjkl")
-  assert(hjkl_upper.up == "k")
-  assert(hjkl_upper.down == "j")
-  assert(hjkl_upper.left == "h")
+  assert(vim.deep_equal(nav_mod.resolve({}), default_nav))
+  -- Commands missing from the table keep their default key.
+  local partial_nav = nav_mod.resolve({ navigation = { inspect = "e" } })
+  assert(partial_nav.up == "k" and partial_nav.left == "h")
+  assert(partial_nav.inspect == "e" and partial_nav.inspect_id == "I")
 
   local custom_nav = nav_mod.resolve({
     navigation = {
@@ -3027,21 +3044,22 @@ do
     },
   })
 
-  assert(custom_nav.style == "custom")
-  assert(custom_nav.up == "w")
-  assert(custom_nav.down == "s")
-  assert(custom_nav.left == "a")
-  assert(custom_nav.right == "d")
-  assert(custom_nav.inspect == "e")
-  assert(custom_nav.inspect_id == "E")
-  -- Test 2: Window with hjkl navigation
+  assert(vim.deep_equal(custom_nav, {
+    up = "w",
+    down = "s",
+    left = "a",
+    right = "d",
+    inspect = "e",
+    inspect_id = "E",
+  }))
+
+  -- Test 2: Window with the default hjkl keys
   local prev_cols = vim.o.columns
   local prev_lines = vim.o.lines
   vim.o.columns = 120
   vim.o.lines = 30
 
   window_mod.open({
-    navigation = "hjkl",
     sidebar = true,
     projects = {
       {
@@ -3285,7 +3303,14 @@ do
   vim.o.lines = 40
 
   window_mod.open({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     sidebar = true,
     contributors = { { username = "alice", provider = "github" } },
     projects = { { repository = "org/repo1", provider = "github" } },
@@ -3387,7 +3412,14 @@ do
 
   -- Test 8: Reopen Oculus and verify dialog does not prematurely close on event loop tick
   window_mod.open({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     sidebar = true,
     contributors = { { username = "alice", provider = "github" } },
     projects = { { repository = "org/repo1", provider = "github" } },
@@ -3469,7 +3501,14 @@ do
   local test_state_file = vim.fn.tempname() .. ".json"
 
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     state_file = test_state_file,
     persist_projects = true,
     projects = {
@@ -3638,7 +3677,14 @@ do
   window_mod.close()
 
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     state_file = test_state_file,
     persist_projects = true,
   })
@@ -4091,7 +4137,14 @@ do
   require("oculus.storage").save(persist_order_state_file, dummy_config)
 
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     state_file = persist_order_state_file,
     persist_projects = true,
   })
@@ -4121,7 +4174,14 @@ do
   }
 
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     state_file = state_file,
     persist_projects = true,
     project_directories = { "Tools" },
@@ -4166,7 +4226,14 @@ do
 
   -- Simulate restart: call oculus.setup with the original configured projects
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     state_file = state_file,
     persist_projects = true,
     project_directories = { "Tools" },
@@ -4219,7 +4286,14 @@ do
   }
 
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     state_file = state_file,
     persist_contributors = true,
     contributors = initial_users,
@@ -4264,7 +4338,14 @@ do
 
   -- Simulate restart: call oculus.setup with the original configured users
   oculus.setup({
-    navigation = "ijkl",
+    navigation = {
+      up = "i",
+      down = "k",
+      left = "j",
+      right = "l",
+      inspect = "h",
+      inspect_id = "H",
+    },
     state_file = state_file,
     persist_contributors = true,
     contributors = initial_users,
