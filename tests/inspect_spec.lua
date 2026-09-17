@@ -805,6 +805,7 @@ do
   local filetype_colorscheme_bg = 0x2a3340
 
   package.loaded.reliquary = {
+    config = { enabled = true },
     apply = function(buf)
       reliquary_apply_count = reliquary_apply_count + 1
       reliquary_buf = buf
@@ -6399,6 +6400,7 @@ do
   local reliquary_applied_buffers = {}
 
   package.loaded["reliquary"] = {
+    config = { enabled = true },
     apply = function(buf)
       table.insert(reliquary_applied_buffers, buf)
     end,
