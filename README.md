@@ -34,6 +34,8 @@ change markers, chunk navigation, and an AI-assisted overview.
 - [FAQ](#faq)
 - [Contributing](#contributing)
 
+Offline help is in `:h oculus`, generated from this README.
+
 ## Features
 
 - **One interface for multiple forges.** Track GitHub and Codeberg repositories and
@@ -87,6 +89,11 @@ Optional:
   keeps context lines in sync across inspect windows.
 - The [Codex CLI](https://github.com/openai/codex) (`codex`) and/or the
   Antigravity CLI (`agy`) power the [AI features](#ai-integration).
+
+If something doesn't work, run `:checkhealth oculus`. It reports your Neovim
+version, `curl` and `git`, which forge tokens it found and where they came
+from, whether your inspect search paths and tracking file exist, the optional
+plugins and agent CLIs it can use, and where telemetry would export to.
 
 ## Installation
 
@@ -771,6 +778,10 @@ framework:
 nvim --headless -u NONE -l tests/opinion_spec.lua
 nvim --headless -u NONE -l tests/telemetry_spec.lua
 nvim --headless -u NONE -l tests/tracking_spec.lua
+nvim --headless -u NONE -l tests/health_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/contributors_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/rename_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/local_activity_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/window_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua

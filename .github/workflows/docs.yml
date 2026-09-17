@@ -1,0 +1,40 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vimdoc:
+    name: Generate doc/oculus.txt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Generate the help file from the README
+        uses: kdheepak/panvimdoc@main
+        with:
+          vimdoc: oculus
+          version: "Neovim >= 0.10"
+          demojify: true
+          treesitter: true
+
+      - name: Commit the help file
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Regenerate doc/oculus.txt from the README"
+          file_pattern: doc/oculus.txt

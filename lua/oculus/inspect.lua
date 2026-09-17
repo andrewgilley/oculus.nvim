@@ -6101,7 +6101,6 @@ local function open_tabs(
   done(inspections)
 end
 
-
 local prepare_module = require("oculus.inspect.prepare").setup(M)
 local blob_lines = prepare_module.blob_lines
 local prepare = prepare_module.prepare

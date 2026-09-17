@@ -1,0 +1,422 @@
+*oculus.txt*        See what's happening across the projects you follow
+
+==============================================================================
+Table of Contents                                   *oculus-table-of-contents*
+
+1. Introduction                                         |oculus-introduction|
+2. Requirements                                         |oculus-requirements|
+3. Setup                                                       |oculus-setup|
+4. The Oculus window                               |oculus-the-oculus-window|
+5. Inspecting changes                             |oculus-inspecting-changes|
+6. Review threads                                     |oculus-review-threads|
+7. Inspect overview                                 |oculus-inspect-overview|
+8. Commands                                                 |oculus-commands|
+9. Options                                                   |oculus-options|
+10. Authentication                                    |oculus-authentication|
+11. Tracking file                                     |oculus-tracking-file|
+12. AI integration                                    |oculus-ai-integration|
+13. Telemetry                                              |oculus-telemetry|
+14. API                                                          |oculus-api|
+15. Highlights                                            |oculus-highlights|
+16. Health                                                    |oculus-health|
+
+==============================================================================
+1. Introduction                                         *oculus-introduction*
+
+Oculus is a dashboard for GitHub and Codeberg activity. Keep a tracked list of
+repositories and users, browse their pushes, merged pull requests and issues,
+then inspect any pull request, issue or commit.
+
+Oculus checks the change out in your local clone (or fetches just the changed
+files when you don't have one) and opens it as real, editable buffers with
+change markers, chunk navigation and an AI-assisted overview.
+
+==============================================================================
+2. Requirements                                         *oculus-requirements*
+
+- Neovim 0.10+
+- `curl` for the GitHub and Codeberg APIs
+- `git` for inspecting changes
+
+Optional:
+
+- oil.nvim shows change status on directory entries in inspected repositories
+  and opens new worktrees.
+- nvim-treesitter-context keeps context lines in sync across inspect windows.
+- The Codex CLI (`codex`) and/or the Antigravity CLI (`agy`) power the AI
+  features. See |oculus-ai-integration|.
+
+Run |:checkhealth| `oculus` to see what Oculus found. See |oculus-health|.
+
+==============================================================================
+3. Setup                                                       *oculus-setup*
+
+>lua
+    require("oculus").setup({
+      projects = {
+        { repository = "neovim/neovim", provider = "github", name = "Neovim" },
+        { repository = "forgejo/forgejo", provider = "codeberg" },
+      },
+      contributors = {
+        { username = "folke", provider = "github" },
+      },
+      -- Where your local clones live, so :OculusInspect can find them
+      inspect_search_paths = { vim.fn.expand("~/src") },
+    })
+
+    vim.keymap.set("n", "<leader>oo", "<cmd>OculusToggle<cr>")
+<
+
+Calling `setup()` is optional; the commands work without it. Fresh
+installations start with empty lists — add entries with `a` in the window,
+list them in `setup()`, or load them from a |oculus-tracking-file|.
+
+Set `$GITHUB_TOKEN` in your environment: unauthenticated GitHub requests are
+rate-limited. See |oculus-authentication|.
+
+==============================================================================
+4. The Oculus window                               *oculus-the-oculus-window*
+
+Oculus uses Vim's `hjkl` movement by default: `k` is up, `j` down, `h` left
+and `l` right, and `i`/`I` inspect. The arrow keys always work too. Press `?`
+to show every command in a sidebar.
+
+Bind each navigation command to the key you want with `navigation`. Commands
+you leave out keep their default key: >lua
+    require("oculus").setup({
+      navigation = { up = "i", down = "k", left = "j", right = "l" },
+    })
+<
+
+Projects and Users lists ~
+
+    <CR> / l / <Right>  Open the selected group or activity feed
+    h / <Left>          Go to the parent group
+    p / u / v           Show Projects / show Users / switch between them
+    w                   Open my work
+    s                   Open saved items
+    a                   Add a project or user (handle or forge URL)
+    f / K / D           Create a group in the current location
+    r                   Remove the selected item or group
+    R                   Rename
+    m                   Start a move; `m` on a sibling reorders, <CR> on a
+                        group moves into it, `h` moves to the parent
+    M                   Move to any group through a picker
+    i / I               Inspect the item under the cursor / by ID
+    F                   Filters for the selected project
+    ?                   Toggle the command sidebar
+    q / <Esc>           Close
+
+Activity feeds ~
+
+    <CR>                Expand the item under the cursor
+    i                   Inspect the item under the cursor
+    I                   Inspect by ID
+    o                   Open the item in your browser
+    S                   Save the item, or remove it from saved items
+    <Tab>               Add the item to the inspect queue
+    n / N               Next / previous page
+    h / <Left>          Back to the list
+
+==============================================================================
+5. Inspecting changes                             *oculus-inspecting-changes*
+
+`:OculusInspect`, or `i` on an activity item, opens the change in its own tab
+pair: the file before the change and the file after it, as real buffers with
+change markers.
+
+    <C-s> / <C-d>       Show the file before / after the change
+    <C-Tab> / <S-Tab>   Next / previous changed chunk
+    <leader>oi          Toggle the changed-files sidebar
+    <leader>op / <C-t>  Toggle the overview (|oculus-inspect-overview|)
+    ]r / [r             Next / previous review thread
+    <leader>oc          Open the review thread on this line
+    <C-r>               Show or hide the review threads on this chunk
+
+A pull request opens one tab pair per commit that touched a file, so each
+comment sits on the version of the file it was written against.
+
+==============================================================================
+6. Review threads                                     *oculus-review-threads*
+
+When you inspect a pull request, Oculus loads its reviews in the background:
+
+- Each commented line gets a label at the end of the line with the author, the
+  first line of the comment and the number of replies. Resolved threads are
+  dimmed.
+- Resting the cursor on that line shows the whole thread in a float.
+  `inspect_thread` moves into it; `b` opens it in your browser, `q` closes it.
+- The sidebar shows how many open threads each file has (`◆2`), or `✓3` when
+  all of a file's threads are resolved.
+- `r` on the overview loads the threads into the files: every comment is shown
+  under the code line it was written on, with replies indented and a line down
+  the number column tying them to that line. `inspect_chunk_threads` (`<C-r>`)
+  does the same for one chunk without leaving the file.
+
+On GitHub, whether a thread is resolved or outdated comes from the GraphQL
+API, which needs a token. Without one, every thread appears unresolved.
+
+==============================================================================
+7. Inspect overview                                 *oculus-inspect-overview*
+
+The overview is a floating summary of the item being inspected: the title,
+metadata and a description. Its footer shows these commands:
+
+    d                   Describe the change with a model you pick
+    p                   (issues) Ask a model for likely patch locations
+    w                   (issues) Create a git worktree for the fix
+    <Space>             Toggle a suggested patch location
+    <CR>                Pick the highlighted model, or open patch locations
+    r                   (pull requests) Load the review threads into the files
+    b                   Open in your browser
+    v / s               Switch between inline-counter and sidebar chunk modes
+    c / q               Close the overview and return to the files
+    e                   Exit the inspection
+
+==============================================================================
+8. Commands                                                 *oculus-commands*
+
+                                                                *:OculusOpen*
+:OculusOpen [project|@user]
+        Open the Oculus window, optionally on a project's activity feed
+        (`owner/repo` or `github:owner/repo`) or a user's (`@login` or
+        `@codeberg:login`; `@me` is the signed-in account).
+
+                                                                *:OculusWork*
+:OculusWork             Open the Oculus window on your work.
+
+                                                               *:OculusClose*
+:OculusClose            Close the window.
+
+                                                              *:OculusToggle*
+:OculusToggle           Toggle the window.
+
+                                                             *:OculusInspect*
+:OculusInspect [target] Inspect an issue, pull request or commit. Prompts when
+                        no target is given. Accepts a URL, `pr 123`,
+                        `owner/repo#123` or a commit SHA.
+
+                                                              *:OculusRename*
+:OculusRename [name]    Rename the selected group or item.
+
+                                                        *:OculusAddDirectory*
+:OculusAddDirectory [name]
+                        Create a group at the current location.
+
+                                                     *:OculusMoveToDirectory*
+:OculusMoveToDirectory [project] [dest]
+                        Move a project to a group. Opens a picker with no
+                        arguments.
+
+                                                      *:OculusReloadTracking*
+:OculusReloadTracking   Re-read the |oculus-tracking-file|.
+
+==============================================================================
+9. Options                                                   *oculus-options*
+
+These are the defaults; pass only what you want to change. >lua
+    require("oculus").setup({
+      -- Window size, as a fraction of the editor (<= 1) or an absolute size
+      width = 0.90,
+      height = 0.80,
+      row = 1,
+      border = "rounded",
+      -- The key for each navigation command
+      navigation = {
+        up = "k",
+        down = "j",
+        left = "h",
+        right = "l",
+        inspect = "i",
+        inspect_id = "I",
+      },
+      sidebar = false,
+      sidebar_width = 26,
+
+      -- Tracked lists
+      projects = {},
+      contributors = {},
+      tracking_file = nil,
+
+      -- Activity
+      per_page = 30,
+      results_limit = 8,
+      contributor_list_limit = 20,
+      push_detail_limit = 10,
+      user_activity_types = {},
+      project_activity_types = { "push", "merged_pull_request", "assigned_issue" },
+      project_issue_filters = {},
+      cache_ttl = 300,
+      request_timeout = 15,
+
+      -- Persistence
+      state_file = vim.fn.stdpath("state") .. "/oculus.json",
+      persist_filters = true,
+      persist_contributors = true,
+      persist_projects = true,
+      persist_inspect_overviews = true,
+
+      -- Authentication (environment variables are used when these are nil)
+      token = nil,
+      gh_token_fallback = true,
+      codeberg_token = nil,
+
+      -- How to open URLs
+      browser_command = nil,
+
+      -- Inspect
+      inspect_cache_ttl = 60,
+      inspect_repositories = {},
+      inspect_search_paths = {},
+      inspect_discovery_roots = { vim.uv.os_homedir() },
+      inspect_remote_context = 20,
+      inspect_remote_cache = vim.fn.stdpath("cache") .. "/oculus/remote",
+      inspect_sidebar_width = 28 / vim.o.columns,
+      inspect_sidebar_toggle = "<leader>oi",
+      inspect_overview_toggle = "<leader>op",
+      inspect_old_version = "<C-s>",
+      inspect_new_version = "<C-d>",
+      inspect_next_chunk = "<C-Tab>",
+      inspect_previous_chunk = "<S-Tab>",
+      inspect_next_thread = "]r",
+      inspect_previous_thread = "[r",
+      inspect_thread = "<leader>oc",
+      inspect_chunk_threads = "<C-r>",
+      inspect_treesitter_context = true,
+      inspect_treesitter_context_multiwindow = true,
+      inspect_treesitter_context_mode = "topline",
+
+      opinion = { provider = nil },
+      telemetry = { enabled = false },
+    })
+<
+
+Filters, search history, list edits, inspect overviews and saved items are
+stored in `state_file` and restored the next time `setup()` runs.
+
+==============================================================================
+10. Authentication                                    *oculus-authentication*
+
+GitHub requests use, in order: the `token` option, `$GITHUB_TOKEN`, then
+`gh auth token` when `gh_token_fallback` is true. Codeberg uses the
+`codeberg_token` option, then `$CODEBERG_TOKEN`.
+
+Tokens are passed to `curl` over stdin, never on the command line. A token is
+optional, but unauthenticated GitHub requests are rate-limited, and thread
+resolution needs one.
+
+==============================================================================
+11. Tracking file                                      *oculus-tracking-file*
+
+Set `tracking_file` to a JSON file and it becomes the source of truth for both
+lists: >json
+    {
+      "version": 1,
+      "projects": [
+        { "repository": "neovim/neovim", "provider": "github" }
+      ],
+      "users": [{ "username": "folke", "provider": "github" }]
+    }
+<
+
+Oculus never creates or overwrites this file with defaults, so create it
+before enabling the option. Edits made in the UI are validated, then written
+back atomically. After editing the file outside Oculus, run
+|:OculusReloadTracking|. See `docs/tracking.md` in the repository for the full
+format and validation rules.
+
+==============================================================================
+12. AI integration                                    *oculus-ai-integration*
+
+Oculus uses AI in two places, both optional.
+
+The overview's `d` (describe) and `p` (patch locations) commands run a local
+agent CLI in a read-only sandbox: Codex when `codex` is on your `PATH`, and
+Gemini through the Antigravity CLI (`agy`) when `$GEMINI_API_KEY` or
+`$GOOGLE_API_KEY` is set. If neither is installed, these commands report that
+no agent is available.
+
+`require("oculus").consult()` sends a prompt, the current buffer and any
+active inspection to a provider function you supply, then shows the answer in
+a floating window. Oculus includes no model client for this, so it works with
+any backend: >lua
+    require("oculus").setup({
+      opinion = {
+        provider = function(request, respond)
+          respond({ text = my_model(request.prompt) })
+        end,
+      },
+    })
+<
+
+==============================================================================
+13. Telemetry                                              *oculus-telemetry*
+
+Telemetry is off by default, and never contacts the author of this plugin.
+When you enable it, Oculus records spans for inspections and model calls and
+exports them as OTLP/HTTP JSON with `curl`, to an endpoint you configure: >lua
+    telemetry = {
+      enabled = true,
+      endpoint = "http://localhost:4318/v1/traces",
+      headers = { Authorization = "Bearer ..." },
+    }
+<
+
+`endpoint` and `headers` fall back to the standard
+`$OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `$OTEL_EXPORTER_OTLP_ENDPOINT` and
+`$OTEL_EXPORTER_OTLP_HEADERS` variables. To handle payloads yourself, set
+`exporter = function(payload, span) ... end`.
+
+==============================================================================
+14. API                                                          *oculus-api*
+
+>lua
+    local oculus = require("oculus")
+
+    oculus.setup(opts)
+    oculus.open()
+    oculus.close()
+    oculus.toggle()
+
+    -- Open straight on a project's or user's activity feed
+    oculus.open_project("neovim/neovim")
+    oculus.open_user("@folke")
+    oculus.open_work()
+
+    -- Inspect by URL or ID, without opening the window
+    oculus.inspect("https://github.com/neovim/neovim/pull/1")
+
+    -- Ask your configured provider about the current buffer
+    oculus.consult("Why does this fail?")
+<
+
+==============================================================================
+15. Highlights                                            *oculus-highlights*
+
+Every group is defined with `default = true`, so your colorscheme wins. The
+window takes its colours from the window it sits over; these groups set the
+rest:
+
+    OculusSectionTitle            Section headings
+    OculusItemTitle               Item titles
+    OculusMoveTarget              The item being moved
+    OculusInspectAdded            Added lines
+    OculusInspectRemoved          Removed lines
+    OculusInspectThread           Open review thread labels
+    OculusInspectThreadResolved   Resolved review thread labels
+    OculusInspectThreadHeader     Comment authors in threads
+    OculusInspectThreadBody       Comment text loaded into the files
+    OculusInspectThreadGutter     The line drawn beside that text
+
+==============================================================================
+16. Health                                                    *oculus-health*
+
+                                                       *:checkhealth-oculus*
+Run `:checkhealth oculus` to see what Oculus found: your Neovim version, curl
+and git, which forge tokens it has and where they came from, whether your
+inspect search paths and tracking file exist, the optional plugins and agent
+CLIs it can use, and where telemetry would export to.
+
+Include its output when reporting a bug.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
