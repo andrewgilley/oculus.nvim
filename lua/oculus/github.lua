@@ -32,7 +32,8 @@ local function decode_response(stdout)
   return payload
 end
 
-local function request_json(url, opts, callback)
+-- request, when given, is { body = <table> } and sends the body as a JSON POST.
+local function request_json(url, opts, callback, request)
   if vim.fn.executable("curl") ~= 1 then
     vim.schedule(function()
       callback(nil, "Oculus requires curl to load GitHub activity")
@@ -63,10 +64,31 @@ local function request_json(url, opts, callback)
     stdin = "Authorization: Bearer " .. token .. "\n"
   end
 
+  -- stdin already carries the token, so the body goes through a file.
+  local body_file
+
+  if request and request.body ~= nil then
+    body_file = vim.fn.tempname()
+    vim.fn.writefile({ vim.json.encode(request.body) }, body_file)
+
+    vim.list_extend(command, {
+      "-X",
+      "POST",
+      "-H",
+      "Content-Type: application/json",
+      "--data-binary",
+      "@" .. body_file,
+    })
+  end
+
   command[#command + 1] = url
 
   vim.system(command, { text = true, stdin = stdin }, function(result)
     vim.schedule(function()
+      if body_file then
+        vim.fn.delete(body_file)
+      end
+
       if result.code ~= 0 then
         local message = vim.trim(result.stderr or "")
         callback(nil, message ~= "" and message or "Unable to reach GitHub")
@@ -923,6 +945,24 @@ function M.enrich_pushes(events, opts, callback)
   end
 end
 
+local function requested_reviewers(pull_request)
+  local reviewers = {}
+
+  for _, user in ipairs(json_value(pull_request.requested_reviewers) or {}) do
+    if type(user) == "table" and type(user.login) == "string" then
+      reviewers[#reviewers + 1] = user.login
+    end
+  end
+
+  for _, team in ipairs(json_value(pull_request.requested_teams) or {}) do
+    if type(team) == "table" and type(team.slug) == "string" then
+      reviewers[#reviewers + 1] = team.slug
+    end
+  end
+
+  return reviewers
+end
+
 function M.pull_request(repo, number, opts, callback)
   opts = opts or {}
   local key = ("%s#%s"):format(repo, number)
@@ -977,6 +1017,9 @@ function M.pull_request(repo, number, opts, callback)
       head_sha = head.sha,
       head_ref = head.ref,
       commit_count = pull_request.commits,
+      mergeable = json_value(pull_request.mergeable),
+      mergeable_state = json_value(pull_request.mergeable_state),
+      requested_reviewers = requested_reviewers(pull_request),
     }
 
     inspect_pull_request_cache[key] = {
@@ -1038,6 +1081,298 @@ function M.pull_request_commits(repo, number, opts, callback)
   end
 
   load_page()
+end
+
+local review_states = {
+  APPROVED = "approved",
+  CHANGES_REQUESTED = "changes_requested",
+  COMMENTED = "commented",
+  DISMISSED = "dismissed",
+}
+
+-- Groups pull request review comments into threads. resolutions maps a
+-- thread's first comment id to { resolved, outdated } from the GraphQL API.
+function M.review_threads(comments, resolutions)
+  local threads = {}
+  local thread_for_comment = {}
+
+  for _, comment in ipairs(comments or {}) do
+    local user = json_value(comment.user)
+
+    local entry = {
+      author = type(user) == "table" and user.login or nil,
+      body = json_value(comment.body),
+      created_at = json_value(comment.created_at),
+      url = json_value(comment.html_url),
+    }
+
+    local parent = thread_for_comment[json_value(comment.in_reply_to_id)]
+
+    if parent then
+      parent.comments[#parent.comments + 1] = entry
+    elseif type(comment.path) == "string" then
+      -- GitHub drops the current line once a comment no longer applies to
+      -- the head, leaving only the line in the commit it was written on.
+      local line = json_value(comment.line)
+
+      parent = {
+        id = tostring(comment.id),
+        path = comment.path,
+        side = comment.side == "LEFT" and "parent" or "change",
+        line = comment.subject_type ~= "file"
+            and (line or json_value(comment.original_line))
+          or nil,
+        commit = line and json_value(comment.commit_id)
+          or json_value(comment.original_commit_id),
+        outdated = line == nil and comment.subject_type ~= "file",
+        resolved = false,
+        url = entry.url,
+        comments = { entry },
+      }
+
+      local resolution = resolutions and resolutions[parent.id]
+
+      if resolution then
+        parent.resolved = resolution.resolved == true
+        parent.outdated = resolution.outdated == true
+      end
+
+      threads[#threads + 1] = parent
+    end
+
+    if parent and comment.id then
+      thread_for_comment[comment.id] = parent
+    end
+  end
+
+  return threads
+end
+
+local function check_run_state(run)
+  if run.status ~= "completed" then
+    return "pending"
+  end
+
+  local conclusion = json_value(run.conclusion)
+
+  if conclusion == "success" then
+    return "success"
+  end
+
+  if conclusion == "neutral" or conclusion == "skipped" or conclusion == "stale" then
+    return "skipped"
+  end
+
+  return "failure"
+end
+
+local function status_state(status)
+  if status.state == "success" or status.state == "pending" then
+    return status.state
+  end
+
+  return "failure"
+end
+
+local function request_pages(url, per_page, max_pages, opts, callback)
+  local results = {}
+  local page = 1
+
+  local function load_page()
+    local separator = url:find("?", 1, true) and "&" or "?"
+
+    request_json(
+      ("%s%sper_page=%d&page=%d"):format(url, separator, per_page, page),
+      opts,
+      function(items, err)
+        if not items then
+          callback(nil, err)
+          return
+        end
+
+        vim.list_extend(results, items)
+
+        if #items == per_page and page < max_pages then
+          page = page + 1
+          load_page()
+          return
+        end
+
+        callback(results)
+      end
+    )
+  end
+
+  load_page()
+end
+
+local review_threads_query = [[
+query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          isResolved
+          isOutdated
+          comments(first: 1) { nodes { databaseId } }
+        }
+      }
+    }
+  }
+}
+]]
+
+-- Thread resolution needs the GraphQL API, which always needs a token.
+local function thread_resolutions(repo, number, opts, callback)
+  if not require("oculus.auth").github_token(opts) then
+    callback(nil)
+    return
+  end
+
+  local owner, name = repo:match("^([^/]+)/(.+)$")
+  local resolutions = {}
+  local pages = 0
+
+  local function load_page(cursor)
+    pages = pages + 1
+
+    request_json("https://api.github.com/graphql", opts, function(payload)
+      local connection = type(payload) == "table"
+        and type(payload.data) == "table"
+        and vim.tbl_get(payload.data, "repository", "pullRequest", "reviewThreads")
+
+      if type(connection) ~= "table" then
+        callback(nil)
+        return
+      end
+
+      for _, node in ipairs(connection.nodes or {}) do
+        local first = vim.tbl_get(node, "comments", "nodes", 1, "databaseId")
+
+        if first then
+          resolutions[tostring(first)] = {
+            resolved = node.isResolved,
+            outdated = node.isOutdated,
+          }
+        end
+      end
+
+      local page_info = connection.pageInfo or {}
+
+      if page_info.hasNextPage == true and pages < 5 then
+        load_page(page_info.endCursor)
+        return
+      end
+
+      callback(resolutions)
+    end, {
+      body = {
+        query = review_threads_query,
+        variables = {
+          owner = owner,
+          name = name,
+          number = tonumber(number),
+          cursor = cursor,
+        },
+      },
+    })
+  end
+
+  load_page(vim.NIL)
+end
+
+-- Reviews, inline review threads and head commit checks for a pull request.
+-- Checks and thread resolution are best effort; a token without access to
+-- them still loads the reviews and threads.
+function M.pull_request_review(repo, number, head_sha, opts, callback)
+  opts = opts or {}
+  local remaining = 5
+  local failed = false
+  local reviews, comments, runs, statuses, resolutions
+
+  local function finish(err)
+    if failed then
+      return
+    end
+
+    if err then
+      failed = true
+      callback(nil, err)
+      return
+    end
+
+    remaining = remaining - 1
+
+    if remaining > 0 then
+      return
+    end
+
+    local result = { reviews = {}, checks = {} }
+
+    for _, review in ipairs(reviews) do
+      local state = review_states[review.state]
+      local user = json_value(review.user)
+
+      if state and type(user) == "table" then
+        result.reviews[#result.reviews + 1] = {
+          author = user.login,
+          state = state,
+          submitted_at = json_value(review.submitted_at),
+        }
+      end
+    end
+
+    for _, run in ipairs(runs or {}) do
+      result.checks[#result.checks + 1] = {
+        name = run.name,
+        state = check_run_state(run),
+        url = json_value(run.html_url),
+      }
+    end
+
+    for _, status in ipairs(statuses or {}) do
+      result.checks[#result.checks + 1] = {
+        name = status.context,
+        state = status_state(status),
+        url = json_value(status.target_url),
+      }
+    end
+
+    result.threads = M.review_threads(comments, resolutions)
+    callback(result)
+  end
+
+  local base = ("https://api.github.com/repos/%s"):format(repo)
+
+  request_pages(base .. "/pulls/" .. number .. "/reviews", 100, 3, opts, function(items, err)
+    reviews = items
+    finish(err and ("could not load reviews: " .. err))
+  end)
+
+  request_pages(base .. "/pulls/" .. number .. "/comments", 100, 5, opts, function(items, err)
+    comments = items
+    finish(err and ("could not load review comments: " .. err))
+  end)
+
+  if type(head_sha) == "string" and head_sha ~= "" then
+    request_json(base .. "/commits/" .. head_sha .. "/check-runs?per_page=100", opts, function(payload)
+      runs = type(payload) == "table" and payload.check_runs or nil
+      finish()
+    end)
+
+    request_json(base .. "/commits/" .. head_sha .. "/status?per_page=100", opts, function(payload)
+      statuses = type(payload) == "table" and payload.statuses or nil
+      finish()
+    end)
+  else
+    remaining = remaining - 2
+  end
+
+  thread_resolutions(repo, number, opts, function(result)
+    resolutions = result
+    finish()
+  end)
 end
 
 function M.issue(repo, number, opts, callback)

@@ -1310,6 +1310,7 @@ function M.pull_request(repo, number, opts, callback)
       head_sha = head.sha,
       head_ref = head.ref,
       commit_count = pull_request.commits,
+      mergeable = json_value(pull_request.mergeable),
       fetch_ref = type(head.ref) == "string"
           and head.ref:match("^refs/")
           and head.ref
@@ -1374,6 +1375,226 @@ function M.pull_request_commits(repo, number, opts, callback)
   end
 
   load_page()
+end
+
+-- Forgejo's requested_reviewers keeps reviewers who have since reviewed, so
+-- pending requests come from the REQUEST_REVIEW entries in the review list.
+local review_states = {
+  APPROVED = "approved",
+  REQUEST_CHANGES = "changes_requested",
+  COMMENT = "commented",
+  REQUEST_REVIEW = "requested",
+}
+
+-- Groups review comments into threads. Forgejo has no reply links; a
+-- conversation is every comment on the same line of the same commit.
+function M.review_threads(comments)
+  local threads = {}
+  local by_key = {}
+  local sorted = vim.deepcopy(comments or {})
+
+  table.sort(sorted, function(a, b)
+    return (tonumber(a.id) or 0) < (tonumber(b.id) or 0)
+  end)
+
+  for _, comment in ipairs(sorted) do
+    local position = tonumber(json_value(comment.position)) or 0
+    local old_position = tonumber(json_value(comment.old_position)) or 0
+    local side = position <= 0 and old_position > 0 and "parent" or "change"
+    local line = side == "parent" and old_position or position
+    local commit = json_value(comment.commit_id)
+
+    if type(comment.path) == "string" then
+      local key = table.concat({
+        comment.path,
+        side,
+        tostring(line),
+        tostring(commit),
+      }, "\0")
+
+      local thread = by_key[key]
+
+      local entry = {
+        author = account_login(comment.user),
+        body = json_value(comment.body),
+        created_at = json_value(comment.created_at),
+        url = json_value(comment.html_url),
+      }
+
+      if not thread then
+        thread = {
+          id = tostring(comment.id),
+          path = comment.path,
+          side = side,
+          line = line > 0 and line or nil,
+          commit = commit ~= "" and commit or nil,
+          resolved = false,
+          url = entry.url,
+          comments = {},
+        }
+
+        by_key[key] = thread
+        threads[#threads + 1] = thread
+      end
+
+      thread.comments[#thread.comments + 1] = entry
+
+      if account(json_value(comment.resolver)) then
+        thread.resolved = true
+      end
+    end
+  end
+
+  return threads
+end
+
+local status_states = {
+  success = "success",
+  pending = "pending",
+  skipped = "skipped",
+  warning = "skipped",
+  failure = "failure",
+  error = "failure",
+}
+
+-- Reviews, inline review threads and head commit statuses for a pull request.
+-- Statuses are best effort.
+function M.pull_request_review(repo, number, head_sha, opts, callback)
+  opts = opts or {}
+  local base = ("%s/api/v1/repos/%s"):format(base_url, repo)
+  local reviews = {}
+  local comments = {}
+  local statuses
+  local remaining = 2
+  local failed = false
+
+  local function finish(err)
+    if failed then
+      return
+    end
+
+    if err then
+      failed = true
+      callback(nil, err)
+      return
+    end
+
+    remaining = remaining - 1
+
+    if remaining > 0 then
+      return
+    end
+
+    local result = { reviews = {}, checks = {} }
+
+    for _, review in ipairs(reviews) do
+      local state = review_states[review.state]
+
+      if review.dismissed == true and state ~= "requested" then
+        state = "dismissed"
+      end
+
+      local author = account_login(review.user)
+
+      if state and author then
+        result.reviews[#result.reviews + 1] = {
+          author = author,
+          state = state,
+          submitted_at = json_value(review.submitted_at),
+        }
+      end
+    end
+
+    for _, status in ipairs(statuses or {}) do
+      local url = json_value(status.target_url)
+
+      if type(url) == "string" and url:sub(1, 1) == "/" then
+        url = base_url .. url
+      end
+
+      result.checks[#result.checks + 1] = {
+        name = status.context,
+        state = status_states[status.status] or "skipped",
+        url = url,
+      }
+    end
+
+    result.threads = M.review_threads(comments)
+    callback(result)
+  end
+
+  local page = 1
+
+  local function load_comments()
+    local pending = 0
+    local comment_error
+
+    for _, review in ipairs(reviews) do
+      if (tonumber(review.comments_count) or 0) > 0 and review.state ~= "PENDING" then
+        pending = pending + 1
+
+        request_json(
+          ("%s/pulls/%s/reviews/%s/comments"):format(base, number, review.id),
+          opts,
+          function(items, err)
+            if items then
+              vim.list_extend(comments, items)
+            else
+              comment_error = comment_error or err
+            end
+
+            pending = pending - 1
+
+            if pending == 0 then
+              finish(comment_error and ("could not load review comments: " .. comment_error))
+            end
+          end
+        )
+      end
+    end
+
+    if pending == 0 then
+      finish()
+    end
+  end
+
+  local function load_reviews()
+    request_json(
+      ("%s/pulls/%s/reviews?limit=50&page=%d"):format(base, number, page),
+      opts,
+      function(items, err)
+        if not items then
+          finish("could not load reviews: " .. tostring(err))
+          return
+        end
+
+        vim.list_extend(reviews, items)
+
+        if #items == 50 and page < 5 then
+          page = page + 1
+          load_reviews()
+          return
+        end
+
+        load_comments()
+      end
+    )
+  end
+
+  load_reviews()
+
+  if type(head_sha) == "string" and head_sha ~= "" then
+    request_json(
+      ("%s/commits/%s/status?limit=50"):format(base, head_sha),
+      opts,
+      function(payload)
+        statuses = type(payload) == "table" and payload.statuses or nil
+        finish()
+      end
+    )
+  else
+    finish()
+  end
 end
 
 function M.issue(repo, number, opts, callback)

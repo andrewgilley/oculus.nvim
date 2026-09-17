@@ -607,6 +607,7 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 local git = require("oculus.inspect.git")
 local patch = require("oculus.inspect.patch")
 local target = require("oculus.inspect.target")
+local review = require("oculus.inspect.review")
 
 local function valid_endpoint(endpoint)
   return endpoint
@@ -2238,6 +2239,7 @@ local function render_focused_chunk(session, chunk_index)
 
   refresh_buffer_highlighting(session.change.buf)
   refresh_buffer_highlighting(session.parent.buf)
+  M._review.render_marks(session)
   return start
 end
 
@@ -2262,6 +2264,7 @@ local function render_full_file(session)
 
   refresh_buffer_highlighting(session.change.buf)
   refresh_buffer_highlighting(session.parent.buf)
+  M._review.render_marks(session)
   return true
 end
 
@@ -3077,6 +3080,8 @@ local function map_file_navigation(endpoint, session, role, group)
       desc = "Previous Oculus changed chunk",
     })
   end
+
+  M._review.map_keys(endpoint, session, role, group)
 end
 
 M._virtual_counter = {}
@@ -3476,10 +3481,12 @@ local function sidebar_file(file)
   return normalized:match("([^/]+)$") or normalized
 end
 
-local function sidebar_row(file, width, version)
+-- threads is the review thread count label shown after the file name.
+local function sidebar_row(file, width, version, threads)
   local prefix = "• "
   local suffix = "P C"
   local version_text = version and (" v.%d"):format(version) or ""
+  local thread_text = threads and (" " .. threads) or ""
 
   local path_width = math.max(
     1,
@@ -3487,11 +3494,12 @@ local function sidebar_row(file, width, version)
       - vim.fn.strdisplaywidth(prefix)
       - vim.fn.strdisplaywidth(suffix)
       - vim.fn.strdisplaywidth(version_text)
+      - vim.fn.strdisplaywidth(thread_text)
       - 2
   )
 
   local path = truncate_path(file, path_width)
-  local body = prefix .. path .. version_text
+  local body = prefix .. path .. version_text .. thread_text
 
   local padding = math.max(
     1,
@@ -3512,6 +3520,12 @@ local function sidebar_row(file, width, version)
       or nil,
     version_end_column = version
         and (#prefix + #path + #version_text)
+      or nil,
+    thread_column = threads
+        and (#prefix + #path + #version_text + 1)
+      or nil,
+    thread_end_column = threads
+        and (#prefix + #path + #version_text + #thread_text)
       or nil,
   }
 end
@@ -3845,6 +3859,18 @@ local function sidebar_overview_lines(overview, width)
     field("Status", value_or(status, "Unknown"))
   end
 
+  if is_pull_request then
+    for _, section in ipairs(review.overview_sections(overview)) do
+      lines[#lines + 1] = "  " .. section.label
+
+      for _, item in ipairs(section.items) do
+        append_sidebar_text(lines, item, width, "  ")
+      end
+
+      lines[#lines + 1] = ""
+    end
+  end
+
   field(
     "Date",
     overview_date(overview.created_at or details.authored_at)
@@ -4119,6 +4145,22 @@ refresh_sidebar = function(group, tab)
           {
             end_col = row.version_end_column,
             hl_group = "Comment",
+            priority = 90,
+          }
+        )
+      end
+
+      if row.thread_column then
+        vim.api.nvim_buf_set_extmark(
+          buf,
+          sidebar_ns,
+          row.line_number - 1,
+          row.thread_column,
+          {
+            end_col = row.thread_end_column,
+            hl_group = row.threads_resolved
+                and "OculusInspectThreadResolved"
+              or "OculusInspectThread",
             priority = 90,
           }
         )
@@ -4785,6 +4827,10 @@ M._overview_ui = {
     ["PR number"] = true,
     ["Issue number"] = true,
     Status = true,
+    Reviews = true,
+    Checks = true,
+    Merge = true,
+    ["Review threads"] = true,
     Date = true,
     ["Agent description"] = true,
     ["Agent explanation"] = true,
@@ -8584,8 +8630,6 @@ local function comment_float(endpoint, comment)
     height = height,
     style = "minimal",
     border = "rounded",
-    title = " Comment ",
-    title_pos = "left",
     focusable = false,
     noautocmd = true,
     zindex = 80,
@@ -8647,6 +8691,640 @@ local function setup_inspection_comment(group, comment)
   session.comment = comment_float(endpoint, comment)
   refresh_sidebar(group, endpoint.tab)
   sidebar_navigating = false
+end
+
+-- Pull request review threads: end-of-line labels on commented lines, a
+-- thread float, navigation between threads, sidebar counts and the overview's
+-- review sections.
+M._review = {
+  ns = vim.api.nvim_create_namespace("oculus_inspect_review"),
+  augroup = vim.api.nvim_create_augroup("oculus_inspect_review", { clear = true }),
+  default_keys = { next = "]r", previous = "[r", open = "<leader>oc" },
+}
+
+function M._review.set_review_highlights()
+  vim.api.nvim_set_hl(0, "OculusInspectThread", {
+    link = "DiagnosticInfo",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "OculusInspectThreadResolved", {
+    link = "Comment",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "OculusInspectThreadHeader", {
+    link = "Title",
+    default = true,
+  })
+end
+
+function M._review.display_rows(lines, width)
+  local rows = 0
+
+  for _, line in ipairs(lines) do
+    rows = rows + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / width))
+  end
+
+  return rows
+end
+
+function M._review.close_float(endpoint)
+  local float = endpoint and endpoint.review_float
+
+  if not float then
+    return
+  end
+
+  endpoint.review_float = nil
+
+  for _, win in ipairs({ float.footer_win, float.win }) do
+    if win and vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+  end
+end
+
+function M._review.render_marks(session)
+  local placed = session.review_threads or {}
+
+  for _, role in ipairs({ "parent", "change" }) do
+    local endpoint = session[role]
+
+    if valid_endpoint(endpoint) then
+      vim.api.nvim_buf_clear_namespace(endpoint.buf, M._review.ns, 0, -1)
+      M._review.close_float(endpoint)
+      endpoint.review_lines = nil
+      local by_line = {}
+      local line_count = vim.api.nvim_buf_line_count(endpoint.buf)
+
+      for _, thread in ipairs(placed) do
+        if thread.side == role then
+          local line, chunk_index = review.display_line(
+            session,
+            role,
+            thread.line
+          )
+
+          line = math.min(line, line_count)
+          local entry = by_line[line]
+
+          if not entry then
+            entry = { threads = {}, chunk_index = chunk_index }
+            by_line[line] = entry
+          end
+
+          entry.threads[#entry.threads + 1] = thread
+        end
+      end
+
+      if next(by_line) then
+        M._review.set_review_highlights()
+        endpoint.review_lines = by_line
+
+        for line, entry in pairs(by_line) do
+          vim.api.nvim_buf_set_extmark(endpoint.buf, M._review.ns, line - 1, 0, {
+            virt_text = {
+              {
+                "  " .. review.mark_text(entry.threads, entry.chunk_index),
+                review.all_resolved(entry.threads)
+                    and "OculusInspectThreadResolved"
+                  or "OculusInspectThread",
+              },
+            },
+            virt_text_pos = "eol",
+            priority = 120,
+          })
+        end
+      end
+    end
+  end
+end
+
+function M._review.review_float_thread(float)
+  local line = vim.api.nvim_win_get_cursor(float.win)[1]
+  local thread = float.entry.threads[1]
+
+  for index, start in ipairs(float.starts) do
+    if start <= line then
+      thread = float.entry.threads[index]
+    end
+  end
+
+  return thread
+end
+
+function M._review.render_review_float_footer(float)
+  local width = vim.api.nvim_win_get_width(float.win)
+  local height = vim.api.nvim_win_get_height(float.win)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+
+  local lines = {
+    " " .. string.rep("─", math.max(1, width - 2)),
+    " b browser   q close",
+  }
+
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  vim.api.nvim_buf_set_extmark(buf, M._review.ns, 0, 0, {
+    end_col = #lines[1],
+    hl_group = "Comment",
+  })
+
+  float.footer_win = vim.api.nvim_open_win(buf, false, {
+    relative = "win",
+    win = float.win,
+    row = math.max(0, height - 2),
+    col = 0,
+    width = width,
+    height = 2,
+    style = "minimal",
+    focusable = false,
+    noautocmd = true,
+    zindex = 81,
+  })
+end
+
+function M._review.focus_review_float(endpoint, float)
+  local lines = vim.deepcopy(float.lines)
+  vim.list_extend(lines, { "", "" })
+  vim.bo[float.buf].modifiable = true
+  vim.api.nvim_buf_set_lines(float.buf, 0, -1, false, lines)
+  vim.bo[float.buf].modifiable = false
+
+  local height = math.max(
+    3,
+    math.min(
+      M._review.display_rows(lines, float.width),
+      vim.api.nvim_win_get_height(endpoint.win) - 2
+    )
+  )
+
+  vim.api.nvim_win_set_config(float.win, {
+    focusable = true,
+    height = height,
+  })
+
+  M._review.render_review_float_footer(float)
+
+  local function close()
+    M._review.close_float(endpoint)
+
+    if valid_endpoint(endpoint) then
+      vim.api.nvim_set_current_win(endpoint.win)
+    end
+  end
+
+  local map_opts = { buffer = float.buf, nowait = true, silent = true }
+  vim.keymap.set("n", "q", close, map_opts)
+  vim.keymap.set("n", "<Esc>", close, map_opts)
+
+  vim.keymap.set("n", "b", function()
+    local thread = M._review.review_float_thread(float)
+
+    if thread and thread.url then
+      local ok, err = browser.open(thread.url, endpoint.browser_config or {})
+
+      if not ok and err then
+        vim.notify("Oculus: " .. tostring(err), vim.log.levels.ERROR)
+      end
+    end
+  end, map_opts)
+
+  vim.api.nvim_create_autocmd("WinLeave", {
+    group = M._review.augroup,
+    buffer = float.buf,
+    once = true,
+    callback = function()
+      vim.schedule(function()
+        if endpoint.review_float == float then
+          M._review.close_float(endpoint)
+        end
+      end)
+    end,
+  })
+
+  float.focused = true
+  endpoint.review_float_focusing = true
+  vim.api.nvim_set_current_win(float.win)
+  endpoint.review_float_focusing = false
+end
+
+-- Shows the threads on a line of an inspected file below or above it, and
+-- optionally moves into the float to scroll it.
+function M._review.show_float(endpoint, line, focus)
+  local entry = valid_endpoint(endpoint)
+    and endpoint.review_lines
+    and endpoint.review_lines[line]
+
+  if not entry then
+    M._review.close_float(endpoint)
+    return nil
+  end
+
+  local current = endpoint.review_float
+
+  if current
+    and current.line == line
+    and vim.api.nvim_win_is_valid(current.win)
+  then
+    if focus and not current.focused then
+      M._review.focus_review_float(endpoint, current)
+    end
+
+    return current
+  end
+
+  M._review.close_float(endpoint)
+
+  -- An activity comment float points at the same comment; the thread replaces it.
+  if endpoint.comment_win and vim.api.nvim_win_is_valid(endpoint.comment_win) then
+    vim.api.nvim_win_close(endpoint.comment_win, true)
+  end
+
+  endpoint.comment_win = nil
+  local lines, headers, starts = review.float_lines(entry.threads)
+  local main_width = vim.api.nvim_win_get_width(endpoint.win)
+  local main_height = vim.api.nvim_win_get_height(endpoint.win)
+  local width = math.max(1, math.min(72, main_width - 4))
+
+  local height = math.max(
+    1,
+    math.min(12, M._review.display_rows(lines, width), main_height - 2)
+  )
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].filetype = "markdown"
+
+  for _, header in ipairs(headers) do
+    vim.api.nvim_buf_set_extmark(buf, M._review.ns, header, 0, {
+      end_col = #lines[header + 1],
+      hl_group = "OculusInspectThreadHeader",
+      priority = 200,
+    })
+  end
+
+  local screen_line = vim.api.nvim_win_call(endpoint.win, function()
+    return vim.fn.winline()
+  end)
+
+  local above = screen_line - 1 >= height + 2
+  local main_config = vim.api.nvim_win_get_config(endpoint.win)
+
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = "win",
+    win = endpoint.win,
+    anchor = above and "SW" or "NW",
+    bufpos = { line - 1, 0 },
+    row = above and 0 or 1,
+    col = math.max(0, main_width - width - 2),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    focusable = false,
+    noautocmd = true,
+    zindex = math.max(80, (tonumber(main_config.zindex) or 0) + 1),
+  })
+
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.b[buf].oculus_inspect_review_thread = true
+
+  endpoint.review_float = {
+    win = win,
+    buf = buf,
+    line = line,
+    entry = entry,
+    lines = lines,
+    starts = starts,
+    width = width,
+  }
+
+  if focus then
+    M._review.focus_review_float(endpoint, endpoint.review_float)
+  end
+
+  return endpoint.review_float
+end
+
+function M._review.on_cursor_moved(endpoint)
+  if not endpoint.review_lines
+    or not valid_endpoint(endpoint)
+    or vim.api.nvim_get_current_win() ~= endpoint.win
+  then
+    return
+  end
+
+  local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+
+  if endpoint.review_lines[line] then
+    M._review.show_float(endpoint, line)
+  else
+    M._review.close_float(endpoint)
+  end
+end
+
+function M._review.focus_review_thread(group, session, thread)
+  local role = thread.side
+  local endpoint = session[role]
+
+  if not valid_endpoint(endpoint) then
+    return
+  end
+
+  local ranges = session.excerpt and session.excerpt[role]
+  local source = thread.line or 1
+
+  if ranges then
+    source = patch.excerpt_line(ranges, source)
+  end
+
+  local chunk_index = patch.revision_hunk_index_at_line(session, role, source)
+
+  if chunk_index
+    and (chunk_index ~= session.active_chunk or not session.focused_chunks)
+  then
+    focus_inspection_chunk(group, session, role, chunk_index)
+  else
+    select_endpoint(endpoint, session, role, group)
+    refresh_sidebar(group, endpoint.tab)
+  end
+
+  local line = math.min(
+    review.display_line(session, role, thread.line),
+    vim.api.nvim_buf_line_count(endpoint.buf)
+  )
+
+  set_change_cursor(endpoint.win, line)
+  M._review.show_float(endpoint, line)
+end
+
+-- Moves to the next or previous review thread, continuing into the other
+-- inspected files in sidebar order.
+function M._review.jump(group, session, role, direction)
+  local session_index
+
+  for index, candidate in ipairs(group) do
+    if candidate == session then
+      session_index = index
+    end
+  end
+
+  local endpoint = session[role]
+
+  if not session_index or not valid_endpoint(endpoint) then
+    return
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+  local current = {}
+
+  for _, thread in ipairs(session.review_threads or {}) do
+    local line = review.display_line(session, thread.side, thread.line)
+
+    if thread.side ~= role then
+      line = map_inspection_line(session, thread.side, role, line)
+    end
+
+    current[#current + 1] = { line = line, thread = thread }
+  end
+
+  table.sort(current, function(a, b)
+    if direction > 0 then
+      return a.line < b.line
+    end
+
+    return a.line > b.line
+  end)
+
+  for _, entry in ipairs(current) do
+    if (direction > 0 and entry.line > cursor)
+      or (direction < 0 and entry.line < cursor)
+    then
+      M._review.focus_review_thread(group, session, entry.thread)
+      return
+    end
+  end
+
+  local count = #group
+
+  for step = 1, count do
+    local index = (session_index - 1 + direction * step) % count + 1
+    local candidate = group[index]
+    local threads = vim.list_slice(candidate.review_threads or {})
+
+    if #threads > 0 and (candidate ~= session or #current > 0) then
+      table.sort(threads, function(a, b)
+        if direction > 0 then
+          return (a.line or 0) < (b.line or 0)
+        end
+
+        return (a.line or 0) > (b.line or 0)
+      end)
+
+      M._review.focus_review_thread(group, candidate, threads[1])
+      return
+    end
+  end
+
+  vim.notify("Oculus: no review threads in this pull request", vim.log.levels.INFO)
+end
+
+function M._review.map_keys(endpoint, session, role, group)
+  -- Only pull requests have review threads.
+  if not valid_endpoint(endpoint)
+    or not group.overview
+    or group.overview.kind ~= "pull_request"
+  then
+    return
+  end
+
+  local function map(lhs, default, callback, description)
+    if lhs == nil then
+      lhs = default
+    end
+
+    if type(lhs) == "string" and lhs ~= "" then
+      vim.keymap.set("n", lhs, callback, {
+        buffer = endpoint.buf,
+        nowait = true,
+        silent = true,
+        desc = description,
+      })
+    end
+  end
+
+  map(group.next_thread, M._review.default_keys.next, function()
+    M._review.jump(group, session, role, 1)
+  end, "Next Oculus review thread")
+
+  map(group.previous_thread, M._review.default_keys.previous, function()
+    M._review.jump(group, session, role, -1)
+  end, "Previous Oculus review thread")
+
+  map(group.thread_open, M._review.default_keys.open, function()
+    local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
+
+    if not M._review.show_float(endpoint, line, true) then
+      vim.notify("Oculus: no review thread on this line", vim.log.levels.INFO)
+    end
+  end, "Open Oculus review thread")
+
+  endpoint.browser_config = group.browser_config
+  vim.api.nvim_clear_autocmds({ group = M._review.augroup, buffer = endpoint.buf })
+
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = M._review.augroup,
+    buffer = endpoint.buf,
+    callback = function()
+      M._review.on_cursor_moved(endpoint)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("WinLeave", {
+    group = M._review.augroup,
+    buffer = endpoint.buf,
+    callback = function()
+      if not endpoint.review_float_focusing then
+        M._review.close_float(endpoint)
+      end
+    end,
+  })
+end
+
+function M._review.update_sidebar(group)
+  if group.kind == "issue" or not group.sidebar_rows then
+    return
+  end
+
+  local buf = group.sidebar_buf
+
+  local rendered = buf
+    and vim.api.nvim_buf_is_valid(buf)
+    and group.sidebar_rendered_mode == "files"
+
+  for index, session in ipairs(group) do
+    local previous = group.sidebar_rows[index]
+
+    if previous then
+      local open, resolved = 0, 0
+
+      for _, thread in ipairs(session.review_threads or {}) do
+        if thread.resolved then
+          resolved = resolved + 1
+        else
+          open = open + 1
+        end
+      end
+
+      local label = open > 0 and ("◆" .. open)
+        or resolved > 0 and ("✓" .. resolved)
+        or nil
+
+      local row = sidebar_row(
+        sidebar_file(session.file),
+        group.sidebar_width,
+        session.sidebar_version,
+        label
+      )
+
+      row.line_number = previous.line_number
+      row.threads_resolved = open == 0
+      group.sidebar_rows[index] = row
+      group.sidebar_lines[row.line_number] = row.line
+
+      if rendered then
+        vim.bo[buf].modifiable = true
+
+        vim.api.nvim_buf_set_lines(
+          buf,
+          row.line_number - 1,
+          row.line_number,
+          false,
+          { row.line }
+        )
+
+        vim.bo[buf].modifiable = false
+      end
+    end
+  end
+
+  if rendered then
+    refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  end
+end
+
+function M._review.apply(group, info, result, err)
+  if group.discarded then
+    return
+  end
+
+  if not result then
+    group.overview.review = { error = tostring(err or "unknown error") }
+  else
+    local unplaced = review.place(
+      group,
+      result.threads,
+      info.commits,
+      info.head_sha
+    )
+
+    group.overview.review = {
+      reviews = result.reviews,
+      checks = result.checks,
+      threads = result.threads,
+      unplaced = unplaced,
+      requested_reviewers = info.requested_reviewers,
+      mergeable = info.mergeable,
+      mergeable_state = info.mergeable_state,
+    }
+
+    for _, session in ipairs(group) do
+      M._review.render_marks(session)
+    end
+
+    M._review.update_sidebar(group)
+
+    for _, session in ipairs(group) do
+      for _, role in ipairs({ "parent", "change" }) do
+        if valid_endpoint(session[role]) then
+          M._review.on_cursor_moved(session[role])
+        end
+      end
+    end
+  end
+
+  if overview_window_is_open(group) then
+    M._overview_ui.render(group)
+  end
+end
+
+function M._review.load(group, info, opts)
+  if not info or info.kind ~= "pull_request" then
+    return
+  end
+
+  local provider = info.forge == "codeberg" and codeberg or github
+
+  provider.pull_request_review(
+    info.owner .. "/" .. info.repo,
+    info.number,
+    info.head_sha,
+    opts,
+    function(result, err)
+      M._review.apply(group, info, result, err)
+    end
+  )
 end
 
 local spinner_frames = {
@@ -8954,6 +9632,9 @@ local function open_tabs(
       new_version = opts.inspect_new_version,
       next_chunk = opts.inspect_next_chunk,
       previous_chunk = opts.inspect_previous_chunk,
+      next_thread = opts.inspect_next_thread,
+      previous_thread = opts.inspect_previous_thread,
+      thread_open = opts.inspect_thread,
       chunk_view_mode = opts.chunk_view_mode
         or opts.inspect_chunk_view_mode
         or "sidebar",
@@ -8970,6 +9651,10 @@ local function open_tabs(
       ),
     }
 
+    if info and info.kind == "pull_request" then
+      inspection_sessions.overview.review = { loading = true }
+    end
+
     for index, paths in ipairs(inspections) do
       local hunks = paths.hunks
         or patch.session_hunks(paths)
@@ -8981,6 +9666,7 @@ local function open_tabs(
         change_file = paths.change_file,
         parent_commit = paths.parent,
         change_commit = paths.commit,
+        commit_index = paths.commit_index,
         parent_repository = paths.repository,
         change_repository = paths.repository,
         changes = paths.changes,
@@ -9295,6 +9981,8 @@ local function open_tabs(
     then
       show_inspection_overview(inspection_sessions)
     end
+
+    M._review.load(inspection_sessions, info, opts)
   end)
 
   inspection_tabs_loading = false
@@ -9786,6 +10474,9 @@ local function apply_pull_request(info, details)
     "fetch_ref",
     "commit_count",
     "commits",
+    "mergeable",
+    "mergeable_state",
+    "requested_reviewers",
   }) do
     resolved[key] = details[key]
   end

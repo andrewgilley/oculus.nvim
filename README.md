@@ -60,6 +60,10 @@ change markers, chunk navigation, and an AI-assisted overview.
   changed files in a sidebar or an [oil.nvim](https://github.com/stevearc/oil.nvim)
   view.
 
+- **Pull request review context.** Review threads appear on the lines they
+  discuss, and the overview shows each reviewer's verdict, check results and
+  merge state.
+
 - **AI-assisted overview.** Generate a description of a change, or ask for
   likely patch locations for an issue, then spin up a `git worktree` to start
   the fix.
@@ -356,12 +360,43 @@ change markers, and you can switch it between the parent and the change:
 | `inspect_new_version`                      | `<C-d>`      | Show the file after the change      |
 | `inspect_next_chunk`                       | `<C-Tab>`    | Jump to the next changed chunk      |
 | `inspect_previous_chunk`                   | `<S-Tab>`    | Jump to the previous changed chunk  |
+| `inspect_next_thread`                      | `]r`         | Jump to the next [review thread](#review-threads) |
+| `inspect_previous_thread`                  | `[r`         | Jump to the previous review thread  |
+| `inspect_thread`                           | `<leader>oc` | Open the review thread on this line |
 | `inspect_sidebar_toggle`                   | `<leader>oi` | Toggle the changed-files sidebar    |
 | `inspect_overview_toggle`                  | `<leader>op` | Toggle the [overview](#inspect-overview) (`<C-t>` also works) |
 
 Changed chunks can be listed in a sidebar (the default) or counted inline with
 virtual text. Toggle between these modes in the overview with `v` and `s`, or
 set `inspect_chunk_view_mode = "virtual"` to start in virtual mode.
+
+### Review threads
+
+When you inspect a pull request, Oculus loads its reviews in the background:
+
+- Each commented line gets a label at the end of the line with the author, the
+  first line of the comment, and the number of replies. Resolved threads are
+  dimmed.
+- Resting the cursor on that line shows the whole thread in a float. Press
+  `inspect_thread` to move into the float and scroll it. In the float, `b`
+  opens the thread in your browser and `q` closes it.
+- The sidebar shows how many open threads each file has (`◆2`), or `✓3` when
+  all of a file's threads are resolved.
+- The overview lists each reviewer's latest verdict, the checks on the head
+  commit, whether the pull request can be merged, and how many threads are
+  open, resolved and outdated.
+
+A pull request inspection shows each commit's changes separately, so a thread
+appears on the version of the file it was written against. A comment on the
+new code appears on the latest version of the file at or before the comment's
+commit, and a comment on the old code appears before the file's first change.
+While a single chunk is shown, a thread in a different chunk is labelled at the
+start of that chunk, and jumping to it shows that chunk. Threads on commits
+that were force-pushed away are counted in the overview but not shown.
+
+On GitHub, whether a thread is resolved or outdated comes from the GraphQL API,
+which needs a [token](#authentication). Without one, every thread appears
+unresolved.
 
 ### Inspect overview
 
@@ -476,6 +511,9 @@ require("oculus").setup({
   inspect_new_version = "<C-d>",
   inspect_next_chunk = "<C-Tab>",
   inspect_previous_chunk = "<S-Tab>",
+  inspect_next_thread = "]r",
+  inspect_previous_thread = "[r",
+  inspect_thread = "<leader>oc",
   -- Keep nvim-treesitter-context in sync across inspect windows
   inspect_treesitter_context = true,
   inspect_treesitter_context_multiwindow = true,
@@ -677,16 +715,19 @@ oculus.show_opinion("Some **markdown**", { title = " Notes " })
 
 ## Highlights
 
-| Group                       | Default                    | Used for                      |
-| --------------------------- | -------------------------- | ----------------------------- |
-| `OculusNormal`              | derived from your window   | Window background             |
-| `OculusBorder`              | derived from your window   | Window border                 |
-| `OculusDirectory`           | links to `Directory`       | Groups in the lists           |
-| `OculusAccounts`            | links to `DiagnosticOk`    | Signed-in accounts            |
-| `OculusActivityIcon`        | `#fbd38d`                  | Event icons                   |
-| `OculusActivityPreview`     | `#9ae6b4`                  | Activity previews             |
-| `OculusContributorSelected` | `#ffffff`                  | The selected list entry       |
-| `OculusMoveTarget`          | `#ff9e3b`                  | The item being moved          |
+| Group                         | Default                   | Used for                      |
+| ----------------------------- | ------------------------- | ----------------------------- |
+| `OculusNormal`                | derived from your window  | Window background             |
+| `OculusBorder`                | derived from your window  | Window border                 |
+| `OculusDirectory`             | links to `Directory`      | Groups in the lists           |
+| `OculusAccounts`              | links to `DiagnosticOk`   | Signed-in accounts            |
+| `OculusActivityIcon`          | `#fbd38d`                 | Event icons                   |
+| `OculusActivityPreview`       | `#9ae6b4`                 | Activity previews             |
+| `OculusContributorSelected`   | `#ffffff`                 | The selected list entry       |
+| `OculusMoveTarget`            | `#ff9e3b`                 | The item being moved          |
+| `OculusInspectThread`         | links to `DiagnosticInfo` | Open review thread labels     |
+| `OculusInspectThreadResolved` | links to `Comment`        | Resolved review thread labels |
+| `OculusInspectThreadHeader`   | links to `Title`          | Comment authors in threads    |
 
 ## Contributing
 
@@ -703,6 +744,7 @@ nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/milestones_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/saved_spec.lua
 nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/work_spec.lua
+nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/review_spec.lua
 ```
 
 The inspect suite needs a checkout of oil.nvim and some environment variables.
