@@ -4178,6 +4178,159 @@ refresh_sidebar = function(group, tab)
   }
 end
 
+-- Mouse wheel events shift a window by 'mousescroll' lines, which overshoots
+-- the compact inspection sidebar; move it a single line per event instead.
+local sidebar_mouse_scroll_step = 1
+
+local function sidebar_window_group(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return nil
+  end
+
+  for _, group in ipairs(sidebar_groups) do
+    for _, sidebar_win in pairs(group.sidebar_windows or {}) do
+      if sidebar_win == win then
+        return group
+      end
+    end
+  end
+
+  return nil
+end
+
+local function sidebar_max_topline(win)
+  local buf = vim.api.nvim_win_get_buf(win)
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  local height = vim.api.nvim_win_get_height(win)
+
+  return math.max(1, line_count - height + 1)
+end
+
+local function clamp_sidebar_scroll(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+
+  local max_topline = sidebar_max_topline(win)
+  local changed = false
+
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+    local topline = math.max(1, math.min(max_topline, view.topline))
+
+    if topline == view.topline and (view.topfill or 0) == 0 then
+      return
+    end
+
+    local height = vim.api.nvim_win_get_height(win)
+    view.topline = topline
+    view.topfill = 0
+
+    view.lnum = math.max(
+      topline,
+      math.min(topline + height - 1, view.lnum)
+    )
+
+    vim.fn.winrestview(view)
+    changed = true
+  end)
+
+  return changed
+end
+
+local function scroll_sidebar_window(win, direction)
+  local max_topline = sidebar_max_topline(win)
+
+  vim.api.nvim_win_call(win, function()
+    local view = vim.fn.winsaveview()
+
+    local topline = math.max(
+      1,
+      math.min(
+        max_topline,
+        view.topline + direction * sidebar_mouse_scroll_step
+      )
+    )
+
+    if topline == view.topline and (view.topfill or 0) == 0 then
+      return
+    end
+
+    local height = vim.api.nvim_win_get_height(win)
+    view.topline = topline
+    view.topfill = 0
+
+    view.lnum = math.max(
+      topline,
+      math.min(topline + height - 1, view.lnum)
+    )
+
+    vim.fn.winrestview(view)
+  end)
+end
+
+local function mouse_scroll_window()
+  local ok, position = pcall(vim.fn.getmousepos)
+  local win = ok and position and position.winid or nil
+
+  if not win or win == 0 or not vim.api.nvim_win_is_valid(win) then
+    win = vim.api.nvim_get_current_win()
+  end
+
+  return win
+end
+
+local function mouse_scroll_lines(win)
+  local ver = tonumber(string.match(vim.o.mousescroll or "", "ver:(%d+)"))
+
+  if ver == 0 then
+    return math.max(1, math.floor(vim.api.nvim_win_get_height(win) / 2))
+  end
+
+  return math.max(1, ver or 3)
+end
+
+-- Sidebar windows scroll a line at a time and stop at the first and last
+-- row; every other window keeps the editor's own wheel behaviour.
+local function scroll_window(win, direction)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+
+  if sidebar_window_group(win) then
+    scroll_sidebar_window(win, direction)
+    return
+  end
+
+  local keys = vim.api.nvim_replace_termcodes(
+    direction > 0 and "<C-e>" or "<C-y>",
+    true,
+    false,
+    true
+  )
+
+  pcall(vim.api.nvim_win_call, win, function()
+    vim.cmd("normal! " .. mouse_scroll_lines(win) .. keys)
+  end)
+end
+
+local function scroll_window_under_mouse(direction)
+  scroll_window(mouse_scroll_window(), direction)
+end
+
+vim.api.nvim_create_autocmd("WinScrolled", {
+  group = sync_group,
+  callback = function()
+    for key in pairs(vim.v.event or {}) do
+      local win = tonumber(key)
+
+      if win and sidebar_window_group(win) then
+        clamp_sidebar_scroll(win)
+      end
+    end
+  end,
+})
+
 local function create_sidebar_window(group, endpoint)
   if not valid_endpoint(endpoint) then
     return
@@ -4206,6 +4359,7 @@ local function create_sidebar_window(group, endpoint)
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
   vim.wo[win].cursorlineopt = "line"
+  vim.wo[win].scrolloff = 0
   vim.wo[win].statusline = inspection_sidebar_statusline_option
   prevent_window_dimming(win)
 
@@ -7337,6 +7491,22 @@ local function map_inspection_sidebar_toggle(group)
       silent = true,
       desc = "Toggle Oculus Inspect overview",
     })
+
+    for lhs, direction in pairs({
+      ["<ScrollWheelDown>"] = 1,
+      ["<ScrollWheelUp>"] = -1,
+    }) do
+      vim.keymap.set("n", lhs, function()
+        scroll_window_under_mouse(direction)
+      end, {
+        buffer = buf,
+        nowait = true,
+        silent = true,
+        desc = direction > 0
+            and "Scroll the window under the mouse down"
+          or "Scroll the window under the mouse up",
+      })
+    end
   end
 
   for _, session in ipairs(group) do
@@ -11101,6 +11271,11 @@ M._set_change_highlights = set_change_highlights
 M._change_ns = change_ns
 M._rendered_treesitter_contexts = rendered_treesitter_contexts
 M._sidebar_chunk = sidebar_chunk
+M._sidebar_window_group = sidebar_window_group
+M._scroll_sidebar_window = scroll_sidebar_window
+M._scroll_window = scroll_window
+M._clamp_sidebar_scroll = clamp_sidebar_scroll
+M._scroll_window_under_mouse = scroll_window_under_mouse
 M._ensure_treesitter_safeguards = ensure_treesitter_safeguards
 M._apply_view_horizontal = apply_view_horizontal
 M._ensure_context_window_leftcol = ensure_context_window_leftcol

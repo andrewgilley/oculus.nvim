@@ -1030,6 +1030,81 @@ do
 
   assert(inspect._sidebar_file("README.md") == "README.md")
 
+  do
+    local scroll_buf = vim.api.nvim_create_buf(false, true)
+    local scroll_lines = {}
+
+    for index = 1, 50 do
+      scroll_lines[index] = "line " .. index
+    end
+
+    vim.api.nvim_buf_set_lines(scroll_buf, 0, -1, false, scroll_lines)
+
+    local scroll_win = vim.api.nvim_open_win(scroll_buf, true, {
+      relative = "editor",
+      row = 0,
+      col = 0,
+      width = 20,
+      height = 10,
+    })
+
+    vim.wo[scroll_win].scrolloff = 0
+
+    local function scroll_topline()
+      return vim.api.nvim_win_call(scroll_win, function()
+        return vim.fn.winsaveview().topline
+      end)
+    end
+
+    inspect._scroll_sidebar_window(scroll_win, 1)
+    assert(scroll_topline() == 2)
+    inspect._scroll_sidebar_window(scroll_win, 1)
+    assert(scroll_topline() == 3)
+    inspect._scroll_sidebar_window(scroll_win, -1)
+    assert(scroll_topline() == 2)
+
+    for _ = 1, 100 do
+      inspect._scroll_sidebar_window(scroll_win, 1)
+    end
+
+    assert(scroll_topline() == 41)
+    assert(vim.api.nvim_win_get_cursor(scroll_win)[1] == 41)
+
+    for _ = 1, 100 do
+      inspect._scroll_sidebar_window(scroll_win, -1)
+    end
+
+    assert(scroll_topline() == 1)
+    assert(vim.api.nvim_win_get_cursor(scroll_win)[1] == 10)
+    assert(not inspect._clamp_sidebar_scroll(scroll_win))
+
+    vim.api.nvim_win_call(scroll_win, function()
+      vim.fn.winrestview({ topline = 50, lnum = 50 })
+    end)
+
+    assert(scroll_topline() == 50)
+    assert(inspect._clamp_sidebar_scroll(scroll_win))
+    assert(scroll_topline() == 41)
+    assert(vim.api.nvim_win_get_cursor(scroll_win)[1] == 50)
+
+    local mousescroll = vim.o.mousescroll
+    vim.o.mousescroll = "ver:3,hor:6"
+
+    vim.api.nvim_win_call(scroll_win, function()
+      vim.fn.winrestview({ topline = 1, lnum = 1 })
+    end)
+
+    -- Windows outside the inspection sidebar keep the editor's wheel step.
+    assert(not inspect._sidebar_window_group(scroll_win))
+    inspect._scroll_window(scroll_win, 1)
+    assert(scroll_topline() == 4)
+    inspect._scroll_window(scroll_win, -1)
+    assert(scroll_topline() == 1)
+    vim.o.mousescroll = mousescroll
+    vim.api.nvim_win_close(scroll_win, true)
+    vim.api.nvim_buf_delete(scroll_buf, { force = true })
+  end
+
   vim.g.oculus_test_sorted_inspections = inspect._sort_inspections({
     { change_file = "tests/unit/inspect_spec.lua" },
     { change_file = "lua/oculus/window.lua" },
@@ -4305,6 +4380,56 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.wo[new_sidebar_win].cursorline)
     assert(vim.wo[old_sidebar_win].cursorlineopt == "line")
     assert(vim.wo[new_sidebar_win].cursorlineopt == "line")
+
+    assert(vim.wo[old_sidebar_win].scrolloff == 0)
+    assert(vim.wo[new_sidebar_win].scrolloff == 0)
+    assert(inspect._sidebar_window_group(old_sidebar_win))
+    assert(inspect._sidebar_window_group(new_sidebar_win))
+    assert(not inspect._sidebar_window_group(old_main_win))
+
+    do
+      local wheel_maps = {}
+
+      for _, mapping in ipairs(
+        vim.api.nvim_buf_get_keymap(sidebar_buf, "n")
+      ) do
+        wheel_maps[mapping.lhs] = true
+      end
+
+      assert(wheel_maps["<ScrollWheelDown>"])
+      assert(wheel_maps["<ScrollWheelUp>"])
+
+      local sidebar_cursor =
+        vim.api.nvim_win_get_cursor(old_sidebar_win)
+
+      local sidebar_line_count = vim.api.nvim_buf_line_count(sidebar_buf)
+
+      local sidebar_max_topline = math.max(
+        1,
+        sidebar_line_count
+          - vim.api.nvim_win_get_height(old_sidebar_win)
+          + 1
+      )
+
+      local function sidebar_topline()
+        return vim.api.nvim_win_call(old_sidebar_win, function()
+          return vim.fn.winsaveview().topline
+        end)
+      end
+
+      for _ = 1, sidebar_line_count + 5 do
+        inspect._scroll_window(old_sidebar_win, 1)
+      end
+
+      assert(sidebar_topline() == sidebar_max_topline)
+
+      for _ = 1, sidebar_line_count + 5 do
+        inspect._scroll_window(old_sidebar_win, -1)
+      end
+
+      assert(sidebar_topline() == 1)
+      vim.api.nvim_win_set_cursor(old_sidebar_win, sidebar_cursor)
+    end
 
     assert(vim.wo[old_sidebar_win].statusline
       == inspect._inspection_sidebar_statusline_option)
