@@ -1,20 +1,40 @@
 local M = {}
+local key_names = { "up", "down", "left", "right", "inspect", "inspect_id" }
 
-local defaults = {
-  style = "ijkl",
-  up = "i",
-  down = "k",
-  left = "j",
-  right = "l",
-  inspect = "h",
-  inspect_id = "H",
+M.presets = {
+  hjkl = {
+    up = "k",
+    down = "j",
+    left = "h",
+    right = "l",
+    inspect = "i",
+    inspect_id = "I",
+  },
+  ijkl = {
+    up = "i",
+    down = "k",
+    left = "j",
+    right = "l",
+    inspect = "h",
+    inspect_id = "H",
+  },
 }
 
---- Resolves the navigation configuration from options table or string.
+M.default_style = "hjkl"
+
+local function preset(style)
+  style = type(style) == "string" and style:lower() or M.default_style
+  return M.presets[style] and style or M.default_style
+end
+
+--- Resolves the navigation keys from the options table or a preset name.
 -- Supports:
---   "ijkl" (default) -> up: i, down: k, left: j, right: l, inspect: h, inspect_id: H
---   "hjkl"           -> up: k, down: j, left: h, right: l, inspect: i, inspect_id: I
---   { up = ..., down = ..., left = ..., right = ..., inspect = ..., inspect_id = ... }
+--   "hjkl" (default) -> up: k, down: j, left: h, right: l, inspect: i, inspect_id: I
+--   "ijkl"           -> up: i, down: k, left: j, right: l, inspect: h, inspect_id: H
+--   { style = "hjkl"|"ijkl", up = ..., down = ..., left = ..., right = ...,
+--     inspect = ..., inspect_id = ... }
+-- Keys missing from a table come from its `style` preset (hjkl by default).
+-- The resolved `style` is the matching preset name, or "custom".
 -- @param opts table|string|nil
 -- @return table
 function M.resolve(opts)
@@ -29,65 +49,29 @@ function M.resolve(opts)
     nav = opts.navigation_keys
   end
 
-  if type(nav) == "string" then
-    local style = nav:lower()
+  if type(nav) ~= "table" then
+    nav = { style = nav }
+  end
 
-    if style == "hjkl" then
-      return {
-        style = "hjkl",
-        up = "k",
-        down = "j",
-        left = "h",
-        right = "l",
-        inspect = "i",
-        inspect_id = "I",
-      }
-    else
-      return {
-        style = "ijkl",
-        up = "i",
-        down = "k",
-        left = "j",
-        right = "l",
-        inspect = "h",
-        inspect_id = "H",
-      }
+  local base = preset(nav.style)
+  local keys = {}
+
+  for _, name in ipairs(key_names) do
+    local key = nav[name]
+
+    keys[name] = type(key) == "string" and key ~= "" and key
+      or M.presets[base][name]
+  end
+
+  for style, preset_keys in pairs(M.presets) do
+    if vim.deep_equal(preset_keys, keys) then
+      keys.style = style
+      return keys
     end
   end
 
-  if type(nav) == "table" then
-    local style = nav.style
-
-    if style == nil then
-      if nav.left == "h" or nav.up == "k" or nav.down == "j" then
-        style = "hjkl"
-      elseif nav.left == "j" or nav.up == "i" or nav.down == "k" then
-        style = "ijkl"
-      else
-        style = "custom"
-      end
-    end
-
-    local is_hjkl = style == "hjkl"
-    local left = nav.left or (is_hjkl and "h" or "j")
-    local down = nav.down or (is_hjkl and "j" or "k")
-    local up = nav.up or (is_hjkl and "k" or "i")
-    local right = nav.right or "l"
-    local inspect = nav.inspect or (left == "h" and "i" or "h")
-    local inspect_id = nav.inspect_id or (inspect == "i" and "I" or "H")
-
-    return {
-      style = style,
-      up = up,
-      down = down,
-      left = left,
-      right = right,
-      inspect = inspect,
-      inspect_id = inspect_id,
-    }
-  end
-
-  return vim.deepcopy(defaults)
+  keys.style = "custom"
+  return keys
 end
 
 return M

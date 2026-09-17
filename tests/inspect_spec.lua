@@ -2639,7 +2639,7 @@ for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
 end
 
 assert(toggled_location_line == first_location_line)
-vim.fn.maparg("k", "n", false, true).callback()
+vim.fn.maparg("j", "n", false, true).callback()
 local moved_location_line
 
 for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
@@ -2655,7 +2655,7 @@ for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
 end
 
 assert(moved_location_line == second_location_line)
-vim.fn.maparg("i", "n", false, true).callback()
+vim.fn.maparg("k", "n", false, true).callback()
 
 assert(explanation_text:gsub("%s+", " "):find(
   "The fileless issue inspection workflow is implemented here.",
@@ -3185,7 +3185,7 @@ local toggle_patch_location = vim.fn.maparg(
 
 assert(toggle_patch_location.desc == "Toggle Oculus patch location")
 toggle_patch_location.callback()
-vim.fn.maparg("k", "n", false, true).callback()
+vim.fn.maparg("j", "n", false, true).callback()
 toggle_patch_location.callback()
 
 local selected_paths_text = table.concat(
@@ -4731,10 +4731,10 @@ if integration_root and (integration_sha or integration_url) then
     local overview_buf = vim.api.nvim_get_current_buf()
     assert(vim.b[overview_buf].oculus_inspect_overview == true)
     assert(vim.o.guicursor == "a:OculusInspectHiddenCursor")
-    local overview_down = vim.fn.maparg("k", "n", false, true)
-    local overview_up = vim.fn.maparg("i", "n", false, true)
+    local overview_down = vim.fn.maparg("j", "n", false, true)
+    local overview_up = vim.fn.maparg("k", "n", false, true)
     local overview_ctrl_i = vim.fn.maparg("<C-i>", "n", false, true)
-    local overview_page_down = vim.fn.maparg("<C-k>", "n", false, true)
+    local overview_page_down = vim.fn.maparg("<C-j>", "n", false, true)
     assert(overview_down.desc == "Scroll Oculus Inspect overview down")
     assert(overview_up.desc == "Scroll Oculus Inspect overview up")
     assert(overview_ctrl_i.desc == "Configured Ctrl-I")

@@ -84,6 +84,7 @@ vim.api.nvim_win_set_hl_ns(origin_win, source_highlight_ns)
 vim.wo[origin_win].winhighlight = "Normal:OculusTestSourceNormal"
 
 window.open({
+  navigation = "ijkl",
   width = 0.8,
   height = 0.8,
   border = "rounded",
@@ -1889,6 +1890,7 @@ do
   end
 
   window.open({
+    navigation = "ijkl",
     width = 0.8,
     height = 0.8,
     border = "rounded",
@@ -2413,6 +2415,7 @@ do
   end
 
   window.open({
+    navigation = "ijkl",
     width = 0.8,
     height = 0.8,
     border = "rounded",
@@ -2538,6 +2541,7 @@ do
   state.project_activity_feed = nil
 
   window.open({
+    navigation = "ijkl",
     width = 0.8,
     height = 0.8,
     border = "rounded",
@@ -2632,6 +2636,7 @@ do
   local oculus = require("oculus")
 
   oculus.setup({
+    navigation = "ijkl",
     persist_projects = false,
     persist_contributors = false,
     projects = {
@@ -2836,6 +2841,7 @@ do
   window_mod.state.sidebar_visible = nil
 
   window_mod.open({
+    navigation = "ijkl",
     sidebar = true,
     sidebar_width = 26,
     projects = {
@@ -2934,6 +2940,7 @@ do
 
   -- Test 10: Sidebar is initially hidden by default and toggles with '?'
   window_mod.open({
+    navigation = "ijkl",
     projects = {
       {
         name = "TestProject",
@@ -2961,13 +2968,40 @@ do
   local window_mod = require("oculus.window")
   -- Test 1: Navigation resolution
   local default_nav = nav_mod.resolve()
-  assert(default_nav.style == "ijkl")
-  assert(default_nav.up == "i")
-  assert(default_nav.down == "k")
-  assert(default_nav.left == "j")
+  assert(default_nav.style == "hjkl")
+  assert(default_nav.up == "k")
+  assert(default_nav.down == "j")
+  assert(default_nav.left == "h")
   assert(default_nav.right == "l")
-  assert(default_nav.inspect == "h")
-  assert(default_nav.inspect_id == "H")
+  assert(default_nav.inspect == "i")
+  assert(default_nav.inspect_id == "I")
+  local ijkl_nav = nav_mod.resolve("ijkl")
+  assert(ijkl_nav.style == "ijkl")
+  assert(ijkl_nav.up == "i")
+  assert(ijkl_nav.down == "k")
+  assert(ijkl_nav.left == "j")
+  assert(ijkl_nav.right == "l")
+  assert(ijkl_nav.inspect == "h")
+  assert(ijkl_nav.inspect_id == "H")
+  assert(nav_mod.resolve("unknown").style == "hjkl")
+  -- A table overrides single keys on top of its style preset.
+  local override_nav = nav_mod.resolve({ navigation = { inspect = "e" } })
+  assert(override_nav.style == "custom")
+  assert(override_nav.up == "k" and override_nav.left == "h")
+  assert(override_nav.inspect == "e" and override_nav.inspect_id == "I")
+
+  local ijkl_override = nav_mod.resolve({
+    navigation = { style = "ijkl", inspect_id = "E" },
+  })
+
+  assert(ijkl_override.style == "custom")
+  assert(ijkl_override.up == "i" and ijkl_override.left == "j")
+  assert(ijkl_override.inspect == "h" and ijkl_override.inspect_id == "E")
+
+  assert(nav_mod.resolve({
+    navigation = { up = "i", down = "k", left = "j", inspect = "h", inspect_id = "H" },
+  }).style == "ijkl")
+
   local hjkl_nav = nav_mod.resolve("hjkl")
   assert(hjkl_nav.style == "hjkl")
   assert(hjkl_nav.up == "k")
@@ -3037,8 +3071,7 @@ do
   assert(i_map.desc == "Inspect Oculus change or issue", "expected i to be inspect in hjkl")
   local cap_i_map = vim.fn.maparg("I", "n", false, true)
   assert(cap_i_map.desc:find("Inspect", 1, true))
-  local cap_h_map = vim.fn.maparg("H", "n", false, true)
-  assert(cap_h_map.desc:find("Inspect", 1, true))
+  assert(vim.fn.maparg("H", "n", false, true).desc == nil, "expected H to stay unmapped with hjkl")
   -- Verify sidebar displays hjkl navigation keys
   assert(window_mod.state.sidebar_buf ~= nil and vim.api.nvim_buf_is_valid(window_mod.state.sidebar_buf))
   local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)
@@ -3077,9 +3110,9 @@ do
 
   -- Verify initial state
   assert(not window_mod._is_inspect_input_open(), "expected inspect input to be initially closed")
-  -- Test 1: Open inspect input via shortcut H
-  local h_map = vim.fn.maparg("H", "n", false, true)
-  assert(h_map ~= nil and type(h_map.callback) == "function", "expected 'H' mapping callback")
+  -- Test 1: Open inspect input via shortcut I
+  local h_map = vim.fn.maparg("I", "n", false, true)
+  assert(h_map ~= nil and type(h_map.callback) == "function", "expected 'I' mapping callback")
   h_map.callback()
   assert(window_mod._is_inspect_input_open(), "expected inspect input to be open")
   assert(window_mod.state.inspect_input_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.inspect_input_win))
@@ -3252,6 +3285,7 @@ do
   vim.o.lines = 40
 
   window_mod.open({
+    navigation = "ijkl",
     sidebar = true,
     contributors = { { username = "alice", provider = "github" } },
     projects = { { repository = "org/repo1", provider = "github" } },
@@ -3353,6 +3387,7 @@ do
 
   -- Test 8: Reopen Oculus and verify dialog does not prematurely close on event loop tick
   window_mod.open({
+    navigation = "ijkl",
     sidebar = true,
     contributors = { { username = "alice", provider = "github" } },
     projects = { { repository = "org/repo1", provider = "github" } },
@@ -3434,6 +3469,7 @@ do
   local test_state_file = vim.fn.tempname() .. ".json"
 
   oculus.setup({
+    navigation = "ijkl",
     state_file = test_state_file,
     persist_projects = true,
     projects = {
@@ -3602,6 +3638,7 @@ do
   window_mod.close()
 
   oculus.setup({
+    navigation = "ijkl",
     state_file = test_state_file,
     persist_projects = true,
   })
@@ -4054,6 +4091,7 @@ do
   require("oculus.storage").save(persist_order_state_file, dummy_config)
 
   oculus.setup({
+    navigation = "ijkl",
     state_file = persist_order_state_file,
     persist_projects = true,
   })
@@ -4083,6 +4121,7 @@ do
   }
 
   oculus.setup({
+    navigation = "ijkl",
     state_file = state_file,
     persist_projects = true,
     project_directories = { "Tools" },
@@ -4127,6 +4166,7 @@ do
 
   -- Simulate restart: call oculus.setup with the original configured projects
   oculus.setup({
+    navigation = "ijkl",
     state_file = state_file,
     persist_projects = true,
     project_directories = { "Tools" },
@@ -4179,6 +4219,7 @@ do
   }
 
   oculus.setup({
+    navigation = "ijkl",
     state_file = state_file,
     persist_contributors = true,
     contributors = initial_users,
@@ -4223,6 +4264,7 @@ do
 
   -- Simulate restart: call oculus.setup with the original configured users
   oculus.setup({
+    navigation = "ijkl",
     state_file = state_file,
     persist_contributors = true,
     contributors = initial_users,

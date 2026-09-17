@@ -164,7 +164,7 @@ vim.keymap.set("n", "<leader>oo", "<cmd>OculusToggle<cr>", { desc = "Oculus" })
 
 Run `:OculusToggle` to open the window. The first screen lists your
 **Projects**. Press `u` to switch to **Users** and `p` to switch back. Select an
-entry to open its activity feed, and press `h` on any item to inspect it.
+entry to open its activity feed, and press `i` on any item to inspect it.
 
 Fresh installations start with empty lists. You can add entries from inside the
 window with `a`, list them in `setup()`, or load them from a
@@ -178,19 +178,37 @@ window with `a`, list them in `setup()`, or load them from a
 
 ### The Oculus window
 
-Oculus uses `ijkl` movement by default: `i` is up, `k` down, `j` left, and
-`l` right. If you prefer Vim's layout, set
-`navigation = "hjkl"`, which moves inspect to `i`/`I`. The arrow keys work in
-both layouts. Press `?` to show every command in a sidebar.
+Oculus uses Vim's `hjkl` movement by default: `k` is up, `j` down, `h` left,
+and `l` right, and `i`/`I` inspect. Set `navigation = "ijkl"` for the
+alternative layout, where `i` is up, `k` down, `j` left, and inspect moves to
+`h`/`H`. The arrow keys work in both layouts. Press `?` to show every command
+in a sidebar.
 
-The keys below use the default `ijkl` layout.
+Each key can also be set on its own. Keys you leave out come from `style`
+(`"hjkl"` when omitted):
+
+```lua
+require("oculus").setup({
+  navigation = {
+    style = "hjkl",
+    up = "k",
+    down = "j",
+    left = "h",
+    right = "l",
+    inspect = "i",
+    inspect_id = "I",
+  },
+})
+```
+
+The keys below use the default `hjkl` layout.
 
 **Projects and Users lists**
 
 | Key                   | Action                                                     |
 | --------------------- | ---------------------------------------------------------- |
 | `<CR>` / `l` / `<Right>` | Open the selected group or activity feed               |
-| `j` / `<Left>`        | Go to the parent group                                     |
+| `h` / `<Left>`        | Go to the parent group                                     |
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
 | `w`                   | Open [my work](#my-work)                                   |
 | `s`                   | Open [saved items](#saved-items)                           |
@@ -198,11 +216,11 @@ The keys below use the default `ijkl` layout.
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Remove the selected item or group                          |
 | `R`                   | Rename (display name, or the username for users)           |
-| `m`                   | Start a move. Then `m` on a sibling reorders, `<CR>` on a group moves into it, and `j` moves to the parent |
+| `m`                   | Start a move. Then `m` on a sibling reorders, `<CR>` on a group moves into it, and `h` moves to the parent |
 | `M`                   | Move to any group through a picker                         |
 | `o`                   | Open the selected profile or repository in your browser    |
 | `F`                   | Edit activity filters                                      |
-| `H`                   | Inspect by ID                                              |
+| `I`                   | Inspect by ID                                              |
 | `?`                   | Toggle the command sidebar                                 |
 | `<Esc>`               | Cancel a pending move, go back, or close                   |
 | `q` / `<C-c>`         | Close                                                      |
@@ -211,8 +229,8 @@ The keys below use the default `ijkl` layout.
 
 | Key             | Action                                                         |
 | --------------- | -------------------------------------------------------------- |
-| `h`             | Inspect the change or issue under the cursor                   |
-| `H`             | Inspect by ID (issue, PR, commit, or `project#id`)             |
+| `i`             | Inspect the change or issue under the cursor                   |
+| `I`             | Inspect by ID (issue, PR, commit, or `project#id`)             |
 | `<Tab>`         | Queue the item for inspection. Queued items open together      |
 | `b`             | Open the item in your browser                                  |
 | `u`             | Show the project's issues                                      |
@@ -223,7 +241,7 @@ The keys below use the default `ijkl` layout.
 | `r`             | Refresh                                                        |
 | `F`             | Choose activity types                                          |
 | `<Space>` / `a` / `n` / `d` | Toggle one filter / enable all / disable all / reset to defaults |
-| `j` / `<Left>`  | Back to the list                                               |
+| `h` / `<Left>`  | Back to the list                                               |
 
 **Local commits**
 
@@ -244,7 +262,7 @@ Press `s` on any activity item (in a project or user feed, the issues view, a
 milestone, or an expanded push or pull request) to save it. Saved items are
 marked with `★`, and pressing `s` again removes them. Press `s` on the start
 screen to open the saved feed: every saved item, newest save first, rendered
-like any other feed, so `h` inspects, `b` opens the browser, `Tab` queues, and
+like any other feed, so `i` inspects, `b` opens the browser, `Tab` queues, and
 `p`/`f` page. `s` there removes the item under the cursor.
 
 Items are stored as snapshots in `state_file`, so they survive restarts and
@@ -265,10 +283,10 @@ each with a count of open items:
 | Mentions           | `is:open mentions:@me`                | `mentioned`                 |
 
 The preview lists the most recently updated items. Select a category to open
-its items as an activity feed spanning every repository, where `h` inspects,
+its items as an activity feed spanning every repository, where `i` inspects,
 `b` opens the browser, `Tab` queues and `s` saves as usual. Press `b` on the
 list to open the forge's own page for that category, `r` to refresh, and
-`j`/`←` to go back. GitHub archived repositories are left out.
+`h`/`←` to go back. GitHub archived repositories are left out.
 
 My work needs a token (see [Authentication](#authentication)). Codeberg is
 listed once you set a Codeberg token or track a Codeberg project or user.
@@ -279,13 +297,13 @@ Press `m` in a project's issues view to list its milestones. The list works
 like the Projects and Users lists: open milestones come first (nearest due date
 first), then closed ones, and the preview shows the due date, progress, and
 description. Select a milestone to see its issues and pull requests as an
-activity feed, where `h` inspects and `b` opens items as usual. Press `b` on
-the list to open a milestone in your browser, `r` to refresh it, and `j`/`←` to
+activity feed, where `i` inspects and `b` opens items as usual. Press `b` on
+the list to open a milestone in your browser, `r` to refresh it, and `h`/`←` to
 go back.
 
 ### Inspecting changes
 
-Inspect a change from an activity feed with `h`, from anywhere with `H`, or with
+Inspect a change from an activity feed with `i`, from anywhere with `I`, or with
 `:OculusInspect`. All of these targets are accepted:
 
 ```vim
@@ -388,9 +406,9 @@ require("oculus").setup({
   height = 0.80,
   row = 1,
   border = "rounded",
-  -- "ijkl", "hjkl", or a table:
-  -- { up = "i", down = "k", left = "j", right = "l", inspect = "h", inspect_id = "H" }
-  navigation = "ijkl",
+  -- "hjkl", "ijkl", or a table of keys layered over a style:
+  -- { style = "hjkl", up = "k", down = "j", left = "h", right = "l", inspect = "i", inspect_id = "I" }
+  navigation = "hjkl",
   -- Show the command sidebar when the window opens
   sidebar = false,
   sidebar_width = 26,

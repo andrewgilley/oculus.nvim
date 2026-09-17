@@ -321,6 +321,7 @@ vim.o.columns = 160
 vim.o.lines = 50
 
 window.open({
+  navigation = "ijkl",
   width = 0.8,
   height = 0.8,
   border = "rounded",

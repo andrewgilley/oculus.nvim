@@ -7816,8 +7816,6 @@ local function open_add_dialog()
   vim.keymap.set("n", "<Up>", prev_provider, d_map_opts)
   vim.keymap.set("n", nav.down, next_provider, d_map_opts)
   vim.keymap.set("n", nav.up, prev_provider, d_map_opts)
-  vim.keymap.set("n", "j", next_provider, d_map_opts)
-  vim.keymap.set("n", "k", prev_provider, d_map_opts)
   vim.keymap.set("n", "<Tab>", next_provider, d_map_opts)
   vim.keymap.set("n", "<S-Tab>", prev_provider, d_map_opts)
   vim.keymap.set("n", "<C-n>", next_provider, d_map_opts)
@@ -9321,14 +9319,14 @@ local function open_inspect_input()
   vim.keymap.set({ "i", "n" }, "<Down>", history_down, map_opts)
   vim.keymap.set({ "i", "n" }, "<C-p>", history_up, map_opts)
   vim.keymap.set({ "i", "n" }, "<C-n>", history_down, map_opts)
-  vim.keymap.set("n", "k", history_up, map_opts)
-  vim.keymap.set("n", "j", history_down, map_opts)
+  -- Keys that enter Insert mode keep their meaning in the input.
+  local insert_keys = { i = true, I = true, a = true, A = true }
 
-  if nav.up and nav.up ~= "i" and nav.up ~= "k" and nav.up ~= "j" then
+  if not insert_keys[nav.up] then
     vim.keymap.set("n", nav.up, history_up, map_opts)
   end
 
-  if nav.down and nav.down ~= "i" and nav.down ~= "j" and nav.down ~= "k" then
+  if not insert_keys[nav.down] then
     vim.keymap.set("n", nav.down, history_down, map_opts)
   end
 
@@ -10115,16 +10113,6 @@ local function map_keys(buf)
   local inspect_id_key = nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")
   map(inspect_id_key, prompt_inspect_by_id, "Inspect issue, PR, commit, or project by ID")
-
-  if inspect_id_key ~= "H"
-    and nav.left ~= "H"
-    and nav.up ~= "H"
-    and nav.down ~= "H"
-    and nav.right ~= "H"
-  then
-    map("H", prompt_inspect_by_id, "Inspect issue, PR, commit, or project by ID")
-  end
-
   map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
 
   map("w", function()
@@ -10152,18 +10140,6 @@ local function map_keys(buf)
   end, "Open Oculus project issues")
 
   map(nav.down, function()
-    if
-      (M.state.view == "directory" or M.state.view == "contributors")
-      and M.state.moving_item
-      and M.state.moving_item.kind == "project"
-      and M.state.moving_item.project
-      and (M.state.moving_item.project.directory or M.state.current_directory)
-      and nav.down == "j"
-    then
-      move_to_parent_directory(M.state.moving_item.project)
-      return
-    end
-
     move_cursor(1)
   end, "Move down in Oculus")
 
@@ -10173,21 +10149,6 @@ local function map_keys(buf)
 
   map(nav.left, move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
-
-  if nav.left ~= "j" and nav.down ~= "j" then
-    map("j", function()
-      if
-        (M.state.view == "directory" or M.state.view == "contributors")
-        and M.state.moving_item
-        and M.state.moving_item.kind == "project"
-        and M.state.moving_item.project
-        and (M.state.moving_item.project.directory or M.state.current_directory)
-      then
-        move_to_parent_directory(M.state.moving_item.project)
-        return
-      end
-    end, "Move selected child item to parent directory")
-  end
 
   map("<Down>", function()
     move_cursor(1)
