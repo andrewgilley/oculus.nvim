@@ -681,3 +681,7 @@ nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/work_spec.lua
 The inspect suite needs a checkout of oil.nvim and some environment variables.
 See [`.github/workflows/tests.yml`](.github/workflows/tests.yml) for the exact
 setup.
+
+## License
+
+[MIT](LICENSE)
