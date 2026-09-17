@@ -1088,12 +1088,9 @@ local function render_sidebar()
   if #accounts > 0 then
     lines[#lines + 1] = ""
 
-    while #lines < config.height - #accounts - 2 do
+    while #lines < config.height - #accounts - 1 do
       lines[#lines + 1] = ""
     end
-
-    lines[#lines + 1] = "  SIGNED IN AS"
-    highlights[#highlights + 1] = { line = #lines, col_start = 2, col_end = -1, hl = "Title" }
 
     for _, account in ipairs(accounts) do
       lines[#lines + 1] = "  " .. account

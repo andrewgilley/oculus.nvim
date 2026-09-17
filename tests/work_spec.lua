@@ -341,7 +341,7 @@ assert(window._is_sidebar_visible())
 wait_for("signed-in account not shown", function()
   local sidebar_lines = vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)
 
-  return sidebar_lines[#sidebar_lines - 1] == "  SIGNED IN AS"
+  return sidebar_lines[#sidebar_lines - 1] == ""
     and sidebar_lines[#sidebar_lines] == "  GitHub: @octo"
 end)
 
