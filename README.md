@@ -748,8 +748,24 @@ oculus.show_opinion("Some **markdown**", { title = " Notes " })
 
 ## Contributing
 
-Bug reports and pull requests are welcome. The test suites are plain Lua
-scripts that run in headless Neovim with no test framework:
+Bug reports and pull requests are welcome.
+
+Two modules hold the two halves of the plugin, each with the parts that stand
+on their own beside them:
+
+| Module                  | What it holds                                                      |
+| ----------------------- | ------------------------------------------------------------------ |
+| `oculus/window.lua`     | The Oculus window: the list, the sidebar, the footer, the keys      |
+| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `milestones`, `work` and `saved` views |
+| `oculus/inspect.lua`    | An inspection: its tabs, buffers, sidebar and chunk navigation      |
+| `oculus/inspect/`       | `prepare` and `git` (getting the change), `patch` (reading a diff), `target` (resolving what to inspect), `overview` (the summary and its agent flows), `review` and `review_ui` (pull request review threads), `oil`, `context` (treesitter-context) and `counters` |
+
+A module beside one of the two takes what it needs from it through `setup()`,
+so the names the rest of the file uses, and everything the tests reach for,
+stay where they are.
+
+The test suites are plain Lua scripts that run in headless Neovim with no test
+framework:
 
 ```sh
 nvim --headless -u NONE -l tests/opinion_spec.lua
