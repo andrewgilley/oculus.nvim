@@ -197,6 +197,41 @@ do
   assert(lines[5] == "@bob" and lines[6] == "Done")
   assert(vim.deep_equal(headers, { 0, 4, 7, 11 }), vim.inspect(headers))
   assert(vim.deep_equal(starts, { 1, 8 }), vim.inspect(starts))
+  -- Inline text wraps each comment under the code line, replies indented.
+  local inline = review.inline_lines({ thread }, 24)
+
+  local inline_text = vim.tbl_map(function(virt_line)
+    return virt_line[1][1]
+  end, inline)
+
+  assert(vim.deep_equal(inline_text, {
+    "  ✓ @alice  2026-09-15  · resolved, outdated",
+    "    Rename this",
+    "    please",
+    "    ↳ @bob",
+    "      Done",
+  }), vim.inspect(inline_text))
+
+  assert(inline[1][1][2] == "OculusInspectThreadResolved")
+
+  local wrapped = review.inline_lines({
+    {
+      comments = {
+        {
+          author = "alice",
+          body = "one two three four five six seven eight nine ten",
+        },
+      },
+    },
+  }, 24)
+
+  assert(wrapped[1][1][1] == "  ◆ @alice")
+  assert(wrapped[1][1][2] == "OculusInspectThreadHeader")
+  assert(wrapped[2][1][1] == "    one two three four", wrapped[2][1][1])
+  assert(wrapped[2][1][2] == "OculusInspectThreadBody")
+  assert(wrapped[3][1][1] == "    five six seven eight", wrapped[3][1][1])
+  assert(wrapped[4][1][1] == "    nine ten", wrapped[4][1][1])
+  assert(#wrapped == 4, vim.inspect(wrapped))
 end
 
 -- GitHub replies join their thread, resolution comes from GraphQL, and a
@@ -476,7 +511,9 @@ do
       -1,
       { details = true }
     )) do
-      result[mark[2] + 1] = mark[4].virt_text[1][1]
+      if mark[4].virt_text then
+        result[mark[2] + 1] = mark[4].virt_text[1][1]
+      end
     end
 
     return result
@@ -531,6 +568,121 @@ do
   -- [r goes back to the unchanged line's thread.
   inspect._review.jump(group, session, "change", -1)
   assert(vim.api.nvim_win_get_cursor(change.win)[1] == 5)
+
+  -- The overview loads the threads into the files: the whole file comes back
+  -- so each thread sits on its own line, with its comments below it.
+  local function inline_marks(endpoint)
+    local result = {}
+
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+      endpoint.buf,
+      inspect._review.ns,
+      0,
+      -1,
+      { details = true }
+    )) do
+      if mark[4].virt_lines then
+        result[mark[2] + 1] = vim.tbl_map(function(virt_line)
+          return virt_line[1][1]
+        end, mark[4].virt_lines)
+      end
+    end
+
+    return result
+  end
+
+  assert(session.active_chunk == 2 and session.focused_chunks)
+  assert(inspect._review.thread_count(group) == 3)
+  assert(inspect._review.toggle_inline(group))
+  assert(group.review_inline)
+  assert(session.focused_chunks == false)
+  assert(session.review_inline_chunk == 2)
+  local change_inline = inline_marks(change)
+
+  assert(vim.deep_equal(
+    change_inline[5],
+    { "  ✓ @carol  · resolved", "    Unchanged" }
+  ), vim.inspect(change_inline))
+
+  assert(vim.deep_equal(change_inline[8], { "  ◆ @alice", "    Second chunk" }),
+    vim.inspect(change_inline))
+
+  assert(vim.deep_equal(
+    inline_marks(parent)[4],
+    { "  ◆ @bob", "    Old side" }
+  ), vim.inspect(inline_marks(parent)))
+
+  -- Inline threads replace the end-of-line labels and the hover float.
+  assert(marks(change)[5] == nil and marks(change)[8] == nil, vim.inspect(marks(change)))
+  vim.api.nvim_set_current_win(change.win)
+  vim.api.nvim_win_set_cursor(change.win, { 5, 0 })
+  inspect._review.on_cursor_moved(change)
+  assert(change.review_float == nil, "no float over inline threads")
+  -- ]r keeps the whole file and moves between the threads in place.
+  inspect._review.jump(group, session, "change", 1)
+  assert(session.focused_chunks == false)
+  assert(vim.api.nvim_win_get_cursor(change.win)[1] == 8)
+  assert(change.review_float == nil)
+  -- Putting them away restores the chunk the file was showing.
+  assert(inspect._review.toggle_inline(group))
+  assert(not group.review_inline)
+  assert(session.focused_chunks and session.active_chunk == 2)
+  assert(session.review_inline_chunk == nil)
+  assert(next(inline_marks(change)) == nil, vim.inspect(inline_marks(change)))
+  assert(marks(change)[8] == "  ◆ @alice: Second chunk", vim.inspect(marks(change)))
+  -- r on the overview page is what loads and unloads them.
+  inspect._show_inspection_overview(group)
+  local overview_buf = vim.api.nvim_win_get_buf(group.overview_win)
+
+  local function footer_text()
+    return vim.api.nvim_buf_get_lines(
+      group.overview_footer_buf,
+      1,
+      2,
+      false
+    )[1] or ""
+  end
+
+  assert(footer_text():find("r threads", 1, true), footer_text())
+  assert(vim.api.nvim_get_current_buf() == overview_buf)
+  local toggle_map = assert(vim.fn.maparg("r", "n", false, true).callback)
+  toggle_map()
+  assert(group.review_inline)
+  assert(footer_text():find("r hide threads", 1, true), footer_text())
+  toggle_map()
+  assert(not group.review_inline)
+  assert(footer_text():find("r threads", 1, true), footer_text())
+  inspect._close_overview_window(group)
+  -- <C-r> in a file shows the threads on the chunk it is showing, on their own.
+  vim.api.nvim_set_current_tabpage(change.tab)
+  vim.api.nvim_set_current_win(change.win)
+  local chunk_map = assert(vim.fn.maparg("<C-r>", "n", false, true).callback)
+  assert(session.focused_chunks and session.active_chunk == 2)
+  chunk_map()
+  assert(not group.review_inline)
+  assert(session.focused_chunks and session.active_chunk == 2)
+
+  assert(vim.deep_equal(
+    inline_marks(change)[8],
+    { "  ◆ @alice", "    Second chunk" }
+  ), vim.inspect(inline_marks(change)))
+
+  assert(marks(change)[8] == nil, vim.inspect(marks(change)))
+  chunk_map()
+  assert(next(inline_marks(change)) == nil, vim.inspect(inline_marks(change)))
+  assert(marks(change)[8] == "  ◆ @alice: Second chunk", vim.inspect(marks(change)))
+  -- A chunk can differ from the workflow-wide setting, which resets it.
+  assert(inspect._review.toggle_inline(group))
+  assert(group.review_inline and session.focused_chunks == false)
+  assert(next(inline_marks(change)) ~= nil)
+  chunk_map()
+  assert(group.review_inline)
+  assert(next(inline_marks(change)) == nil, vim.inspect(inline_marks(change)))
+  assert(marks(change)[8] == "  ◆ @alice: Second chunk", vim.inspect(marks(change)))
+  assert(inspect._review.toggle_inline(group))
+  assert(not group.review_inline and session.review_inline_views == nil)
+  assert(session.focused_chunks and session.active_chunk == 2)
+  assert(marks(change)[8] == "  ◆ @alice: Second chunk", vim.inspect(marks(change)))
 
   for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
     if not vim.tbl_contains(tabs_before, tab) and vim.api.nvim_tabpage_is_valid(tab) then

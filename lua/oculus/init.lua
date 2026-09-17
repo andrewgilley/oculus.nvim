@@ -75,6 +75,7 @@ local defaults = {
   inspect_next_thread = "]r",
   inspect_previous_thread = "[r",
   inspect_thread = "<leader>oc",
+  inspect_chunk_threads = "<C-r>",
   inspect_treesitter_context = true,
   inspect_treesitter_context_multiwindow = true,
   inspect_treesitter_context_mode = "topline",

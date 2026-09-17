@@ -61,8 +61,8 @@ change markers, chunk navigation, and an AI-assisted overview.
   view.
 
 - **Pull request review context.** Review threads appear on the lines they
-  discuss, and the overview shows each reviewer's verdict, check results and
-  merge state.
+  discuss, can be loaded into the code as full comment threads, and the
+  overview shows each reviewer's verdict, check results and merge state.
 
 - **AI-assisted overview.** Generate a description of a change, or ask for
   likely patch locations for an issue, then spin up a `git worktree` to start
@@ -363,6 +363,7 @@ change markers, and you can switch it between the parent and the change:
 | `inspect_next_thread`                      | `]r`         | Jump to the next [review thread](#review-threads) |
 | `inspect_previous_thread`                  | `[r`         | Jump to the previous review thread  |
 | `inspect_thread`                           | `<leader>oc` | Open the review thread on this line |
+| `inspect_chunk_threads`                    | `<C-r>`      | Show or hide the review threads on the chunk this file is showing (shadows redo in inspected buffers; set to `false` to keep it) |
 | `inspect_sidebar_toggle`                   | `<leader>oi` | Toggle the changed-files sidebar    |
 | `inspect_overview_toggle`                  | `<leader>op` | Toggle the [overview](#inspect-overview) (`<C-t>` also works) |
 
@@ -385,6 +386,17 @@ When you inspect a pull request, Oculus loads its reviews in the background:
 - The overview lists each reviewer's latest verdict, the checks on the head
   commit, whether the pull request can be merged, and how many threads are
   open, resolved and outdated.
+- Pressing `r` on the [overview](#inspect-overview) loads the threads into the
+  files: every comment is shown under the code line it was written on, with
+  replies indented, in place of the end-of-line label and the float. Files
+  whose threads sit in other chunks are shown whole while the threads are
+  loaded, so each one lands on its own line; `r` again puts the threads away
+  and brings back the chunk each file was showing.
+- `inspect_chunk_threads` (`<C-r>`) does the same for one chunk without
+  leaving the file, and without changing what the file is showing. It starts
+  from whatever `r` last set and flips only the chunk you are on, so you can
+  read one thread in place while the rest stay as labels, or hide the comments
+  on a chunk while the rest of the inspection keeps them.
 
 A pull request inspection shows each commit's changes separately, so a thread
 appears on the version of the file it was written against. A comment on the
@@ -410,6 +422,7 @@ metadata, and a description. Its footer shows these commands:
 | `w`         | _(issues)_ Create a `git worktree` for the fix (default branch `fix-issue-<n>`) and open the selected locations |
 | `<Space>`   | Toggle a suggested patch location                                 |
 | `<CR>`      | Pick the highlighted model, or open patch locations               |
+| `r`         | _(pull requests)_ Load the [review threads](#review-threads) into the files, or put them away |
 | `b`         | Open in your browser                                              |
 | `v` / `s`   | Switch between the inline-counter and sidebar chunk modes         |
 | `c` / `q`   | Close the overview and return to the files                        |
@@ -514,6 +527,7 @@ require("oculus").setup({
   inspect_next_thread = "]r",
   inspect_previous_thread = "[r",
   inspect_thread = "<leader>oc",
+  inspect_chunk_threads = "<C-r>",
   -- Keep nvim-treesitter-context in sync across inspect windows
   inspect_treesitter_context = true,
   inspect_treesitter_context_multiwindow = true,
@@ -728,6 +742,7 @@ oculus.show_opinion("Some **markdown**", { title = " Notes " })
 | `OculusInspectThread`         | links to `DiagnosticInfo` | Open review thread labels     |
 | `OculusInspectThreadResolved` | links to `Comment`        | Resolved review thread labels |
 | `OculusInspectThreadHeader`   | links to `Title`          | Comment authors in threads    |
+| `OculusInspectThreadBody`     | links to `Comment`        | Comment text of threads loaded into the files |
 
 ## Contributing
 

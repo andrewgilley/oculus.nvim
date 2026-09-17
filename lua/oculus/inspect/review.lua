@@ -446,6 +446,145 @@ function M.all_resolved(threads)
   return #threads > 0
 end
 
+local function thread_status(thread)
+  local status = {}
+
+  if thread.resolved then
+    status[#status + 1] = "resolved"
+  end
+
+  if thread.outdated then
+    status[#status + 1] = "outdated"
+  end
+
+  return status
+end
+
+local function comment_date(comment)
+  return type(comment.created_at) == "string"
+    and comment.created_at:match("^%d%d%d%d%-%d%d%-%d%d")
+    or nil
+end
+
+-- Wraps text to width, keeping its paragraph breaks.
+function M.wrap(text, width)
+  local available = math.max(1, width)
+  local lines = {}
+
+  for _, paragraph in ipairs(vim.split(
+    tostring(text or ""),
+    "\n",
+    { plain = true }
+  )) do
+    paragraph = vim.trim((paragraph:gsub("\r$", "")))
+
+    if paragraph == "" then
+      lines[#lines + 1] = ""
+    else
+      local current = ""
+
+      for word in paragraph:gmatch("%S+") do
+        while vim.fn.strdisplaywidth(word) > available do
+          if current ~= "" then
+            lines[#lines + 1] = current
+            current = ""
+          end
+
+          local take = available
+          local piece = vim.fn.strcharpart(word, 0, take)
+
+          while vim.fn.strdisplaywidth(piece) > available and take > 1 do
+            take = take - 1
+            piece = vim.fn.strcharpart(word, 0, take)
+          end
+
+          lines[#lines + 1] = piece
+          word = vim.fn.strcharpart(word, take)
+        end
+
+        local proposed = current == "" and word or (current .. " " .. word)
+
+        if vim.fn.strdisplaywidth(proposed) <= available then
+          current = proposed
+        else
+          lines[#lines + 1] = current
+          current = word
+        end
+      end
+
+      if current ~= "" then
+        lines[#lines + 1] = current
+      end
+    end
+  end
+
+  return lines
+end
+
+-- The virtual lines shown under a commented code line, as extmark virt_lines:
+-- every comment of every thread on that line, wrapped to width. Replies are
+-- indented under the comment that opened the thread.
+function M.inline_lines(threads, width)
+  width = math.max(20, tonumber(width) or 60)
+  local lines = {}
+
+  for thread_index, thread in ipairs(threads) do
+    if thread_index > 1 then
+      lines[#lines + 1] = { { "", "OculusInspectThreadBody" } }
+    end
+
+    local header_group = thread.resolved
+        and "OculusInspectThreadResolved"
+      or "OculusInspectThreadHeader"
+
+    local body_group = thread.resolved
+        and "OculusInspectThreadResolved"
+      or "OculusInspectThreadBody"
+
+    local status = thread_status(thread)
+
+    for comment_index, comment in ipairs(thread.comments or {}) do
+      local indent = comment_index == 1 and "  " or "    "
+
+      local header = ("%s%s@%s"):format(
+        indent,
+        comment_index == 1 and (thread.resolved and "✓ " or "◆ ") or "↳ ",
+        tostring(comment.author or "unknown")
+      )
+
+      local date = comment_date(comment)
+
+      if date then
+        header = header .. "  " .. date
+      end
+
+      if comment_index == 1 and #status > 0 then
+        header = header .. "  · " .. table.concat(status, ", ")
+      end
+
+      lines[#lines + 1] = { { header, header_group } }
+      local body_indent = indent .. "  "
+
+      local body = M.wrap(
+        vim.trim(tostring(comment.body or "")),
+        width - vim.fn.strdisplaywidth(body_indent)
+      )
+
+      while body[#body] == "" do
+        table.remove(body)
+      end
+
+      for _, body_line in ipairs(body) do
+        lines[#lines + 1] = {
+          { body_line == "" and "" or (body_indent .. body_line), body_group },
+        }
+      end
+    end
+  end
+
+  return lines
+end
+
 -- The lines of the thread float, the 0-based header lines to highlight, and
 -- the 1-based line each thread starts on.
 function M.float_lines(threads)
@@ -459,15 +598,7 @@ function M.float_lines(threads)
     end
 
     starts[thread_index] = #lines + 1
-    local status = {}
-
-    if thread.resolved then
-      status[#status + 1] = "resolved"
-    end
-
-    if thread.outdated then
-      status[#status + 1] = "outdated"
-    end
+    local status = thread_status(thread)
 
     for comment_index, comment in ipairs(thread.comments or {}) do
       if comment_index > 1 then
@@ -475,9 +606,7 @@ function M.float_lines(threads)
       end
 
       local header = "@" .. tostring(comment.author or "unknown")
-
-      local date = type(comment.created_at) == "string"
-        and comment.created_at:match("^%d%d%d%d%-%d%d%-%d%d")
+      local date = comment_date(comment)
 
       if date then
         header = header .. "  " .. date

@@ -3645,53 +3645,12 @@ end
 
 local function append_sidebar_text(lines, text, width, indent)
   indent = indent or ""
-  local available = math.max(1, width - vim.fn.strdisplaywidth(indent))
 
-  for _, paragraph in ipairs(vim.split(
-    tostring(text or ""),
-    "\n",
-    { plain = true }
+  for _, line in ipairs(review.wrap(
+    text,
+    width - vim.fn.strdisplaywidth(indent)
   )) do
-    paragraph = vim.trim(paragraph)
-
-    if paragraph == "" then
-      lines[#lines + 1] = ""
-    else
-      local current = ""
-
-      for word in paragraph:gmatch("%S+") do
-        while vim.fn.strdisplaywidth(word) > available do
-          if current ~= "" then
-            lines[#lines + 1] = indent .. current
-            current = ""
-          end
-
-          local take = math.max(1, available)
-          local piece = vim.fn.strcharpart(word, 0, take)
-
-          while vim.fn.strdisplaywidth(piece) > available and take > 1 do
-            take = take - 1
-            piece = vim.fn.strcharpart(word, 0, take)
-          end
-
-          lines[#lines + 1] = indent .. piece
-          word = vim.fn.strcharpart(word, take)
-        end
-
-        local proposed = current == "" and word or (current .. " " .. word)
-
-        if vim.fn.strdisplaywidth(proposed) <= available then
-          current = proposed
-        else
-          lines[#lines + 1] = indent .. current
-          current = word
-        end
-      end
-
-      if current ~= "" then
-        lines[#lines + 1] = indent .. current
-      end
-    end
+    lines[#lines + 1] = line == "" and "" or (indent .. line)
   end
 end
 
@@ -4202,7 +4161,6 @@ local function sidebar_max_topline(win)
   local buf = vim.api.nvim_win_get_buf(win)
   local line_count = vim.api.nvim_buf_line_count(buf)
   local height = vim.api.nvim_win_get_height(win)
-
   return math.max(1, line_count - height + 1)
 end
 
@@ -5256,6 +5214,11 @@ function M._overview_ui.render_footer(group)
 
   if issue_patches then
     left_commands = left_commands .. "   p path   w worktree"
+  end
+
+  if M._review.thread_count(group) > 0 then
+    left_commands = left_commands
+      .. (group.review_inline and "   r hide threads" or "   r threads")
   end
 
   left_commands = left_commands
@@ -7185,6 +7148,15 @@ show_inspection_overview = function(group)
     desc = "Open Oculus inspection item in browser",
   })
 
+  vim.keymap.set("n", "r", function()
+    M._review.toggle_inline(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Show Oculus review threads in the inspected files",
+  })
+
   vim.keymap.set("n", "v", function()
     group.chunk_view_mode = "virtual"
     close_inspection_sidebar(group)
@@ -8869,7 +8841,12 @@ end
 M._review = {
   ns = vim.api.nvim_create_namespace("oculus_inspect_review"),
   augroup = vim.api.nvim_create_augroup("oculus_inspect_review", { clear = true }),
-  default_keys = { next = "]r", previous = "[r", open = "<leader>oc" },
+  default_keys = {
+    next = "]r",
+    previous = "[r",
+    open = "<leader>oc",
+    chunk = "<C-r>",
+  },
 }
 
 function M._review.set_review_highlights()
@@ -8885,6 +8862,11 @@ function M._review.set_review_highlights()
 
   vim.api.nvim_set_hl(0, "OculusInspectThreadHeader", {
     link = "Title",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "OculusInspectThreadBody", {
+    link = "Comment",
     default = true,
   })
 end
@@ -8915,8 +8897,53 @@ function M._review.close_float(endpoint)
   end
 end
 
+-- The width available for inline thread text in a window.
+function M._review.inline_width(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return 60
+  end
+
+  local width = vim.api.nvim_win_get_width(win)
+
+  if vim.wo[win].number or vim.wo[win].relativenumber then
+    width = width - math.max(tonumber(vim.wo[win].numberwidth) or 0, 4)
+  end
+
+  if vim.wo[win].signcolumn ~= "no" then
+    width = width - 2
+  end
+
+  width = width - (tonumber(vim.wo[win].foldcolumn) or 0)
+  return math.max(20, width - 4)
+end
+
+-- Threads are shown inline for the chunk a file is on, or for the whole file
+-- when it is not focused on one.
+function M._review.inline_key(session)
+  return session.active_chunk or 0
+end
+
+-- Whether the view a file is showing has its threads inline: the workflow's
+-- own setting, unless this view was toggled on its own.
+function M._review.inline_state(group, session)
+  local inline = group ~= nil and group.review_inline == true
+  local overrides = session.review_inline_views
+
+  if overrides then
+    local override = overrides[M._review.inline_key(session)]
+
+    if override ~= nil then
+      inline = override
+    end
+  end
+
+  return inline
+end
+
 function M._review.render_marks(session)
   local placed = session.review_threads or {}
+  local group = sidebar_group_for_session(session)
+  local inline = M._review.inline_state(group, session)
 
   for _, role in ipairs({ "parent", "change" }) do
     local endpoint = session[role]
@@ -8925,6 +8952,7 @@ function M._review.render_marks(session)
       vim.api.nvim_buf_clear_namespace(endpoint.buf, M._review.ns, 0, -1)
       M._review.close_float(endpoint)
       endpoint.review_lines = nil
+      endpoint.review_inline_lines = nil
       local by_line = {}
       local line_count = vim.api.nvim_buf_line_count(endpoint.buf)
 
@@ -8951,24 +8979,154 @@ function M._review.render_marks(session)
       if next(by_line) then
         M._review.set_review_highlights()
         endpoint.review_lines = by_line
+        local inline_lines = nil
+        local width = inline and M._review.inline_width(endpoint.win) or 0
 
         for line, entry in pairs(by_line) do
-          vim.api.nvim_buf_set_extmark(endpoint.buf, M._review.ns, line - 1, 0, {
-            virt_text = {
-              {
-                "  " .. review.mark_text(entry.threads, entry.chunk_index),
-                review.all_resolved(entry.threads)
-                    and "OculusInspectThreadResolved"
-                  or "OculusInspectThread",
+          -- A thread the current view collapses onto a chunk start is not on
+          -- the code it was written against, so it keeps the compact label.
+          if inline and not entry.chunk_index then
+            inline_lines = inline_lines or {}
+            inline_lines[line] = true
+
+            vim.api.nvim_buf_set_extmark(endpoint.buf, M._review.ns, line - 1, 0, {
+              virt_lines = review.inline_lines(entry.threads, width),
+              priority = 120,
+            })
+          else
+            vim.api.nvim_buf_set_extmark(endpoint.buf, M._review.ns, line - 1, 0, {
+              virt_text = {
+                {
+                  "  " .. review.mark_text(entry.threads, entry.chunk_index),
+                  review.all_resolved(entry.threads)
+                      and "OculusInspectThreadResolved"
+                    or "OculusInspectThread",
+                },
               },
-            },
-            virt_text_pos = "eol",
-            priority = 120,
-          })
+              virt_text_pos = "eol",
+              priority = 120,
+            })
+          end
         end
+
+        endpoint.review_inline_lines = inline_lines
       end
     end
   end
+end
+
+-- The number of review threads placed in the inspected files.
+function M._review.thread_count(group)
+  local count = 0
+
+  for _, session in ipairs(group) do
+    count = count + #(session.review_threads or {})
+  end
+
+  return count
+end
+
+-- Shows every thread's comments under the code they were written on, or goes
+-- back to the end-of-line labels. Files whose threads sit in other chunks are
+-- rendered whole while the threads are loaded, so each one lands on its own
+-- line; their chunk comes back when the threads are put away.
+function M._review.toggle_inline(group)
+  if M._review.thread_count(group) == 0 then
+    vim.notify(
+      "Oculus: no review threads in this pull request",
+      vim.log.levels.INFO
+    )
+
+    return false
+  end
+
+  group.review_inline = not group.review_inline
+
+  for _, session in ipairs(group) do
+    session.review_inline_views = nil
+
+    if #(session.review_threads or {}) > 0 then
+      local chunk = nil
+
+      if group.review_inline then
+        if session.focused_chunks then
+          session.review_inline_chunk = session.active_chunk
+          chunk = session.active_chunk
+          render_full_file(session)
+        else
+          M._review.render_marks(session)
+        end
+      else
+        chunk = session.review_inline_chunk
+        session.review_inline_chunk = nil
+
+        -- Only put back the chunk this file was showing if it is still whole.
+        if chunk
+          and session.focused_chunks == false
+          and session.hunks
+          and session.hunks[chunk]
+        then
+          render_focused_chunk(session, chunk)
+        else
+          chunk = nil
+          M._review.render_marks(session)
+        end
+      end
+
+      local hunk = chunk and session.hunks and session.hunks[chunk] or nil
+      local endpoint = session.change
+
+      if hunk and valid_endpoint(endpoint) then
+        local start = group.review_inline
+            and hunk.new_start
+          or session.focused_start
+          or hunk.new_start
+
+        move_cursor_to_line_start(
+          endpoint.win,
+          start,
+          chunk_max_line_for_role(hunk, "change", start)
+        )
+      end
+    end
+  end
+
+  refresh_sidebar(group, vim.api.nvim_get_current_tabpage())
+  M._refresh_virtual_counters(group)
+
+  if overview_window_is_open(group) then
+    M._overview_ui.render(group)
+  end
+
+  return true
+end
+
+-- Shows or hides the comments of the threads on the chunk a file is showing,
+-- leaving the rest of the inspection as it is.
+function M._review.toggle_chunk_inline(group, session, role)
+  local endpoint = session[role]
+
+  if not valid_endpoint(endpoint) then
+    return false
+  end
+
+  if #(session.review_threads or {}) == 0 then
+    vim.notify(
+      "Oculus: no review threads in this file",
+      vim.log.levels.INFO
+    )
+
+    return false
+  end
+
+  session.review_inline_views = session.review_inline_views or {}
+
+  session.review_inline_views[M._review.inline_key(session)] =
+    not M._review.inline_state(group, session)
+
+  M._review.render_marks(session)
+  M._review.on_cursor_moved(endpoint)
+  return true
 end
 
 function M._review.review_float_thread(float)
@@ -9197,7 +9355,10 @@ function M._review.on_cursor_moved(endpoint)
 
   local line = vim.api.nvim_win_get_cursor(endpoint.win)[1]
 
-  if endpoint.review_lines[line] then
+  if endpoint.review_lines[line]
+    and not (endpoint.review_inline_lines
+      and endpoint.review_inline_lines[line])
+  then
     M._review.show_float(endpoint, line)
   else
     M._review.close_float(endpoint)
@@ -9222,6 +9383,7 @@ function M._review.focus_review_thread(group, session, thread)
   local chunk_index = patch.revision_hunk_index_at_line(session, role, source)
 
   if chunk_index
+    and not group.review_inline
     and (chunk_index ~= session.active_chunk or not session.focused_chunks)
   then
     focus_inspection_chunk(group, session, role, chunk_index)
@@ -9236,7 +9398,12 @@ function M._review.focus_review_thread(group, session, thread)
   )
 
   set_change_cursor(endpoint.win, line)
-  M._review.show_float(endpoint, line)
+
+  if not (endpoint.review_inline_lines
+    and endpoint.review_inline_lines[line])
+  then
+    M._review.show_float(endpoint, line)
+  end
 end
 
 -- Moves to the next or previous review thread, continuing into the other
@@ -9349,6 +9516,10 @@ function M._review.map_keys(endpoint, session, role, group)
       vim.notify("Oculus: no review thread on this line", vim.log.levels.INFO)
     end
   end, "Open Oculus review thread")
+
+  map(group.chunk_threads, M._review.default_keys.chunk, function()
+    M._review.toggle_chunk_inline(group, session, role)
+  end, "Show Oculus review threads on this chunk")
 
   endpoint.browser_config = group.browser_config
   vim.api.nvim_clear_autocmds({ group = M._review.augroup, buffer = endpoint.buf })
@@ -9805,6 +9976,7 @@ local function open_tabs(
       next_thread = opts.inspect_next_thread,
       previous_thread = opts.inspect_previous_thread,
       thread_open = opts.inspect_thread,
+      chunk_threads = opts.inspect_chunk_threads,
       chunk_view_mode = opts.chunk_view_mode
         or opts.inspect_chunk_view_mode
         or "sidebar",
