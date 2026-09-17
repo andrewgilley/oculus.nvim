@@ -317,6 +317,9 @@ If no clone is found, Oculus inspects the change remotely instead:
   stretches are replaced by a single `⋯ 94 unchanged lines ⋯` marker, written
   as a comment in the file's language. The sidebar's chunk list keeps the real
   line numbers, while buffer line numbers count excerpt lines.
+- The project's directory structure at the inspected commits is laid out in
+  the cache as empty files, so oil.nvim can browse it. Selecting an inspected
+  file in oil.nvim shows its inspection; selecting any other file closes oil.nvim.
 - The overview shows `Source: Remote, ±20 lines around changes`. For issues,
   `p` (patch locations) and `w` (worktree) are unavailable because there is no
   checkout to search or branch from.

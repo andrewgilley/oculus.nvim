@@ -668,6 +668,139 @@ function M.ensure_remote_repository(info, opts, callback)
   end)
 end
 
+-- Remote cache repositories have no working tree, so a file browser opened on
+-- an inspected file finds nothing. Their commits do include trees (only blobs
+-- are filtered out), so each inspected commit's layout is written out as empty
+-- directories and files. The marker under .git skips commits already laid out.
+local materialized_trees = {}
+local materialize_batch_size = 2000
+
+local function tree_marker(repository, commit)
+  return vim.fs.joinpath(repository, ".git", "oculus", "trees", commit)
+end
+
+local function safe_tree_path(path)
+  for part in (path .. "/"):gmatch("(.-)/") do
+    if part == "" or part == "." or part == ".." or part:lower() == ".git" then
+      return false
+    end
+  end
+
+  return not path:find("\\", 1, true)
+end
+
+local function write_tree_entries(repository, entries, callback)
+  local directories = { [repository] = true }
+  local index = 1
+
+  local function ensure_directory(path)
+    if directories[path] then
+      return true
+    end
+
+    if not ensure_directory(vim.fs.dirname(path)) then
+      return false
+    end
+
+    if not vim.uv.fs_mkdir(path, 493) and not M.directory(path) then
+      return false
+    end
+
+    directories[path] = true
+    return true
+  end
+
+  local function step()
+    local last = math.min(#entries, index + materialize_batch_size - 1)
+
+    for position = index, last do
+      local entry = entries[position]
+      local path = vim.fs.joinpath(repository, entry.path)
+
+      if entry.directory then
+        ensure_directory(path)
+      elseif ensure_directory(vim.fs.dirname(path)) then
+        local fd = vim.uv.fs_open(path, "wx", 420)
+
+        if fd then
+          vim.uv.fs_close(fd)
+        end
+      end
+    end
+
+    index = last + 1
+
+    if index > #entries then
+      callback()
+    else
+      vim.schedule(step)
+    end
+  end
+
+  step()
+end
+
+function M.materialize_remote_tree(repository, commits, callback)
+  callback = callback or function() end
+  local pending = {}
+  local seen = {}
+
+  for _, commit in pairs(commits or {}) do
+    local key = path_key(repository) .. ":" .. tostring(commit)
+
+    if type(commit) == "string"
+      and commit:match("^%x+$")
+      and not seen[key]
+      and not materialized_trees[key]
+      and not vim.uv.fs_stat(tree_marker(repository, commit))
+    then
+      seen[key] = true
+      pending[#pending + 1] = commit
+    end
+  end
+
+  if #pending == 0 then
+    callback(true)
+    return
+  end
+
+  M.map_concurrently(pending, 2, function(commit, _, done)
+    M.run_raw({
+      "git", "-C", repository, "ls-tree", "-r", "-z", commit,
+    }, function(output, err)
+      if not output then
+        done(nil, err)
+        return
+      end
+
+      local entries = {}
+
+      for record in output:gmatch("([^%z]+)") do
+        local kind, path = record:match("^%d+ (%a+) %x+\t(.+)$")
+
+        if path and safe_tree_path(path) then
+          entries[#entries + 1] = { path = path, directory = kind == "commit" }
+        end
+      end
+
+      write_tree_entries(repository, entries, function()
+        local marker = tree_marker(repository, commit)
+        vim.fn.mkdir(vim.fs.dirname(marker), "p")
+        local fd = vim.uv.fs_open(marker, "w", 420)
+
+        if fd then
+          vim.uv.fs_close(fd)
+        end
+
+        materialized_trees[path_key(repository) .. ":" .. commit] = true
+        done(true)
+      end)
+    end)
+  end, function(_, err)
+    callback(err == nil, err)
+  end)
+end
+
 function M.ensure_repository(info, opts, callback)
   M.find_local_repository(info, opts, function(repository, fetch_source)
     if repository then

@@ -58,6 +58,8 @@ jobs:
         run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
 
       - name: Run remote inspect tests
+        env:
+          OCULUS_INSPECT_TEST_OIL: ${{ runner.temp }}/oil.nvim
         run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
 
       - name: Run milestone tests

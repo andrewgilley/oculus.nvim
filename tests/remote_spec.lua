@@ -167,6 +167,7 @@ end
 local big = numbered(120, "local value =")
 write("lua/big.lua", big)
 write("gone.txt", numbered(5, "gone"))
+write("docs/untouched.txt", numbered(5, "untouched"))
 write("moved_old.txt", numbered(40, "moved"))
 git_command("-C", source, "add", "--all")
 git_command("-C", source, "commit", "--quiet", "-m", "base")
@@ -252,6 +253,23 @@ for _, inspection in ipairs(inspections) do
 end
 
 assert(#inspections == 4, vim.inspect(vim.tbl_keys(by_file)))
+
+-- Both commits' trees are laid out as empty placeholders for file browsers.
+local function placeholder(path)
+  local stat = vim.uv.fs_stat(vim.fs.joinpath(cache_repository, path))
+  return stat and stat.type == "file" and stat.size == 0
+end
+
+wait_for("remote tree was not laid out", function()
+  return placeholder("lua/big.lua")
+    and placeholder("added.lua")
+    and placeholder("gone.txt")
+    and placeholder("moved_old.txt")
+    and placeholder("moved_new.txt")
+    and placeholder("docs/untouched.txt")
+end)
+
+assert(vim.uv.fs_stat(vim.fs.joinpath(cache_repository, ".git", "oculus", "trees", feature_sha)))
 assert(by_file["moved_new.txt"].status == "R")
 assert(by_file["moved_new.txt"].parent_file == "moved_old.txt")
 assert(by_file["gone.txt"].status == "D")
@@ -424,6 +442,102 @@ for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
 end
 
 assert(marker_buffers == 2, marker_buffers)
+
+-- Oil browses the placeholder tree. Selecting an inspected file shows its
+-- inspection; any other file only closes Oil.
+if vim.env.OCULUS_INSPECT_TEST_OIL then
+  vim.opt.runtimepath:append(vim.env.OCULUS_INSPECT_TEST_OIL)
+  local oil = require("oil")
+  oil.setup({ watch_for_changes = false })
+
+  local function inspection_tab(file, role)
+    for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+      local state_ok, state = pcall(vim.api.nvim_tabpage_get_var, tab, "oculus_inspect")
+
+      if state_ok and state.file == file and state.role == role then
+        return tab
+      end
+    end
+  end
+
+  local function select_in_oil(directory, name)
+    -- Fresh Oil buffers, so the origin marker below comes from this round.
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_get_name(buf):match("^oil://") then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end
+
+    -- Entering a tab can move to the version last viewed, so use the
+    -- inspection window of whichever tab is current.
+    vim.api.nvim_set_current_tabpage(assert(inspection_tab("lua/big.lua", "change")))
+    local big_tab = vim.api.nvim_get_current_tabpage()
+    local big_buf
+
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(big_tab)) do
+      local buf = vim.api.nvim_win_get_buf(win)
+
+      if type(vim.b[buf].oculus_inspect) == "table" then
+        vim.api.nvim_set_current_win(win)
+        big_buf = buf
+      end
+    end
+
+    assert(big_buf and vim.b[big_buf].oculus_inspect.file == "lua/big.lua")
+    oil.open()
+
+    wait_for("Oil did not open on the inspected file", function()
+      local buf = vim.api.nvim_get_current_buf()
+
+      return vim.bo[buf].filetype == "oil"
+        and type(vim.b[buf].oculus_inspect_oil_origin) == "table"
+    end)
+
+    oil.open(directory)
+
+    wait_for("Oil did not list " .. name, function()
+      local buf = vim.api.nvim_get_current_buf()
+
+      if vim.bo[buf].filetype ~= "oil"
+        or vim.fs.normalize(oil.get_current_dir() or "") ~= vim.fs.normalize(directory)
+      then
+        return false
+      end
+
+      for line = 1, vim.api.nvim_buf_line_count(buf) do
+        local entry = oil.get_entry_on_line(buf, line)
+
+        if entry and entry.name == name then
+          vim.api.nvim_win_set_cursor(0, { line, 0 })
+          return vim.fn.maparg("<CR>", "n", false, true).desc == "Select Oculus Inspect Oil entry"
+        end
+      end
+
+      return false
+    end)
+
+    vim.fn.maparg("<CR>", "n", false, true).callback()
+    return big_tab, big_buf
+  end
+
+  local tab_count = #vim.api.nvim_list_tabpages()
+  local added_tab = inspection_tab("added.lua", "change")
+  select_in_oil(cache_repository, "added.lua")
+
+  wait_for("selecting an inspected file did not show its inspection", function()
+    return vim.api.nvim_get_current_tabpage() == added_tab
+  end)
+
+  local big_tab, big_buf = select_in_oil(vim.fs.joinpath(cache_repository, "docs"), "untouched.txt")
+
+  wait_for("selecting a placeholder did not close Oil", function()
+    return vim.api.nvim_get_current_tabpage() == big_tab
+      and vim.api.nvim_get_current_buf() == big_buf
+  end)
+
+  assert(#vim.api.nvim_list_tabpages() == tab_count)
+end
+
 vim.api.nvim_set_current_dir(original_cwd)
 assert(vim.fn.delete(workspace, "rf") == 0)
 print("remote_spec: ok")

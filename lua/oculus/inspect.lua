@@ -39,6 +39,7 @@ local restore_inspection_sidebar_for_buffer
 local show_inspection_overview
 local show_sidebar_files
 local apply_inspection_filetype
+local select_endpoint
 
 local function ensure_treesitter_safeguards()
   if
@@ -1182,6 +1183,35 @@ local function invoke_oil_mapping(mapping)
   end
 end
 
+-- The inspection in `context`'s group that loaded `name` in `directory`, on
+-- the side the Oil view was opened from unless the file only exists on the
+-- other side (added or deleted files).
+local function inspected_oil_file(context, directory, name)
+  local _, _, relative = session_directory(context.session, context.role, directory)
+
+  if relative == nil then
+    return
+  end
+
+  local path = comparable_path(relative == "" and name or (relative .. "/" .. name))
+  local group = context.group or sidebar_group_for_session(context.session) or { context.session }
+  local roles = context.role == "parent" and { "parent", "change" } or { "change", "parent" }
+
+  for _, role in ipairs(roles) do
+    for _, session in ipairs(group) do
+      local file = change_path_for_role({
+        status = session.status,
+        old_path = session.parent_file,
+        new_path = session.change_file,
+      }, role)
+
+      if type(file) == "string" and comparable_path(file) == path and valid_endpoint(session[role]) then
+        return session, role, group
+      end
+    end
+  end
+end
+
 local function map_oil_origin_selection(buf, context, oil)
   for _, lhs in ipairs({ "l", "<CR>" }) do
     local original = vim.api.nvim_buf_call(buf, function()
@@ -1203,6 +1233,27 @@ local function map_oil_origin_selection(buf, context, oil)
           and matching_oil_entry_name(entry.name, context.filename)
         then
           oil.close()
+          return
+        end
+
+        -- Without a local clone the files on disk are empty placeholders, so
+        -- only an inspected file opens (in its inspection); any other file
+        -- just closes Oil.
+        if entry
+          and entry.type ~= "directory"
+          and directory
+          and context.session
+          and context.session.remote
+        then
+          local session, role, group = inspected_oil_file(context, directory, entry.name)
+          oil.close()
+
+          if session then
+            vim.schedule(function()
+              select_endpoint(session[role], session, role, group)
+            end)
+          end
+
           return
         end
 
@@ -2465,7 +2516,7 @@ local function remember_session_role(session, role)
   end
 end
 
-local function select_endpoint(endpoint, session, role, group)
+select_endpoint = function(endpoint, session, role, group)
   if not valid_endpoint(endpoint) then
     return
   end
@@ -9649,6 +9700,19 @@ local function prepare(info, opts, callback)
         if pairs_err then
           callback(nil, pairs_err)
           return
+        end
+
+        if remote then
+          local tree_commits = {}
+
+          for _, pair in ipairs(pairs) do
+            tree_commits[#tree_commits + 1] = pair.parent
+            tree_commits[#tree_commits + 1] = pair.commit
+          end
+
+          -- Lay out the directory structure in the background so oil.nvim
+          -- can browse it; the files themselves stay empty.
+          git.materialize_remote_tree(repository, tree_commits)
         end
 
         load_commit_overview(repository, info, commits.commit, function()
