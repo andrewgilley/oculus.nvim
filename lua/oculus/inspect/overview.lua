@@ -75,6 +75,7 @@ function M.setup(inspect, internal)
       Merge = true,
       ["Review threads"] = true,
       Date = true,
+      Source = true,
       ["Agent description"] = true,
       ["Agent explanation"] = true,
       ["Agent suggestion"] = true,

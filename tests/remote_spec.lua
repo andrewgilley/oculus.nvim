@@ -128,6 +128,53 @@ do
   }, 60), "\n")
 
   assert(overview_text:find("Remote, ±12 lines around changes", 1, true))
+  local buf = vim.api.nvim_create_buf(false, true)
+
+  local group = {
+    overview_buf = buf,
+    overview_content_width = 60,
+    overview = {
+      kind = "commit",
+      remote = true,
+      remote_context = 12,
+    },
+  }
+
+  inspect._overview_ui.render(group)
+  local rendered_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local source_line
+
+  for line_num, line_str in ipairs(rendered_lines) do
+    if line_str == "  Source" then
+      source_line = line_num
+      break
+    end
+  end
+
+  assert(source_line, "Source heading line not found in remote overview")
+  local source_underlined = false
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    buf,
+    -1,
+    0,
+    -1,
+    { details = true }
+  )) do
+    if mark[2] + 1 == source_line
+      and mark[4].hl_group == "OculusInspectOverviewSection"
+    then
+      source_underlined = true
+      break
+    end
+  end
+
+  assert(
+    source_underlined,
+    "Source heading was not styled with OculusInspectOverviewSection in remote overview"
+  )
+
+  vim.api.nvim_buf_delete(buf, { force = true })
 end
 
 local function git_command(...)
