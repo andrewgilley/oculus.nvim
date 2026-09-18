@@ -97,10 +97,10 @@ assert(table.concat(
   "\n"
 ):find("example/new-project", 1, true))
 
-local remove_mapping = vim.fn.maparg("r", "n", false, true)
+local remove_mapping = vim.fn.maparg("R", "n", false, true)
 
 assert(remove_mapping.desc
-  == "Remove selected Oculus item or refresh activity")
+  == "Remove the selected Oculus group or item")
 
 assert(vim.fn.maparg("x", "n", false, true).desc == nil)
 remove_mapping.callback()
@@ -228,11 +228,11 @@ oculus.setup({
 })
 
 window.open(oculus.config)
-vim.fn.maparg("r", "n", false, true).callback()
+vim.fn.maparg("R", "n", false, true).callback()
 vim.fn.maparg("y", "n", false, true).callback()
 assert(#window.state.opts.projects == 0)
 vim.fn.maparg("v", "n", false, true).callback()
-vim.fn.maparg("r", "n", false, true).callback()
+vim.fn.maparg("R", "n", false, true).callback()
 vim.fn.maparg("y", "n", false, true).callback()
 assert(#window.state.contributors == 0)
 window.close()

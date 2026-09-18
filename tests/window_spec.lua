@@ -1632,10 +1632,10 @@ assert(not page_one_footer_text:find("? shortcuts", 1, true))
 local user_refresh_mapping = vim.fn.maparg("r", "n", false, true)
 
 assert(user_refresh_mapping.desc
-  == "Remove selected Oculus item or refresh activity")
+  == "Rename selected Oculus item or refresh activity")
 
--- R no longer refreshes (r does); it now renames the selected list item.
-assert(vim.fn.maparg("R", "n", false, true).desc == "Rename the selected Oculus group or item")
+-- r refreshes activity pages and renames list items; R removes list items.
+assert(vim.fn.maparg("R", "n", false, true).desc == "Remove the selected Oculus group or item")
 user_refresh_mapping.callback()
 assert(requested_force[#requested_force] == true)
 assert(state.activity_page == 1)
@@ -2295,7 +2295,7 @@ do
   local refresh_mapping = vim.fn.maparg("r", "n", false, true)
 
   assert(refresh_mapping.desc
-    == "Remove selected Oculus item or refresh activity")
+    == "Rename selected Oculus item or refresh activity")
 
   refresh_mapping.callback()
   assert(repository_forces[#repository_forces] == true)
@@ -3658,7 +3658,7 @@ do
 
   assert(core_dir_line ~= nil)
   vim.api.nvim_win_set_cursor(window_mod.state.win, { core_dir_line, 0 })
-  local r_map = vim.fn.maparg("r", "n", false, true)
+  local r_map = vim.fn.maparg("R", "n", false, true)
   assert(r_map ~= nil and type(r_map.callback) == "function")
   r_map.callback()
   assert(window_mod.state.footer_prompt, "remove asks for confirmation first")

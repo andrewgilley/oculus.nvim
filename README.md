@@ -223,8 +223,8 @@ The keys below are the defaults.
 | `s`                   | Open [saved items](#saved-items)                           |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
 | `f` / `K` / `D`       | Create a group in the current location                     |
-| `r`                   | Remove the selected item or group                          |
-| `R`                   | Rename (display name, or the username for users)           |
+| `r`                   | Rename (display name, or the username for users)           |
+| `R`                   | Remove the selected item or group                          |
 | `m`                   | Start a move. Then `m` on a sibling reorders, `<CR>` on a group moves into it, and `h` moves to the parent |
 | `M`                   | Move to any group through a picker                         |
 | `o`                   | Open the selected profile or repository in your browser    |

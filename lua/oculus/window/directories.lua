@@ -407,7 +407,7 @@ function M.setup(window, internal)
 
       internal.footer(
         lines,
-        ("%s/← back  a add  r remove  m move  ?: help"):format(
+        ("%s/← back  a add  r rename  R remove  m move  ?: help"):format(
           nav.left
         )
       )

@@ -499,7 +499,8 @@ local function sidebar_sections_for_view(view)
           { "s", "Saved" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
-          { "r", "Remove" },
+          { "r", "Rename" },
+          { "R", "Remove" },
           { "m", "Move" },
           { "f", "Filters" },
           { "d", "Defaults" },
@@ -512,7 +513,8 @@ local function sidebar_sections_for_view(view)
           { "f", "Folder" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
-          { "r", "Remove" },
+          { "r", "Rename" },
+          { "R", "Remove" },
           { "m", "Move" },
           { "F", "Filters" },
           { "o", "Profile" },
@@ -668,7 +670,8 @@ local function sidebar_sections_for_view(view)
           { "a", "Add" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
-          { "r", "Remove" },
+          { "r", "Rename" },
+          { "R", "Remove" },
           { "m", "Move" },
           { "F", "Filters" },
           { "d", "Defaults" },
@@ -891,7 +894,7 @@ local function footer_commands_text()
         and "  p projects   w work   s saved   m move   ?: help"
       or "  u users   w work   s saved   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
-    return ("  %s/← back   a add   r remove   m move   ?: help"):format(
+    return ("  %s/← back   a add   r rename   R remove   m move   ?: help"):format(
       nav.left
     )
   elseif M.state.view == "milestones" or M.state.view == "work" then
@@ -3219,7 +3222,8 @@ local function render_shortcuts()
     { "v", "Switch between project and user lists" },
     { "a", "Add a GitHub or Codeberg project or account" },
     { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
-    { "r", "Remove the selected project or account" },
+    { "r", "Rename the selected project or account" },
+    { "R", "Remove the selected project or account" },
     { "m", "Move the selected project or account" },
     { "f", "Edit filters for the selected user or project" },
     { "F", "Edit global activity filters" },
@@ -6311,7 +6315,6 @@ local function map_keys(buf)
 
   map("?", toggle_sidebar, "Toggle Oculus command sidebar")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
-  map("R", function() M.rename() end, "Rename the selected Oculus group or item")
 
   map("m", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
@@ -6412,11 +6415,17 @@ local function map_keys(buf)
 
   map("r", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
-      request_removal()
+      M.rename()
     else
       refresh_activity()
     end
-  end, "Remove selected Oculus item or refresh activity")
+  end, "Rename selected Oculus item or refresh activity")
+
+  map("R", function()
+    if M.state.view == "contributors" or M.state.view == "directory" then
+      request_removal()
+    end
+  end, "Remove the selected Oculus group or item")
 
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   local inspect_key = nav.inspect

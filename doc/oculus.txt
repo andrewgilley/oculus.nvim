@@ -239,9 +239,9 @@ The keys below are the defaults.
 
   f / K / D          Create a group in the current location
 
-  r                  Remove the selected item or group
+  r                  Rename (display name, or the username for users)
 
-  R                  Rename (display name, or the username for users)
+  R                  Remove the selected item or group
 
   m                  Start a move. Then m on a sibling reorders, <CR> on
                      a group moves into it, and h moves to the parent
