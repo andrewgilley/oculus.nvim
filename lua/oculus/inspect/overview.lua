@@ -315,7 +315,7 @@ function M.setup(inspect, internal)
       vim.bo[buf].bufhidden = "wipe"
       vim.bo[buf].swapfile = false
 
-      internal.without_reliquary(function()
+      internal.without_colorscheme(function()
         vim.bo[buf].filetype = "oculus-inspect-overview-footer"
       end)
 
@@ -448,7 +448,7 @@ function M.setup(inspect, internal)
     if footer_win and vim.api.nvim_win_is_valid(footer_win) then
       vim.api.nvim_win_set_config(footer_win, config)
     else
-      footer_win = internal.without_reliquary(function()
+      footer_win = internal.without_colorscheme(function()
         return vim.api.nvim_open_win(buf, false, config)
       end)
 

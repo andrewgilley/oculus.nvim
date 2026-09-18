@@ -1,6 +1,6 @@
 local M = {}
 local scope_name = "oculus.nvim"
-local scope_version = "0.1.0"
+local scope_version = require("oculus.version")
 local id_counter = 0
 
 local function config()
@@ -158,8 +158,7 @@ local function resource_attributes(cfg)
     ["service.name"] = cfg.service_name or scope_name,
     ["service.version"] = cfg.service_version or scope_version,
     ["deployment.environment.name"] = cfg.environment
-      or vim.env.OTEL_SERVICE_ENVIRONMENT
-      or "dev",
+      or vim.env.OTEL_SERVICE_ENVIRONMENT,
   }, cfg.resource_attributes)
 end
 

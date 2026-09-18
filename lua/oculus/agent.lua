@@ -655,7 +655,7 @@ function M.models(callback)
       clientInfo = {
         name = "oculus_nvim",
         title = "Oculus.nvim",
-        version = "0.1.0",
+        version = require("oculus.version"),
       },
     },
   })

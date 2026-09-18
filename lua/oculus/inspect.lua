@@ -52,6 +52,7 @@ local context = require("oculus.inspect.context").setup(M, {
 local ensure_treesitter_safeguards = context.ensure_safeguards
 local ensure_context_window_leftcol = context.ensure_leftcol
 local rendered_treesitter_contexts = context.rendered
+local colorscheme = require("oculus.inspect.colorscheme")
 local git = require("oculus.inspect.git")
 local patch = require("oculus.inspect.patch")
 local target = require("oculus.inspect.target")
@@ -527,23 +528,34 @@ local function set_change_highlights()
   local cursorline =
     vim.api.nvim_get_hl(0, { name = "CursorLine" })
 
+  local diff_delete = vim.api.nvim_get_hl(0, {
+    name = "DiffDelete",
+    link = false,
+  })
+
+  local diff_add = vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
+
   vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
-    fg = 0xfee2e2,
-    bg = 0x991b1b,
+    fg = diff_delete.fg or 0xfee2e2,
+    bg = diff_delete.bg or 0x991b1b,
+    default = true,
   })
 
   vim.api.nvim_set_hl(0, "OculusInspectAdded", {
-    fg = 0xdcfce7,
-    bg = 0x166534,
+    fg = diff_add.fg or 0xdcfce7,
+    bg = diff_add.bg or 0x166534,
+    default = true,
   })
 
   vim.api.nvim_set_hl(0, "OculusIssueSection", {
     fg = diagnostic_info.fg or 0x61afef,
     bg = normal.bg,
+    default = true,
   })
 
   overview_section.underline = true
   overview_section.sp = overview_section.sp or overview_section.fg
+  overview_section.default = true
 
   vim.api.nvim_set_hl(
     0,
@@ -554,6 +566,7 @@ local function set_change_highlights()
   vim.api.nvim_set_hl(0, "OculusInspectAgentModelSelected", {
     fg = diagnostic_info.fg or 0x61afef,
     bold = true,
+    default = true,
   })
 
   vim.api.nvim_set_hl(0, "OculusInspectHiddenCursor", {
@@ -968,34 +981,9 @@ function apply_inspection_filetype(buf, force_refresh)
     vim.bo[buf].filetype = filetype
   end
 
-  local reliquary_ok, reliquary = pcall(require, "reliquary")
-
-  if reliquary_ok
-    and type(reliquary) == "table"
-    and type(reliquary.apply) == "function"
-    and type(reliquary.config) == "table"
-  then
-    -- reliquary ignores non-file buffers, and the overview suspends it while
-    -- open, but inspection buffers show real source code and should get that
-    -- code's colorscheme.
-    local enabled = reliquary.config.enabled
-    local intended = enabled
-
-    for _, group in ipairs(sidebar_groups or {}) do
-      if group.reliquary_suspended then
-        intended = group.reliquary_suspended.enabled
-        break
-      end
-    end
-
-    local buftype = vim.bo[buf].buftype
-    vim.bo[buf].buftype = ""
-    reliquary.config.enabled = intended
-    pcall(reliquary.apply, buf)
-    reliquary.config.enabled = enabled
-    vim.bo[buf].buftype = buftype
-  end
-
+  -- Inspection buffers are scratch buffers, which per-filetype colorscheme
+  -- plugins skip, but they show real source code and should get its scheme.
+  colorscheme.apply(buf, sidebar_groups)
   local window_ok, window = pcall(require, "oculus.window")
 
   if window_ok and type(window.refresh_window_highlights) == "function" then
@@ -3174,56 +3162,13 @@ local function restore_overview_cursor(group)
   vim.o.guicursor = guicursor or ""
 end
 
--- reliquary.nvim swaps the global colorscheme on BufEnter/FileType, and the
--- overview's scratch buffers resolve to its fallback scheme. Pause it while
--- the overview is built or focused so the code's colorscheme stays active.
-local function reliquary_module()
-  local reliquary = package.loaded.reliquary
-
-  if type(reliquary) == "table" and type(reliquary.config) == "table" then
-    return reliquary
-  end
-end
-
-local function suspend_reliquary(group)
-  local reliquary = reliquary_module()
-
-  if not reliquary or group.reliquary_suspended then
-    return
-  end
-
-  group.reliquary_suspended = { enabled = reliquary.config.enabled }
-  reliquary.config.enabled = false
-end
-
-local function resume_reliquary(group)
-  local saved = group.reliquary_suspended
-  local reliquary = reliquary_module()
-  group.reliquary_suspended = nil
-
-  if saved and reliquary then
-    reliquary.config.enabled = saved.enabled
-  end
-end
-
-local function without_reliquary(callback)
-  local reliquary = reliquary_module()
-
-  if not reliquary then
-    return callback()
-  end
-
-  local enabled = reliquary.config.enabled
-  reliquary.config.enabled = false
-  local ok, result = pcall(callback)
-  reliquary.config.enabled = enabled
-
-  if not ok then
-    error(result, 0)
-  end
-
-  return result
-end
+-- Per-filetype colorscheme plugins swap the global colorscheme on
+-- BufEnter/FileType, and the overview's scratch buffers resolve to their
+-- fallback scheme. Pause them while the overview is built or focused so the
+-- code's colorscheme stays active.
+local suspend_colorscheme = colorscheme.suspend
+local resume_colorscheme = colorscheme.resume
+local without_colorscheme = colorscheme.without
 
 local function close_overview_window(group)
   local win = group.overview_win
@@ -3261,7 +3206,7 @@ local function close_overview_window(group)
     vim.api.nvim_win_close(win, true)
   end
 
-  resume_reliquary(group)
+  resume_colorscheme(group)
 
   if buf and vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_delete(buf, { force = true })
@@ -3507,7 +3452,7 @@ local overview_internal = {
   overview_window_is_open = overview_window_is_open,
   append_sidebar_text = append_sidebar_text,
   close_overview_window = close_overview_window,
-  without_reliquary = without_reliquary,
+  without_colorscheme = without_colorscheme,
   hide_overview_cursor = hide_overview_cursor,
   sidebar_overview_lines = sidebar_overview_lines,
   relative_path = relative_path,
@@ -3595,7 +3540,7 @@ show_inspection_overview = function(group)
   group.overview_content_width =
     math.max(12, (config.width or 28) - 4)
 
-  suspend_reliquary(group)
+  suspend_colorscheme(group)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -3641,7 +3586,7 @@ show_inspection_overview = function(group)
       if overview_window_is_open(group)
         and vim.api.nvim_get_current_win() == group.overview_win
       then
-        suspend_reliquary(group)
+        suspend_colorscheme(group)
         hide_overview_cursor(group)
         M._overview_ui.schedule_highlight_refresh(group)
       end
@@ -3653,7 +3598,7 @@ show_inspection_overview = function(group)
     buffer = buf,
     callback = function()
       restore_overview_cursor(group)
-      resume_reliquary(group)
+      resume_colorscheme(group)
     end,
   })
 
@@ -4301,7 +4246,7 @@ function M._overview_ui.prepare_patch_sidebar(source_group, opened)
 
   group.kind = "issue"
   group.discarded = nil
-  group.reliquary_suspended = nil
+  group.colorscheme_suspended = nil
   group.overview_win = nil
   group.overview_buf = nil
   group.overview_footer_win = nil
@@ -5527,9 +5472,10 @@ local function load_tab(
     pcall(vim.cmd, "tcd " .. vim.fn.fnameescape(working_directory))
   end
 
-  -- Until the filetype is known the buffer resolves to reliquary's empty
-  -- scheme; apply_inspection_filetype picks the right one below.
-  local buf = without_reliquary(function()
+  -- Until the filetype is known, a per-filetype colorscheme plugin resolves
+  -- the buffer to its empty scheme; apply_inspection_filetype picks the right
+  -- one below.
+  local buf = without_colorscheme(function()
     vim.cmd("enew")
     local new_buf = vim.api.nvim_get_current_buf()
     vim.bo[new_buf].buftype = "nofile"
@@ -5652,8 +5598,9 @@ local function finish_inspection_buffer_initialization(endpoint)
 end
 
 local function make_inspection_tab()
-  -- The empty tab buffer would otherwise switch reliquary to its empty scheme.
-  without_reliquary(function()
+  -- The empty tab buffer would otherwise switch a per-filetype colorscheme
+  -- plugin to its empty scheme.
+  without_colorscheme(function()
     vim.cmd("tabnew")
   end)
 

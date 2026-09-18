@@ -2,16 +2,6 @@ local M = {}
 local default_inspect_search_paths = {}
 local default_inspect_sidebar_width = 28 / math.max(1, vim.o.columns)
 
-if vim.env.USERPROFILE and vim.env.USERPROFILE ~= "" then
-  default_inspect_search_paths[1] = vim.fs.joinpath(
-    vim.env.USERPROFILE,
-    "Desktop",
-    "Dev",
-    "code",
-    "source"
-  )
-end
-
 local defaults = {
   width = 0.90,
   height = 0.80,
@@ -79,13 +69,19 @@ local defaults = {
   inspect_treesitter_context = true,
   inspect_treesitter_context_multiwindow = true,
   inspect_treesitter_context_mode = "topline",
+  -- A per-filetype colorscheme plugin to colour inspected buffers with and to
+  -- pause while Oculus opens its own windows; nil detects reliquary.nvim,
+  -- false turns it off. See "Per-filetype colorschemes" in :h oculus-usage.
+  inspect_colorscheme = nil,
   telemetry = {
     enabled = false,
     endpoint = nil,
     headers = {},
     service_name = "oculus.nvim",
-    service_version = "0.1.0",
-    environment = "dev",
+    -- service_version defaults to the plugin's version, and the deployment
+    -- environment is only reported when you set one.
+    service_version = nil,
+    environment = nil,
     resource_attributes = {},
     timeout = 5,
     exporter = nil,

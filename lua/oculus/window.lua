@@ -6623,21 +6623,23 @@ function M.open(opts)
   vim.wo[win].cursorlineopt = "line"
 
   vim.api.nvim_set_hl(0, "OculusActivityIcon", {
-    fg = "#fbd38d",
-    bg = "NONE",
+    link = "WarningMsg",
+    default = true,
   })
 
   vim.api.nvim_set_hl(0, "OculusActivityPreview", {
-    fg = "#9ae6b4",
-    bg = "NONE",
+    link = "DiagnosticOk",
+    default = true,
   })
 
   vim.api.nvim_set_hl(0, "OculusContributorSelected", {
-    fg = "#ffffff",
+    link = "Title",
+    default = true,
   })
 
   vim.api.nvim_set_hl(0, "OculusMoveTarget", {
-    fg = "#ff9e3b",
+    link = "DiagnosticWarn",
+    default = true,
   })
 
   vim.api.nvim_set_hl(0, "OculusDirectory", {

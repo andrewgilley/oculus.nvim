@@ -549,8 +549,9 @@ function M.setup(inspect, internal)
     local background = highlight_background("Normal")
 
     vim.api.nvim_set_hl(0, "OculusOilChange", {
-      fg = 0xfbd38d,
+      fg = highlight_foreground("WarningMsg", 0xfbd38d),
       bg = background,
+      default = true,
     })
   end
 

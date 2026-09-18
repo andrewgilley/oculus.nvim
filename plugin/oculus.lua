@@ -128,3 +128,39 @@ end, {
   nargs = "*",
   desc = "Move a project to a directory in Oculus",
 })
+
+-- <Plug> mappings, so a keymap can be bound without going through setup().
+for lhs, mapping in pairs({
+  ["<Plug>(oculus-toggle)"] = {
+    desc = "Toggle Oculus",
+    run = function()
+      require("oculus").toggle()
+    end,
+  },
+  ["<Plug>(oculus-open)"] = {
+    desc = "Open Oculus",
+    run = function()
+      require("oculus").open()
+    end,
+  },
+  ["<Plug>(oculus-close)"] = {
+    desc = "Close Oculus",
+    run = function()
+      require("oculus").close()
+    end,
+  },
+  ["<Plug>(oculus-work)"] = {
+    desc = "Open Oculus on your work",
+    run = function()
+      require("oculus").open_work()
+    end,
+  },
+  ["<Plug>(oculus-inspect)"] = {
+    desc = "Inspect an issue, pull request or commit",
+    run = function()
+      require("oculus").inspect()
+    end,
+  },
+}) do
+  vim.keymap.set("n", lhs, mapping.run, { silent = true, desc = mapping.desc })
+end

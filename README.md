@@ -438,6 +438,26 @@ metadata, and a description. Its footer shows these commands:
 
 Worktrees are created next to the repository as `<repo>-<branch>`.
 
+### Per-filetype colorschemes
+
+Plugins that switch the colorscheme per filetype skip scratch buffers, so
+inspected files would keep whatever scheme was active. Oculus colours them
+itself, and pauses the plugin while it opens its own windows. It detects
+[reliquary.nvim](https://github.com/andrewgilley/reliquary.nvim); describe any
+other plugin with an adapter:
+
+```lua
+require("oculus").setup({
+  inspect_colorscheme = {
+    apply = function(buf) end, -- colour one buffer for its filetype
+    enabled = function() return true end,
+    set_enabled = function(enabled) end,
+  },
+})
+```
+
+Set `inspect_colorscheme = false` to turn this off.
+
 ### Commands
 
 | Command                                  | Description                                            |
@@ -451,6 +471,20 @@ Worktrees are created next to the repository as `<repo>-<branch>`.
 | `:OculusAddDirectory [name]`             | Create a group at the current location                 |
 | `:OculusMoveToDirectory [project] [dest]`| Move a project to a group (opens a picker with no arguments) |
 | `:OculusReloadTracking`                  | Re-read the [tracking file](#tracking-file)            |
+
+To bind your own keys without going through `setup()`, map these:
+
+| Mapping                    | Action                              |
+| -------------------------- | ----------------------------------- |
+| `<Plug>(oculus-toggle)`    | Toggle the window                   |
+| `<Plug>(oculus-open)`      | Open the window                     |
+| `<Plug>(oculus-close)`     | Close the window                    |
+| `<Plug>(oculus-work)`      | Open the window on [my work](#my-work) |
+| `<Plug>(oculus-inspect)`   | Inspect an issue, PR, or commit     |
+
+```lua
+vim.keymap.set("n", "<leader>oo", "<Plug>(oculus-toggle)")
+```
 
 ## Options
 
@@ -540,6 +574,9 @@ require("oculus").setup({
   inspect_treesitter_context = true,
   inspect_treesitter_context_multiwindow = true,
   inspect_treesitter_context_mode = "topline",
+  -- A per-filetype colorscheme plugin (see "Per-filetype colorschemes")
+  -- nil detects reliquary.nvim; false turns the integration off
+  inspect_colorscheme = nil,
 
   -- See "AI integration"
   opinion = {
@@ -557,8 +594,8 @@ require("oculus").setup({
     endpoint = nil,
     headers = {},
     service_name = "oculus.nvim",
-    service_version = "0.1.0",
-    environment = "dev",
+    service_version = nil, -- the plugin's version
+    environment = nil, -- only reported when you set one
     resource_attributes = {},
     timeout = 5,
     exporter = nil,
@@ -677,8 +714,10 @@ The provider can also return its result synchronously instead of calling
 
 ## Telemetry
 
-Telemetry is off by default. When you enable it, Oculus records spans for
-inspections and model calls and exports them as OTLP/HTTP JSON using `curl`:
+Telemetry is off by default, and it never contacts the author of this plugin:
+it only exports to an endpoint you configure. When you enable it, Oculus
+records spans for inspections and model calls and exports them as OTLP/HTTP
+JSON using `curl`:
 
 ```lua
 telemetry = {
@@ -737,16 +776,23 @@ oculus.show_opinion("Some **markdown**", { title = " Notes " })
 
 ## Highlights
 
+Every group is defined with `default = true`, so your colorscheme and your own
+`:highlight` commands take precedence. Groups "from" another group copy its
+colours when the colorscheme loads, and are left alone if you have set them.
+
 | Group                         | Default                   | Used for                      |
 | ----------------------------- | ------------------------- | ----------------------------- |
 | `OculusNormal`                | derived from your window  | Window background             |
 | `OculusBorder`                | derived from your window  | Window border                 |
 | `OculusDirectory`             | links to `Directory`      | Groups in the lists           |
 | `OculusAccounts`              | links to `DiagnosticOk`   | Signed-in accounts            |
-| `OculusActivityIcon`          | `#fbd38d`                 | Event icons                   |
-| `OculusActivityPreview`       | `#9ae6b4`                 | Activity previews             |
-| `OculusContributorSelected`   | `#ffffff`                 | The selected list entry       |
-| `OculusMoveTarget`            | `#ff9e3b`                 | The item being moved          |
+| `OculusActivityIcon`          | links to `WarningMsg`     | Event icons                   |
+| `OculusActivityPreview`       | links to `DiagnosticOk`   | Activity previews             |
+| `OculusContributorSelected`   | links to `Title`          | The selected list entry       |
+| `OculusMoveTarget`            | links to `DiagnosticWarn` | The item being moved          |
+| `OculusInspectAdded`          | from `DiffAdd`            | Added lines in inspected files |
+| `OculusInspectRemoved`        | from `DiffDelete`         | Removed lines in inspected files |
+| `OculusOilChange`             | from `WarningMsg`         | Changed entries in oil listings |
 | `OculusInspectThread`         | links to `DiagnosticInfo` | Open review thread labels     |
 | `OculusInspectThreadResolved` | links to `Comment`        | Resolved review thread labels |
 | `OculusInspectThreadHeader`   | links to `Title`          | Comment authors in threads    |
