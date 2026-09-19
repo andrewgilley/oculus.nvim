@@ -16,7 +16,7 @@ local function job(value)
     assert(string(value[key]), "Missing job " .. key)
   end
 
-  for _, key in ipairs({ "run_id", "result_hypothesis_id", "error", "retry_of", "conclusion" }) do
+  for _, key in ipairs({ "run_id", "result_hypothesis_id", "result_investigation_id", "error", "retry_of", "conclusion" }) do
     assert(optional_string(value[key]), "Invalid job " .. key)
   end
 
@@ -37,7 +37,10 @@ local function validate(command, value)
       assert(type(resource.available) == "boolean" and optional_string(resource.reason), "Invalid resource availability")
       assert(type(resource.policy) == "table", "Missing resource policy")
 
-      for _, key in ipairs({ "max_memory_bytes", "max_fuel_per_case", "wall_timeout_ms" }) do
+      local policy_keys = resource.backend == "plexus-native" and { "wall_timeout_ms" }
+        or { "max_memory_bytes", "max_fuel_per_case", "wall_timeout_ms" }
+
+      for _, key in ipairs(policy_keys) do
         assert(type(resource.policy[key]) == "number" and resource.policy[key] > 0, "Invalid resource policy " .. key)
       end
     end

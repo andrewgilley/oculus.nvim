@@ -72,8 +72,12 @@ function M.open(config, plexus_config, submission)
         lines[#lines + 1] = "    " .. text(resource.reason)
         local policy = resource.policy
 
-        lines[#lines + 1] = "    Guest linear memory bytes: " .. text(policy.max_memory_bytes)
-          .. " · fuel/case: " .. text(policy.max_fuel_per_case) .. " · timeout ms: " .. text(policy.wall_timeout_ms)
+        if resource.backend == "plexus-native" then
+          lines[#lines + 1] = "    Native worker · timeout ms: " .. text(policy.wall_timeout_ms)
+        else
+          lines[#lines + 1] = "    Guest linear memory bytes: " .. text(policy.max_memory_bytes)
+            .. " · fuel/case: " .. text(policy.max_fuel_per_case) .. " · timeout ms: " .. text(policy.wall_timeout_ms)
+        end
 
         lines[#lines + 1] = ""
       end
@@ -83,11 +87,18 @@ function M.open(config, plexus_config, submission)
       for _, job in ipairs(state.jobs) do
         local start = #lines + 1
         lines[#lines + 1] = "  " .. text(job.id) .. " · " .. text(job.state) .. " · " .. text(job.resource_id)
-        lines[#lines + 1] = "    Binding: " .. text(job.binding_id) .. " · hypothesis: " .. text(job.hypothesis_id)
+
+        if job.kind == "discovery_validation" then
+          lines[#lines + 1] = "    Opportunity: " .. text(job.binding_id) .. " · investigation: " .. text(job.hypothesis_id)
+          lines[#lines + 1] = "    Evidence investigation: " .. text(job.result_investigation_id)
+        else
+          lines[#lines + 1] = "    Binding: " .. text(job.binding_id) .. " · hypothesis: " .. text(job.hypothesis_id)
+          lines[#lines + 1] = "    Evidence hypothesis: " .. text(job.result_hypothesis_id)
+        end
+
         lines[#lines + 1] = "    Plan: " .. text(job.plan_id)
         lines[#lines + 1] = "    Run: " .. text(job.run_id)
         lines[#lines + 1] = "    Evidence conclusion: " .. text(job.conclusion)
-        lines[#lines + 1] = "    Evidence hypothesis: " .. text(job.result_hypothesis_id)
         lines[#lines + 1] = "    Artifact store: " .. text(job.artifact_store)
         if job.cancel_requested then lines[#lines + 1] = "    Cancellation requested" end
         if job.retry_of and job.retry_of ~= vim.NIL then lines[#lines + 1] = "    Retry of: " .. text(job.retry_of) end
@@ -96,7 +107,7 @@ function M.open(config, plexus_config, submission)
         lines[#lines + 1] = ""
       end
 
-      if #state.jobs == 0 then lines[#lines + 1] = "  No jobs. Press n on a Plexus binding to queue an experiment." end
+      if #state.jobs == 0 then lines[#lines + 1] = "  No jobs. Press n on a Plexus binding or supported discovery finding." end
     end
 
     vim.list_extend(lines, { "", "", "" })
@@ -149,6 +160,11 @@ function M.open(config, plexus_config, submission)
   end
 
   function state.submit(value)
+    if value.kind == "discovery_validation" then
+      action({ "submit-investigation", value.investigation_id, value.opportunity_id, value.artifact_store, config.state_dir })
+      return
+    end
+
     action({ "submit", value.hypothesis_id, value.binding_id, value.artifact_store, config.state_dir })
   end
 
@@ -185,6 +201,15 @@ function M.open(config, plexus_config, submission)
   function state.open_result(job)
     job = selected(job)
     if not job then return end
+
+    if job.kind == "discovery_validation" then
+      if type(job.result_investigation_id) ~= "string" then footer("No investigation evidence yet."); return end
+      local result_config = vim.deepcopy(plexus_config or {})
+      result_config.store = job.artifact_store
+      state.close()
+      require("oculus.investigations").open(result_config, config, job.result_investigation_id)
+      return
+    end
 
     if type(job.result_hypothesis_id) ~= "string" then
       footer("No attached evidence yet. The run and any attachment error remain in the job.")

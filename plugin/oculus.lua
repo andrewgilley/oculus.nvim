@@ -54,6 +54,14 @@ vim.api.nvim_create_user_command("OculusCapabilities", function(opts)
   require("oculus").open_capabilities(opts.args)
 end, { nargs = 1, complete = "file", desc = "Discover Rust capability opportunities beside source" })
 
+vim.api.nvim_create_user_command("OculusInvestigate", function()
+  require("oculus").investigate()
+end, { desc = "Investigate a local committed change and its consumer opportunities" })
+
+vim.api.nvim_create_user_command("OculusInvestigations", function()
+  require("oculus").open_investigations()
+end, { desc = "Browse durable project change investigations" })
+
 vim.api.nvim_create_user_command("OculusNexus", function()
   require("oculus").open_nexus()
 end, { desc = "Manage local Nexus resources and experiment jobs" })

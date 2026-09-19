@@ -3238,6 +3238,8 @@ local function render_shortcuts()
   section("ACTIVITY", {
     { nav.inspect, "Inspect the selected change or issue" },
     { nav.inspect_id, "Inspect an issue, PR, commit, or project by ID" },
+    { "gI", "Investigate the selected local commit" },
+    { "gP", "Browse durable change investigations" },
     { "Tab", "Queue activity for sequential inspection" },
     { "b", "Open the selected activity in a browser" },
     { "u", "Open a project's issue activity" },
@@ -6299,6 +6301,13 @@ local function map_keys(buf)
   map("<C-c>", M.close, "Close Oculus")
   map("q", M.close, "Close Oculus")
   map("P", function() require("oculus").open_plexus() end, "Open Plexus investigations")
+
+  map("gI", function()
+    local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+    require("oculus.investigations").from_activity(M.state.opts, M.state.activity_events[line], M.state.line_targets[line])
+  end, "Investigate selected local commit")
+
+  map("gP", function() require("oculus").open_investigations() end, "Browse durable change investigations")
 
   map("C", function()
     local win = M.state.win

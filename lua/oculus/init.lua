@@ -48,6 +48,7 @@ local defaults = {
   plexus = {
     command = { "plexus" },
     store = vim.fn.stdpath("data") .. "/oculus/plexus",
+    capture_timeout_ms = 300000,
     backend = "wasmtime",
     timeout_ms = 120000,
   },
@@ -528,6 +529,16 @@ end
 
 function M.open_nexus(submission)
   return require("oculus.nexus").open(M.config.nexus, M.config.plexus, submission)
+end
+
+function M.investigate(context)
+  return require("oculus.investigations").prompt(M.config, context)
+end
+
+function M.open_investigations(id)
+  local window = require("oculus.window")
+  if window.state.win and vim.api.nvim_win_is_valid(window.state.win) then window.close() end
+  return require("oculus.investigations").open(M.config.plexus, M.config.nexus, id)
 end
 
 function M.open_capabilities(manifest)

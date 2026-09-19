@@ -106,7 +106,7 @@ Oculus supports all the usual plugin managers.
 ```lua
 {
   "andrewgilley/oculus.nvim",
-  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusCapabilities", "OculusNexus" },
+  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
   keys = {
     { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
   },
@@ -466,6 +466,8 @@ Set `inspect_colorscheme = false` to turn this off.
 | `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
 | `:OculusPlexus [hypothesis.json]` | Explore hypotheses and run scoped experiments |
+| `:OculusInvestigate` | Investigate a committed local change against a consumer project |
+| `:OculusInvestigations` | Browse and reopen durable project investigations |
 | `:OculusNexus` | Manage local deployment resources and queued experiments |
 | `:OculusCapabilities discovery.json` | Discover API opportunities beside source |
 | `:OculusClose`                           | Close it                                               |
@@ -572,6 +574,53 @@ With both binaries built, run `nvim --headless -u NONE --cmd 'set showtabline=0'
 for the fixed-length-list adapter → Wasmtime/Zug runs → comparison workflow;
 `PLEXUS_BIN` and `PLEXUS_ZUG_WORKER` override the sibling binary paths.
 
+### Investigate a selected change
+
+Press `gI` on a local commit in an Oculus activity feed, or run
+`:OculusInvestigate` to choose a local repository and revision pair. The prompts
+collect the producer's relative Cargo manifest, a tracked local consumer (or a
+repository path), its committed revision and manifest, and your investigation
+intent. Plexus resolves actual Git identities and captures committed sources;
+uncommitted worktree edits are excluded. No discovery manifest or artifact ID is
+needed. Cargo capture can take longer than ordinary requests; configure
+`plexus.capture_timeout_ms` (default `300000`) if necessary.
+
+The first analysis supports Rust enum additions reaching rejecting consumer
+matches. Findings remain inferred and explicitly list limitations. Unsupported
+captures and changes with no matching opportunities remain visible records.
+Workspace packages can be selected using paths such as `crates/parser/Cargo.toml`.
+
+`:OculusInvestigations` or `gP` opens the persistent project catalog. Select an
+investigation and press `Enter`; restarting Neovim does not erase its findings or
+evidence. In a finding, `Enter` opens digest-verified local source, falling back
+to a read-only archived snapshot when the local bytes changed or disappeared.
+Individual source references in an evidence path are navigable too.
+
+| Key | Action |
+| --- | --- |
+| `Enter` | Open a catalog entry or the selected source reference |
+| `n` | Queue an explicitly supported finding experiment through Nexus |
+| `r` | Reload the stored investigation or catalog |
+| `g` | Return to the catalog |
+| `c` / `Ctrl-c` | Cancel the pending capture/read request |
+| `q` / `Esc` | Close the investigation view |
+
+A supported native Plexus fixture requires a Nexus resource with backend
+`plexus-native`; it does not run as a Wasm experiment. The Nexus view's `w` runs
+the queue and `o` reopens the investigation with its durable, fixture-scoped
+evidence. Findings without an applicable experiment say so and cannot be queued.
+
+Run `nvim --headless -u NONE -l tests/investigations_spec.lua` for prompt, catalog,
+source provenance, cancellation and Nexus round-trip coverage. With the sibling
+Plexus binary built, `tests/investigations_integration_spec.lua` creates a temporary
+Git workspace, submits through the actual command prompts, reopens the durable
+catalog and navigates archived source after deleting the repository. It accepts a
+`PLEXUS_BIN` override. The optional `tests/investigations_nexus_integration_spec.lua`
+uses `PLEXUS_INVESTIGATION_FIXTURE` pointing to a JSON descriptor containing `store`
+and `investigation_id` for an existing supported capture. It exercises the real
+native fixture queue and evidence return using temporary Nexus state, and appends
+validation evidence to that capture's artifact store.
+
 ### Nexus deployment resources
 
 `:OculusNexus` opens the local resource and job view. From a Plexus investigation,
@@ -591,7 +640,8 @@ require("oculus").setup({
 
 The default command is `{ "nexus" }`. Configure resources using the sibling Nexus
 project's CLI before submitting experiments. Its initial deployment scope is local
-native processes with Wasmtime or Zug execution through Plexus. It does not provision
+native processes with Wasmtime or Zug execution through Plexus, plus supported
+native discovery fixtures. It does not provision
 cloud machines. Existing plan runtime identities remain pinned.
 
 | Key | Action |

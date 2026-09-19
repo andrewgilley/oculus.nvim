@@ -1,0 +1,367 @@
+local M = {}
+local client = require("oculus.plexus.client")
+
+local function text(value)
+  if value == nil or value == vim.NIL then return "—" end
+  return tostring(value):gsub("[%c]", " ")
+end
+
+local function set_lines(buf, lines)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+end
+
+local function valid_view(value)
+  assert(type(value) == "table" and value.schema_version == 1 and value.kind == "selected_change", "Invalid investigation")
+  assert(type(value.investigation_id) == "string" and type(value.observation) == "table", "Missing investigation identity")
+  assert(vim.tbl_contains({ "completed", "unsupported", "failed" }, value.status), "Invalid investigation status")
+
+  for _, key in ipairs({ "reports", "limitations", "experiments", "evidence" }) do
+    assert(type(value[key]) == "table" and vim.islist(value[key]), "Missing investigation " .. key)
+  end
+end
+
+-- Both the catalog and details are projections of durable engine records.
+function M.open(config, nexus_config, id, submission)
+  if M.state and not M.state.closed then M.state.close() end
+  config = vim.deepcopy(config or {})
+  config.store = vim.fn.fnamemodify(config.store or vim.fn.stdpath("data") .. "/oculus/plexus", ":p")
+  local state = { config = config, generation = 0, targets = {}, source_win = vim.api.nvim_get_current_win() }
+  M.state = state
+  vim.cmd("botright vnew")
+  state.win, state.buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+  vim.bo[state.buf].buftype, vim.bo[state.buf].bufhidden = "nofile", "wipe"
+  vim.bo[state.buf].swapfile, vim.bo[state.buf].filetype = false, "oculus-investigations"
+  vim.wo[state.win].wrap, vim.wo[state.win].number, vim.wo[state.win].relativenumber = true, false, false
+
+  local function status(message)
+    if state.closed or not vim.api.nvim_buf_is_valid(state.buf) then return end
+    vim.bo[state.buf].modifiable = true
+    vim.api.nvim_buf_set_lines(state.buf, 2, 3, false, { "  " .. text(message) })
+    vim.bo[state.buf].modifiable = false
+  end
+
+  local function failure(message)
+    state.error = tostring(message)
+    status("Error: " .. state.error)
+    vim.notify("Oculus investigations: " .. state.error, vim.log.levels.WARN)
+  end
+
+  function state.cancel()
+    state.generation = state.generation + 1
+    if state.pending then state.pending.cancel() end
+    state.pending, state.busy = nil, false
+    status("Stopped waiting; previously stored investigations remain in the catalog.")
+  end
+
+  function state.close()
+    if state.closed then return end
+    state.cancel()
+    state.closed = true
+
+    if vim.api.nvim_win_is_valid(state.win) then
+      if not pcall(vim.api.nvim_win_close, state.win, true) then
+        vim.api.nvim_win_set_buf(state.win, vim.api.nvim_create_buf(true, false))
+      end
+    end
+  end
+
+  vim.api.nvim_create_autocmd("WinClosed", { pattern = tostring(state.win), once = true, callback = state.close })
+  vim.api.nvim_create_autocmd("BufWipeout", { buffer = state.buf, once = true, callback = state.close })
+
+  local function request(arguments, callback)
+    if state.closed then return end
+    if state.busy then status("An operation is running; c stops waiting."); return end
+    state.busy, state.error = true, nil
+    state.generation = state.generation + 1
+    local generation = state.generation
+    status(arguments[1] == "investigate" and "Capturing committed sources and analysing changes…" or "Loading…")
+
+    local handle = client.request(config, arguments, function(value, err)
+      if state.closed or generation ~= state.generation then return end
+      state.pending, state.busy = nil, false
+      if err then failure(err); return end
+      local ok, reason = pcall(callback, value)
+      if not ok then failure("Invalid engine response: " .. tostring(reason)) end
+    end)
+
+    if state.busy and generation == state.generation then state.pending = handle end
+  end
+
+  local function header(title)
+    return { "  PLEXUS · " .. title, "  Enter source/open · n queue experiment · r reload · g catalog · c cancel · q close", "  Ready", "" }
+  end
+
+  local function show(value)
+    valid_view(value)
+    local lines, targets = header("CHANGE INVESTIGATION"), {}
+    local observation = value.observation
+    lines[#lines + 1] = "  " .. text(value.status) .. " · " .. text(value.intent)
+    lines[#lines + 1] = "  Producer: " .. text(observation.repository)
+    lines[#lines + 1] = "  Revisions: " .. text(observation.base) .. " → " .. text(observation.head)
+    lines[#lines + 1] = "  Consumer: " .. text(observation.consumer_repository) .. " @ " .. text(observation.consumer_revision)
+    lines[#lines + 1] = "  Committed sources only; uncommitted edits are excluded."
+    lines[#lines + 1] = "  Investigation: " .. text(value.investigation_id)
+    for _, limitation in ipairs(value.limitations) do lines[#lines + 1] = "  Limit: " .. text(limitation) end
+    local evidence = {}
+    for _, item in ipairs(value.evidence) do evidence[item.opportunity_id] = item end
+    local experiments = {}
+    for _, item in ipairs(value.experiments) do experiments[item.opportunity_id] = item end
+    local count = 0
+
+    for _, report in ipairs(value.reports) do
+      assert(type(report.opportunities) == "table", "Missing report opportunities")
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = "  Report: " .. text(report.report_id) .. " · rule " .. text(report.rule_version)
+
+      for _, opportunity in ipairs(report.opportunities) do
+        count = count + 1
+        local target = { opportunity = opportunity, experiment = experiments[opportunity.id], source = opportunity.consumer_location }
+        local start = #lines + 1
+        lines[#lines + 1] = "  " .. text(opportunity.title) .. " · " .. text(opportunity.status)
+        lines[#lines + 1] = "    " .. text(opportunity.explanation)
+        local source = opportunity.consumer_location or {}
+        lines[#lines + 1] = "    Source: " .. text(source.path) .. ":" .. text(source.line)
+
+        for _, step in ipairs(opportunity.evidence_path or {}) do
+          lines[#lines + 1] = "    " .. text(step.relation) .. " → " .. text(step.description)
+
+          if type(step.source) == "table" then
+            lines[#lines + 1] = "      " .. text(step.source.path) .. ":" .. text(step.source.line)
+            targets[#lines] = { opportunity = opportunity, experiment = target.experiment, source = step.source }
+          end
+        end
+
+        for _, limitation in ipairs(opportunity.limitations or {}) do lines[#lines + 1] = "    Limit: " .. text(limitation) end
+        lines[#lines + 1] = target.experiment and ("    n: " .. text(target.experiment.label)) or "    No supported experiment for this finding."
+        local result = evidence[opportunity.id]
+
+        if result then
+          lines[#lines + 1] = "    Evidence: " .. text(result.status) .. " · " .. text(result.validation_id)
+          lines[#lines + 1] = "      " .. text(result.diagnostic)
+          lines[#lines + 1] = "      Scoped to this fixture; relationship remains inferred."
+        end
+
+        for row = start, #lines do targets[row] = targets[row] or target end
+        lines[#lines + 1] = ""
+      end
+
+      for _, limitation in ipairs(report.limitations or {}) do lines[#lines + 1] = "  Limit: " .. text(limitation) end
+      for _, delta in ipairs(report.deltas or {}) do lines[#lines + 1] = "  API delta: " .. text(delta.kind) .. " · " .. text(delta.path) end
+    end
+
+    if count == 0 then
+      lines[#lines + 1] = value.status == "completed" and "  No opportunities matched the supported rules."
+        or "  Analysis unavailable for this scope; see reasons above."
+    end
+
+    state.view, state.targets, state.mode = value, targets, "investigation"
+    set_lines(state.buf, lines)
+  end
+
+  function state.load(investigation_id)
+    request({ "investigation", investigation_id, config.store }, show)
+  end
+
+  function state.catalog()
+    request({ "investigations", config.store }, function(value)
+      assert(type(value.investigations) == "table" and vim.islist(value.investigations), "Missing investigation catalog")
+      local lines, targets = header("INVESTIGATION CATALOG"), {}
+
+      for _, item in ipairs(value.investigations) do
+        assert(type(item.investigation_id) == "string" and type(item.observation) == "table", "Invalid catalog entry")
+        local start = #lines + 1
+        lines[#lines + 1] = "  " .. text(item.status) .. " · " .. text(item.intent)
+        lines[#lines + 1] = "    " .. text(item.observation.repository) .. " → " .. text(item.observation.consumer_repository)
+        lines[#lines + 1] = "    " .. text(item.observation.base) .. " → " .. text(item.observation.head)
+        lines[#lines + 1] = "    " .. text(item.investigation_id)
+        for row = start, #lines do targets[row] = item end
+        lines[#lines + 1] = ""
+      end
+
+      if #value.investigations == 0 then lines[#lines + 1] = "  No investigations. Use :OculusInvestigate or gI on local activity." end
+      state.catalog_value, state.targets, state.mode = value, targets, "catalog"
+      set_lines(state.buf, lines)
+    end)
+  end
+
+  function state.refresh()
+    if state.mode == "investigation" then state.load(state.view.investigation_id) else state.catalog() end
+  end
+
+  local function selected(target)
+    return target or state.targets[vim.api.nvim_win_get_cursor(state.win)[1]]
+  end
+
+  local function source_window()
+    if not vim.api.nvim_win_is_valid(state.source_win)
+      or vim.api.nvim_win_get_config(state.source_win).relative ~= ""
+      or vim.bo[vim.api.nvim_win_get_buf(state.source_win)].modified then
+      vim.api.nvim_set_current_win(state.win)
+      vim.cmd("leftabove vnew")
+      state.source_win = vim.api.nvim_get_current_win()
+    end
+
+    return state.source_win
+  end
+
+  function state.navigate(target)
+    target = selected(target)
+    if not target then status("Place the cursor on an investigation or finding."); return end
+    if state.mode == "catalog" then state.load(target.investigation_id); return end
+    local location = target.source
+
+    if type(location) ~= "table" or type(location.path) ~= "string" or type(location.digest) ~= "string"
+      or not location.digest:match("^sha256:%x+$") or type(location.line) ~= "number" or location.line < 1
+      or location.line % 1 ~= 0 or type(location.column) ~= "number" or location.column < 1
+      or location.column % 1 ~= 0 then failure("Invalid source location."); return end
+
+    local function display(buf, message)
+      local win = source_window()
+      vim.api.nvim_win_set_buf(win, buf)
+      local row = math.min(location.line, vim.api.nvim_buf_line_count(buf))
+      local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
+      vim.api.nvim_win_set_cursor(win, { row, math.min(location.column - 1, #line) })
+      vim.api.nvim_set_current_win(win)
+      status(message)
+    end
+
+    local loaded = vim.fn.bufnr(location.path)
+    local file = location.path:sub(1, 1) == "/" and io.open(location.path, "rb") or nil
+    local bytes
+    if file then bytes = file:read("*a"); file:close() end
+
+    if bytes and "sha256:" .. vim.fn.sha256(bytes) == location.digest and not (loaded >= 0 and vim.bo[loaded].modified) then
+      local buf = vim.fn.bufadd(location.path)
+      vim.fn.bufload(buf)
+      vim.api.nvim_buf_call(buf, function() vim.cmd("checktime") end)
+      display(buf, "Showing digest-verified local source.")
+      return
+    end
+
+    if type(location.artifact) ~= "string" then failure("Archived source is unavailable."); return end
+
+    request({ "investigation-source", location.artifact, config.store }, function(value)
+      assert(type(value.content) == "string" and "sha256:" .. vim.fn.sha256(value.content) == location.digest, "Archived source digest mismatch")
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[buf].bufhidden, vim.bo[buf].swapfile = "wipe", false
+      vim.bo[buf].filetype = vim.filetype.match({ filename = location.path }) or ""
+      set_lines(buf, vim.split(value.content, "\n", { plain = true }))
+      vim.bo[buf].readonly = true
+      vim.b[buf].oculus_archived_source = location.artifact
+      display(buf, "Showing archived source; local file is missing, changed, or modified.")
+    end)
+  end
+
+  function state.queue(target)
+    target = selected(target)
+
+    if state.mode ~= "investigation" or not target or not target.experiment then
+      status("The selected finding has no supported experiment.")
+      return
+    end
+
+    require("oculus.nexus").open(nexus_config, config, {
+      kind = "discovery_validation", investigation_id = state.view.investigation_id,
+      opportunity_id = target.opportunity.id, artifact_store = config.store,
+    })
+  end
+
+  local maps = { ["<CR>"] = function() state.navigate() end, n = function() state.queue() end,
+    r = state.refresh, g = state.catalog, c = state.cancel, ["<C-c>"] = state.cancel, q = state.close, ["<Esc>"] = state.close }
+
+  for key, callback in pairs(maps) do vim.keymap.set("n", key, callback, { buffer = state.buf, silent = true, nowait = true }) end
+  set_lines(state.buf, header("INVESTIGATIONS"))
+
+  if submission then request({ "investigate", vim.json.encode(submission), config.store }, show)
+  elseif id then state.load(id)
+  else state.catalog() end
+
+  return state
+end
+
+-- Oculus only collects intent. Git identity, captures, inference and experiment
+-- eligibility belong to Plexus; all requests cross an argv/JSON boundary.
+function M.prompt(config, context)
+  context = context or {}
+
+  local request = { schema_version = 1, repository = context.repository, base = context.base, head = context.head,
+    consumer_revision = "HEAD", producer_manifest = "Cargo.toml", consumer_manifest = "Cargo.toml" }
+
+  local function ask(key, prompt, default, next_step, completion)
+    vim.ui.input({ prompt = prompt, default = request[key] or default, completion = completion }, function(value)
+      if not value or vim.trim(value) == "" then return end
+      request[key] = vim.trim(value)
+      next_step()
+    end)
+  end
+
+  local function submit()
+    request.repository = vim.fn.fnamemodify(vim.fn.expand(request.repository), ":p"):gsub("/$", "")
+    request.consumer_repository = vim.fn.fnamemodify(vim.fn.expand(request.consumer_repository), ":p"):gsub("/$", "")
+    local window = require("oculus.window")
+    if window.state.win and vim.api.nvim_win_is_valid(window.state.win) then window.close() end
+    M.open(config.plexus, config.nexus, nil, request)
+  end
+
+  local function intent() ask("intent", "Investigation intent: ", "What does this change enable for the consumer?", submit) end
+  local function consumer_manifest() ask("consumer_manifest", "Consumer Cargo manifest (relative to repository): ", "Cargo.toml", intent) end
+  local function consumer_revision() ask("consumer_revision", "Consumer committed revision (working edits excluded): ", "HEAD", consumer_manifest) end
+  local function consumer_path() ask("consumer_repository", "Consumer local repository: ", vim.fn.getcwd(), consumer_revision, "dir") end
+
+  local function consumer()
+    local choices, projects, index = {}, config.projects or {}, 0
+
+    local function next_project()
+      index = index + 1
+      local project = projects[index]
+
+      if project then
+        require("oculus.local_activity").find_repository(project, config, function(path)
+          if path then choices[#choices + 1] = { label = (project.name or project.repository) .. " · " .. path, path = path } end
+          next_project()
+        end)
+      elseif #choices == 0 then consumer_path()
+      else
+        choices[#choices + 1] = { label = "Choose another local repository…" }
+
+        vim.ui.select(choices, { prompt = "Consumer project:", format_item = function(item) return item.label end }, function(choice)
+          if not choice then return end
+          if choice.path then request.consumer_repository = choice.path; consumer_revision() else consumer_path() end
+        end)
+      end
+    end
+
+    next_project()
+  end
+
+  local function producer_manifest() ask("producer_manifest", "Producer Cargo manifest (relative to repository): ", "Cargo.toml", consumer) end
+  local function base() ask("base", "Base committed revision: ", (request.head or "HEAD") .. "^", producer_manifest) end
+  local function head() ask("head", "Head committed revision (working edits excluded): ", "HEAD", base) end
+  ask("repository", "Producer local repository: ", vim.fn.getcwd(), head, "dir")
+end
+
+function M.from_activity(config, event, url)
+  if type(event) ~= "table" or not event.oculus_local then
+    vim.notify("Oculus: select a local commit, or use :OculusInvestigate for a revision pair.", vim.log.levels.INFO)
+    return
+  end
+
+  local parsed = type(url) == "string" and require("oculus.inspect.patch").parse_target_url(url) or nil
+  local head = parsed and parsed.kind == "commit" and parsed.sha or (event.payload or {}).head
+
+  if type(head) ~= "string" or not head:match("^%x+$") then
+    vim.notify("Oculus: select an individual local commit.", vim.log.levels.WARN)
+    return
+  end
+
+  local project = { repository = (event.repo or {}).name, provider = event.oculus_local.forge }
+
+  require("oculus.local_activity").find_repository(project, config, function(path)
+    if not path then vim.notify("Oculus: no local clone found for this activity.", vim.log.levels.WARN); return end
+    M.prompt(config, { repository = path, base = head .. "^", head = head })
+  end)
+end
+
+return M

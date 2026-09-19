@@ -1,0 +1,147 @@
+vim.opt.runtimepath:prepend(vim.fn.getcwd())
+local bridge = require("oculus.investigations")
+local directory = vim.fn.tempname()
+vim.fn.mkdir(directory, "p")
+local source = directory .. "/consumer.rs"
+local bytes = "fn inspect() {\n    match kind {}\n}\n"
+vim.fn.writefile(vim.split(bytes, "\n", { plain = true }), source, "b")
+local digest = "sha256:" .. vim.fn.sha256(bytes)
+local calls = {}
+local original_system, original_notify = vim.system, vim.notify
+vim.notify = function() end
+
+vim.system = function(argv, options, callback)
+  local call = { argv = argv, options = options, callback = callback }
+  calls[#calls + 1] = call
+  return { kill = function(_, signal) call.killed = signal end }
+end
+
+local function respond(call, value)
+  local completed = false
+  call.callback({ code = 0, stdout = vim.json.encode(value), stderr = "" })
+  vim.schedule(function() completed = true end)
+  assert(vim.wait(1000, function() return completed end))
+end
+
+local location = { path = source, line = 2, column = 5, digest = digest, artifact = digest }
+
+local finding = { id = "gap", title = "A capability emerged", status = "inferred", explanation = "A variant reaches a rejecting fallback.",
+  consumer_location = location, evidence_path = { { relation = "consumes", description = "Consumer match", source = location } },
+  limitations = { "Syntax only." } }
+
+local view = {
+  schema_version = 1, kind = "selected_change", investigation_id = "sha256:investigation", created_unix_nanos = "1",
+  intent = "Find opportunities", status = "completed",
+  observation = { repository = "/producer", base = "actual-base", head = "actual-head", consumer_repository = directory, consumer_revision = "actual-consumer" },
+  reports = { { report_id = "sha256:report", rule_version = "enum-rule/1", opportunities = { finding },
+    deltas = { { kind = "added", path = "producer::Kind::New" } } } },
+  limitations = { "Committed bytes only." }, experiments = { { opportunity_id = "gap", report_id = "sha256:report", kind = "plexus_wit_fixture", label = "Run supported fixture" } },
+  evidence = {},
+}
+
+local config = { command = { "/a path/plexus" }, store = directory .. "/store" }
+local nexus_config = { command = { "/a path/nexus" }, state_dir = directory .. "/nexus" }
+local submission = { schema_version = 1, repository = "/producer; $(touch nope)", head = "HEAD", base = "HEAD^", consumer_repository = directory, intent = "Find opportunities" }
+local state = bridge.open(config, nexus_config, nil, submission)
+assert(calls[1].argv[2] == "investigate" and vim.deep_equal(vim.json.decode(calls[1].argv[3]), submission))
+assert(calls[1].options.timeout == 300000 and #calls[1].argv == 4)
+respond(calls[1], view)
+assert(not state.error, state.error)
+assert(not state.busy and state.mode == "investigation")
+local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("actual-base → actual-head", 1, true) and rendered:find("n: Run supported fixture", 1, true))
+assert(rendered:find("uncommitted edits are excluded", 1, true))
+local target
+for _, item in pairs(state.targets) do target = item; break end
+assert(target and target.experiment)
+local count = #calls
+state.navigate(target)
+assert(#calls == count and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.source_win)) == source)
+assert(vim.api.nvim_win_get_cursor(state.source_win)[1] == 2)
+vim.fn.writefile({ "changed source" }, source)
+state.navigate(target)
+assert(calls[#calls].argv[2] == "investigation-source" and calls[#calls].argv[3] == digest)
+respond(calls[#calls], { schema_version = 1, content = bytes })
+assert(not state.error, state.error)
+local archived_buf = vim.api.nvim_win_get_buf(state.source_win)
+assert(vim.b[archived_buf].oculus_archived_source == digest and vim.bo[archived_buf].readonly)
+assert(not vim.bo[archived_buf].modifiable)
+state.navigate(target)
+respond(calls[#calls], { schema_version = 1, content = "corrupt" })
+assert(state.error:find("digest mismatch", 1, true))
+state.catalog()
+respond(calls[#calls], { schema_version = 1, investigations = { view } })
+assert(state.mode == "catalog")
+state.navigate(view)
+assert(calls[#calls].argv[2] == "investigation" and calls[#calls].argv[3] == view.investigation_id)
+respond(calls[#calls], view)
+state.queue(target)
+assert(calls[#calls].argv[2] == "submit-investigation")
+assert(calls[#calls].argv[3] == view.investigation_id and calls[#calls].argv[4] == finding.id)
+local nexus = require("oculus.nexus").state
+
+local job = { id = "job-1", state = "queued", resource_id = "plexus-native", hypothesis_id = view.investigation_id,
+  binding_id = finding.id, plan_id = view.investigation_id, artifact_store = config.store, kind = "discovery_validation" }
+
+respond(calls[#calls], { schema_version = 1, job = job })
+respond(calls[#calls], { schema_version = 1, jobs = { job } })
+nexus.refresh("resources")
+respond(calls[#calls], { schema_version = 1, resources = { { id = "native", backend = "plexus-native", available = true, policy = { wall_timeout_ms = 30000 } } } })
+assert(not nexus.error, nexus.error)
+job.state, job.result_investigation_id = "succeeded", view.investigation_id
+nexus.open_result(job)
+assert(nexus.closed and state.closed)
+state = bridge.state
+assert(calls[#calls].argv[2] == "investigation")
+local completed = vim.deepcopy(view)
+completed.evidence = { { opportunity_id = "gap", validation_id = "sha256:validation", status = "accepted", diagnostic = "This fixture passed." } }
+respond(calls[#calls], completed)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("Evidence: accepted", 1, true) and rendered:find("relationship remains inferred", 1, true))
+local no_experiment = vim.deepcopy(view)
+no_experiment.experiments = {}
+state.refresh()
+respond(calls[#calls], no_experiment)
+for _, item in pairs(state.targets) do target = item; break end
+count = #calls
+state.queue(target)
+assert(#calls == count, "unsupported findings must not become Nexus jobs")
+state.refresh()
+local pending = calls[#calls]
+state.cancel()
+assert(pending.killed == 15 and not state.busy)
+respond(pending, view)
+assert(#state.view.experiments == 0, "late cancelled callback ignored")
+state.close()
+local old_input, old_select = vim.ui.input, vim.ui.select
+local answers = { "/producer", "v2", "v1", "crates/provider/Cargo.toml", directory, "consumer-tag", "crates/consumer/Cargo.toml", "What changed?" }
+local prompts = {}
+
+vim.ui.input = function(options, callback)
+  prompts[#prompts + 1] = options.prompt
+  callback(table.remove(answers, 1))
+end
+
+bridge.prompt({ plexus = config, nexus = nexus_config, projects = {} })
+assert(#answers == 0 and #prompts == 8)
+local request = vim.json.decode(calls[#calls].argv[3])
+assert(request.base == "v1" and request.head == "v2" and request.consumer_revision == "consumer-tag")
+assert(request.producer_manifest == "crates/provider/Cargo.toml" and request.consumer_manifest == "crates/consumer/Cargo.toml")
+respond(calls[#calls], view)
+bridge.state.close()
+local old_find = require("oculus.local_activity").find_repository
+require("oculus.local_activity").find_repository = function(_, _, callback) callback(directory) end
+local prompted_context
+local old_prompt = bridge.prompt
+bridge.prompt = function(_, context) prompted_context = context end
+local sha = string.rep("a", 40)
+bridge.from_activity({}, { oculus_local = { forge = "github" }, repo = { name = "owner/project" }, payload = { head = sha } }, "https://github.com/owner/project/commit/" .. sha)
+assert(prompted_context.repository == directory and prompted_context.head == sha and prompted_context.base == sha .. "^")
+prompted_context = nil
+bridge.from_activity({}, { repo = { name = "owner/project" }, payload = { head = sha } })
+assert(not prompted_context, "remote activity must not silently claim local provenance")
+bridge.prompt = old_prompt
+require("oculus.local_activity").find_repository = old_find
+vim.ui.input, vim.ui.select, vim.system, vim.notify = old_input, old_select, original_system, original_notify
+vim.fn.delete(directory, "rf")
+print("Selected change prompts, durable catalog, archived navigation, Nexus submission/evidence and cancellation passed")

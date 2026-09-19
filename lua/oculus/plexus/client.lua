@@ -43,7 +43,7 @@ function M.request(config, arguments, callback)
 
   local ok, process = pcall(vim.system, argv, {
     text = true,
-    timeout = config.timeout_ms or 120000,
+    timeout = arguments[1] == "investigate" and (config.capture_timeout_ms or 300000) or (config.timeout_ms or 120000),
   }, function(result)
     vim.schedule(function()
       if not active then return end
