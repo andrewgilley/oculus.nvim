@@ -126,7 +126,7 @@ local function scratch(filetype)
   return buf
 end
 
-function M.open(config, manifest)
+function M.open(config, manifest, hypothesis_id)
   if M.state and not M.state.closed then M.state.close() end
   config = vim.deepcopy(config or {})
   config.store = vim.fn.fnamemodify(config.store or vim.fn.stdpath("data") .. "/oculus/plexus", ":p")
@@ -154,7 +154,7 @@ function M.open(config, manifest)
     if not state.closed and vim.api.nvim_buf_is_valid(state.footer_buf) then
       set_lines(state.footer_buf, {
         "  D discover  m manifest  l load ID  r refresh  R revise",
-        "  x run  d compare  J JSON  H history  c cancel  q close",
+        "  x run  n Nexus  d compare  J JSON  H history  c cancel  q close",
         "  " .. text(message or ("Backend: " .. (config.backend or "wasmtime"))),
       })
     end
@@ -267,6 +267,18 @@ function M.open(config, manifest)
     end)
   end
 
+  function state.submit(binding)
+    if not state.view then return end
+    binding = binding or state.targets[vim.api.nvim_win_get_cursor(state.win)[1]]
+    if not binding then footer("Place the cursor on a binding to queue its plan in Nexus."); return end
+
+    require("oculus").open_nexus({
+      hypothesis_id = state.view.hypothesis_id,
+      binding_id = binding.id,
+      artifact_store = config.store,
+    })
+  end
+
   local function detail(lines, filetype)
     if state.raw_win and vim.api.nvim_win_is_valid(state.raw_win) then
       vim.api.nvim_win_close(state.raw_win, true)
@@ -317,6 +329,7 @@ function M.open(config, manifest)
   local maps = {
     q = state.close, ["<Esc>"] = state.close, c = state.cancel, ["<C-c>"] = state.cancel,
     r = state.refresh, R = state.revise, x = function() state.run() end,
+    n = function() state.submit() end,
     d = function()
       local latest
 
@@ -347,7 +360,9 @@ function M.open(config, manifest)
   set_lines(state.buf, { "  PLEXUS", "", "  m: open a hypothesis manifest · l: load an existing hypothesis ID", "", "  Experiments run only when you press x on a binding." })
   footer()
 
-  if manifest and manifest ~= "" then
+  if hypothesis_id then
+    state.load(hypothesis_id)
+  elseif manifest and manifest ~= "" then
     state.prepare(manifest, false)
   elseif vim.fn.filereadable(receipt_file) == 1 then
     local ok, saved = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(receipt_file), "\n")) end)

@@ -106,7 +106,7 @@ Oculus supports all the usual plugin managers.
 ```lua
 {
   "andrewgilley/oculus.nvim",
-  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusCapabilities" },
+  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusCapabilities", "OculusNexus" },
   keys = {
     { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
   },
@@ -466,6 +466,7 @@ Set `inspect_colorscheme = false` to turn this off.
 | `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
 | `:OculusPlexus [hypothesis.json]` | Explore hypotheses and run scoped experiments |
+| `:OculusNexus` | Manage local deployment resources and queued experiments |
 | `:OculusCapabilities discovery.json` | Discover API opportunities beside source |
 | `:OculusClose`                           | Close it                                               |
 | `:OculusToggle`                          | Toggle it                                              |
@@ -530,6 +531,7 @@ experiment evidence. Move to any line of a binding before running it.
 | `r` | Reload the current immutable hypothesis |
 | `R` | Create a revision from the current manifest and carry evidence forward |
 | `x` | Run the selected binding's exact plan, then attach the run to its cases obligation |
+| `n` | Queue the selected binding in Nexus and open deployment jobs |
 | `d` | Compare two archived run IDs and inspect runtime agreement, case outputs, and limitations |
 | `J` | Inspect the full hypothesis JSON in a separate view |
 | `H` | Inspect the store's run history JSON |
@@ -569,6 +571,52 @@ the real prepare → run → attach → revise workflow. It accepts `PLEXUS_BIN`
 With both binaries built, run `nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/plexus_comparison_integration_spec.lua`
 for the fixed-length-list adapter → Wasmtime/Zug runs → comparison workflow;
 `PLEXUS_BIN` and `PLEXUS_ZUG_WORKER` override the sibling binary paths.
+
+### Nexus deployment resources
+
+`:OculusNexus` opens the local resource and job view. From a Plexus investigation,
+press `n` on a binding to queue its pinned experiment. Nexus selects an available
+resource matching the runtime and resource policy; `w` explicitly starts the queue.
+Completed jobs link back to the evidence attached by Plexus in the original artifact
+store. Oculus renders placement and lifecycle records; Nexus owns those decisions.
+
+```lua
+require("oculus").setup({
+  nexus = {
+    command = { "python3", "/absolute/path/to/nexus/nexus.py" },
+    state_dir = vim.fn.stdpath("data") .. "/oculus/nexus",
+  },
+})
+```
+
+The default command is `{ "nexus" }`. Configure resources using the sibling Nexus
+project's CLI before submitting experiments. Its initial deployment scope is local
+native processes with Wasmtime or Zug execution through Plexus. It does not provision
+cloud machines. Existing plan runtime identities remain pinned.
+
+| Key | Action |
+| --- | --- |
+| `r` | Refresh job progress or resource availability |
+| `w` | Drain the queued jobs with a local worker |
+| `c` | Request cancellation of the selected job, including while work is active |
+| `R` | Retry the selected job as a new durable job |
+| `o` / `Enter` | Open the selected job's attached evidence in Plexus |
+| `s` | Inspect available resources and their memory, fuel and time limits |
+| `g` | Return to the jobs list |
+| `q` / `Esc` | Close the view; queued or running work remains managed by Nexus |
+
+Work runs asynchronously. Use `r` to inspect progress; closing the view does not
+cancel jobs or terminate the worker. A successful execution can still produce
+evidence contradicting the hypothesis; inspect the attached Plexus conclusion.
+Failures retain their job record and any archived run even if evidence attachment
+did not finish. Retry preserves the original attempt.
+
+Run `nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/nexus_spec.lua`
+to check submission, resource rendering, concurrent cancellation and view lifecycle.
+With the sibling Plexus and Zug binaries built, `tests/nexus_integration_spec.lua`
+exercises selected bindings through a temporary Nexus deployment and both runtimes,
+then reopens attached evidence in Oculus. It accepts `PLEXUS_BIN`,
+`PLEXUS_ZUG_WORKER`, and `NEXUS_SCRIPT` overrides.
 
 ### Rust capability opportunities beside source
 

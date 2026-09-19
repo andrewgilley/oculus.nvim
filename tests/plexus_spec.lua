@@ -53,12 +53,28 @@ assert(not vim.api.nvim_win_get_config(state.win).title)
 assert(not vim.api.nvim_win_get_config(state.win).footer)
 assert(vim.api.nvim_win_get_config(state.footer_win).relative == "win")
 local inspect_json
+local submit_nexus
 
 for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(state.buf, "n")) do
   assert(mapping.lhs ~= "j" and mapping.lhs ~= "k", "preserve cursor navigation")
   if mapping.lhs == "J" then inspect_json = mapping.callback end
+  if mapping.lhs == "n" then submit_nexus = mapping.callback end
 end
 
+assert(submit_nexus, "Nexus must be reachable from a selected Plexus binding")
+local oculus = require("oculus")
+local original_open_nexus, submitted = oculus.open_nexus
+oculus.open_nexus = function(value) submitted = value end
+
+for row, binding in pairs(state.targets) do
+  if binding.id == "increment" then vim.api.nvim_win_set_cursor(state.win, { row, 0 }); break end
+end
+
+submit_nexus()
+assert(submitted.hypothesis_id == view.hypothesis_id and submitted.binding_id == "increment")
+assert(submitted.artifact_store == vim.fn.fnamemodify(config.store, ":p"))
+assert(#calls == 1, "submission delegates to Nexus rather than directly executing Plexus")
+oculus.open_nexus = original_open_nexus
 assert(inspect_json)
 inspect_json()
 assert(vim.api.nvim_win_is_valid(state.raw_win))

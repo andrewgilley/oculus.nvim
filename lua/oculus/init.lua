@@ -51,6 +51,11 @@ local defaults = {
     backend = "wasmtime",
     timeout_ms = 120000,
   },
+  nexus = {
+    command = { "nexus" },
+    state_dir = vim.fn.stdpath("data") .. "/oculus/nexus",
+    timeout_ms = 120000,
+  },
   inspect_cache_ttl = 60,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
@@ -519,6 +524,10 @@ end
 
 function M.open_plexus(manifest)
   return require("oculus.plexus").open(M.config.plexus, manifest)
+end
+
+function M.open_nexus(submission)
+  return require("oculus.nexus").open(M.config.nexus, M.config.plexus, submission)
 end
 
 function M.open_capabilities(manifest)
