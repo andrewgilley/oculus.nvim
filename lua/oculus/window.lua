@@ -496,6 +496,7 @@ local function sidebar_sections_for_view(view)
         items = showing_users and {
           { "p", "Projects" },
           { "w", "My work" },
+          { "W", "Workspace" },
           { "s", "Saved" },
           { "P", "Plexus" },
           { "C", "Capabilities" },
@@ -510,6 +511,7 @@ local function sidebar_sections_for_view(view)
         } or {
           { "u", "Users" },
           { "w", "My work" },
+          { "W", "Workspace" },
           { "s", "Saved" },
           { "P", "Plexus" },
           { "C", "Capabilities" },
@@ -1375,7 +1377,14 @@ local function visible_contributors()
 end
 
 local function visible_projects()
-  return display_projects(M.state.opts.projects)
+  local projects = display_projects(M.state.opts.projects)
+  if M.state.workspace_filter_enabled ~= false then
+    local ws = require("oculus.workspace").get_active(M.state.opts)
+    if ws then
+      projects = require("oculus.workspace").filter_projects(M.state.opts, projects)
+    end
+  end
+  return projects
 end
 
 local function utc_time(year, month, day, hour, minute, second)
@@ -1623,13 +1632,29 @@ local function startup_project_items()
   local dir_map = {}
   local dir_keys = {}
 
+  local active_ws = require("oculus.workspace").get_active(M.state.opts)
+  local filter_active = active_ws and M.state.workspace_filter_enabled ~= false
+
   for _, d in ipairs(dirs) do
     if type(d) == "string" and d ~= "" then
-      local key = "dir:" .. d:lower()
+      local show_dir = true
+      if filter_active then
+        show_dir = false
+        for _, p in ipairs(all_projects) do
+          if p.directory and p.directory:lower() == d:lower() then
+            show_dir = true
+            break
+          end
+        end
+      end
 
-      if not dir_map[key] then
-        dir_map[key] = { kind = "directory", name = d }
-        dir_keys[#dir_keys + 1] = key
+      if show_dir then
+        local key = "dir:" .. d:lower()
+
+        if not dir_map[key] then
+          dir_map[key] = { kind = "directory", name = d }
+          dir_keys[#dir_keys + 1] = key
+        end
       end
     end
   end
@@ -1760,7 +1785,7 @@ local function render_contributors()
       while #lines < window_height - 2 do lines[#lines + 1] = "" end
       lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
       separator_line = #lines
-      footer(lines, "p projects  u users  w work  s saved  f folder  m move")
+      footer(lines, "p projects  u users  w work  W workspace  s saved  f folder  m move")
       commands_line = #lines
       -- Keep the commands inside the list pane, clear of the preview.
       lines[commands_line] = pad_cell(trim_to_width(lines[commands_line], left_width - 1), left_width)
@@ -1835,8 +1860,17 @@ local function render_contributors()
 
   if not showing_users then
     project_heading_line = #lines + 1
-    lines[#lines + 1] = "  PROJECTS"
+    local active_ws = require("oculus.workspace").get_active(M.state.opts)
+    if active_ws and M.state.workspace_filter_enabled ~= false then
+      lines[#lines + 1] = "  PROJECTS · " .. active_ws.name:upper()
+    else
+      lines[#lines + 1] = "  PROJECTS"
+    end
     local items = startup_project_items()
+
+    if #items == 0 and active_ws and M.state.workspace_filter_enabled ~= false then
+      lines[#lines + 1] = pad_cell("  (no projects in workspace '" .. active_ws.name .. "')", left_width)
+    end
 
     for _, item in ipairs(items) do
       local line = #lines + 1
@@ -1941,8 +1975,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and "p projects  w work  s saved  P plexus  C capabilities  m move  ?: help"
-      or "u users  w work  s saved  P plexus  C capabilities  f folder  m move  ?: help")
+        and "p projects  w work  W workspace  s saved  P plexus  C capabilities  m move  ?: help"
+      or "u users  w work  W workspace  s saved  P plexus  C capabilities  f folder  m move  ?: help")
 
     commands_line = #lines
   else
@@ -6259,6 +6293,114 @@ local function toggle_community_view()
   render_contributors()
 end
 
+local function prompt_select_workspace()
+  local workspace = require("oculus.workspace")
+  local all = workspace.list(M.state.opts)
+  local active = workspace.get_active(M.state.opts)
+  local filter_active = M.state.workspace_filter_enabled ~= false
+
+  local items = {}
+
+  if active then
+    items[#items + 1] = {
+      kind = "clear",
+      label = "✕ Clear active workspace (show all projects)",
+    }
+    items[#items + 1] = {
+      kind = "toggle_filter",
+      label = filter_active and "⊘ Toggle workspace filter (currently: ON -> turn OFF)"
+        or "⊙ Toggle workspace filter (currently: OFF -> turn ON)",
+    }
+  end
+
+  for _, ws in ipairs(all) do
+    local is_active = active and (active.name:lower() == ws.name:lower())
+    local count = #(ws.projects or {})
+    local desc = (ws.description and ws.description ~= "") and (" - " .. ws.description) or ""
+    local proj_str = string.format(" [%d project%s]", count, count == 1 and "" or "s")
+    local mark = is_active and "* " or "  "
+    local active_tag = is_active and " (active)" or ""
+    items[#items + 1] = {
+      kind = "select",
+      ws = ws,
+      label = string.format("%s%s%s%s%s", mark, ws.name, active_tag, desc, proj_str),
+    }
+  end
+
+  items[#items + 1] = {
+    kind = "new",
+    label = "+ Create new workspace…",
+  }
+
+  vim.ui.select(items, {
+    prompt = "Oculus Workspace:",
+    format_item = function(item)
+      return item.label
+    end,
+  }, function(choice)
+    if not choice then
+      return
+    end
+
+    if choice.kind == "clear" then
+      workspace.set_active(M.state.opts, nil)
+      if is_valid_win(M.state.win) then
+        if M.state.opts.tracking_file then
+          M.refresh_tracking()
+        else
+          render_contributors()
+        end
+      end
+      vim.notify("Oculus: Active workspace cleared.", vim.log.levels.INFO)
+    elseif choice.kind == "toggle_filter" then
+      M.state.workspace_filter_enabled = not filter_active
+      if is_valid_win(M.state.win) then
+        if M.state.opts.tracking_file then
+          M.refresh_tracking()
+        else
+          render_contributors()
+        end
+      end
+      local status_str = M.state.workspace_filter_enabled and "enabled" or "disabled"
+      vim.notify("Oculus: Workspace filter " .. status_str .. ".", vim.log.levels.INFO)
+    elseif choice.kind == "select" then
+      workspace.set_active(M.state.opts, choice.ws.name)
+      M.state.workspace_filter_enabled = true
+      if is_valid_win(M.state.win) then
+        if M.state.opts.tracking_file then
+          M.refresh_tracking()
+        else
+          render_contributors()
+        end
+      end
+      local count = #(choice.ws.projects or {})
+      vim.notify(string.format("Oculus: Switched to workspace '%s' (%d project%s).", choice.ws.name, count, count == 1 and "" or "s"), vim.log.levels.INFO)
+    elseif choice.kind == "new" then
+      vim.ui.input({ prompt = "New workspace name: " }, function(name)
+        if not name or vim.trim(name) == "" then
+          return
+        end
+        name = vim.trim(name)
+        local ws, err = workspace.add(M.state.opts, name, { projects = {} })
+        if ws then
+          workspace.set_active(M.state.opts, name)
+          M.state.workspace_filter_enabled = true
+          if is_valid_win(M.state.win) then
+            if M.state.opts.tracking_file then
+              M.refresh_tracking()
+            else
+              render_contributors()
+            end
+          end
+          vim.notify(string.format("Oculus: Created and activated workspace '%s'.", name), vim.log.levels.INFO)
+        else
+          vim.notify("Oculus: " .. tostring(err), vim.log.levels.ERROR)
+        end
+      end)
+    end
+  end)
+end
+
 local function map_keys(buf)
   local nav = navigation.resolve(M.state.opts)
 
@@ -6339,6 +6481,11 @@ local function map_keys(buf)
 
   map("?", toggle_sidebar, "Toggle Oculus command sidebar")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
+  map("W", function()
+    if M.state.view == "contributors" or M.state.view == "directory" then
+      prompt_select_workspace()
+    end
+  end, "Select or switch Oculus project workspace")
 
   map("m", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
@@ -7115,4 +7262,18 @@ M.move_to_parent_directory = move_to_parent_directory
 M._move_to_parent_directory = move_to_parent_directory
 M._startup_project_items = startup_project_items
 M._directory_preview_items = directory_preview_items
+
+function M.toggle_workspace_filter()
+  M.state.workspace_filter_enabled = not (M.state.workspace_filter_enabled ~= false)
+  if is_valid_win(M.state.win) then
+    if M.state.opts and M.state.opts.tracking_file then
+      M.refresh_tracking()
+    else
+      render_contributors()
+    end
+  end
+  return M.state.workspace_filter_enabled
+end
+
+M.prompt_select_workspace = prompt_select_workspace
 return M

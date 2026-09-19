@@ -35,6 +35,8 @@ local defaults = {
   project_directories = {},
   project_order = {},
   projects = {},
+  workspaces = {},
+  active_workspace = nil,
   project_descriptions = {},
   persist_filters = true,
   persist_contributors = true,
@@ -309,6 +311,14 @@ function M.setup(opts)
     M.config.project_order = vim.deepcopy(opts.project_order)
   end
 
+  if opts.workspaces ~= nil then
+    M.config.workspaces = vim.deepcopy(opts.workspaces)
+  end
+
+  if opts.active_workspace ~= nil then
+    M.config.active_workspace = opts.active_workspace
+  end
+
   if M.config.persist_filters
     or M.config.persist_contributors
     or M.config.persist_projects
@@ -403,6 +413,14 @@ function M.setup(opts)
 
       if type(saved.search_history) == "table" then
         M.config.search_history = vim.deepcopy(saved.search_history)
+      end
+
+      if opts.workspaces == nil and type(saved.workspaces) == "table" then
+        M.config.workspaces = vim.deepcopy(saved.workspaces)
+      end
+
+      if opts.active_workspace == nil and saved.active_workspace ~= nil then
+        M.config.active_workspace = saved.active_workspace
       end
     end
   end
@@ -614,6 +632,38 @@ end
 
 function M.open_project_directory(name)
   return require("oculus.window").open_project_directory(name)
+end
+
+function M.set_workspace(name)
+  return require("oculus.workspace").set_active(M.config, name)
+end
+
+function M.get_workspace()
+  return require("oculus.workspace").get_active(M.config)
+end
+
+function M.workspaces()
+  return require("oculus.workspace").list(M.config)
+end
+
+function M.add_workspace(name, def)
+  return require("oculus.workspace").add(M.config, name, def)
+end
+
+function M.remove_workspace(name)
+  return require("oculus.workspace").remove(M.config, name)
+end
+
+function M.filter_projects(projects)
+  return require("oculus.workspace").filter_projects(M.config, projects)
+end
+
+function M.toggle_workspace_filter()
+  return require("oculus.window").toggle_workspace_filter()
+end
+
+function M.prompt_select_workspace()
+  return require("oculus.window").prompt_select_workspace()
 end
 
 return M

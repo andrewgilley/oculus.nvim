@@ -510,7 +510,10 @@ function M.prompt(config, context)
   local function consumer_path() ask("consumer_repository", "Consumer local repository: ", vim.fn.getcwd(), consumer_revision, "dir") end
 
   local function consumer()
-    local choices, projects, index = {}, config.projects or {}, 0
+    local workspace = require("oculus.workspace")
+    local active_ws = workspace.get_active(config)
+    local prompt_title = active_ws and ("Consumer project (" .. active_ws.name .. "):") or "Consumer project:"
+    local choices, projects, index = {}, workspace.filter_projects(config, config.projects), 0
 
     local function next_project()
       index = index + 1
@@ -525,7 +528,7 @@ function M.prompt(config, context)
       else
         choices[#choices + 1] = { label = "Choose another local repository…" }
 
-        vim.ui.select(choices, { prompt = "Consumer project:", format_item = function(item) return item.label end }, function(choice)
+        vim.ui.select(choices, { prompt = prompt_title, format_item = function(item) return item.label end }, function(choice)
           if not choice then return end
           if choice.path then request.consumer_repository = choice.path; consumer_revision() else consumer_path() end
         end)

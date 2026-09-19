@@ -73,6 +73,68 @@ vim.api.nvim_create_user_command("OculusInvestigations", function()
   require("oculus").open_investigations()
 end, { desc = "Browse durable project change investigations" })
 
+vim.api.nvim_create_user_command("OculusWorkspace", function(opts)
+  local workspace = require("oculus.workspace")
+  local oculus = require("oculus")
+  local arg = vim.trim(opts.args or "")
+
+  if arg == "" then
+    local active = workspace.get_active(oculus.config)
+    local all = workspace.list(oculus.config)
+    if #all == 0 then
+      vim.notify("Oculus: No workspaces configured.", vim.log.levels.INFO)
+      return
+    end
+
+    local lines = { "Oculus Workspaces:" }
+    for _, ws in ipairs(all) do
+      local is_active = active and (active.name:lower() == ws.name:lower())
+      local mark = is_active and "* " or "  "
+      local desc = (ws.description and ws.description ~= "") and (" - " .. ws.description) or ""
+      local proj_count = #(ws.projects or {})
+      local proj_str = string.format(" [%d project%s]", proj_count, proj_count == 1 and "" or "s")
+      lines[#lines + 1] = string.format("%s%s%s%s%s", mark, ws.name, is_active and " (active)" or "", desc, proj_str)
+    end
+    vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+    return
+  end
+
+  if arg:lower() == "none" or arg:lower() == "clear" then
+    workspace.set_active(oculus.config, nil)
+    vim.notify("Oculus: Active workspace cleared.", vim.log.levels.INFO)
+    return
+  end
+
+  local ok, err_or_ws = workspace.set_active(oculus.config, arg)
+  if ok then
+    local count = #(err_or_ws.projects or {})
+    vim.notify(string.format("Oculus: Active workspace set to '%s' (%d project%s).", err_or_ws.name, count, count == 1 and "" or "s"), vim.log.levels.INFO)
+  else
+    local all = workspace.list(oculus.config)
+    local names = vim.tbl_map(function(w) return w.name end, all)
+    local avail = #names > 0 and (" Available: " .. table.concat(names, ", ")) or " (No workspaces configured)"
+    vim.notify(string.format("Oculus: %s.%s", err_or_ws, avail), vim.log.levels.WARN)
+  end
+end, {
+  nargs = "?",
+  desc = "View or switch the active Oculus project workspace",
+  complete = function(arglead)
+    local workspace = require("oculus.workspace")
+    local config = require("oculus").config or {}
+    local completions = { "clear", "none" }
+    for _, ws in ipairs(workspace.list(config)) do
+      completions[#completions + 1] = ws.name
+    end
+    local matches = {}
+    for _, c in ipairs(completions) do
+      if c:lower():sub(1, #arglead) == arglead:lower() then
+        matches[#matches + 1] = c
+      end
+    end
+    return matches
+  end,
+})
+
 vim.api.nvim_create_user_command("OculusNexus", function()
   require("oculus").open_nexus()
 end, { desc = "Manage local Nexus resources and experiment jobs" })

@@ -9,7 +9,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Specs that run without `set showtabline=0`, matching how they were written.
-plain_specs=" opinion telemetry tracking health inspect investigations "
+plain_specs=" opinion telemetry tracking health inspect investigations workspace "
 
 if [ "$#" -gt 0 ]; then
   specs=()

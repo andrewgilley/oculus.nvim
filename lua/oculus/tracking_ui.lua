@@ -23,6 +23,21 @@ local function label(node)
   return node.name or node.repository
 end
 
+local function node_matches_workspace(node, active_ws)
+  if not active_ws or not active_ws.projects or #active_ws.projects == 0 then
+    return true
+  end
+  if node.children then
+    for _, child in ipairs(node.children) do
+      if node_matches_workspace(child, active_ws) then
+        return true
+      end
+    end
+    return false
+  end
+  return require("oculus.workspace").matches_workspace(node, active_ws)
+end
+
 -- Mirror the legacy directory preview: header, then direct children without
 -- repeating the group's own name.
 function M.preview_items(state, target, max_visible)
@@ -52,22 +67,36 @@ function M.render(state)
   if not nodes then state.tracking_paths[kind] = {}; path = {}; nodes = tree and tree[kind] or {} end
   state.view = 'contributors'
   state.line_targets = {}
-  local lines = {'', '  ACTIVITY', '', '  ' .. kind:upper()}
+  local active_ws = require("oculus.workspace").get_active(state.opts)
+  local filter_active = active_ws and state.workspace_filter_enabled ~= false and kind == "projects"
+  local header_title = kind:upper()
+  if filter_active then
+    header_title = "PROJECTS · " .. active_ws.name:upper()
+  end
+  local lines = {'', '  ACTIVITY', '', '  ' .. header_title}
   if state.opts._tracking and state.opts._tracking.error then lines[#lines + 1] = '  Tracking error: :OculusReloadTracking' end
 
+  local visible_count = 0
   for index, node in ipairs(nodes) do
-    local target
+    if not filter_active or node_matches_workspace(node, active_ws) then
+      visible_count = visible_count + 1
+      local target
 
-    if node.children then target = {kind='tracking_group', name=node.name}
-    elseif kind == 'projects' then target = {kind='project', project=vim.deepcopy(node)}
-    else target = vim.deepcopy(node) end
+      if node.children then target = {kind='tracking_group', name=node.name}
+      elseif kind == 'projects' then target = {kind='project', project=vim.deepcopy(node)}
+      else target = vim.deepcopy(node) end
 
-    target.tracking_index = index
-    lines[#lines + 1] = '  ' .. label(node)
-    state.line_targets[#lines] = target
+      target.tracking_index = index
+      lines[#lines + 1] = '  ' .. label(node)
+      state.line_targets[#lines] = target
+    end
   end
 
-  if #nodes == 0 and kind == 'projects' then lines[#lines + 1] = '  Empty list. a add item · f add group' end
+  if #nodes == 0 and kind == 'projects' then
+    lines[#lines + 1] = '  Empty list. a add item · f add group'
+  elseif visible_count == 0 and filter_active then
+    lines[#lines + 1] = "  (no projects in workspace '" .. active_ws.name .. "')"
+  end
   return lines
 end
 
