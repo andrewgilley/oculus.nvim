@@ -203,6 +203,103 @@ assert(request.base == "v1" and request.head == "v2" and request.consumer_revisi
 assert(request.producer_manifest == "crates/provider/Cargo.toml" and request.consumer_manifest == "crates/consumer/Cargo.toml")
 respond(calls[#calls], view)
 bridge.state.close()
+answers = { "/native-producer", "v3", "v2", "include/math.hpp", "c++", directory, "zig-tag", "src/adapter.zig", "Find the missing C ABI wrapper" }
+prompts = {}
+local prompt_options = {}
+
+vim.ui.input = function(options, callback)
+  prompts[#prompts + 1], prompt_options[#prompt_options + 1] = options.prompt, options
+  callback(table.remove(answers, 1))
+end
+
+bridge.prompt({ plexus = config, nexus = nexus_config, projects = {} }, { analysis = "c_zig" })
+assert(#answers == 0 and #prompts == 9)
+assert(prompt_options[5].default == "c", "C is the default standalone header language")
+request = vim.json.decode(calls[#calls].argv[3])
+
+assert(vim.deep_equal(request, {
+  schema_version = 1, analysis = "c_zig", repository = "/native-producer", base = "v2", head = "v3",
+  producer_header = "include/math.hpp", header_language = "c++", consumer_repository = directory,
+  consumer_revision = "zig-tag", consumer_source = "src/adapter.zig", intent = "Find the missing C ABI wrapper",
+}), "C/C++ to Zig requests must not contain Rust Cargo inputs")
+
+local zig_bytes = "extern fn add(a: c_int, b: c_int) c_int;\n"
+local zig_digest = "sha256:" .. vim.fn.sha256(zig_bytes)
+local zig_location = { path = directory .. "/src/adapter.zig", line = 1, column = 1, digest = zig_digest, artifact = zig_digest }
+local c_zig_view = vim.deepcopy(view)
+c_zig_view.observation = request
+c_zig_view.intent = request.intent
+c_zig_view.experiments = {}
+c_zig_view.reports[1].rule_version = "c-zig/1"
+c_zig_view.reports[1].deltas = {}
+
+c_zig_view.reports[1].opportunities = { {
+  id = "wrapper", kind = "missing_c_abi_wrapper", title = "A C ABI wrapper could connect C++ to Zig", status = "inferred",
+  explanation = "The C++ declaration matches the Zig requirement's shape but needs C linkage.",
+  consumer_location = zig_location, evidence_path = { { relation = "requires", description = "Explicit Zig extern requirement", source = zig_location } },
+  validation = vim.NIL, limitations = { "Declarations do not demonstrate implementation or runtime behavior." },
+} }
+
+c_zig_view.reasoning = {
+  schema_version = 1, relations = {},
+  claims = { { id = "wrapper-claim", opportunity_id = "wrapper", status = "inferred", rule_version = "c-zig/1",
+    statement = "A wrapper is required before direct C ABI composition.", obligations = { "wrapper/implementation" },
+    support = { { kind = "consumer_source", artifact = zig_digest, source = zig_location } } } },
+  obligations = { { id = "wrapper/implementation", opportunity_id = "wrapper", label = "Wrapper implementation", status = "unresolved", evidence = {} } },
+}
+
+respond(calls[#calls], c_zig_view)
+state = bridge.state
+assert(not state.error, state.error)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("Analysis: C/C++ ABI → Zig", 1, true))
+assert(rendered:find("Header: include/math.hpp · language c++", 1, true))
+assert(rendered:find("Zig source: src/adapter.zig", 1, true))
+assert(rendered:find("A C ABI wrapper could connect C++ to Zig", 1, true))
+assert(rendered:find("Wrapper implementation · unresolved", 1, true))
+assert(rendered:find("No supported experiment for this finding.", 1, true))
+for _, item in pairs(state.targets) do target = item; break end
+assert(target and not target.experiment)
+count = #calls
+state.queue(target)
+assert(#calls == count, "C/C++ declarations without an experiment must not be queued")
+state.navigate(target)
+assert(calls[#calls].argv[2] == "investigation-source" and calls[#calls].argv[3] == zig_digest)
+respond(calls[#calls], { schema_version = 1, content = zig_bytes })
+archived_buf = vim.api.nvim_win_get_buf(state.source_win)
+assert(vim.b[archived_buf].oculus_archived_source == zig_digest and vim.bo[archived_buf].readonly)
+assert(vim.bo[archived_buf].filetype == "zig")
+state.catalog()
+respond(calls[#calls], { schema_version = 1, investigations = { c_zig_view } })
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("Analysis: C/C++ ABI → Zig", 1, true))
+state.close()
+answers = { "/producer", "HEAD", "HEAD^", "include/api.h", "python" }
+count = #calls
+bridge.prompt({ plexus = config, nexus = nexus_config, projects = {} }, { analysis = "c_zig" })
+assert(#answers == 0 and #calls == count, "unsupported header languages must stop before submission")
+bridge.prompt({ plexus = config, nexus = nexus_config, projects = {} }, { analysis = "unknown" })
+assert(#calls == count, "unknown analysis must not silently submit a Rust request")
+local oculus = require("oculus")
+local old_investigate = oculus.investigate
+local command_calls, command_context = 0, nil
+
+oculus.investigate = function(context)
+  command_calls, command_context = command_calls + 1, context
+end
+
+dofile("plugin/oculus.lua")
+local completions = vim.fn.getcompletion("OculusInvestigate ", "cmdline")
+assert(vim.tbl_contains(completions, "rust") and vim.tbl_contains(completions, "c-zig"))
+vim.cmd("OculusInvestigate c-zig")
+assert(command_calls == 1 and command_context.analysis == "c_zig")
+vim.cmd("OculusInvestigate")
+assert(command_calls == 2 and command_context == nil, "the default command must preserve Rust analysis")
+vim.cmd("OculusInvestigate rust")
+assert(command_calls == 3 and command_context == nil)
+vim.cmd("OculusInvestigate invalid")
+assert(command_calls == 3)
+oculus.investigate = old_investigate
 local old_find = require("oculus.local_activity").find_repository
 require("oculus.local_activity").find_repository = function(_, _, callback) callback(directory) end
 local prompted_context
@@ -223,4 +320,4 @@ respond(calls[#calls], compiler)
 state.close()
 vim.ui.input, vim.ui.select, vim.system, vim.notify = old_input, old_select, original_system, original_notify
 vim.fn.delete(directory, "rf")
-print("Selected change prompts, durable catalog, archived navigation, Nexus submission/evidence and cancellation passed")
+print("Rust and C/C++ to Zig prompts, durable catalog, archived navigation, Nexus submission/evidence and cancellation passed")

@@ -466,7 +466,7 @@ Set `inspect_colorscheme = false` to turn this off.
 | `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
 | `:OculusPlexus [hypothesis.json]` | Explore hypotheses and run scoped experiments |
-| `:OculusInvestigate` | Investigate a committed local change against a consumer project |
+| `:OculusInvestigate [rust\|c-zig]` | Investigate a committed local change against a consumer project |
 | `:OculusInvestigations` | Browse and reopen durable project investigations |
 | `:OculusNexus` | Manage local deployment resources and queued experiments |
 | `:OculusCapabilities discovery.json` | Discover API opportunities beside source |
@@ -585,10 +585,27 @@ uncommitted worktree edits are excluded. No discovery manifest or artifact ID is
 needed. Cargo capture can take longer than ordinary requests; configure
 `plexus.capture_timeout_ms` (default `300000`) if necessary.
 
-The first analysis supports Rust enum additions reaching rejecting consumer
-matches. Findings remain inferred and explicitly list limitations. Unsupported
-captures and changes with no matching opportunities remain visible records.
+The default Rust analysis supports enum additions reaching rejecting consumer
+matches and candidate function substitutions. Findings remain inferred and
+explicitly list limitations. Unsupported captures and changes with no matching
+opportunities remain visible records.
 Workspace packages can be selected using paths such as `crates/parser/Cargo.toml`.
+
+Run `:OculusInvestigate c-zig` to investigate a C or C++ producer against a Zig
+consumer. The prompts collect the producer's standalone header, its language
+(`c` or `c++`, default `c`), and the consumer's explicit Zig source file instead
+of Cargo manifests. For example, select `include/api.hpp` and `src/adapter.zig`.
+The investigation shows the header language and both selected paths; source
+references and archived navigation work as they do for Rust findings.
+
+This analysis requires Clang 22 on the machine running Plexus. Its initial scope
+is standalone headers and explicit Zig `extern` declarations. Plexus can expose
+compatible declarations and missing C ABI wrappers, including C++ declarations
+that require C linkage. These findings describe declarations, not completed
+implementations, successful linking, or verified runtime behavior. Unresolved
+obligations remain visible, and these findings have no queueable experiment yet.
+`:OculusInvestigate rust` explicitly selects the existing Rust analysis; `gI`
+on local activity continues to use that default.
 
 `:OculusInvestigations` or `gP` opens the persistent project catalog. Select an
 investigation and press `Enter`; restarting Neovim does not erase its findings or
@@ -630,6 +647,10 @@ validation evidence to that capture's artifact store.
 For a compiler-check capture, add `expected_conclusion: "supported_for_signature"`
 and optionally `opportunity_id` to the descriptor. The same integration test then
 checks signature evidence alongside the still-unresolved behavior obligation.
+
+Run `nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/c_zig_integration_spec.lua`
+to exercise real C++ and Zig Git histories, the actual Plexus CLI, relationship
+rendering and archived source navigation after deleting the source repositories.
 
 ### Nexus deployment resources
 

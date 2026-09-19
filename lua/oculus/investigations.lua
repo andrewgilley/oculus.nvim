@@ -106,9 +106,16 @@ function M.open(config, nexus_config, id, submission)
     local lines, targets = header("CHANGE INVESTIGATION"), {}
     local observation = value.observation
     lines[#lines + 1] = "  " .. text(value.status) .. " · " .. text(value.intent)
+    if observation.analysis == "c_zig" then lines[#lines + 1] = "  Analysis: C/C++ ABI → Zig" end
     lines[#lines + 1] = "  Producer: " .. text(observation.repository)
     lines[#lines + 1] = "  Revisions: " .. text(observation.base) .. " → " .. text(observation.head)
     lines[#lines + 1] = "  Consumer: " .. text(observation.consumer_repository) .. " @ " .. text(observation.consumer_revision)
+
+    if observation.analysis == "c_zig" then
+      lines[#lines + 1] = "  Header: " .. text(observation.producer_header) .. " · language " .. text(observation.header_language)
+      lines[#lines + 1] = "  Zig source: " .. text(observation.consumer_source)
+    end
+
     lines[#lines + 1] = "  Committed sources only; uncommitted edits are excluded."
     lines[#lines + 1] = "  Investigation: " .. text(value.investigation_id)
     for _, limitation in ipairs(value.limitations) do lines[#lines + 1] = "  Limit: " .. text(limitation) end
@@ -250,6 +257,7 @@ function M.open(config, nexus_config, id, submission)
         assert(type(item.investigation_id) == "string" and type(item.observation) == "table", "Invalid catalog entry")
         local start = #lines + 1
         lines[#lines + 1] = "  " .. text(item.status) .. " · " .. text(item.intent)
+        if item.observation.analysis == "c_zig" then lines[#lines + 1] = "    Analysis: C/C++ ABI → Zig" end
         lines[#lines + 1] = "    " .. text(item.observation.repository) .. " → " .. text(item.observation.consumer_repository)
         lines[#lines + 1] = "    " .. text(item.observation.base) .. " → " .. text(item.observation.head)
         lines[#lines + 1] = "    " .. text(item.investigation_id)
@@ -363,8 +371,18 @@ end
 function M.prompt(config, context)
   context = context or {}
 
+  if context.analysis ~= nil and context.analysis ~= "rust" and context.analysis ~= "c_zig" then
+    vim.notify("Oculus: choose rust or c-zig investigation analysis.", vim.log.levels.WARN)
+    return
+  end
+
+  local c_zig = context.analysis == "c_zig"
+
   local request = { schema_version = 1, repository = context.repository, base = context.base, head = context.head,
-    consumer_revision = "HEAD", producer_manifest = "Cargo.toml", consumer_manifest = "Cargo.toml" }
+    consumer_revision = "HEAD" }
+
+  if c_zig then request.analysis = "c_zig"
+  else request.producer_manifest, request.consumer_manifest = "Cargo.toml", "Cargo.toml" end
 
   local function ask(key, prompt, default, next_step, completion)
     vim.ui.input({ prompt = prompt, default = request[key] or default, completion = completion }, function(value)
@@ -383,8 +401,13 @@ function M.prompt(config, context)
   end
 
   local function intent() ask("intent", "Investigation intent: ", "What does this change enable for the consumer?", submit) end
-  local function consumer_manifest() ask("consumer_manifest", "Consumer Cargo manifest (relative to repository): ", "Cargo.toml", intent) end
-  local function consumer_revision() ask("consumer_revision", "Consumer committed revision (working edits excluded): ", "HEAD", consumer_manifest) end
+
+  local function consumer_input()
+    if c_zig then ask("consumer_source", "Consumer Zig source (relative to repository): ", "src/main.zig", intent)
+    else ask("consumer_manifest", "Consumer Cargo manifest (relative to repository): ", "Cargo.toml", intent) end
+  end
+
+  local function consumer_revision() ask("consumer_revision", "Consumer committed revision (working edits excluded): ", "HEAD", consumer_input) end
   local function consumer_path() ask("consumer_repository", "Consumer local repository: ", vim.fn.getcwd(), consumer_revision, "dir") end
 
   local function consumer()
@@ -413,8 +436,23 @@ function M.prompt(config, context)
     next_project()
   end
 
-  local function producer_manifest() ask("producer_manifest", "Producer Cargo manifest (relative to repository): ", "Cargo.toml", consumer) end
-  local function base() ask("base", "Base committed revision: ", (request.head or "HEAD") .. "^", producer_manifest) end
+  local function header_language()
+    ask("header_language", "Header language (c or c++): ", "c", function()
+      if request.header_language ~= "c" and request.header_language ~= "c++" then
+        vim.notify("Oculus: header language must be c or c++.", vim.log.levels.WARN)
+        return
+      end
+
+      consumer()
+    end)
+  end
+
+  local function producer_input()
+    if c_zig then ask("producer_header", "Producer standalone header (relative to repository): ", "include/api.h", header_language)
+    else ask("producer_manifest", "Producer Cargo manifest (relative to repository): ", "Cargo.toml", consumer) end
+  end
+
+  local function base() ask("base", "Base committed revision: ", (request.head or "HEAD") .. "^", producer_input) end
   local function head() ask("head", "Head committed revision (working edits excluded): ", "HEAD", base) end
   ask("repository", "Producer local repository: ", vim.fn.getcwd(), head, "dir")
 end

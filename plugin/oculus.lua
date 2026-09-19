@@ -54,9 +54,20 @@ vim.api.nvim_create_user_command("OculusCapabilities", function(opts)
   require("oculus").open_capabilities(opts.args)
 end, { nargs = 1, complete = "file", desc = "Discover Rust capability opportunities beside source" })
 
-vim.api.nvim_create_user_command("OculusInvestigate", function()
-  require("oculus").investigate()
-end, { desc = "Investigate a local committed change and its consumer opportunities" })
+vim.api.nvim_create_user_command("OculusInvestigate", function(opts)
+  if opts.args ~= "" and opts.args ~= "rust" and opts.args ~= "c-zig" then
+    vim.notify("Oculus: choose rust or c-zig investigation analysis.", vim.log.levels.WARN)
+    return
+  end
+
+  require("oculus").investigate(opts.args == "c-zig" and { analysis = "c_zig" } or nil)
+end, {
+  nargs = "?",
+  complete = function(arglead)
+    return vim.tbl_filter(function(value) return value:sub(1, #arglead) == arglead end, { "rust", "c-zig" })
+  end,
+  desc = "Investigate a local committed Rust or C/C++ to Zig relationship",
+})
 
 vim.api.nvim_create_user_command("OculusInvestigations", function()
   require("oculus").open_investigations()
