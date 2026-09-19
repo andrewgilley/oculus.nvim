@@ -5046,18 +5046,19 @@ if integration_root and (integration_sha or integration_url) then
   vim.g.oculus_test_main_tab_chunk =
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.chunk_index
 
+  -- Advancing shows the parent version of the next chunk first.
   toggle_mapped.callback()
   assert(vim.bo[change_buf].modifiable)
   assert(not vim.bo[change_buf].readonly)
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
-  assert(vim.api.nvim_get_current_win() == change_win)
-  assert_cursor_at_first_nonblank(change_win)
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
+  assert(vim.api.nvim_get_current_win() == parent_win)
+  assert_cursor_at_first_nonblank(parent_win)
 
   do
     local active = vim.b[sidebar_buf].oculus_inspect_sidebar_active
     assert(active.pair_index == vim.g.oculus_test_main_tab_pair)
     assert(active.chunk_index == vim.g.oculus_test_main_tab_chunk + 1)
-    assert(active.role == "change")
+    assert(active.role == "parent")
 
     local active_sidebar_win = assert(sidebar_window(
       vim.api.nvim_get_current_tabpage()
@@ -5275,14 +5276,16 @@ if integration_root and (integration_sha or integration_url) then
       == vim.g.oculus_test_chunk_count
   )
 
+  -- Wrapping forward past the last chunk returns to the first file header in
+  -- the parent tab.
   toggle_mapped.callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
 
   assert(vim.api.nvim_get_current_win()
-    == assert(sidebar_window(tabs[3])))
+    == assert(sidebar_window(tabs[2])))
 
   assert(vim.api.nvim_win_get_cursor(
-    assert(sidebar_window(tabs[3]))
+    assert(sidebar_window(tabs[2]))
   )[1] == file_lines[1])
 
   assert(vim.api.nvim_win_get_cursor(change_win)[1] == 1)
@@ -5293,14 +5296,16 @@ if integration_root and (integration_sha or integration_url) then
   ).topline == 1)
 
   assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index == 1)
-  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.role == "change")
+  assert(vim.b[sidebar_buf].oculus_inspect_sidebar_active.role == "parent")
+  -- Moving back keeps the parent role, so it lands in the last pair's
+  -- parent tab.
   previous_mapped.callback()
 
   assert(vim.api.nvim_get_current_tabpage()
-    == tabs[pair_count * 2 + 1])
+    == tabs[pair_count * 2])
 
   assert(vim.api.nvim_get_current_win()
-    == assert(sidebar_window(tabs[pair_count * 2 + 1])))
+    == assert(sidebar_window(tabs[pair_count * 2])))
 
   assert(
     vim.b[sidebar_buf].oculus_inspect_sidebar_active.pair_index
@@ -5313,18 +5318,19 @@ if integration_root and (integration_sha or integration_url) then
   )
 
   toggle_mapped.callback()
-  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_tabpage() == tabs[2])
   vim.g.oculus_test_chunk = nil
   vim.g.oculus_test_chunk_count = nil
-  overview_sidebar_win = assert(sidebar_window(tabs[3]))
+  -- Navigation left the parent tab's sidebar focused; open the overview there.
+  overview_sidebar_win = assert(sidebar_window(tabs[2]))
   vim.api.nvim_set_current_win(overview_sidebar_win)
 
   local overview_saved = {
     sidebar_win = overview_sidebar_win,
     sidebar_cursor = vim.api.nvim_win_get_cursor(overview_sidebar_win),
     sidebar_view = vim.fn.winsaveview(),
-    main_cursor = vim.api.nvim_win_get_cursor(change_win),
-    main_view = vim.api.nvim_win_call(change_win, vim.fn.winsaveview),
+    main_cursor = vim.api.nvim_win_get_cursor(parent_win),
+    main_view = vim.api.nvim_win_call(parent_win, vim.fn.winsaveview),
   }
 
   assert(vim.api.nvim_get_current_buf() == sidebar_buf)
@@ -5438,12 +5444,12 @@ if integration_root and (integration_sha or integration_url) then
   end)
 
   assert(vim.deep_equal(
-    vim.api.nvim_win_get_cursor(change_win),
+    vim.api.nvim_win_get_cursor(parent_win),
     overview_saved.main_cursor
   ))
 
   assert(vim.deep_equal(
-    vim.api.nvim_win_call(change_win, vim.fn.winsaveview),
+    vim.api.nvim_win_call(parent_win, vim.fn.winsaveview),
     overview_saved.main_view
   ))
 
@@ -5465,7 +5471,7 @@ if integration_root and (integration_sha or integration_url) then
     == overview_saved.sidebar_view.topline)
 
   assert(vim.deep_equal(
-    vim.api.nvim_win_get_cursor(change_win),
+    vim.api.nvim_win_get_cursor(parent_win),
     overview_saved.main_cursor
   ))
 
@@ -5476,7 +5482,11 @@ if integration_root and (integration_sha or integration_url) then
     false
   )[1]:find("• ", 1, true))
 
-  vim.api.nvim_set_current_win(assert(sidebar_window(tabs[3])))
+  -- Switch to the new file version from the sidebar, which keeps the sidebar
+  -- focused in the change tab.
+  vim.fn.maparg("gD", "n", false, true).callback()
+  assert(vim.api.nvim_get_current_tabpage() == tabs[3])
+  assert(vim.api.nvim_get_current_win() == sidebar_window(tabs[3]))
 
   vim.g.oculus_test_toggled_sidebar_state = {
     cursor = vim.api.nvim_win_get_cursor(0),
@@ -5595,8 +5605,10 @@ if integration_root and (integration_sha or integration_url) then
   local initial_sidebar_win = assert(sidebar_window(tabs[2]))
   assert(vim.api.nvim_get_current_win() == parent_win)
 
+  -- The sidebar cursor follows the active entry: the file header, or the chunk
+  -- that switching file versions selected.
   assert(vim.api.nvim_win_get_cursor(initial_sidebar_win)[1]
-    == file_lines[1])
+    == file_lines[1] + (sidebar_active.chunk_index or 0))
 
   local sidebar_signs = vim.api.nvim_get_namespaces()
     .oculus_inspect_sidebar
