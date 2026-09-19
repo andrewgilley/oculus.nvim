@@ -4913,7 +4913,15 @@ switch_sidebar_version = function(group, target_role)
   vim.api.nvim_set_current_win(sidebar_win)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
-  move_cursor_to_line_start(sidebar_win)
+
+  -- The sidebar never scrolls sideways. Supplying that view keeps the helper
+  -- from reapplying the column 0 set above, so the cursor lands on the first
+  -- non-blank character.
+  move_cursor_to_line_start(sidebar_win, nil, nil, nil, nil, {
+    leftcol = 0,
+    skipcol = 0,
+  })
+
   local chunk_index = entry and entry.chunk_index or session.active_chunk or 1
   local start, max_line
 
