@@ -1305,28 +1305,18 @@ so the names the rest of the file uses, and everything the tests reach for,
 stay where they are.
 
 The test suites are plain Lua scripts that run in headless Neovim with no test
-framework:
+framework. `scripts/test` runs every unit spec; name specs to run only those:
 
 >sh
-    nvim --headless -u NONE -l tests/opinion_spec.lua
-    nvim --headless -u NONE -l tests/telemetry_spec.lua
-    nvim --headless -u NONE -l tests/tracking_spec.lua
-    nvim --headless -u NONE -l tests/health_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/contributors_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/rename_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/local_activity_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/window_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/milestones_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/saved_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/work_spec.lua
-    nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/review_spec.lua
+    scripts/test
+    scripts/test window inspect
 <
 
-The inspect suite needs a checkout of oil.nvim and some environment variables.
-See `.github/workflows/tests.yml` <.github/workflows/tests.yml> for the exact
-setup.
+Specs ending in `_integration_spec.lua` need the sibling Plexus, Zug or Nexus
+builds and run only when named; the sections above describe each one. The
+inspect suite’s pinned-commit integration needs a checkout of oil.nvim and
+some environment variables. See `.github/workflows/tests.yml`
+<.github/workflows/tests.yml> for the exact setup.
 
 
 LICENSE                                                       *oculus-license*
