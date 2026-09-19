@@ -98,7 +98,7 @@ function M.open(config, nexus_config, id, submission)
   end
 
   local function header(title)
-    return { "  PLEXUS · " .. title, "  Enter source/open · n queue experiment · r reload · g catalog · c cancel · q close", "  Ready", "" }
+    return { "  PLEXUS · " .. title, "  Enter source/open · n queue · p composition · r reload · g catalog · c cancel · q close", "  Ready", "" }
   end
 
   local function show(value)
@@ -204,18 +204,50 @@ function M.open(config, nexus_config, id, submission)
         end
 
         for _, limitation in ipairs(opportunity.limitations or {}) do lines[#lines + 1] = "    Limit: " .. text(limitation) end
-        lines[#lines + 1] = target.experiment and ("    n: " .. text(target.experiment.label)) or "    No supported experiment for this finding."
+
+        lines[#lines + 1] = target.experiment and ("    n: " .. text(target.experiment.label))
+          or (observation.analysis == "c_zig" and "    Native preparation requires explicit sources and behavioral cases."
+            or "    No supported experiment for this finding.")
+
+        if observation.analysis == "c_zig" then lines[#lines + 1] = "    p: prepare a C/Zig composition from selected sources and behavioral cases." end
         local attempts = evidence[opportunity.id] or {}
         if #attempts > 0 then lines[#lines + 1] = "    Evidence attempts: " .. #attempts end
 
         for _, result in ipairs(attempts) do
           lines[#lines + 1] = "    Evidence: " .. text(result.status) .. " · " .. text(result.validation_id)
-          lines[#lines + 1] = "      " .. text(result.diagnostic)
+          if type(result.diagnostic) == "string" then lines[#lines + 1] = "      " .. text(result.diagnostic) end
           if type(result.scope) == "string" and result.scope ~= "" then lines[#lines + 1] = "      Scope: " .. text(result.scope) end
 
+          local function artifact_row(label, artifact)
+            if type(artifact) ~= "string" then return end
+            lines[#lines + 1] = "        " .. label .. ": " .. text(artifact) .. " · Enter to inspect"
+            targets[#lines] = { opportunity = opportunity, source = { artifact = artifact, digest = artifact, path = label, line = 1, column = 1 } }
+          end
+
           for _, case in ipairs(result.cases or {}) do
-            lines[#lines + 1] = "      Case: " .. text(case.label) .. " · " .. text(case.status)
-            lines[#lines + 1] = "        Expected: " .. text(case.expected) .. " · actual: " .. text(case.actual)
+            lines[#lines + 1] = "      Case: " .. text(case.label or case.name) .. " · " .. text(case.status or case.verdict)
+
+            if result.kind == "c_zig_composition" then
+              lines[#lines + 1] = "        Expected exit: " .. text(case.expected_exit) .. " · actual: " .. text(case.actual_exit)
+              lines[#lines + 1] = "        Expected stdout: " .. text(case.expected_stdout)
+              artifact_row("stdout", case.stdout)
+              artifact_row("stderr", case.stderr)
+            else
+              lines[#lines + 1] = "        Expected: " .. text(case.expected) .. " · actual: " .. text(case.actual)
+            end
+          end
+
+          if result.kind == "c_zig_composition" then
+            lines[#lines + 1] = "      Native link: " .. text(result.link_status)
+
+            for _, step in ipairs(result.steps or {}) do
+              if step.phase ~= "behavior" then
+                lines[#lines + 1] = "      " .. text(step.phase) .. ": " .. text(step.name) .. " · " .. (step.success and "succeeded" or "failed")
+                artifact_row("stderr", step.stderr)
+              end
+            end
+
+            for _, unresolved in ipairs(result.unresolved or {}) do lines[#lines + 1] = "      Unresolved: " .. text(unresolved) end
           end
         end
 
@@ -224,7 +256,8 @@ function M.open(config, nexus_config, id, submission)
             or (target.experiment and target.experiment.kind == "rust_function_signature")
 
           lines[#lines + 1] = compiler and "      Scoped to compiler signature checks; behavior remains unverified and relationship remains inferred."
-            or "      Scoped to this fixture; relationship remains inferred."
+            or (observation.analysis == "c_zig" and "      Selected cases only; general equivalence remains unverified and relationship remains inferred."
+              or "      Scoped to this fixture; relationship remains inferred.")
         end
 
         for row = start, #lines do targets[row] = targets[row] or target end
@@ -353,7 +386,29 @@ function M.open(config, nexus_config, id, submission)
     })
   end
 
+  function state.compose(target, path)
+    target = selected(target)
+
+    if state.mode ~= "investigation" or not target or not target.opportunity
+      or state.view.observation.analysis ~= "c_zig" then
+      status("Select a C/Zig finding to prepare a native composition.")
+      return
+    end
+
+    local options = { native = true, investigation_id = state.view.investigation_id, opportunity_id = target.opportunity.id }
+
+    local function open(manifest)
+      if state.closed or type(manifest) ~= "string" or vim.trim(manifest) == "" then return end
+      state.close()
+      require("oculus.compositions").open(config, nexus_config, manifest, options)
+    end
+
+    if path then open(path)
+    else vim.ui.input({ prompt = "C/Zig composition request (sources and cases): ", completion = "file" }, open) end
+  end
+
   local maps = { ["<CR>"] = function() state.navigate() end, n = function() state.queue() end,
+    p = function() state.compose() end,
     r = state.refresh, g = state.catalog, c = state.cancel, ["<C-c>"] = state.cancel, q = state.close, ["<Esc>"] = state.close }
 
   for key, callback in pairs(maps) do vim.keymap.set("n", key, callback, { buffer = state.buf, silent = true, nowait = true }) end

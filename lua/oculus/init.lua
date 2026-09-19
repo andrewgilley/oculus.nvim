@@ -531,6 +531,10 @@ function M.open_nexus(submission)
   return require("oculus.nexus").open(M.config.nexus, M.config.plexus, submission)
 end
 
+function M.open_composition(input)
+  return require("oculus.compositions").open(M.config.plexus, M.config.nexus, input)
+end
+
 function M.investigate(context)
   return require("oculus.investigations").prompt(M.config, context)
 end

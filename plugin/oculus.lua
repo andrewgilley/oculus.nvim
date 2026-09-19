@@ -77,6 +77,10 @@ vim.api.nvim_create_user_command("OculusNexus", function()
   require("oculus").open_nexus()
 end, { desc = "Manage local Nexus resources and experiment jobs" })
 
+vim.api.nvim_create_user_command("OculusComposition", function(opts)
+  require("oculus").open_composition(opts.args ~= "" and opts.args or nil)
+end, { nargs = "?", complete = "file", desc = "Inspect, queue and reopen a linked Plexus composition" })
+
 vim.api.nvim_create_user_command("OculusClose", function()
   require("oculus").close()
 end, { desc = "Close Oculus" })

@@ -12,8 +12,12 @@ end
 local function job(value)
   assert(type(value) == "table" and string(value.id) and states[value.state], "Invalid job identity or state")
 
-  for _, key in ipairs({ "resource_id", "hypothesis_id", "binding_id", "plan_id", "artifact_store" }) do
+  for _, key in ipairs({ "resource_id", "plan_id", "artifact_store" }) do
     assert(string(value[key]), "Missing job " .. key)
+  end
+
+  for _, key in ipairs({ "hypothesis_id", "binding_id" }) do
+    assert(value.kind == "composition" and optional_string(value[key]) or string(value[key]), "Missing job " .. key)
   end
 
   for _, key in ipairs({ "run_id", "result_hypothesis_id", "result_investigation_id", "error", "retry_of", "conclusion" }) do

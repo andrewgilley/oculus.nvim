@@ -66,7 +66,7 @@ assert(vim.deep_equal(state.view.reports, report))
 local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
 assert(rendered:find("Analysis: C/C++ ABI → Zig", 1, true))
 assert(rendered:find("Claim: observed", 1, true) and rendered:find("Claim: inferred", 1, true))
-assert(rendered:find("No supported experiment", 1, true))
+assert(rendered:find("Native preparation requires explicit sources and behavioral cases", 1, true))
 for _, obligation in ipairs(state.view.reasoning.obligations) do assert(obligation.status == "unresolved") end
 local selected
 

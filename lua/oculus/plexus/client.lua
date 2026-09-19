@@ -19,7 +19,7 @@ function M.request(config, arguments, callback)
   end
 
   vim.list_extend(argv, arguments)
-  local runtime_commands = { hypothesize = true, revise = true, run = true, replay = true }
+  local runtime_commands = { hypothesize = true, revise = true, run = true, replay = true, compose = true, ["compose-run"] = true }
 
   if runtime_commands[arguments[1]] then
     local backend = config.backend or "wasmtime"
@@ -59,6 +59,7 @@ function M.request(config, arguments, callback)
       local decoded, value = pcall(vim.json.decode, result.stdout or "")
 
       local version = decoded and type(value) == "table" and (value.schema_version
+        or (type(value.plan) == "table" and value.plan.schema_version)
         or (type(value.record) == "table" and value.record.schema_version)
         or (type(value.replay) == "table" and type(value.replay.record) == "table"
           and value.replay.record.schema_version))

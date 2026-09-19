@@ -41,6 +41,13 @@ local report = {
   limitations = { "Agreement does not prove the expected result.", "Identical archived inputs only." },
 }
 
+local linked = vim.deepcopy(report)
+linked.kind, linked.left_link, linked.right_link = "composition_runtime_comparison", "satisfied", "inconclusive"
+local comparison = require("oculus.plexus.comparison")
+local linked_lines = table.concat(comparison.lines(linked, left, right), "\n")
+assert(linked_lines:find("Link obligation: satisfied", 1, true) and linked_lines:find("Link obligation: inconclusive", 1, true))
+linked.right_link = "verified"
+assert(not pcall(comparison.lines, linked, left, right))
 local config = { command = { "/path with spaces/plexus" }, store = directory, backend = "zug", zug_command = "/tmp/zug" }
 local state = bridge.open(config, directory .. "/hypothesis.json")
 respond(calls[1], view)
@@ -57,8 +64,10 @@ compare_key()
 assert(prompts[1].options.default == left)
 prompts[1].callback(left)
 prompts[2].callback(" " .. right .. " ")
+
 assert(vim.deep_equal(calls[2].argv, { config.command[1], "compare-runs", left, right, vim.fn.fnamemodify(directory, ":p") }),
   "compare must pass explicit IDs and store without execution backend flags")
+
 respond(calls[2], report)
 assert(state.comparison.comparison_id == report.comparison_id and not state.busy)
 assert(vim.deep_equal(investigation, vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)))
@@ -124,7 +133,6 @@ divergence.cases[1].right_values = { 10 }
 respond(calls[#calls], divergence)
 respond(cancelled, report)
 assert(state.comparison.comparison_id == divergence.comparison_id, "late cancelled callback must not replace newer comparison")
-
 local inconclusive = vim.deepcopy(report)
 inconclusive.status, inconclusive.cases[1].status = "inconclusive", "inconclusive"
 inconclusive.cases[1].right_values = vim.NIL
@@ -133,7 +141,6 @@ state.compare(left, right)
 respond(calls[#calls], inconclusive)
 rendered = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(state.raw_win), 0, -1, false), "\n")
 assert(rendered:find("Right: unavailable", 1, true) and rendered:find("Individual conclusion: unsupported", 1, true))
-
 compare_key()
 prompts[#prompts].callback(left)
 local stale_prompt = prompts[#prompts]

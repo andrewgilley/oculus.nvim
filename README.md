@@ -106,7 +106,7 @@ Oculus supports all the usual plugin managers.
 ```lua
 {
   "andrewgilley/oculus.nvim",
-  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
+  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusComposition", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
   keys = {
     { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
   },
@@ -466,6 +466,7 @@ Set `inspect_colorscheme = false` to turn this off.
 | `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
 | `:OculusPlexus [hypothesis.json]` | Explore hypotheses and run scoped experiments |
+| `:OculusComposition [manifest.json\|plan-id]` | Inspect parts, connections, cases and archived composition attempts |
 | `:OculusInvestigate [rust\|c-zig]` | Investigate a committed local change against a consumer project |
 | `:OculusInvestigations` | Browse and reopen durable project investigations |
 | `:OculusNexus` | Manage local deployment resources and queued experiments |
@@ -603,7 +604,8 @@ is standalone headers and explicit Zig `extern` declarations. Plexus can expose
 compatible declarations and missing C ABI wrappers, including C++ declarations
 that require C linkage. These findings describe declarations, not completed
 implementations, successful linking, or verified runtime behavior. Unresolved
-obligations remain visible, and these findings have no queueable experiment yet.
+obligations remain visible. Press `p` on a supported finding to prepare an
+[executable composition](#executable-compositions) with explicit sources and cases.
 `:OculusInvestigate rust` explicitly selects the existing Rust analysis; `gI`
 on local activity continues to use that default.
 
@@ -617,6 +619,7 @@ Individual source references in an evidence path are navigable too.
 | --- | --- |
 | `Enter` | Open a catalog entry or the selected source reference |
 | `n` | Queue an explicitly supported finding experiment through Nexus |
+| `p` | Prepare a C/Zig composition request and review its sources, adapter and cases |
 | `r` | Reload the stored investigation or catalog |
 | `g` | Return to the catalog |
 | `c` / `Ctrl-c` | Cancel the pending capture/read request |
@@ -651,6 +654,55 @@ checks signature evidence alongside the still-unresolved behavior obligation.
 Run `nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/c_zig_integration_spec.lua`
 to exercise real C++ and Zig Git histories, the actual Plexus CLI, relationship
 rendering and archived source navigation after deleting the source repositories.
+
+### Executable compositions
+
+`:OculusComposition /path/to/composition.json` prepares a linked core Wasm plan
+without executing it. Start with the sibling
+`plexus/fixtures/compositions/checksum-link/composition.json`. The view shows the
+provider and consumer, typed connections, pinned runtime, memory inputs, expected
+case results, link evidence and behavior evidence separately. Preparation uses the
+configured `plexus.backend`; Nexus places the resulting pinned runtime plan.
+
+Press `n` to queue the displayed plan, then `w` in Nexus to work the queue and
+`o` to reopen its evidence. A successful Nexus job can contain a contradicted
+behavioral result. `h` lists archived composition runs; `Enter` reopens a run's
+plan; `d` on a run compares it with another runtime's run ID. `r` reloads and `m`
+prepares another manifest. Without an argument the command reopens the last plan
+for this store. Sources can be removed after preparation: execution and reopening
+use archived bytes. Evidence remains limited to those parts and cases.
+
+For a C/C++–Zig finding, press `p` in `:OculusInvestigations` and select a native
+composition request file. The request identifies the selected investigation and
+opportunity, committed producer compilation units, optional additional files,
+an absolute Zig 0.16 executable, and behavioral cases. For example:
+
+```json
+{
+  "schema_version": 1,
+  "investigation_id": "sha256:<investigation digest>",
+  "opportunity_id": "<selected finding id>",
+  "producer_sources": ["src/api.cpp"],
+  "producer_files": [],
+  "consumer_files": [],
+  "zig": "/absolute/path/to/zig",
+  "cases": [{"name": "known behavior", "arguments": [], "expected_stdout": "", "expected_exit": 0}]
+}
+```
+
+The captured Zig source must be an executable entry point that exercises the
+selected interface. Plexus may propose a bounded scalar C ABI wrapper; `Enter`
+on an adapter or source row opens its digest-verified archived text for review.
+The plan shows toolchain identity, cases, obligations and execution limitations.
+`n` queues this exact reviewed plan on a `plexus-native` resource. `o` in Nexus
+returns to the originating finding with build, link and case evidence. `Enter`
+on an output artifact opens its retained stdout or diagnostic. Native execution
+uses trusted local source; passing cases do not establish general equivalence,
+pointer safety or compatibility on other targets.
+
+The real scenarios are covered by `tests/compositions_integration_spec.lua` and
+`tests/c_zig_composition_integration_spec.lua`; both run through the UI and Nexus
+and reopen results after the source repositories or manifests are removed.
 
 ### Nexus deployment resources
 

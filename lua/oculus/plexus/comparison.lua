@@ -22,13 +22,15 @@ end
 
 function M.lines(report, left, right)
   assert(type(report) == "table" and report.schema_version == 1
-    and report.kind == "runtime_comparison", "Invalid comparison schema")
+    and (report.kind == "runtime_comparison" or report.kind == "composition_runtime_comparison"), "Invalid comparison schema")
+
   assert(artifact(report.comparison_id), "Missing comparison artifact ID")
   assert(report.left_run == left and report.right_run == right, "Comparison run IDs differ from request")
   assert(({ agreement_for_cases = true, divergence = true, inconclusive = true })[report.status], "Invalid comparison status")
   assert(type(report.cases) == "table" and vim.islist(report.cases), "Missing comparison cases")
   assert(type(report.limitations) == "table" and vim.islist(report.limitations), "Missing comparison limitations")
   local conclusions = { supported_for_cases = true, contradicted_by_case = true, inconclusive = true, unsupported = true }
+
   local lines = {
     "  PLEXUS · RUNTIME COMPARISON", "",
     "  Status: " .. report.status,
@@ -38,12 +40,20 @@ function M.lines(report, left, right)
 
   for _, side in ipairs({ "left", "right" }) do
     local runtime = report[side .. "_runtime"]
+
     assert(type(runtime) == "table" and type(runtime.backend) == "string"
       and type(runtime.version) == "string", "Missing runtime identity")
+
     assert(conclusions[report[side .. "_conclusion"]], "Invalid individual conclusion")
     lines[#lines + 1] = "  " .. side:upper() .. ": " .. text(runtime.backend) .. " " .. text(runtime.version)
     lines[#lines + 1] = "    Run: " .. text(report[side .. "_run"])
     lines[#lines + 1] = "    Individual conclusion: " .. report[side .. "_conclusion"]
+
+    if report.kind == "composition_runtime_comparison" then
+      local link = report[side .. "_link"]
+      assert(({ satisfied = true, declared_satisfied = true, violated = true, inconclusive = true })[link], "Invalid composition link status")
+      lines[#lines + 1] = "    Link obligation: " .. link
+    end
   end
 
   lines[#lines + 1] = ""

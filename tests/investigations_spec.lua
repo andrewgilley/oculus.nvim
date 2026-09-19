@@ -257,7 +257,7 @@ assert(rendered:find("Header: include/math.hpp · language c++", 1, true))
 assert(rendered:find("Zig source: src/adapter.zig", 1, true))
 assert(rendered:find("A C ABI wrapper could connect C++ to Zig", 1, true))
 assert(rendered:find("Wrapper implementation · unresolved", 1, true))
-assert(rendered:find("No supported experiment for this finding.", 1, true))
+assert(rendered:find("Native preparation requires explicit sources and behavioral cases", 1, true))
 for _, item in pairs(state.targets) do target = item; break end
 assert(target and not target.experiment)
 count = #calls
@@ -317,6 +317,23 @@ local custom_config = vim.tbl_extend("force", config, { capture_timeout_ms = 450
 state = bridge.open(custom_config, nexus_config, nil, submission)
 assert(calls[#calls].options.timeout == 450000, "capture retains its independently configurable timeout")
 respond(calls[#calls], compiler)
+state.close()
+local native_view = vim.deepcopy(c_zig_view)
+local native_id = native_view.reports[1].opportunities[1].id
+
+native_view.evidence = { { kind = "c_zig_composition", opportunity_id = native_id, validation_id = "sha256:native", status = "supported_for_cases",
+  scope = "Selected native cases", link_status = "succeeded", cases = {
+    { name = "nonzero-is-expected", verdict = "passed", expected_exit = 6, actual_exit = 6, expected_stdout = "", stdout = digest, stderr = digest },
+  }, steps = { { phase = "behavior", name = "nonzero-is-expected", success = false, exit_code = 6, stderr = digest } },
+  unresolved = { "general_behavioral_equivalence" } } }
+
+state = bridge.open(config, nexus_config, native_view.investigation_id)
+respond(calls[#calls], native_view)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("nonzero-is-expected · passed", 1, true))
+assert(rendered:find("Expected exit: 6 · actual: 6", 1, true))
+assert(not rendered:find("nonzero-is-expected · failed", 1, true), "Nonzero expected exit is a passing case")
+assert(rendered:find("general_behavioral_equivalence", 1, true))
 state.close()
 vim.ui.input, vim.ui.select, vim.system, vim.notify = old_input, old_select, original_system, original_notify
 vim.fn.delete(directory, "rf")
