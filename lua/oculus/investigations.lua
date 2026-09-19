@@ -210,6 +210,11 @@ function M.open(config, nexus_config, id, submission)
             or "    No supported experiment for this finding.")
 
         if observation.analysis == "c_zig" then lines[#lines + 1] = "    p: prepare a C/Zig composition from selected sources and behavioral cases." end
+
+        if opportunity.kind == "candidate_substitution" then
+          lines[#lines + 1] = "    p: adapt the consumer's calls and test them against the producer before and after the change."
+        end
+
         local attempts = evidence[opportunity.id] or {}
         if #attempts > 0 then lines[#lines + 1] = "    Evidence attempts: " .. #attempts end
 
@@ -227,7 +232,14 @@ function M.open(config, nexus_config, id, submission)
           for _, case in ipairs(result.cases or {}) do
             lines[#lines + 1] = "      Case: " .. text(case.label or case.name) .. " · " .. text(case.status or case.verdict)
 
-            if result.kind == "c_zig_composition" then
+            if result.kind == "rust_call_site_adaptation" then
+              lines[#lines + 1] = "        Before the change: " .. text(case.baseline) .. " · adapted after: " .. text(case.adapted)
+
+              if type(case.adapted) == "table" then
+                artifact_row("stdout", case.adapted.stdout)
+                artifact_row("stderr", case.adapted.stderr)
+              end
+            elseif result.kind == "c_zig_composition" then
               lines[#lines + 1] = "        Expected exit: " .. text(case.expected_exit) .. " · actual: " .. text(case.actual_exit)
               lines[#lines + 1] = "        Expected stdout: " .. text(case.expected_stdout)
               artifact_row("stdout", case.stdout)
@@ -235,6 +247,19 @@ function M.open(config, nexus_config, id, submission)
             else
               lines[#lines + 1] = "        Expected: " .. text(case.expected) .. " · actual: " .. text(case.actual)
             end
+          end
+
+          if result.kind == "rust_call_site_adaptation" then
+            lines[#lines + 1] = "      Adaptation needed: " .. text(result.adaptation_needed) .. " · adapted build: " .. text(result.adapted_build)
+
+            for _, step in ipairs(result.steps or {}) do
+              if not step.phase:match("_case$") then
+                lines[#lines + 1] = "      " .. text(step.phase) .. ": " .. text(step.name) .. " · " .. (step.success and "succeeded" or "failed")
+                artifact_row("stderr", step.stderr)
+              end
+            end
+
+            for _, unresolved in ipairs(result.unresolved or {}) do lines[#lines + 1] = "      Unresolved: " .. text(unresolved) end
           end
 
           if result.kind == "c_zig_composition" then
@@ -255,7 +280,10 @@ function M.open(config, nexus_config, id, submission)
           local compiler = (type(opportunity.validation) == "table" and opportunity.validation.kind == "rust_function_signature")
             or (target.experiment and target.experiment.kind == "rust_function_signature")
 
-          lines[#lines + 1] = compiler and "      Scoped to compiler signature checks; behavior remains unverified and relationship remains inferred."
+          local adapted = vim.iter(attempts):any(function(result) return result.kind == "rust_call_site_adaptation" end)
+
+          lines[#lines + 1] = adapted and "      Selected consumer tests only; behavioral equivalence remains unverified and relationship remains inferred."
+            or compiler and "      Scoped to compiler signature checks; behavior remains unverified and relationship remains inferred."
             or (observation.analysis == "c_zig" and "      Selected cases only; general equivalence remains unverified and relationship remains inferred."
               or "      Scoped to this fixture; relationship remains inferred.")
         end
@@ -388,14 +416,17 @@ function M.open(config, nexus_config, id, submission)
 
   function state.compose(target, path)
     target = selected(target)
+    local finding = state.mode == "investigation" and target and target.opportunity
+    local c_zig = finding and state.view.observation.analysis == "c_zig"
+    local rust = finding and target.opportunity.kind == "candidate_substitution" and not c_zig
 
-    if state.mode ~= "investigation" or not target or not target.opportunity
-      or state.view.observation.analysis ~= "c_zig" then
-      status("Select a C/Zig finding to prepare a native composition.")
+    if not c_zig and not rust then
+      status("Select a C/Zig finding or a Rust substitution finding to prepare a composition.")
       return
     end
 
-    local options = { native = true, investigation_id = state.view.investigation_id, opportunity_id = target.opportunity.id }
+    local options = { native = true, kind = rust and "rust" or "c_zig",
+      investigation_id = state.view.investigation_id, opportunity_id = target.opportunity.id }
 
     local function open(manifest)
       if state.closed or type(manifest) ~= "string" or vim.trim(manifest) == "" then return end
@@ -404,6 +435,19 @@ function M.open(config, nexus_config, id, submission)
     end
 
     if path then open(path)
+    elseif rust then
+      -- The developer names the tests; Plexus derives the patch and trees itself.
+      vim.ui.input({ prompt = "Consumer tests to keep passing (exact names, space-separated): " }, function(value)
+        if state.closed or type(value) ~= "string" or vim.trim(value) == "" then return end
+
+        local request = vim.json.encode({ schema_version = 1, investigation_id = options.investigation_id,
+          opportunity_id = options.opportunity_id, tests = vim.split(vim.trim(value), "%s+") })
+
+        local file = vim.fn.stdpath("state") .. "/oculus-adaptations/" .. vim.fn.sha256(request) .. ".json"
+        vim.fn.mkdir(vim.fn.fnamemodify(file, ":h"), "p")
+        if vim.fn.writefile({ request }, file) ~= 0 then status("Could not write the adaptation request."); return end
+        open(file)
+      end)
     else vim.ui.input({ prompt = "C/Zig composition request (sources and cases): ", completion = "file" }, open) end
   end
 

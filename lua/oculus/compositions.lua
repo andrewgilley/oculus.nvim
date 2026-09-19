@@ -75,9 +75,11 @@ function M.open(config, nexus_config, input, options)
   local function render()
     local view = state.view
     local native = state.native
+    local rust = view.native_kind == "rust_call_site_adaptation"
     local plan = native and view.composition or view.plan
     local runtime = native and view.runtime or plan.runtime
-    local lines, targets = header(native and "C/ZIG COMPOSITION" or "LINKED COMPOSITION"), {}
+    local title = rust and "RUST CALL-SITE ADAPTATION" or native and "C/ZIG COMPOSITION" or "LINKED COMPOSITION"
+    local lines, targets = header(title), {}
     lines[#lines + 1] = "  " .. text(view.question or "Developer-selected native experiment")
     lines[#lines + 1] = "  Plan: " .. view.plan_id
     lines[#lines + 1] = "  Runtime: " .. text(runtime.backend) .. " " .. text(runtime.version)
@@ -91,6 +93,7 @@ function M.open(config, nexus_config, input, options)
       lines[#lines + 1] = "  " .. text(part.name) .. " · " .. text(part.role) .. " · " .. text(part.project)
       if part.revision then lines[#lines + 1] = "    Revision: " .. text(part.revision) end
       if part.module then lines[#lines + 1] = "    Module: " .. text(part.module) .. " · source: " .. text(part.source) end
+      if part.package then lines[#lines + 1] = "    Package: " .. text(part.package) .. " · " .. text(part.manifest or part.directory) end
 
       for _, file in ipairs(part.files or {}) do
         lines[#lines + 1] = "    " .. text(file.path) .. " · " .. text(file.artifact)
@@ -102,7 +105,10 @@ function M.open(config, nexus_config, input, options)
     lines[#lines + 1] = "  CONNECTIONS"
 
     for _, link in ipairs(plan.connections) do
-      if native then
+      if rust then
+        lines[#lines + 1] = "  " .. text(link.importer) .. " calls " .. text(link.previous) .. " → " .. text(link.replacement)
+          .. " through " .. text(link.alias)
+      elseif native then
         lines[#lines + 1] = "  " .. text(link.symbol) .. " · " .. text(link.kind) .. " · " .. text(link.signature)
       else
         lines[#lines + 1] = "  " .. text(link.importer) .. " → " .. text(link.module) .. " :: " .. text(link.name) .. " · " .. text(link.status)
@@ -111,7 +117,20 @@ function M.open(config, nexus_config, input, options)
       end
     end
 
-    if type(plan.adaptation) == "table" then
+    if rust and type(plan.adaptation) == "table" then
+      local patch = { artifact = plan.adaptation.patch, path = plan.adaptation.path .. ".diff" }
+      lines[#lines + 1] = "  Proposed patch: " .. text(plan.adaptation.path) .. " · " .. text(plan.adaptation.patch)
+      targets[#lines] = patch
+      lines[#lines + 1] = "    Enter opens the archived patch for review before queuing; the worktree is never changed."
+      targets[#lines] = patch
+
+      for _, edit in ipairs(plan.adaptation.edits or {}) do
+        lines[#lines + 1] = "    " .. text(edit.line) .. ":" .. text(edit.column) .. " " .. text(edit.original)
+          .. " → " .. (edit.replacement == "" and "(removed)" or text(edit.replacement))
+
+        lines[#lines + 1] = "      " .. text(edit.reason)
+      end
+    elseif type(plan.adaptation) == "table" then
       lines[#lines + 1] = "  Proposed adapter: " .. text(plan.adaptation.path) .. " · " .. text(plan.adaptation.artifact)
       targets[#lines] = { artifact = plan.adaptation.artifact, path = plan.adaptation.path }
       lines[#lines + 1] = "    Enter opens the archived adapter for review before queuing."
@@ -121,7 +140,11 @@ function M.open(config, nexus_config, input, options)
     lines[#lines + 1] = ""
     lines[#lines + 1] = "  PLANNED CASES"
 
-    for _, case in ipairs(native and plan.cases or view.cases or {}) do
+    for _, case in ipairs(rust and plan.cases or {}) do
+      lines[#lines + 1] = "  " .. text(case) .. " · consumer test, before and after the change"
+    end
+
+    for _, case in ipairs(not rust and (native and plan.cases or view.cases) or {}) do
       lines[#lines + 1] = "  " .. text(case.name) .. " · arguments: " .. text(case.arguments)
 
       lines[#lines + 1] = native and ("    Expected stdout: " .. text(case.expected_stdout) .. " · exit: " .. text(case.expected_exit))
@@ -135,7 +158,12 @@ function M.open(config, nexus_config, input, options)
     if view.link then lines[#lines + 1] = "  Declared links: " .. text(view.link.status) end
     for _, obligation in ipairs(plan.obligations or {}) do lines[#lines + 1] = "  " .. text(obligation) end
     for _, limitation in ipairs(plan.limitations or {}) do lines[#lines + 1] = "  " .. text(limitation) end
-    if native then lines[#lines + 1] = "  Execution: trusted local native sources and proposed adapter." end
+
+    if native then
+      lines[#lines + 1] = rust and "  Execution: trusted local consumer and producer builds with the proposed patch."
+        or "  Execution: trusted local native sources and proposed adapter."
+    end
+
     for _, blocker in ipairs(view.blockers or {}) do lines[#lines + 1] = "  Blocker: " .. text(blocker) end
     lines[#lines + 1] = "  Evidence applies to the pinned parts and selected cases. General behavior remains unverified."
     lines[#lines + 1] = ""
@@ -165,7 +193,7 @@ function M.open(config, nexus_config, input, options)
 
   local function accept(view, check_selection)
     assert(type(view.plan_id) == "string", "Missing composition plan identity")
-    local native = view.native_kind == "c_zig_composition"
+    local native = view.native_kind == "c_zig_composition" or view.native_kind == "rust_call_site_adaptation"
     local plan = native and view.composition or view.plan
     assert(type(plan) == "table" and type(plan.parts) == "table" and type(plan.connections) == "table", "Missing composition parts or connections")
 
@@ -195,7 +223,8 @@ function M.open(config, nexus_config, input, options)
     if type(path) ~= "string" or vim.trim(path) == "" then return end
     local native = options.native
     if state.view then native = state.native end
-    request({ native and "c-zig-compose" or "compose", vim.fn.fnamemodify(path, ":p"), config.store }, function(view) accept(view, native) end)
+    local command = not native and "compose" or options.kind == "rust" and "rust-adapt" or "c-zig-compose"
+    request({ command, vim.fn.fnamemodify(path, ":p"), config.store }, function(view) accept(view, native) end)
   end
 
   function state.submit()

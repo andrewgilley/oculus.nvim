@@ -619,7 +619,7 @@ Individual source references in an evidence path are navigable too.
 | --- | --- |
 | `Enter` | Open a catalog entry or the selected source reference |
 | `n` | Queue an explicitly supported finding experiment through Nexus |
-| `p` | Prepare a C/Zig composition request and review its sources, adapter and cases |
+| `p` | Prepare a C/Zig composition, or adapt a Rust substitution in its consumer, and review it |
 | `r` | Reload the stored investigation or catalog |
 | `g` | Return to the catalog |
 | `c` / `Ctrl-c` | Cancel the pending capture/read request |
@@ -700,8 +700,22 @@ on an output artifact opens its retained stdout or diagnostic. Native execution
 uses trusted local source; passing cases do not establish general equivalence,
 pointer safety or compatibility on other targets.
 
-The real scenarios are covered by `tests/compositions_integration_spec.lua` and
-`tests/c_zig_composition_integration_spec.lua`; both run through the UI and Nexus
+For a Rust candidate substitution, press `p` and name the consumer tests whose
+behavior must be kept (exact test names, separated by spaces). Oculus writes the
+request; Plexus proposes a patch that rewrites the consumer's calls to the
+replacement, and shows it with each edit. `Enter` on the patch row opens the
+archived diff for review; your worktree is never changed. `n` queues the plan.
+The run builds the consumer against the producer before the change (the
+baseline), then the unadapted and the adapted consumer after it, and runs the
+selected tests before and after. `o` in Nexus returns to the finding with
+separate build and test obligations: `supported_for_cases`, `build_failed`,
+`behavior_failed`, or `inconclusive` when the baseline itself fails. Selected
+tests do not establish that the functions behave the same in general. See the
+sibling Plexus `docs/selected-changes.md` for the profile and its limits.
+
+The real scenarios are covered by `tests/compositions_integration_spec.lua`,
+`tests/c_zig_composition_integration_spec.lua` and
+`tests/rust_adaptation_integration_spec.lua`; all run through the UI and Nexus
 and reopen results after the source repositories or manifests are removed.
 
 ### Nexus deployment resources
