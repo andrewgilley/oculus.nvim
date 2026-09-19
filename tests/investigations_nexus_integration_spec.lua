@@ -10,6 +10,7 @@ local root = vim.fn.fnamemodify(vim.fn.getcwd(), ":h")
 local binary = vim.env.PLEXUS_BIN or root .. "/plexus/target/debug/plexus"
 local launcher = vim.env.NEXUS_SCRIPT or root .. "/nexus/nexus.py"
 local fixture = vim.json.decode(table.concat(vim.fn.readfile(vim.env.PLEXUS_INVESTIGATION_FIXTURE), "\n"))
+local expected_conclusion = fixture.expected_conclusion or "reproduced_gap"
 assert(type(fixture.store) == "string" and type(fixture.investigation_id) == "string", "Invalid investigation descriptor")
 assert(vim.fn.executable(binary) == 1, "Build Plexus first")
 local directory = vim.fn.tempname()
@@ -37,7 +38,7 @@ assert(state.view.status == "completed" and #state.view.experiments > 0, "Fixtur
 local selected
 
 for row, target in pairs(state.targets) do
-  if target.experiment then
+  if target.experiment and (not fixture.opportunity_id or target.opportunity.id == fixture.opportunity_id) then
     selected = target
     vim.api.nvim_win_set_cursor(state.win, { row, 0 })
     break
@@ -52,10 +53,11 @@ assert(not nexus.error, nexus.error)
 assert(nexus.last_job.kind == "discovery_validation" and nexus.last_job.resource_id == "local-native")
 assert(nexus.last_job.state == "queued")
 key(nexus, "w")
-assert(vim.wait(15000, function() return nexus.error or (not nexus.working and nexus.jobs[1].state == "succeeded") end))
+assert(vim.wait(130000, function() return nexus.error or not nexus.working end))
+assert(vim.wait(10000, function() return nexus.error or nexus.jobs[1].state ~= "queued" end))
 assert(not nexus.error, nexus.error)
 local job = nexus.jobs[1]
-assert(job.state == "succeeded" and job.conclusion == "reproduced_gap", vim.inspect(job))
+assert(job.state == "succeeded" and job.conclusion == expected_conclusion, vim.inspect(job))
 assert(job.result_investigation_id == fixture.investigation_id and type(job.run_id) == "string")
 
 for row, item in pairs(nexus.targets) do
@@ -73,7 +75,7 @@ for _, item in ipairs(state.view.evidence) do
   if item.opportunity_id == selected.opportunity.id and item.plan_id == job.plan_id then evidence = item; break end
 end
 
-assert(evidence and evidence.status == "reproduced_gap", vim.inspect(state.view.evidence))
+assert(evidence and evidence.status == expected_conclusion, vim.inspect(state.view.evidence))
 assert(evidence.runtime.backend == "plexus-native")
 
 for _, report in ipairs(state.view.reports) do
@@ -83,7 +85,32 @@ for _, report in ipairs(state.view.reports) do
 end
 
 local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
-assert(rendered:find("Evidence: reproduced_gap", 1, true) and rendered:find("relationship remains inferred", 1, true))
+assert(rendered:find("Evidence: " .. expected_conclusion, 1, true) and rendered:find("relationship remains inferred", 1, true))
+
+if selected.experiment.kind == "rust_function_signature" then
+  assert(rendered:find("Claim: observed", 1, true) and rendered:find("Claim: inferred", 1, true))
+  assert(rendered:find("behavior remains unverified", 1, true))
+  assert(type(evidence.scope) == "string" and rendered:find("Scope: " .. evidence.scope, 1, true))
+
+  for _, case in ipairs(evidence.cases) do
+    assert(rendered:find("Case: " .. case.label .. " · " .. case.status, 1, true))
+    assert(rendered:find("Expected: " .. case.expected .. " · actual: " .. case.actual, 1, true))
+  end
+
+  local signature, behavior
+
+  for _, obligation in ipairs(state.view.reasoning.obligations) do
+    if obligation.opportunity_id == selected.opportunity.id then
+      if obligation.kind == "replacement_signature" then signature = obligation end
+      if obligation.kind == "behavioral_equivalence" then behavior = obligation end
+    end
+  end
+
+  local expected_signature = expected_conclusion == "contradicted_by_signature" and "contradicted" or expected_conclusion
+  assert(signature and signature.status == expected_signature, vim.inspect(signature))
+  assert(behavior and behavior.status == "unresolved", vim.inspect(behavior))
+end
+
 state.close()
 vim.fn.delete(directory, "rf")
-print("Real Oculus finding → Nexus native placement → Plexus fixture → durable inferred investigation evidence passed")
+print("Real Oculus finding → Nexus native placement → Plexus checks → durable inferred investigation evidence passed")

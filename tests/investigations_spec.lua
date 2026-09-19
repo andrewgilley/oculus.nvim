@@ -98,6 +98,80 @@ completed.evidence = { { opportunity_id = "gap", validation_id = "sha256:validat
 respond(calls[#calls], completed)
 rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
 assert(rendered:find("Evidence: accepted", 1, true) and rendered:find("relationship remains inferred", 1, true))
+local compiler = vim.deepcopy(view)
+compiler.reports[1].opportunities[1].validation = { kind = "rust_function_signature" }
+compiler.reports[1].opportunities[1].substitution = { previous_path = "provider::legacy", replacement_path = "provider::replacement" }
+compiler.experiments[1] = { opportunity_id = "gap", kind = "rust_function_signature", label = "Check replacement signature" }
+
+compiler.reasoning = {
+  schema_version = 1,
+  claims = {
+    { id = "claim-observed", opportunity_id = "gap", kind = "public_declaration", status = "observed", rule_version = "signature/1",
+      statement = "A public replacement declaration was added.", obligations = {}, support = {} },
+    { id = "claim-gap", kind = "candidate_substitution", status = "inferred", rule_version = "signature/1",
+      statement = "The replacement has a matching declared signature.", obligations = { "gap/signature", "gap/behavior" },
+      support = { { kind = "source", artifact = digest, source = location } } },
+    { id = "claim-other", kind = "candidate_substitution", status = "inferred", statement = "Unrelated finding must remain elsewhere.",
+      obligations = { "other/signature" }, support = {} },
+  },
+  relations = {},
+  obligations = {
+    { id = "gap/signature", opportunity_id = "gap", kind = "signature", label = "Replacement signature", status = "supported_for_signature", evidence = { "sha256:compiler" } },
+    { id = "gap/behavior", opportunity_id = "gap", kind = "behavior", label = "Behavioral compatibility", status = "unresolved", evidence = {} },
+    { id = "other/signature", opportunity_id = "other", kind = "signature", label = "Other signature", status = "unresolved", evidence = {} },
+  },
+}
+
+compiler.evidence = { { opportunity_id = "gap", validation_id = "sha256:compiler", status = "supported_for_signature", diagnostic = "Both function pointer assignments compiled.",
+  scope = "Offline function pointer assertions with default features disabled; no consumer compilation.",
+  cases = { { label = "after_replacement", expected = "accepted", actual = "accepted", status = "matched" } } } }
+
+state.refresh()
+assert(calls[#calls].options.timeout == 120000, "catalog reads keep their ordinary timeout")
+respond(calls[#calls], compiler)
+assert(not state.error, state.error)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("Candidate substitution: provider::legacy → provider::replacement", 1, true))
+assert(rendered:find("Claim: inferred", 1, true) and rendered:find("Rule: signature/1", 1, true))
+assert(rendered:find("Claim: observed · A public replacement declaration was added.", 1, true))
+assert(rendered:find("Support: source", 1, true) and rendered:find("sha256:compiler", 1, true))
+assert(rendered:find("Replacement signature · supported_for_signature", 1, true))
+assert(rendered:find("Behavioral compatibility · unresolved", 1, true))
+assert(rendered:find("behavior remains unverified and relationship remains inferred", 1, true))
+assert(rendered:find("Scope: Offline function pointer assertions with default features disabled; no consumer compilation.", 1, true))
+assert(rendered:find("Case: after_replacement · matched", 1, true))
+assert(rendered:find("Expected: accepted · actual: accepted", 1, true))
+assert(not rendered:find("Unrelated finding", 1, true) and not rendered:find("Other signature", 1, true))
+local support_target
+
+for row, item in pairs(state.targets) do
+  if vim.api.nvim_buf_get_lines(state.buf, row - 1, row, false)[1]:find("        " .. source, 1, true) then support_target = item end
+end
+
+assert(support_target and support_target.source.artifact == digest and support_target.experiment.kind == "rust_function_signature")
+local conflicting = vim.deepcopy(compiler)
+conflicting.reasoning.obligations[1].status = "conflicting_evidence"
+conflicting.reasoning.obligations[1].evidence = { "sha256:rejected-compiler", "sha256:compiler" }
+
+table.insert(conflicting.evidence, 1, { opportunity_id = "gap", validation_id = "sha256:rejected-compiler", status = "contradicted_by_signature",
+  diagnostic = "The replacement declaration did not compile in this attempt.", scope = "Archived compiler inputs for the rejected attempt.",
+  cases = { { label = "after_replacement", expected = "accepted", actual = "rejected", status = "mismatched" } } })
+
+table.insert(conflicting.evidence, { opportunity_id = "other", validation_id = "sha256:unrelated", status = "inconclusive", diagnostic = "Evidence for a different finding." })
+state.refresh()
+respond(calls[#calls], conflicting)
+assert(not state.error, state.error)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("Evidence attempts: 2", 1, true))
+assert(rendered:find("Evidence: supported_for_signature · sha256:compiler", 1, true))
+assert(rendered:find("Evidence: contradicted_by_signature · sha256:rejected-compiler", 1, true))
+assert(rendered:find("Case: after_replacement · matched", 1, true) and rendered:find("Case: after_replacement · mismatched", 1, true))
+assert(rendered:find("Expected: accepted · actual: accepted", 1, true) and rendered:find("Expected: accepted · actual: rejected", 1, true))
+assert(rendered:find("Scope: Archived compiler inputs for the rejected attempt.", 1, true))
+assert(rendered:find("Scope: Offline function pointer assertions with default features disabled; no consumer compilation.", 1, true))
+assert(rendered:find("Replacement signature · conflicting_evidence", 1, true))
+assert(rendered:find("Behavioral compatibility · unresolved", 1, true) and rendered:find("Claim: inferred", 1, true))
+assert(not rendered:find("Evidence for a different finding", 1, true))
 local no_experiment = vim.deepcopy(view)
 no_experiment.experiments = {}
 state.refresh()
@@ -142,6 +216,11 @@ bridge.from_activity({}, { repo = { name = "owner/project" }, payload = { head =
 assert(not prompted_context, "remote activity must not silently claim local provenance")
 bridge.prompt = old_prompt
 require("oculus.local_activity").find_repository = old_find
+local custom_config = vim.tbl_extend("force", config, { capture_timeout_ms = 450000, timeout_ms = 8000 })
+state = bridge.open(custom_config, nexus_config, nil, submission)
+assert(calls[#calls].options.timeout == 450000, "capture retains its independently configurable timeout")
+respond(calls[#calls], compiler)
+state.close()
 vim.ui.input, vim.ui.select, vim.system, vim.notify = old_input, old_select, original_system, original_notify
 vim.fn.delete(directory, "rf")
 print("Selected change prompts, durable catalog, archived navigation, Nexus submission/evidence and cancellation passed")

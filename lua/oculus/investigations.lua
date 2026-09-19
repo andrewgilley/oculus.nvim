@@ -20,6 +20,14 @@ local function valid_view(value)
   for _, key in ipairs({ "reports", "limitations", "experiments", "evidence" }) do
     assert(type(value[key]) == "table" and vim.islist(value[key]), "Missing investigation " .. key)
   end
+
+  if value.reasoning ~= nil and value.reasoning ~= vim.NIL then
+    assert(type(value.reasoning) == "table" and value.reasoning.schema_version == 1, "Invalid investigation reasoning")
+
+    for _, key in ipairs({ "claims", "relations", "obligations" }) do
+      assert(type(value.reasoning[key]) == "table" and vim.islist(value.reasoning[key]), "Missing reasoning " .. key)
+    end
+  end
 end
 
 -- Both the catalog and details are projections of durable engine records.
@@ -105,9 +113,39 @@ function M.open(config, nexus_config, id, submission)
     lines[#lines + 1] = "  Investigation: " .. text(value.investigation_id)
     for _, limitation in ipairs(value.limitations) do lines[#lines + 1] = "  Limit: " .. text(limitation) end
     local evidence = {}
-    for _, item in ipairs(value.evidence) do evidence[item.opportunity_id] = item end
+
+    for _, item in ipairs(value.evidence) do
+      evidence[item.opportunity_id] = evidence[item.opportunity_id] or {}
+      table.insert(evidence[item.opportunity_id], item)
+    end
+
     local experiments = {}
     for _, item in ipairs(value.experiments) do experiments[item.opportunity_id] = item end
+    local reasoning = type(value.reasoning) == "table" and value.reasoning or {}
+    local obligations, claims = {}, {}
+
+    for _, obligation in ipairs(reasoning.obligations or {}) do
+      obligations[obligation.opportunity_id] = obligations[obligation.opportunity_id] or {}
+      table.insert(obligations[obligation.opportunity_id], obligation)
+    end
+
+    for _, claim in ipairs(reasoning.claims or {}) do
+      if type(claim.opportunity_id) == "string" then
+        claims[claim.opportunity_id] = claims[claim.opportunity_id] or {}
+        table.insert(claims[claim.opportunity_id], claim)
+      else
+        for opportunity_id, finding_obligations in pairs(obligations) do
+          for _, obligation in ipairs(finding_obligations) do
+            if vim.tbl_contains(claim.obligations or {}, obligation.id) then
+              claims[opportunity_id] = claims[opportunity_id] or {}
+              table.insert(claims[opportunity_id], claim)
+              break
+            end
+          end
+        end
+      end
+    end
+
     local count = 0
 
     for _, report in ipairs(value.reports) do
@@ -121,6 +159,12 @@ function M.open(config, nexus_config, id, submission)
         local start = #lines + 1
         lines[#lines + 1] = "  " .. text(opportunity.title) .. " · " .. text(opportunity.status)
         lines[#lines + 1] = "    " .. text(opportunity.explanation)
+
+        if type(opportunity.substitution) == "table" then
+          lines[#lines + 1] = "    Candidate substitution: " .. text(opportunity.substitution.previous_path)
+            .. " → " .. text(opportunity.substitution.replacement_path)
+        end
+
         local source = opportunity.consumer_location or {}
         lines[#lines + 1] = "    Source: " .. text(source.path) .. ":" .. text(source.line)
 
@@ -133,14 +177,47 @@ function M.open(config, nexus_config, id, submission)
           end
         end
 
+        for _, claim in ipairs(claims[opportunity.id] or {}) do
+          lines[#lines + 1] = "    Claim: " .. text(claim.status) .. " · " .. text(claim.statement)
+          lines[#lines + 1] = "      Rule: " .. text(claim.rule_version)
+
+          for _, support in ipairs(claim.support or {}) do
+            lines[#lines + 1] = "      Support: " .. text(support.kind) .. " · " .. text(support.artifact)
+
+            if type(support.source) == "table" then
+              lines[#lines + 1] = "        " .. text(support.source.path) .. ":" .. text(support.source.line)
+              targets[#lines] = { opportunity = opportunity, experiment = target.experiment, source = support.source }
+            end
+          end
+        end
+
+        for _, obligation in ipairs(obligations[opportunity.id] or {}) do
+          lines[#lines + 1] = "    Obligation: " .. text(obligation.label) .. " · " .. text(obligation.status)
+          for _, artifact in ipairs(obligation.evidence or {}) do lines[#lines + 1] = "      Evidence: " .. text(artifact) end
+        end
+
         for _, limitation in ipairs(opportunity.limitations or {}) do lines[#lines + 1] = "    Limit: " .. text(limitation) end
         lines[#lines + 1] = target.experiment and ("    n: " .. text(target.experiment.label)) or "    No supported experiment for this finding."
-        local result = evidence[opportunity.id]
+        local attempts = evidence[opportunity.id] or {}
+        if #attempts > 0 then lines[#lines + 1] = "    Evidence attempts: " .. #attempts end
 
-        if result then
+        for _, result in ipairs(attempts) do
           lines[#lines + 1] = "    Evidence: " .. text(result.status) .. " · " .. text(result.validation_id)
           lines[#lines + 1] = "      " .. text(result.diagnostic)
-          lines[#lines + 1] = "      Scoped to this fixture; relationship remains inferred."
+          if type(result.scope) == "string" and result.scope ~= "" then lines[#lines + 1] = "      Scope: " .. text(result.scope) end
+
+          for _, case in ipairs(result.cases or {}) do
+            lines[#lines + 1] = "      Case: " .. text(case.label) .. " · " .. text(case.status)
+            lines[#lines + 1] = "        Expected: " .. text(case.expected) .. " · actual: " .. text(case.actual)
+          end
+        end
+
+        if #attempts > 0 then
+          local compiler = (type(opportunity.validation) == "table" and opportunity.validation.kind == "rust_function_signature")
+            or (target.experiment and target.experiment.kind == "rust_function_signature")
+
+          lines[#lines + 1] = compiler and "      Scoped to compiler signature checks; behavior remains unverified and relationship remains inferred."
+            or "      Scoped to this fixture; relationship remains inferred."
         end
 
         for row = start, #lines do targets[row] = targets[row] or target end

@@ -605,10 +605,17 @@ Individual source references in an evidence path are navigable too.
 | `c` / `Ctrl-c` | Cancel the pending capture/read request |
 | `q` / `Esc` | Close the investigation view |
 
-A supported native Plexus fixture requires a Nexus resource with backend
+A supported native Plexus fixture or compiler signature check requires a Nexus resource with backend
 `plexus-native`; it does not run as a Wasm experiment. The Nexus view's `w` runs
-the queue and `o` reopens the investigation with its durable, fixture-scoped
+the queue and `o` reopens the investigation with its durable, check-scoped
 evidence. Findings without an applicable experiment say so and cannot be queued.
+Each finding displays Plexus's provenance-carrying claim and outstanding
+obligations when available. Compiler support for a candidate replacement's
+signature leaves behavioral compatibility unresolved; the relationship remains
+inferred. Source references attached to a claim are navigable with `Enter`.
+All evidence attempts remain visible, including conflicting results. Compiler
+attempts show their scope and each case's expected and actual outcome.
+Signature checks require a native resource wall budget of 120 seconds.
 
 Run `nvim --headless -u NONE -l tests/investigations_spec.lua` for prompt, catalog,
 source provenance, cancellation and Nexus round-trip coverage. With the sibling
@@ -620,6 +627,9 @@ uses `PLEXUS_INVESTIGATION_FIXTURE` pointing to a JSON descriptor containing `st
 and `investigation_id` for an existing supported capture. It exercises the real
 native fixture queue and evidence return using temporary Nexus state, and appends
 validation evidence to that capture's artifact store.
+For a compiler-check capture, add `expected_conclusion: "supported_for_signature"`
+and optionally `opportunity_id` to the descriptor. The same integration test then
+checks signature evidence alongside the still-unresolved behavior obligation.
 
 ### Nexus deployment resources
 
