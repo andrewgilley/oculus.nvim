@@ -246,7 +246,12 @@ local function project_location(path, repository)
     path = path:sub(#root + 2)
   end
 
-  local embedded = path:lower():find(
+  -- Only absolute paths from another checkout carry a foreign prefix to
+  -- trim. Relative paths can legitimately repeat the folder name, such as
+  -- `oculus/lua/oculus/` in a clone named after its Lua module.
+  local absolute = path:find("^/") or path:find("^%a:/")
+
+  local embedded = absolute and path:lower():find(
     "/" .. folder:lower() .. "/",
     1,
     true
