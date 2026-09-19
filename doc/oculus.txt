@@ -559,7 +559,8 @@ COMMANDS ~
 
   :OculusWork                               Open the Oculus window on my work
 
-  :OculusPlexus [hypothesis.json]            Explore scoped hypotheses and evidence
+  :OculusPlexus [hypothesis.json]           Explore hypotheses and run scoped
+                                            experiments
 
   :OculusCapabilities discovery.json        Discover API opportunities beside source
 
@@ -631,6 +632,7 @@ experiment evidence. Move to any line of a binding before running it.
   ----------------------------------- -----------------------------------
   D                                   Choose a Rust discovery manifest
                                       and open capabilities beside source
+
   m                                   Open a hypothesis manifest (prepare
                                       without executing)
 
@@ -680,42 +682,66 @@ attach → revise workflow. It accepts `PLEXUS_BIN`, `PLEXUS_BACKEND`, and
 `PLEXUS_ZUG_COMMAND` environment overrides.
 
 
-RUST CAPABILITY OPPORTUNITIES                            *oculus-capabilities*
+RUST CAPABILITY OPPORTUNITIES BESIDE SOURCE ~
 
-:OculusCapabilities discovery.json
-    Discover Rust API opportunities in a normal split beside source. Also press
-    C on the Oculus start screen or D in the Plexus investigation view, then
-    select a discovery manifest. The same plexus.command/store/timeout_ms apply.
+`:OculusCapabilities /absolute/path/discovery.json` opens a normal vertical
+split beside your current source window. You can also press `C` on the Oculus
+start screen or `D` in the Plexus investigation view and choose a discovery
+manifest. It uses the same `plexus.command`, `store`, and `timeout_ms`
+settings. Plexus compares archived Rust API snapshots, identifies supported
+consumer match gaps, and returns the evidence path and limitations; Oculus only
+presents the typed report.
 
-The engine returns API deltas, producer revisions and snapshots, inferred
-opportunities, source digests, evidence paths and limitations. Oculus presents
-those records; it does not infer capabilities or execute source commands.
+The report shows API deltas, producer revisions and snapshot IDs, source
+digests, inferred opportunities, and each inference’s limits. On an
+opportunity:
 
-    <Enter>       Navigate to the selected opportunity's consumer source
-    p             Explicitly run its generated Plexus WIT validation fixture
-    r             Rediscover from the manifest's current inputs
-    c / CTRL-C    Cancel the pending operation
-    q / <Esc>     Close this split and cancel pending work
+  -----------------------------------------------------------------------
+  Key                                 Action
+  ----------------------------------- -----------------------------------
+  Enter                               Navigate to the consumer match in
+                                      the adjacent source window
 
-Opening the report preserves your source buffer and does not run validation.
-Navigation verifies saved source bytes against their archived SHA-256 digest
-and refuses stale source or unsaved buffers. Fixture observations stay scoped;
-accepted/reproduced_gap does not promote the opportunity out of inferred status.
-Validation uses archived report inputs: rediscover after editing the source.
+  p                                   Explicitly run the generated Plexus
+                                      WIT validation fixture
 
-For the prepared wit-parser -> Plexus investigation, start Neovim from the shared
-workspace root. Configure plexus.command with the absolute path to
-plexus/target/debug/plexus and plexus.store with the absolute path to
-plexus/.plexus/rust-api/store. Then run:
+  r                                   Rediscover from the manifest’s
+                                      current inputs
 
+  c / Ctrl-C                          Cancel the pending local operation
+
+  q / Esc                             Close this split and cancel pending
+                                      work
+  -----------------------------------------------------------------------
+Source navigation checks the saved file against the archived SHA-256 digest and
+refuses stale files or unsaved source buffers. Opening the report does not
+replace your source buffer or run validation. Fixture results remain scoped
+observations; `accepted` or `reproduced_gap` does not promote an inferred
+opportunity into complete implementation support. Validation operates on
+archived report inputs, so rediscover first when investigating newly edited
+source.
+
+For the prepared wit-parser → Plexus investigation, start Neovim from the
+shared workspace root and configure `plexus.command` to
+`plexus/target/debug/plexus` and `plexus.store` to
+`plexus/.plexus/rust-api/store` using absolute paths. Then run:
+
+>vim
     :OculusCapabilities plexus/.plexus/rust-api/discovery.json
+<
 
-Prepare these generated inputs with the sibling Plexus docs/rust-api.md
-workflow first. Select an opportunity, press Enter for consumer code, return to
-the report split and press p for its fixture. No backend selection is required.
+This generated manifest compares the archived upstream APIs against Plexus’s
+extractor. If it has not been prepared yet, follow the sibling Plexus
+`docs/rust-api.md` workflow first. Select an opportunity, press `Enter` to
+inspect its consumer code, return to the report split, and press `p` to run the
+fixture. The command does not require a runtime backend selection.
 
-Lua API: require("oculus").open_capabilities(manifest)
-
+Lua entry point: `require("oculus").open_capabilities(manifest)`. The
+source-navigation, explicit-validation, and cancellation checks run with `nvim
+--headless -u NONE --cmd 'set showtabline=0' -l tests/capabilities_spec.lua`.
+`tests/capabilities_integration_spec.lua` exercises the real CLI; set
+`PLEXUS_DISCOVERY_MANIFEST` and `PLEXUS_DISCOVERY_STORE` to prepared discovery
+inputs, and optionally `PLEXUS_BIN` to the engine executable.
 
 
 OPTIONS                                                       *oculus-options*
