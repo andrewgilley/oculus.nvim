@@ -1,5 +1,6 @@
 local M = {}
 local client = require("oculus.plexus.client")
+local comparison = require("oculus.plexus.comparison")
 
 local function text(value)
   if value == nil or value == vim.NIL then return "—" end
@@ -107,6 +108,7 @@ local function lines_for(view)
   lines[#lines + 1] = "  Passing isolated cases does not verify the complete composition."
   lines[#lines + 1] = ""
   lines[#lines + 1] = ""
+  lines[#lines + 1] = ""
   return lines, targets
 end
 
@@ -144,14 +146,15 @@ function M.open(config, manifest)
   state.footer_buf = scratch("oculus-plexus")
 
   state.footer_win = vim.api.nvim_open_win(state.footer_buf, false, {
-    relative = "win", win = state.win, row = height - 2, col = 0,
-    width = width, height = 2, style = "minimal", focusable = false, zindex = 60,
+    relative = "win", win = state.win, row = height - 3, col = 0,
+    width = width, height = 3, style = "minimal", focusable = false, zindex = 60,
   })
 
   local function footer(message)
     if not state.closed and vim.api.nvim_buf_is_valid(state.footer_buf) then
       set_lines(state.footer_buf, {
-        "  D discover  m manifest  l load ID  r refresh  R revise  x run  J JSON  H history  c cancel  q close",
+        "  D discover  m manifest  l load ID  r refresh  R revise",
+        "  x run  d compare  J JSON  H history  c cancel  q close",
         "  " .. text(message or ("Backend: " .. (config.backend or "wasmtime"))),
       })
     end
@@ -264,12 +267,12 @@ function M.open(config, manifest)
     end)
   end
 
-  local function raw(value)
+  local function detail(lines, filetype)
     if state.raw_win and vim.api.nvim_win_is_valid(state.raw_win) then
       vim.api.nvim_win_close(state.raw_win, true)
     end
 
-    local buf = scratch("json")
+    local buf = scratch(filetype)
 
     state.raw_win = vim.api.nvim_open_win(buf, true, {
       relative = "win", win = state.win, row = 1, col = 1, width = width - 2,
@@ -277,8 +280,30 @@ function M.open(config, manifest)
     })
 
     vim.wo[state.raw_win].wrap = true
-    set_lines(buf, { vim.json.encode(value) })
+    set_lines(buf, lines)
     vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = buf, silent = true })
+    return buf
+  end
+
+  local function raw(value)
+    detail({ vim.json.encode(value) }, "json")
+  end
+
+  function state.compare(left, right)
+    if not comparison.is_artifact(left) or not comparison.is_artifact(right) then
+      failure("Comparison requires two sha256 run artifact IDs from this store")
+      return
+    end
+
+    request({ "compare-runs", left, right, config.store }, function(report)
+      local ok, lines = pcall(comparison.lines, report, left, right)
+      if not ok then failure("Invalid comparison response: " .. tostring(lines)); return end
+      state.comparison = report
+      state.error = nil
+      local buf = detail(lines, "oculus-plexus-comparison")
+      vim.keymap.set("n", "J", function() raw(report) end, { buffer = buf, silent = true })
+      footer("Comparison: " .. report.status .. " · investigation and attached evidence preserved")
+    end)
   end
 
   local function prompt(options, callback)
@@ -292,6 +317,18 @@ function M.open(config, manifest)
   local maps = {
     q = state.close, ["<Esc>"] = state.close, c = state.cancel, ["<C-c>"] = state.cancel,
     r = state.refresh, R = state.revise, x = function() state.run() end,
+    d = function()
+      local latest
+
+      for _, evidence in ipairs(state.view and state.view.evidence or {}) do
+        local run = type(evidence.attachment) == "table" and evidence.attachment.run
+        if comparison.is_artifact(run) then latest = run end
+      end
+
+      prompt({ prompt = "Left run artifact ID: ", default = latest }, function(left)
+        prompt({ prompt = "Right run artifact ID: " }, function(right) state.compare(vim.trim(left), vim.trim(right)) end)
+      end)
+    end,
     D = function()
       prompt({ prompt = "Rust discovery manifest: ", completion = "file" }, function(path)
         require("oculus").open_capabilities(path)

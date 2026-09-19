@@ -530,6 +530,7 @@ experiment evidence. Move to any line of a binding before running it.
 | `r` | Reload the current immutable hypothesis |
 | `R` | Create a revision from the current manifest and carry evidence forward |
 | `x` | Run the selected binding's exact plan, then attach the run to its cases obligation |
+| `d` | Compare two archived run IDs and inspect runtime agreement, case outputs, and limitations |
 | `J` | Inspect the full hypothesis JSON in a separate view |
 | `H` | Inspect the store's run history JSON |
 | `c` / `Ctrl-C` | Cancel the current local operation |
@@ -540,6 +541,15 @@ execution. Changing the configured backend does not rewrite existing pinned
 plans: use `R` to prepare a revision for the new backend. A backend mismatch is
 recorded by Plexus as unsupported evidence, never silently rerouted. To retain
 a separate comparison branch, use `m` to prepare the same manifest again.
+
+Press `d` and enter the two run IDs shown in evidence or `H` history. The first
+prompt offers an attached run when available. Plexus compares the archived
+workloads without executing either again; different inputs are rejected.
+The separate comparison view shows each runtime's own conclusion alongside
+case-by-case agreement, divergence, or inconclusive results. Agreement can
+include matching wrong outputs, so it does not establish correctness. Press
+`J` there for full evidence and runtime identities, or `q` to return to the
+unchanged investigation. The comparison artifact ID identifies its durable evidence.
 
 The last successfully displayed ID and manifest are remembered per store under
 `stdpath("state")/oculus-plexus/`. Reopening without a path restores that ID.
@@ -555,6 +565,10 @@ The bridge's process/lifecycle test runs with
 With the sibling Plexus binary built, `tests/plexus_integration_spec.lua` runs
 the real prepare → run → attach → revise workflow. It accepts `PLEXUS_BIN`,
 `PLEXUS_BACKEND`, and `PLEXUS_ZUG_COMMAND` environment overrides.
+
+With both binaries built, run `nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/plexus_comparison_integration_spec.lua`
+for the fixed-length-list adapter → Wasmtime/Zug runs → comparison workflow;
+`PLEXUS_BIN` and `PLEXUS_ZUG_WORKER` override the sibling binary paths.
 
 ### Rust capability opportunities beside source
 

@@ -649,6 +649,9 @@ experiment evidence. Move to any line of a binding before running it.
                                       plan, then attach the run to its
                                       cases obligation
 
+  d                                   Compare two archived run IDs and
+                                      inspect case outputs and limits
+
   J                                   Inspect the full hypothesis JSON in
                                       a separate view
 
@@ -665,6 +668,15 @@ execution. Changing the configured backend does not rewrite existing pinned
 plans: use `R` to prepare a revision for the new backend. A backend mismatch is
 recorded by Plexus as unsupported evidence, never silently rerouted. To retain
 a separate comparison branch, use `m` to prepare the same manifest again.
+
+Press d and enter two run IDs from evidence or H history; an attached run is
+offered in the first prompt when available. Plexus compares archived workloads
+without executing them again and rejects different inputs. A separate view
+shows each runtime's own conclusion, case outputs, agreement/divergence or
+inconclusive status, and limitations. Agreement can include matching wrong
+outputs and does not establish correctness. J shows full evidence and runtime
+identities; q returns to the unchanged investigation. The comparison artifact
+ID identifies its durable evidence.
 
 The last successfully displayed ID and manifest are remembered per store under
 `stdpath("state")/oculus-plexus/`. Reopening without a path restores that ID.
