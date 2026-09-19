@@ -7,8 +7,8 @@
   with a concise, descriptive commit message and description body; and push them
   to the configured remote.
 
-- After pushing commits for code changes, run the Lazy plugin manager update action
-  from the CLI (`nvim --headless "+Lazy! update" +qa`).
+- Neovim loads this checkout directly (lazy.nvim `dir`), so no plugin-manager
+  update step is needed after pushing.
 
 - Do not place title text directly on window borders (`FloatTitle`); similarly, footer UI
   must not appear on the window border (`FloatFooter`), but in a dedicated floating footer
