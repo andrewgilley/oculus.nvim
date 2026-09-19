@@ -123,7 +123,7 @@ lazy.nvim ~
 >lua
     {
       "andrewgilley/oculus.nvim",
-      cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus" },
+      cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusCapabilities" },
       keys = {
         { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
       },
@@ -559,6 +559,10 @@ COMMANDS ~
 
   :OculusWork                               Open the Oculus window on my work
 
+  :OculusPlexus [hypothesis.json]            Explore scoped hypotheses and evidence
+
+  :OculusCapabilities discovery.json        Discover API opportunities beside source
+
   :OculusClose                              Close it
 
   :OculusToggle                             Toggle it
@@ -625,6 +629,8 @@ experiment evidence. Move to any line of a binding before running it.
   -----------------------------------------------------------------------
   Key                                 Action
   ----------------------------------- -----------------------------------
+  D                                   Choose a Rust discovery manifest
+                                      and open capabilities beside source
   m                                   Open a hypothesis manifest (prepare
                                       without executing)
 
@@ -672,6 +678,44 @@ The bridge’s process/lifecycle test runs with `nvim --headless -u NONE --cmd
 built, `tests/plexus_integration_spec.lua` runs the real prepare → run →
 attach → revise workflow. It accepts `PLEXUS_BIN`, `PLEXUS_BACKEND`, and
 `PLEXUS_ZUG_COMMAND` environment overrides.
+
+
+RUST CAPABILITY OPPORTUNITIES                            *oculus-capabilities*
+
+:OculusCapabilities discovery.json
+    Discover Rust API opportunities in a normal split beside source. Also press
+    C on the Oculus start screen or D in the Plexus investigation view, then
+    select a discovery manifest. The same plexus.command/store/timeout_ms apply.
+
+The engine returns API deltas, producer revisions and snapshots, inferred
+opportunities, source digests, evidence paths and limitations. Oculus presents
+those records; it does not infer capabilities or execute source commands.
+
+    <Enter>       Navigate to the selected opportunity's consumer source
+    p             Explicitly run its generated Plexus WIT validation fixture
+    r             Rediscover from the manifest's current inputs
+    c / CTRL-C    Cancel the pending operation
+    q / <Esc>     Close this split and cancel pending work
+
+Opening the report preserves your source buffer and does not run validation.
+Navigation verifies saved source bytes against their archived SHA-256 digest
+and refuses stale source or unsaved buffers. Fixture observations stay scoped;
+accepted/reproduced_gap does not promote the opportunity out of inferred status.
+Validation uses archived report inputs: rediscover after editing the source.
+
+For the prepared wit-parser -> Plexus investigation, start Neovim from the shared
+workspace root. Configure plexus.command with the absolute path to
+plexus/target/debug/plexus and plexus.store with the absolute path to
+plexus/.plexus/rust-api/store. Then run:
+
+    :OculusCapabilities plexus/.plexus/rust-api/discovery.json
+
+Prepare these generated inputs with the sibling Plexus docs/rust-api.md
+workflow first. Select an opportunity, press Enter for consumer code, return to
+the report split and press p for its fixture. No backend selection is required.
+
+Lua API: require("oculus").open_capabilities(manifest)
+
 
 
 OPTIONS                                                       *oculus-options*

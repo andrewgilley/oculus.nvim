@@ -151,7 +151,7 @@ function M.open(config, manifest)
   local function footer(message)
     if not state.closed and vim.api.nvim_buf_is_valid(state.footer_buf) then
       set_lines(state.footer_buf, {
-        "  m manifest  l load ID  r refresh  R revise  x run  J JSON  H history  c cancel  q close",
+        "  D discover  m manifest  l load ID  r refresh  R revise  x run  J JSON  H history  c cancel  q close",
         "  " .. text(message or ("Backend: " .. (config.backend or "wasmtime"))),
       })
     end
@@ -292,6 +292,11 @@ function M.open(config, manifest)
   local maps = {
     q = state.close, ["<Esc>"] = state.close, c = state.cancel, ["<C-c>"] = state.cancel,
     r = state.refresh, R = state.revise, x = function() state.run() end,
+    D = function()
+      prompt({ prompt = "Rust discovery manifest: ", completion = "file" }, function(path)
+        require("oculus").open_capabilities(path)
+      end)
+    end,
     m = function() prompt({ prompt = "Hypothesis manifest: ", completion = "file" }, function(path) state.prepare(path, false) end) end,
     l = function() prompt({ prompt = "Hypothesis artifact ID: " }, state.load) end,
     J = function() if state.view then raw(state.view) end end,

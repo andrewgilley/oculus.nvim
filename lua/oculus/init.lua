@@ -521,6 +521,14 @@ function M.open_plexus(manifest)
   return require("oculus.plexus").open(M.config.plexus, manifest)
 end
 
+function M.open_capabilities(manifest)
+  local investigation = require("oculus.plexus").state
+  if investigation and not investigation.closed then investigation.close() end
+  local window = require("oculus.window")
+  if window.state.win and vim.api.nvim_win_is_valid(window.state.win) then window.close() end
+  return require("oculus.capabilities").open(M.config.plexus, manifest)
+end
+
 -- Look up the account signed in on "github" (the default) or "codeberg".
 -- `callback(viewer, err)` gets { provider, login, name?, html_url?, avatar_url? }.
 function M.viewer(provider, callback)

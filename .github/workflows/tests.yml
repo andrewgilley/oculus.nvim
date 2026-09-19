@@ -57,6 +57,9 @@ jobs:
       - name: Run Plexus bridge tests
         run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/plexus_spec.lua
 
+      - name: Run capability discovery UI tests
+        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/capabilities_spec.lua
+
       - name: Run health tests
         run: nvim --headless -u NONE -l tests/health_spec.lua
 

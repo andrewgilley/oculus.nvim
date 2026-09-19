@@ -50,6 +50,10 @@ vim.api.nvim_create_user_command("OculusPlexus", function(opts)
   require("oculus").open_plexus(opts.args ~= "" and opts.args or nil)
 end, { nargs = "?", complete = "file", desc = "Explore a Plexus hypothesis and run its experiments" })
 
+vim.api.nvim_create_user_command("OculusCapabilities", function(opts)
+  require("oculus").open_capabilities(opts.args)
+end, { nargs = 1, complete = "file", desc = "Discover Rust capability opportunities beside source" })
+
 vim.api.nvim_create_user_command("OculusClose", function()
   require("oculus").close()
 end, { desc = "Close Oculus" })

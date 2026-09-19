@@ -497,6 +497,8 @@ local function sidebar_sections_for_view(view)
           { "p", "Projects" },
           { "w", "My work" },
           { "s", "Saved" },
+          { "P", "Plexus" },
+          { "C", "Capabilities" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
           { "r", "Rename" },
@@ -509,6 +511,8 @@ local function sidebar_sections_for_view(view)
           { "u", "Users" },
           { "w", "My work" },
           { "s", "Saved" },
+          { "P", "Plexus" },
+          { "C", "Capabilities" },
           { "a", "Add" },
           { "f", "Folder" },
           { "M", "Move Dir" },
@@ -891,8 +895,8 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  p projects   w work   s saved   P plexus   m move   ?: help"
-      or "  u users   w work   s saved   P plexus   f folder   m move   ?: help"
+        and "  p projects   w work   s saved   P plexus   C capabilities   m move   ?: help"
+      or "  u users   w work   s saved   P plexus   C capabilities   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   r rename   R remove   m move   ?: help"):format(
       nav.left
@@ -1937,8 +1941,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and "p projects  w work  s saved  P plexus  m move  ?: help"
-      or "u users  w work  s saved  P plexus  f folder  m move  ?: help")
+        and "p projects  w work  s saved  P plexus  C capabilities  m move  ?: help"
+      or "u users  w work  s saved  P plexus  C capabilities  f folder  m move  ?: help")
 
     commands_line = #lines
   else
@@ -6295,6 +6299,16 @@ local function map_keys(buf)
   map("<C-c>", M.close, "Close Oculus")
   map("q", M.close, "Close Oculus")
   map("P", function() require("oculus").open_plexus() end, "Open Plexus investigations")
+
+  map("C", function()
+    local win = M.state.win
+    local request_id = M.state.request_id
+
+    vim.ui.input({ prompt = "Rust discovery manifest: ", completion = "file" }, function(path)
+      if M.state.win ~= win or M.state.request_id ~= request_id then return end
+      if path and vim.trim(path) ~= "" then require("oculus").open_capabilities(path) end
+    end)
+  end, "Discover Rust capability opportunities")
 
   map("<Esc>", function()
     if (M.state.view == "contributors" or M.state.view == "directory") and M.state.moving_item then
