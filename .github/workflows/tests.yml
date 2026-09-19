@@ -45,60 +45,13 @@ jobs:
       - name: Show Neovim version
         run: nvim --version
 
-      - name: Run opinion tests
-        run: nvim --headless -u NONE -l tests/opinion_spec.lua
-
-      - name: Run telemetry tests
-        run: nvim --headless -u NONE -l tests/telemetry_spec.lua
-
-      - name: Run tracking file tests
-        run: nvim --headless -u NONE -l tests/tracking_spec.lua
-
-      - name: Run Plexus bridge tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/plexus_spec.lua
-
-      - name: Run Plexus runtime comparison UI tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/plexus_comparison_spec.lua
-
-      - name: Run capability discovery UI tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/capabilities_spec.lua
-
-      - name: Run health tests
-        run: nvim --headless -u NONE -l tests/health_spec.lua
-
-      - name: Run contributor tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/contributors_spec.lua
-
-      - name: Run rename tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/rename_spec.lua
-
-      - name: Run tracking UI tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/tracking_ui_spec.lua
-
-      - name: Run remote inspect tests
+      - name: Run unit specs
         env:
+          NVIM_LOG_FILE: ${{ runner.temp }}/nvim.log
           OCULUS_INSPECT_TEST_OIL: ${{ runner.temp }}/oil.nvim
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/remote_spec.lua
+        run: scripts/test
 
-      - name: Run milestone tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/milestones_spec.lua
-
-      - name: Run review thread tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/review_spec.lua
-
-      - name: Run saved item tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/saved_spec.lua
-
-      - name: Run work tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/work_spec.lua
-
-      - name: Run local activity tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/local_activity_spec.lua
-
-      - name: Run window tests
-        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/window_spec.lua
-
-      - name: Run inspect tests
+      - name: Run inspect integration against a pinned commit
         env:
           NVIM_LOG_FILE: ${{ runner.temp }}/nvim.log
           OCULUS_INSPECT_TEST_ROOT: ${{ github.workspace }}
@@ -109,4 +62,4 @@ jobs:
           OCULUS_INSPECT_TEST_PAIR_COUNT: "1"
           OCULUS_INSPECT_TEST_NO_WORKTREES: "1"
           OCULUS_INSPECT_TEST_VERIFY_CONTENT: "1"
-        run: nvim --headless -u NONE -l tests/inspect_spec.lua
+        run: scripts/test inspect

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Run every Oculus unit spec headlessly. Integration specs, which need sibling
+# Plexus, Zug or Nexus builds, are excluded unless named explicitly.
+#
+#   scripts/test                    # all unit specs
+#   scripts/test window inspect     # only the named specs
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# Specs that run without `set showtabline=0`, matching how they were written.
+plain_specs=" opinion telemetry tracking health inspect investigations "
+
+if [ "$#" -gt 0 ]; then
+  specs=()
+  for name in "$@"; do
+    specs+=("tests/${name%_spec.lua}_spec.lua")
+  done
+else
+  specs=()
+  for spec in tests/*_spec.lua; do
+    case "$spec" in
+      *_integration_spec.lua) ;;
+      *) specs+=("$spec") ;;
+    esac
+  done
+fi
+
+failed=()
+
+for spec in "${specs[@]}"; do
+  name="$(basename "$spec" _spec.lua)"
+  args=(--headless -u NONE)
+
+  if [[ "$plain_specs" != *" $name "* ]]; then
+    args+=(--cmd "set showtabline=0")
+  fi
+
+  printf '%-24s ' "$name"
+
+  if output="$(nvim "${args[@]}" -l "$spec" 2>&1)"; then
+    echo "ok"
+  else
+    echo "FAILED"
+    printf '%s\n' "$output" | tail -n 20 | sed 's/^/    /'
+    failed+=("$name")
+  fi
+done
+
+if [ "${#failed[@]}" -gt 0 ]; then
+  echo
+  echo "failed: ${failed[*]}"
+  exit 1
+fi
