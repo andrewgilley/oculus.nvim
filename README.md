@@ -24,6 +24,7 @@ change markers, chunk navigation, and an AI-assisted overview.
   - [Inspecting changes](#inspecting-changes)
   - [Inspect overview](#inspect-overview)
   - [Commands](#commands)
+- [Plexus investigations](#plexus-investigations)
 - [Options](#options)
 - [Authentication](#authentication)
 - [Tracking file](#tracking-file)
@@ -105,7 +106,7 @@ Oculus supports all the usual plugin managers.
 ```lua
 {
   "andrewgilley/oculus.nvim",
-  cmd = { "OculusOpen", "OculusToggle", "OculusInspect" },
+  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus" },
   keys = {
     { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
   },
@@ -485,6 +486,72 @@ To bind your own keys without going through `setup()`, map these:
 ```lua
 vim.keymap.set("n", "<leader>oo", "<Plug>(oculus-toggle)")
 ```
+
+## Plexus investigations
+
+`:OculusPlexus [hypothesis.json]` opens the Plexus investigation view; `P` in
+Oculus opens the last investigation. Plexus is a separate local executable.
+Build it in the sibling `plexus` project and configure its location:
+
+```lua
+require("oculus").setup({
+  plexus = {
+    command = { "/absolute/path/to/plexus/target/debug/plexus" },
+    store = "/absolute/path/to/investigation-store",
+    backend = "wasmtime", -- or "zug"
+    -- Required for backend = "zug":
+    -- zug_command = "/absolute/path/to/zug/zig-out/bin/zug-plexus",
+    timeout_ms = 120000,
+  },
+})
+```
+
+The default command is `{ "plexus" }`, and the default store is
+`stdpath("data") .. "/oculus/plexus"`. Commands run asynchronously as argument
+lists. Oculus renders the engine's results; Plexus owns inference, provenance,
+runtime selection, and evidence interpretation.
+
+Preparation reads saved files from disk; unsaved editor buffers are not
+captured. Save relevant buffers before preparing or revising.
+
+For an initial example, open the sibling
+`plexus/fixtures/hypotheses/hypothesis.json`. The view shows the question,
+declaration status, worktree status, selected providers and their relevance,
+artifact mappings, pinned runtime, unresolved obligations, and current/stale
+experiment evidence. Move to any line of a binding before running it.
+
+| Key | Action |
+| --- | --- |
+| `m` | Open a hypothesis manifest (prepare without executing) |
+| `l` | Load an existing hypothesis artifact ID from this store |
+| `r` | Reload the current immutable hypothesis |
+| `R` | Create a revision from the current manifest and carry evidence forward |
+| `x` | Run the selected binding's exact plan, then attach the run to its cases obligation |
+| `J` | Inspect the full hypothesis JSON in a separate view |
+| `H` | Inspect the store's run history JSON |
+| `c` / `Ctrl-C` | Cancel the current local operation |
+| `q` / `Esc` | Close and cancel the pending operation |
+
+Passing cases do not resolve implementation conformance or complete composition
+execution. Changing the configured backend does not rewrite existing pinned
+plans: use `R` to prepare a revision for the new backend. A backend mismatch is
+recorded by Plexus as unsupported evidence, never silently rerouted. To retain
+a separate comparison branch, use `m` to prepare the same manifest again.
+
+The last successfully displayed ID and manifest are remembered per store under
+`stdpath("state")/oculus-plexus/`. Reopening without a path restores that ID.
+Errors preserve the previous view. Cancellation stops local waiting; a run
+already written by Plexus remains in history, even if attachment was cancelled.
+The initial bridge accepts explicit manifests; selecting projects in the activity
+feed does not yet generate hypotheses automatically.
+
+Lua entry point: `require("oculus").open_plexus(manifest_or_nil)`.
+
+The bridge's process/lifecycle test runs with
+`nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/plexus_spec.lua`.
+With the sibling Plexus binary built, `tests/plexus_integration_spec.lua` runs
+the real prepare → run → attach → revise workflow. It accepts `PLEXUS_BIN`,
+`PLEXUS_BACKEND`, and `PLEXUS_ZUG_COMMAND` environment overrides.
 
 ## Options
 

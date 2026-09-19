@@ -45,6 +45,12 @@ local defaults = {
   inspect_overviews = {},
   state_file = vim.fn.stdpath("state") .. "/oculus.json",
   browser_command = nil,
+  plexus = {
+    command = { "plexus" },
+    store = vim.fn.stdpath("data") .. "/oculus/plexus",
+    backend = "wasmtime",
+    timeout_ms = 120000,
+  },
   inspect_cache_ttl = 60,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
@@ -509,6 +515,10 @@ end
 
 function M.open_work()
   return require("oculus.window").open_work(M.config)
+end
+
+function M.open_plexus(manifest)
+  return require("oculus.plexus").open(M.config.plexus, manifest)
 end
 
 -- Look up the account signed in on "github" (the default) or "codeberg".

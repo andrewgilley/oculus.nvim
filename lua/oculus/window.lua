@@ -891,8 +891,8 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  p projects   w work   s saved   m move   ?: help"
-      or "  u users   w work   s saved   f folder   m move   ?: help"
+        and "  p projects   w work   s saved   P plexus   m move   ?: help"
+      or "  u users   w work   s saved   P plexus   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   r rename   R remove   m move   ?: help"):format(
       nav.left
@@ -1937,8 +1937,8 @@ local function render_contributors()
     local nav = navigation.resolve(M.state.opts)
 
     footer(lines, showing_users
-        and "p projects  w work  s saved  m move  ?: help"
-      or "u users  w work  s saved  f folder  m move  ?: help")
+        and "p projects  w work  s saved  P plexus  m move  ?: help"
+      or "u users  w work  s saved  P plexus  f folder  m move  ?: help")
 
     commands_line = #lines
   else
@@ -6294,6 +6294,7 @@ local function map_keys(buf)
 
   map("<C-c>", M.close, "Close Oculus")
   map("q", M.close, "Close Oculus")
+  map("P", function() require("oculus").open_plexus() end, "Open Plexus investigations")
 
   map("<Esc>", function()
     if (M.state.view == "contributors" or M.state.view == "directory") and M.state.moving_item then

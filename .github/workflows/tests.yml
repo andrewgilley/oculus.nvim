@@ -54,6 +54,9 @@ jobs:
       - name: Run tracking file tests
         run: nvim --headless -u NONE -l tests/tracking_spec.lua
 
+      - name: Run Plexus bridge tests
+        run: nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/plexus_spec.lua
+
       - name: Run health tests
         run: nvim --headless -u NONE -l tests/health_spec.lua
 

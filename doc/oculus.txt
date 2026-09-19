@@ -121,7 +121,7 @@ lazy.nvim ~
 >lua
     {
       "andrewgilley/oculus.nvim",
-      cmd = { "OculusOpen", "OculusToggle", "OculusInspect" },
+      cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus" },
       keys = {
         { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
       },
@@ -988,6 +988,48 @@ framework:
 The inspect suite needs a checkout of oil.nvim and some environment variables.
 See `.github/workflows/tests.yml` <.github/workflows/tests.yml> for the exact
 setup.
+
+
+PLEXUS INVESTIGATIONS                                    *oculus-plexus*
+
+:OculusPlexus [hypothesis.json]
+    Open a Plexus hypothesis manifest, or restore the last viewed hypothesis
+    from the configured store. P in the main Oculus window opens this view.
+
+Configure setup({ plexus = { command = { "/absolute/path/to/plexus" },
+store = "/absolute/path/to/store", backend = "wasmtime" } }). The default
+command is { "plexus" }; the default store is stdpath("data")/oculus/plexus.
+For backend = "zug", also set zug_command to the absolute zug-plexus executable.
+The timeout_ms default is 120000. Paths and commands are passed as argv without
+shell interpolation. The engine owns inference and evidence interpretation.
+
+Preparation reads saved files on disk, not unsaved editor buffers. Save changes
+before preparing or revising.
+
+The view displays declaration reachability, worktree status, provider relevance,
+artifact mappings, pinned runtime, unresolved obligations and current/stale
+experiment evidence. Place the cursor on a binding, then use:
+
+    m             Open a manifest; prepare without executing
+    l             Load a hypothesis artifact ID from this store
+    r             Reload the current immutable hypothesis
+    R             Revise from its manifest, carrying historical evidence
+    x             Run the binding's exact plan and attach its cases evidence
+    J             Inspect full hypothesis JSON
+    H             Inspect store run history JSON
+    c / CTRL-C    Cancel the current operation
+    q / <Esc>     Close and cancel pending work
+
+Passing cases do not verify interface conformance or the whole composition.
+Changing the backend requires R to revise pinned plans; a mismatch is reported
+as unsupported evidence. Use m for a separate hypothesis branch.
+
+The last successful ID/manifest is remembered per store under
+stdpath("state")/oculus-plexus/. Errors preserve the previous view. A cancelled
+run may already be persisted in history. Project selection does not yet create
+hypotheses automatically. Example: ../plexus/fixtures/hypotheses/hypothesis.json.
+
+Lua API: require("oculus").open_plexus(manifest_or_nil)
 
 
 LICENSE                                                       *oculus-license*
