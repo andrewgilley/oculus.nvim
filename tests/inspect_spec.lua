@@ -5847,9 +5847,12 @@ if integration_root and (integration_sha or integration_url) then
       false
     )[1]:find("%S") or 1) - 1))
 
+  local selected_change_cursor = vim.api.nvim_win_get_cursor(change_win)
+  local selected_change_line = selected_change_cursor[1]
+
   do
     local cursor = vim.api.nvim_win_get_cursor(change_win)
-    assert(cursor[1] == selected_parent_cursor[1])
+    assert(cursor[1] == selected_change_line)
     assert_cursor_at_first_nonblank(change_win)
   end
 
@@ -5904,7 +5907,7 @@ if integration_root and (integration_sha or integration_url) then
 
   do
     local cursor = vim.api.nvim_win_get_cursor(change_win)
-    assert(cursor[1] == selected_parent_cursor[1])
+    assert(cursor[1] == selected_change_line)
     assert_cursor_at_first_nonblank(change_win)
   end
 

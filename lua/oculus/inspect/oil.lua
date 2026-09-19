@@ -615,6 +615,7 @@ function M.setup(inspect, internal)
     entry_status = oil_entry_status,
     entered_subdirectory = entered_oil_subdirectory,
     first_changed_file_line = first_changed_oil_file_line,
+    restore_inspection_sidebar_for_buffer = restore_inspection_sidebar_for_buffer,
   }
 end
 

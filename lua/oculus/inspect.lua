@@ -6629,10 +6629,11 @@ local oil = require("oculus.inspect.oil").setup(M, {
   session_directory = session_directory,
   close_inspection_sidebar = close_inspection_sidebar,
   open_inspection_sidebar = open_inspection_sidebar,
-  restore_inspection_sidebar_for_buffer = restore_inspection_sidebar_for_buffer,
   valid_endpoint = valid_endpoint,
   select_endpoint = select_endpoint,
 })
+
+restore_inspection_sidebar_for_buffer = oil.restore_inspection_sidebar_for_buffer
 
 require("oculus.inspect.review_ui").setup(M, {
   valid_endpoint = valid_endpoint,
