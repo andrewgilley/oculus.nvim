@@ -1,5 +1,5 @@
 *oculus.txt*
-                          For Neovim >= 0.10    Last change: 2026 September 18
+                          For Neovim >= 0.10    Last change: 2026 September 19
 
 ==============================================================================
 Table of Contents                                   *oculus-table-of-contents*
@@ -10,6 +10,7 @@ Table of Contents                                   *oculus-table-of-contents*
   - Installation                                         |oculus-installation|
   - Quick start                                           |oculus-quick-start|
   - Usage                                                       |oculus-usage|
+  - Plexus investigations                       |oculus-plexus-investigations|
   - Options                                                   |oculus-options|
   - Authentication                                     |oculus-authentication|
   - Tracking file                                       |oculus-tracking-file|
@@ -48,6 +49,7 @@ change markers, chunk navigation, and an AI-assisted overview.
     - Inspecting changes
     - Inspect overview
     - Commands
+- |oculus-plexus-investigations|
 - |oculus-options|
 - |oculus-authentication|
 - |oculus-tracking-file|
@@ -587,6 +589,91 @@ To bind your own keys without going through `setup()`, map these:
 <
 
 
+PLEXUS INVESTIGATIONS                           *oculus-plexus-investigations*
+
+`:OculusPlexus [hypothesis.json]` opens the Plexus investigation view; `P` in
+Oculus opens the last investigation. Plexus is a separate local executable.
+Build it in the sibling `plexus` project and configure its location:
+
+>lua
+    require("oculus").setup({
+      plexus = {
+        command = { "/absolute/path/to/plexus/target/debug/plexus" },
+        store = "/absolute/path/to/investigation-store",
+        backend = "wasmtime", -- or "zug"
+        -- Required for backend = "zug":
+        -- zug_command = "/absolute/path/to/zug/zig-out/bin/zug-plexus",
+        timeout_ms = 120000,
+      },
+    })
+<
+
+The default command is `{ "plexus" }`, and the default store is
+`stdpath("data") .. "/oculus/plexus"`. Commands run asynchronously as argument
+lists. Oculus renders the engine’s results; Plexus owns inference,
+provenance, runtime selection, and evidence interpretation.
+
+Preparation reads saved files from disk; unsaved editor buffers are not
+captured. Save relevant buffers before preparing or revising.
+
+For an initial example, open the sibling
+`plexus/fixtures/hypotheses/hypothesis.json`. The view shows the question,
+declaration status, worktree status, selected providers and their relevance,
+artifact mappings, pinned runtime, unresolved obligations, and current/stale
+experiment evidence. Move to any line of a binding before running it.
+
+  -----------------------------------------------------------------------
+  Key                                 Action
+  ----------------------------------- -----------------------------------
+  m                                   Open a hypothesis manifest (prepare
+                                      without executing)
+
+  l                                   Load an existing hypothesis
+                                      artifact ID from this store
+
+  r                                   Reload the current immutable
+                                      hypothesis
+
+  R                                   Create a revision from the current
+                                      manifest and carry evidence forward
+
+  x                                   Run the selected binding’s exact
+                                      plan, then attach the run to its
+                                      cases obligation
+
+  J                                   Inspect the full hypothesis JSON in
+                                      a separate view
+
+  H                                   Inspect the store’s run history
+                                      JSON
+
+  c / Ctrl-C                          Cancel the current local operation
+
+  q / Esc                             Close and cancel the pending
+                                      operation
+  -----------------------------------------------------------------------
+Passing cases do not resolve implementation conformance or complete composition
+execution. Changing the configured backend does not rewrite existing pinned
+plans: use `R` to prepare a revision for the new backend. A backend mismatch is
+recorded by Plexus as unsupported evidence, never silently rerouted. To retain
+a separate comparison branch, use `m` to prepare the same manifest again.
+
+The last successfully displayed ID and manifest are remembered per store under
+`stdpath("state")/oculus-plexus/`. Reopening without a path restores that ID.
+Errors preserve the previous view. Cancellation stops local waiting; a run
+already written by Plexus remains in history, even if attachment was cancelled.
+The initial bridge accepts explicit manifests; selecting projects in the
+activity feed does not yet generate hypotheses automatically.
+
+Lua entry point: `require("oculus").open_plexus(manifest_or_nil)`.
+
+The bridge’s process/lifecycle test runs with `nvim --headless -u NONE --cmd
+'set showtabline=0' -l tests/plexus_spec.lua`. With the sibling Plexus binary
+built, `tests/plexus_integration_spec.lua` runs the real prepare → run →
+attach → revise workflow. It accepts `PLEXUS_BIN`, `PLEXUS_BACKEND`, and
+`PLEXUS_ZUG_COMMAND` environment overrides.
+
+
 OPTIONS                                                       *oculus-options*
 
 These are the defaults. You only need to pass the options you want to change.
@@ -988,48 +1075,6 @@ framework:
 The inspect suite needs a checkout of oil.nvim and some environment variables.
 See `.github/workflows/tests.yml` <.github/workflows/tests.yml> for the exact
 setup.
-
-
-PLEXUS INVESTIGATIONS                                    *oculus-plexus*
-
-:OculusPlexus [hypothesis.json]
-    Open a Plexus hypothesis manifest, or restore the last viewed hypothesis
-    from the configured store. P in the main Oculus window opens this view.
-
-Configure setup({ plexus = { command = { "/absolute/path/to/plexus" },
-store = "/absolute/path/to/store", backend = "wasmtime" } }). The default
-command is { "plexus" }; the default store is stdpath("data")/oculus/plexus.
-For backend = "zug", also set zug_command to the absolute zug-plexus executable.
-The timeout_ms default is 120000. Paths and commands are passed as argv without
-shell interpolation. The engine owns inference and evidence interpretation.
-
-Preparation reads saved files on disk, not unsaved editor buffers. Save changes
-before preparing or revising.
-
-The view displays declaration reachability, worktree status, provider relevance,
-artifact mappings, pinned runtime, unresolved obligations and current/stale
-experiment evidence. Place the cursor on a binding, then use:
-
-    m             Open a manifest; prepare without executing
-    l             Load a hypothesis artifact ID from this store
-    r             Reload the current immutable hypothesis
-    R             Revise from its manifest, carrying historical evidence
-    x             Run the binding's exact plan and attach its cases evidence
-    J             Inspect full hypothesis JSON
-    H             Inspect store run history JSON
-    c / CTRL-C    Cancel the current operation
-    q / <Esc>     Close and cancel pending work
-
-Passing cases do not verify interface conformance or the whole composition.
-Changing the backend requires R to revise pinned plans; a mismatch is reported
-as unsupported evidence. Use m for a separate hypothesis branch.
-
-The last successful ID/manifest is remembered per store under
-stdpath("state")/oculus-plexus/. Errors preserve the previous view. A cancelled
-run may already be persisted in history. Project selection does not yet create
-hypotheses automatically. Example: ../plexus/fixtures/hypotheses/hypothesis.json.
-
-Lua API: require("oculus").open_plexus(manifest_or_nil)
 
 
 LICENSE                                                       *oculus-license*
