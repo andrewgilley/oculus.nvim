@@ -28,7 +28,10 @@ local default_version_keys = { old = "<C-s>", new = "<C-d>" }
 local default_next_chunk = "<C-Tab>"
 local default_previous_chunk = "<S-Tab>"
 local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
-local inspection_statusline_option = "%!v:lua.require('oculus.inspect')._inspection_statusline()"
+-- The `require'module'.fn()` form resolves in Lua. `require('module')` would
+-- convert the whole module table to a Vim dict on every redraw, and fail once
+-- any table in it mixes integer and string keys.
+local inspection_statusline_option = "%!v:lua.require'oculus.inspect'._inspection_statusline()"
 local inspection_sidebar_statusline_option = "[oculus] "
 local normalize_inspection_view
 local refresh_sidebar
