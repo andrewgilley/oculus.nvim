@@ -252,33 +252,8 @@ function M.setup(window, milestone_view, internal)
       end
     end
 
-    local separator_line
-    local commands_line
-
-    if not sidebar_visible then
-      while #lines < window_height - 2 do
-        lines[#lines + 1] = ""
-      end
-
-      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-      separator_line = #lines
-      local nav = navigation.resolve(window.state.opts)
-
-      internal.footer(
-        lines,
-        ("%s/← back  ⏎ open  b browser  r refresh  ?: help"):format(nav.left)
-      )
-
-      commands_line = #lines
-
-      lines[commands_line] = internal.pad_cell(
-        internal.trim_to_width(lines[commands_line], left_width - 1),
-        left_width
-      )
-    else
-      while #lines < window_height do
-        lines[#lines + 1] = ""
-      end
+    while #lines < window_height do
+      lines[#lines + 1] = ""
     end
 
     internal.set_lines(lines)

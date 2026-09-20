@@ -943,78 +943,7 @@ local function get_inspect_input_title()
 end
 
 local function render_activity_footer(force)
-  if is_sidebar_visible() and not force and not is_inspect_input_open() then
-    close_activity_footer()
-    return
-  end
-
-  local config = footer_win_config()
-
-  if not config then
-    return
-  end
-
-  local buf = M.state.footer_buf
-
-  if not is_valid_buf(buf) then
-    buf = make_footer_buf()
-    M.state.footer_buf = buf
-  end
-
-  local width = config.width
-  local activity_commands = footer_commands_text()
-  local footer_line = activity_commands
-  local title_start = nil
-  local title_end = nil
-
-  if is_inspect_input_open() then
-    local tab_space = 4
-    local title_str = get_inspect_input_title()
-    title_start = #footer_line + tab_space
-    footer_line = footer_line .. string.rep(" ", tab_space) .. title_str
-    title_end = #footer_line
-  end
-
-  local lines = {
-    "  " .. string.rep("─", math.max(1, width - 4)),
-    footer_line,
-  }
-
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 0, 2, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, "OculusNormal", 1, 2, #activity_commands)
-
-  if M.state.footer_prompt then
-    local question_end = 2 + #M.state.footer_prompt.question
-    vim.api.nvim_buf_add_highlight(buf, ns, "WarningMsg", 1, 2, question_end)
-  end
-
-  if title_start and title_end then
-    local trimmed_len = #vim.trim(get_inspect_input_title())
-    vim.api.nvim_buf_add_highlight(buf, ns, "Title", 1, title_start, title_start + trimmed_len)
-  end
-
-  if is_valid_win(M.state.footer_win) then
-    vim.api.nvim_win_set_config(M.state.footer_win, config)
-  else
-    M.state.footer_win = vim.api.nvim_open_win(buf, false, config)
-  end
-
-  vim.wo[M.state.footer_win].wrap = false
-  vim.wo[M.state.footer_win].cursorline = false
-
-  vim.wo[M.state.footer_win].winhighlight = table.concat({
-    "Normal:OculusNormal",
-    "NormalFloat:OculusNormal",
-  }, ",")
-
-  use_window_highlights(M.state.footer_win)
-  vim.wo[M.state.footer_win].number = false
-  vim.wo[M.state.footer_win].relativenumber = false
-  vim.wo[M.state.footer_win].signcolumn = "no"
+  close_activity_footer()
 end
 
 local function list_buffer_line_count()
@@ -1378,12 +1307,15 @@ end
 
 local function visible_projects()
   local projects = display_projects(M.state.opts.projects)
+
   if M.state.workspace_filter_enabled ~= false then
     local ws = require("oculus.workspace").get_active(M.state.opts)
+
     if ws then
       projects = require("oculus.workspace").filter_projects(M.state.opts, projects)
     end
   end
+
   return projects
 end
 
@@ -1452,7 +1384,6 @@ end
 
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 8
 local function footer(lines, text)
-  lines[#lines + 1] = "  " .. text
 end
 
 local function preview_left_width(window_width)
@@ -1631,15 +1562,16 @@ local function startup_project_items()
   local all_projects = visible_projects()
   local dir_map = {}
   local dir_keys = {}
-
   local active_ws = require("oculus.workspace").get_active(M.state.opts)
   local filter_active = active_ws and M.state.workspace_filter_enabled ~= false
 
   for _, d in ipairs(dirs) do
     if type(d) == "string" and d ~= "" then
       local show_dir = true
+
       if filter_active then
         show_dir = false
+
         for _, p in ipairs(all_projects) do
           if p.directory and p.directory:lower() == d:lower() then
             show_dir = true
@@ -1777,31 +1709,14 @@ local function render_contributors()
     local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
     for index, line in ipairs(lines) do lines[index] = pad_cell(trim_to_width(line, left_width - 1), left_width) end
     local window_height = vim.api.nvim_win_get_height(M.state.win)
-    local separator_line, commands_line
-
-    -- Match the legacy list layout: separator and commands on the bottom rows,
-    -- or no footer at all while the sidebar shows the commands.
-    if not is_sidebar_visible() then
-      while #lines < window_height - 2 do lines[#lines + 1] = "" end
-      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-      separator_line = #lines
-      footer(lines, "p projects  u users  w work  W workspace  s saved  f folder  m move")
-      commands_line = #lines
-      -- Keep the commands inside the list pane, clear of the preview.
-      lines[commands_line] = pad_cell(trim_to_width(lines[commands_line], left_width - 1), left_width)
-    else
-      while #lines < window_height do lines[#lines + 1] = "" end
-    end
-
+    while #lines < window_height do lines[#lines + 1] = "" end
     set_lines(lines)
-    M.state.list_footer_line = commands_line
-    M.state.list_footer_text = commands_line and lines[commands_line]
+    M.state.list_footer_line = nil
+    M.state.list_footer_text = nil
     work_view.accounts.render()
     vim.wo[M.state.win].cursorline = false
     highlight(2, 2, -1, "Title")
     highlight(4, 2, -1, "Title")
-    if separator_line then highlight(separator_line, 2, -1, "WinSeparator") end
-    if commands_line then highlight(commands_line, 2, -1, "OculusNormal") end
 
     -- Groups carry no trailing slash; mark them like legacy folders instead.
     for line, target in pairs(M.state.line_targets) do
@@ -1861,11 +1776,13 @@ local function render_contributors()
   if not showing_users then
     project_heading_line = #lines + 1
     local active_ws = require("oculus.workspace").get_active(M.state.opts)
+
     if active_ws and M.state.workspace_filter_enabled ~= false then
       lines[#lines + 1] = "  PROJECTS · " .. active_ws.name:upper()
     else
       lines[#lines + 1] = "  PROJECTS"
     end
+
     local items = startup_project_items()
 
     if #items == 0 and active_ws and M.state.workspace_filter_enabled ~= false then
@@ -1924,7 +1841,7 @@ local function render_contributors()
   )
 
   local window_height = vim.api.nvim_win_get_height(M.state.win)
-  local footer_space = is_sidebar_visible() and 0 or 4
+  local footer_space = 0
 
   list_limit = math.min(
     list_limit,
@@ -1962,32 +1879,13 @@ local function render_contributors()
     lines[#lines + 1] = "  a add account"
   end
 
-  local separator_line = nil
-  local commands_line = nil
-
-  if not is_sidebar_visible() then
-    while #lines < window_height - 2 do
-      lines[#lines + 1] = ""
-    end
-
-    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-    separator_line = #lines
-    local nav = navigation.resolve(M.state.opts)
-
-    footer(lines, showing_users
-        and "p projects  w work  W workspace  s saved  P plexus  C capabilities  m move  ?: help"
-      or "u users  w work  W workspace  s saved  P plexus  C capabilities  f folder  m move  ?: help")
-
-    commands_line = #lines
-  else
-    while #lines < window_height do
-      lines[#lines + 1] = ""
-    end
+  while #lines < window_height do
+    lines[#lines + 1] = ""
   end
 
   set_lines(lines)
-  M.state.list_footer_line = commands_line
-  M.state.list_footer_text = commands_line and lines[commands_line]
+  M.state.list_footer_line = nil
+  M.state.list_footer_text = nil
   work_view.accounts.render()
   vim.wo[M.state.win].cursorline = false
   highlight(2, 2, -1, "Title")
@@ -2310,18 +2208,6 @@ local function render_filters(scope, selected_type)
     end
   end
 
-  local width = vim.api.nvim_win_get_width(M.state.win)
-  local separator_line = nil
-  local commands_line = nil
-
-  if not is_sidebar_visible() then
-    local nav = navigation.resolve(M.state.opts)
-    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-    separator_line = #lines
-    footer(lines, ("? shortcuts   %s/← back   q close"):format(nav.left))
-    commands_line = #lines
-  end
-
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -2338,14 +2224,6 @@ local function render_filters(scope, selected_type)
 
     highlight(line, 7, 35, "Function")
     highlight(line, 36, -1, "Comment")
-  end
-
-  if separator_line then
-    highlight(separator_line, 2, -1, "WinSeparator")
-  end
-
-  if commands_line then
-    highlight(commands_line, 2, -1, "OculusNormal")
   end
 
   render_sidebar()
@@ -2507,13 +2385,6 @@ local function render_issue_filters(project, selected_dimension)
     lines[#lines + 1] = ""
   end
 
-  local commands_line = nil
-
-  if not is_sidebar_visible() then
-    footer(lines, "<Space> select   q close")
-    commands_line = #lines
-  end
-
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
 
@@ -2534,10 +2405,6 @@ local function render_issue_filters(project, selected_dimension)
     )
 
     highlight(line, 7, -1, "Function")
-  end
-
-  if commands_line then
-    highlight(commands_line, 0, -1, "Comment")
   end
 
   render_sidebar()
@@ -2651,11 +2518,6 @@ local function render_error(message)
       "  Could not load activity",
       "  " .. message,
     }
-
-  if not is_sidebar_visible() then
-    local nav = navigation.resolve(M.state.opts)
-    footer(lines, ("? shortcuts   %s/← back   q close"):format(nav.left))
-  end
 
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
@@ -3228,11 +3090,33 @@ local function render_shortcuts()
   close_activity_footer()
   M.state.view = "shortcuts"
   M.state.line_targets = {}
+  local ret = M.state.shortcut_return
+  local from_view = ret and ret.view or "contributors"
+  local comm_view = ret and ret.community_view or M.state.community_view or "projects"
+  local subtitle
+
+  if from_view == "contributors" then
+    subtitle = (comm_view == "users") and "Commands for Users" or "Commands for Projects"
+  elseif from_view == "directory" then
+    subtitle = "Commands for Folder"
+  elseif from_view == "activity" then
+    subtitle = "Commands for Activity"
+  elseif from_view == "milestones" then
+    subtitle = "Commands for Milestones"
+  elseif from_view == "work" then
+    subtitle = "Commands for My Work"
+  elseif from_view == "filters" then
+    subtitle = "Commands for Activity Filters"
+  elseif from_view == "issue_filters" then
+    subtitle = "Commands for Issue Filters"
+  else
+    subtitle = "Commands available in Oculus"
+  end
 
   local lines = {
     "",
     "  KEYBOARD SHORTCUTS",
-    "  Commands available throughout Oculus",
+    "  " .. subtitle,
   }
 
   local headings = { 2 }
@@ -3249,57 +3133,205 @@ local function render_shortcuts()
 
   local nav = navigation.resolve(M.state.opts)
 
-  section("NAVIGATION", {
-    { nav.up .. " / <Up>", "Select the previous item" },
-    { nav.down .. " / <Down>", "Select the next item" },
-    { nav.right .. " / <Right> / <CR>", "Select the current item" },
-    { nav.left .. " / <Left>", "Return to the previous page" },
-  })
+  if from_view == "contributors" then
+    if comm_view == "users" then
+      section("NAVIGATION", {
+        { nav.up .. " / <Up>", "Select the previous user" },
+        { nav.down .. " / <Down>", "Select the next user" },
+        { nav.right .. " / <Right> / <CR>", "Select the current user" },
+      })
 
-  section("STARTUP LISTS", {
-    { "v", "Switch between project and user lists" },
-    { "a", "Add a GitHub or Codeberg project or account" },
-    { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
-    { "r", "Rename the selected project or account" },
-    { "R", "Remove the selected project or account" },
-    { "m", "Move the selected project or account" },
-    { "f", "Edit filters for the selected user or project" },
-    { "F", "Edit global activity filters" },
-    { "d", "Reset activity filters to defaults" },
-    { "o", "Open the selected contributor profile" },
-  })
+      section("ACTIONS", {
+        { "p", "Switch to project list" },
+        { "w", "Open your work: review requests, PRs, mentions" },
+        { "s", "Open saved activity items" },
+        { "P", "Open Plexus investigations" },
+        { "C", "Discover Rust capability opportunities" },
+        { "m", "Move the selected user" },
+        { "a", "Add a GitHub or Codeberg account" },
+        { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
+        { "r", "Rename the selected account" },
+        { "R", "Remove the selected account" },
+        { "f", "Edit filters for the selected user" },
+        { "F", "Edit global activity filters" },
+        { "d", "Reset activity filters to defaults" },
+        { "o", "Open the selected contributor profile" },
+      })
 
-  section("ACTIVITY", {
-    { nav.inspect, "Inspect the selected change or issue" },
-    { nav.inspect_id, "Inspect an issue, PR, commit, or project by ID" },
-    { "gI", "Investigate the selected local commit" },
-    { "gP", "Browse durable change investigations" },
-    { "Tab", "Queue activity for sequential inspection" },
-    { "b", "Open the selected activity in a browser" },
-    { "u", "Open a project's issue activity" },
-    { "r", "Refresh the current activity page" },
-    { "p", "Load the next eight older activity items" },
-    { nav.right .. " / <Right>", "Open the next older activity page" },
-    { "f", "Move forward, or filter a project issue page" },
-  })
+      section("GENERAL", {
+        { "? / " .. nav.left .. " / <Left>", "Return to user list" },
+        { "q / <Esc> / <C-c>", "Close Oculus" },
+      })
+    else
+      section("NAVIGATION", {
+        { nav.up .. " / <Up>", "Select the previous item" },
+        { nav.down .. " / <Down>", "Select the next item" },
+        { nav.right .. " / <Right> / <CR>", "Select the current item" },
+      })
 
-  section("FILTER CHECKLIST", {
-    { "<Space> / l / <CR>", "Toggle the selected activity type" },
-    { "a", "Enable every activity type" },
-    { "n", "Disable every activity type" },
-  })
+      section("ACTIONS", {
+        { "u", "Switch to user list" },
+        { "w", "Open your work: review requests, PRs, mentions" },
+        { "W", "Select or switch project workspace" },
+        { "s", "Open saved activity items" },
+        { "P", "Open Plexus investigations" },
+        { "C", "Discover Rust capability opportunities" },
+        { "f", "Create a project folder" },
+        { "m", "Move the selected project or folder" },
+        { "M", "Move project to folder" },
+        { "a", "Add a GitHub or Codeberg project" },
+        { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
+        { "r", "Rename the selected project or folder" },
+        { "R", "Remove the selected project or folder" },
+        { "F", "Edit global activity filters" },
+        { "d", "Reset activity filters to defaults" },
+        { "o", "Open the selected contributor profile" },
+      })
 
-  section("GENERAL", {
-    { "?", "Open or close this shortcut page" },
-    { "q / <Esc> / <C-c>", "Close Oculus" },
-  })
+      section("GENERAL", {
+        { "? / " .. nav.left .. " / <Left>", "Return to project list" },
+        { "q / <Esc> / <C-c>", "Close Oculus" },
+      })
+    end
+  elseif from_view == "directory" then
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous project" },
+      { nav.down .. " / <Down>", "Select the next project" },
+      { nav.right .. " / <Right> / <CR>", "Select the current project" },
+      { nav.left .. " / <Left>", "Return to project list" },
+    })
 
-  local commands_line = nil
+    section("ACTIONS", {
+      { "w", "Open your work: review requests, PRs, mentions" },
+      { "s", "Open saved activity items" },
+      { "a", "Add a GitHub or Codeberg project" },
+      { "r", "Rename the selected project" },
+      { "R", "Remove the selected project" },
+      { "m", "Move the selected project" },
+      { "M", "Move project to folder" },
+      { "f", "Create a project folder" },
+      { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
+      { "F", "Edit global activity filters" },
+      { "d", "Reset activity filters to defaults" },
+      { "o", "Open the selected contributor profile" },
+    })
 
-  if not is_sidebar_visible() then
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = ("  ? or %s/← back   q close"):format(nav.left)
-    commands_line = #lines
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to folder" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  elseif from_view == "activity" then
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous item" },
+      { nav.down .. " / <Down>", "Select the next item" },
+      { nav.left .. " / <Left>", "Return to the previous page" },
+      { nav.right .. " / <Right>", "Open the next older activity page" },
+    })
+
+    local actions = {
+      { nav.inspect, "Inspect the selected change or issue" },
+      { nav.inspect_id, "Inspect an issue, PR, commit, or project by ID" },
+      { "Tab", "Queue activity for sequential inspection" },
+      { "b", "Open the selected activity in a browser" },
+      { "s", (ret and ret.activity_saved) and "Unsave activity item" or "Save activity item" },
+      { "r", "Refresh the current activity page" },
+      { "p", "Load the next eight older activity items" },
+    }
+
+    if ret and ret.activity_issue_page then
+      actions[#actions + 1] = { "f", "Filter issue activity" }
+      actions[#actions + 1] = { "m", "Open project milestones" }
+    elseif ret and ret.activity_project and not ret.activity_milestone and not ret.activity_commit_page then
+      actions[#actions + 1] = { "u", "Open project issues" }
+    end
+
+    actions[#actions + 1] = { "gI", "Investigate the selected local commit" }
+    actions[#actions + 1] = { "gP", "Browse durable change investigations" }
+    section("ACTIONS", actions)
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to activity" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  elseif from_view == "milestones" then
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous milestone" },
+      { nav.down .. " / <Down>", "Select the next milestone" },
+      { nav.right .. " / <Right> / <CR>", "Open the selected milestone" },
+      { nav.left .. " / <Left>", "Return to the previous page" },
+    })
+
+    section("ACTIONS", {
+      { "b", "Open the selected milestone in a browser" },
+      { "r", "Refresh milestones" },
+    })
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to milestones" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  elseif from_view == "work" then
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous item" },
+      { nav.down .. " / <Down>", "Select the next item" },
+      { nav.right .. " / <Right> / <CR>", "Open the selected item" },
+      { nav.left .. " / <Left>", "Return to the previous page" },
+    })
+
+    section("ACTIONS", {
+      { "b", "Open the selected item in a browser" },
+      { "r", "Refresh work items" },
+    })
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to work" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  elseif from_view == "filters" then
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous filter" },
+      { nav.down .. " / <Down>", "Select the next filter" },
+      { nav.left .. " / <Left>", "Return to the previous page" },
+    })
+
+    section("ACTIONS", {
+      { "<Space> / l / <CR>", "Toggle the selected activity type" },
+      { "a", "Enable every activity type" },
+      { "n", "Disable every activity type" },
+      { "d", "Reset activity filters to defaults" },
+    })
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to filters" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  elseif from_view == "issue_filters" then
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous filter option" },
+      { nav.down .. " / <Down>", "Select the next filter option" },
+      { nav.left .. " / <Left>", "Return to the previous page" },
+    })
+
+    section("ACTIONS", {
+      { "<Space> / <CR>", "Select filter option" },
+    })
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to issue filters" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  else
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous item" },
+      { nav.down .. " / <Down>", "Select the next item" },
+      { nav.right .. " / <Right> / <CR>", "Select the current item" },
+      { nav.left .. " / <Left>", "Return to the previous page" },
+    })
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to Oculus" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
   end
 
   set_lines(lines)
@@ -3310,11 +3342,6 @@ local function render_shortcuts()
   end
 
   highlight(3, 2, -1, "Comment")
-
-  if commands_line then
-    highlight(commands_line, 2, -1, "OculusNormal")
-  end
-
   render_sidebar()
   vim.api.nvim_win_set_cursor(M.state.win, { 2, 0 })
 end
@@ -6103,7 +6130,13 @@ local function go_back()
         M.state.activity_project,
         return_state.selected_type
       )
+    elseif return_state.view == "directory" and return_state.current_directory then
+      render_directory(return_state.current_directory)
     else
+      if return_state.community_view then
+        M.state.community_view = return_state.community_view
+      end
+
       render_contributors()
     end
 
@@ -6259,10 +6292,18 @@ local function toggle_shortcuts()
 
   M.state.shortcut_return = {
     view = M.state.view,
+    community_view = M.state.community_view,
     cursor = is_valid_win(M.state.win)
         and vim.api.nvim_win_get_cursor(M.state.win)
       or nil,
     selected_type = selected_type,
+    activity_commit_page = M.state.activity_commit_page,
+    activity_issue_page = M.state.activity_issue_page,
+    activity_project = M.state.activity_project,
+    activity_milestone = M.state.activity_milestone,
+    activity_saved = M.state.activity_saved,
+    activity_work = M.state.activity_work,
+    current_directory = M.state.current_directory,
   }
 
   if M.state.view == "activity" then
@@ -6298,7 +6339,6 @@ local function prompt_select_workspace()
   local all = workspace.list(M.state.opts)
   local active = workspace.get_active(M.state.opts)
   local filter_active = M.state.workspace_filter_enabled ~= false
-
   local items = {}
 
   if active then
@@ -6306,6 +6346,7 @@ local function prompt_select_workspace()
       kind = "clear",
       label = "✕ Clear active workspace (show all projects)",
     }
+
     items[#items + 1] = {
       kind = "toggle_filter",
       label = filter_active and "⊘ Toggle workspace filter (currently: ON -> turn OFF)"
@@ -6320,6 +6361,7 @@ local function prompt_select_workspace()
     local proj_str = string.format(" [%d project%s]", count, count == 1 and "" or "s")
     local mark = is_active and "* " or "  "
     local active_tag = is_active and " (active)" or ""
+
     items[#items + 1] = {
       kind = "select",
       ws = ws,
@@ -6344,6 +6386,7 @@ local function prompt_select_workspace()
 
     if choice.kind == "clear" then
       workspace.set_active(M.state.opts, nil)
+
       if is_valid_win(M.state.win) then
         if M.state.opts.tracking_file then
           M.refresh_tracking()
@@ -6351,9 +6394,11 @@ local function prompt_select_workspace()
           render_contributors()
         end
       end
+
       vim.notify("Oculus: Active workspace cleared.", vim.log.levels.INFO)
     elseif choice.kind == "toggle_filter" then
       M.state.workspace_filter_enabled = not filter_active
+
       if is_valid_win(M.state.win) then
         if M.state.opts.tracking_file then
           M.refresh_tracking()
@@ -6361,11 +6406,13 @@ local function prompt_select_workspace()
           render_contributors()
         end
       end
+
       local status_str = M.state.workspace_filter_enabled and "enabled" or "disabled"
       vim.notify("Oculus: Workspace filter " .. status_str .. ".", vim.log.levels.INFO)
     elseif choice.kind == "select" then
       workspace.set_active(M.state.opts, choice.ws.name)
       M.state.workspace_filter_enabled = true
+
       if is_valid_win(M.state.win) then
         if M.state.opts.tracking_file then
           M.refresh_tracking()
@@ -6373,6 +6420,7 @@ local function prompt_select_workspace()
           render_contributors()
         end
       end
+
       local count = #(choice.ws.projects or {})
       vim.notify(string.format("Oculus: Switched to workspace '%s' (%d project%s).", choice.ws.name, count, count == 1 and "" or "s"), vim.log.levels.INFO)
     elseif choice.kind == "new" then
@@ -6380,11 +6428,14 @@ local function prompt_select_workspace()
         if not name or vim.trim(name) == "" then
           return
         end
+
         name = vim.trim(name)
         local ws, err = workspace.add(M.state.opts, name, { projects = {} })
+
         if ws then
           workspace.set_active(M.state.opts, name)
           M.state.workspace_filter_enabled = true
+
           if is_valid_win(M.state.win) then
             if M.state.opts.tracking_file then
               M.refresh_tracking()
@@ -6392,6 +6443,7 @@ local function prompt_select_workspace()
               render_contributors()
             end
           end
+
           vim.notify(string.format("Oculus: Created and activated workspace '%s'.", name), vim.log.levels.INFO)
         else
           vim.notify("Oculus: " .. tostring(err), vim.log.levels.ERROR)
@@ -6441,7 +6493,16 @@ local function map_keys(buf)
   end
 
   map("<C-c>", M.close, "Close Oculus")
-  map("q", M.close, "Close Oculus")
+
+  map("q", function()
+    if M.state.view == "shortcuts" then
+      go_back()
+      return
+    end
+
+    M.close()
+  end, "Close Oculus")
+
   map("P", function() require("oculus").open_plexus() end, "Open Plexus investigations")
 
   map("gI", function()
@@ -6471,6 +6532,7 @@ local function map_keys(buf)
     if M.state.view == "directory"
       or M.state.view == "milestones"
       or M.state.view == "work"
+      or M.state.view == "shortcuts"
     then
       go_back()
       return
@@ -6479,8 +6541,9 @@ local function map_keys(buf)
     M.close()
   end, "Close Oculus")
 
-  map("?", toggle_sidebar, "Toggle Oculus command sidebar")
+  map("?", toggle_shortcuts, "Show Oculus keyboard shortcuts")
   map("v", toggle_community_view, "Switch Oculus project and user lists")
+
   map("W", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
       prompt_select_workspace()
@@ -7131,6 +7194,8 @@ M._get_search_history = get_search_history
 M._add_search_history = add_search_history
 M.close_activity_footer = close_activity_footer
 M.render_activity_footer = render_activity_footer
+M._toggle_shortcuts = toggle_shortcuts
+M._render_shortcuts = render_shortcuts
 
 function M.rename(name)
   if not is_valid_win(M.state.win) or (M.state.view ~= "contributors" and M.state.view ~= "directory") then
@@ -7265,6 +7330,7 @@ M._directory_preview_items = directory_preview_items
 
 function M.toggle_workspace_filter()
   M.state.workspace_filter_enabled = not (M.state.workspace_filter_enabled ~= false)
+
   if is_valid_win(M.state.win) then
     if M.state.opts and M.state.opts.tracking_file then
       M.refresh_tracking()
@@ -7272,6 +7338,7 @@ function M.toggle_workspace_filter()
       render_contributors()
     end
   end
+
   return M.state.workspace_filter_enabled
 end
 

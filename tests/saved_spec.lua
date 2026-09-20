@@ -204,8 +204,11 @@ local function buffer_text()
   return table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
 end
 
-local function footer_text()
-  return table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
+local function shortcuts_text()
+  press("?")
+  local text = buffer_text()
+  press("?")
+  return text
 end
 
 local function title_lines()
@@ -286,9 +289,10 @@ window.open({
 })
 
 state = window.state
-assert(buffer_text():find("s saved", 1, true))
+assert(not buffer_text():find("s saved", 1, true))
+assert(shortcuts_text():find("Open saved activity items", 1, true))
 open_project("neovim/neovim")
-assert(footer_text():find("s save", 1, true), footer_text())
+assert(shortcuts_text():find("Save activity item", 1, true))
 local lines = title_lines()
 vim.api.nvim_win_set_cursor(state.win, { lines[1], 0 })
 press("s")
@@ -328,7 +332,7 @@ local text = buffer_text()
 assert(text:find("  SAVED\n", 1, true), text)
 assert(text:find("5 saved items (1/3)", 1, true), text)
 assert(#state.events == 2)
-assert(footer_text():find("s unsave", 1, true))
+assert(shortcuts_text():find("Unsave activity item", 1, true))
 
 for _, line in ipairs(title_lines()) do
   assert(starred(line), "saved item is not starred")

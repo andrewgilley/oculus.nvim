@@ -400,13 +400,11 @@ assert(state.activity_project and not state.activity_issue_page)
 press("u")
 assert(state.activity_issue_page == true)
 local issue_events = state.events
-
-local issue_footer = table.concat(
-  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
-  "\n"
-)
-
-assert(issue_footer:find("m milestones", 1, true), issue_footer)
+assert(not state.footer_win or not vim.api.nvim_win_is_valid(state.footer_win))
+press("?")
+local issue_shortcuts = buffer_text()
+assert(issue_shortcuts:find("Open project milestones", 1, true), issue_shortcuts)
+press("?")
 -- The issues page opens the milestone list.
 press("m")
 assert(state.view == "milestones", state.view)
@@ -416,7 +414,11 @@ local text = buffer_text()
 assert(text:find("  MILESTONES", 1, true))
 assert(text:find("  neovim/neovim · GitHub", 1, true))
 assert(text:find("  OPEN (3)", 1, true))
-assert(text:find("back  ⏎ open  b browser  r refresh", 1, true))
+assert(not text:find("back  ⏎ open  b browser  r refresh", 1, true))
+press("?")
+local ms_shortcuts = buffer_text()
+assert(ms_shortcuts:find("Open the selected milestone", 1, true), ms_shortcuts)
+press("?")
 assert(not state.footer_win or not vim.api.nvim_win_is_valid(state.footer_win))
 -- Open milestones come first, soonest due date first and undated last.
 local open_order = {}
@@ -487,14 +489,11 @@ assert(text:find("  0.13 · neovim/neovim", 1, true), text)
 assert(text:find("@author-1 · open issue #1", 1, true), text)
 assert(text:find("@author-2 · open pull request #2", 1, true), text)
 assert(text:find("Milestone item 3", 1, true))
-
-local item_footer = table.concat(
-  vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false),
-  "\n"
-)
-
-assert(not item_footer:find("u issues", 1, true), item_footer)
-assert(not item_footer:find("m milestones", 1, true), item_footer)
+assert(not state.footer_win or not vim.api.nvim_win_is_valid(state.footer_win))
+press("?")
+local item_shortcuts = buffer_text()
+assert(not item_shortcuts:find("Open project milestones", 1, true), item_shortcuts)
+press("?")
 press("p")
 assert(state.activity_page == 2)
 assert(#state.events == 2)

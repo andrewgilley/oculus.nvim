@@ -50,14 +50,15 @@ end
 assert(window.state.preview_items[4][1] == 'Nested', 'initial group preview lists children')
 local rows = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
 local height = vim.api.nvim_win_get_height(window.state.win)
+assert(#rows == height, 'tracking list pads to full window height')
 
-assert(#rows == height and rows[height]:match('^  p projects') and rows[height - 1]:match('^  ─'),
-  'tracking footer sits on the bottom row below a separator, like the legacy list')
+assert(not rows[height]:match('^  p projects') and not rows[height - 1]:match('^  ─'),
+  'tracking footer is removed from the bottom row')
 
-assert(vim.fn.strdisplaywidth(rows[height]) <= vim.fn.strdisplaywidth(rows[height - 1])
-  and not rows[height]:find('M to group') and not rows[height]:find('r remove'),
-  'tracking footer stays in the list pane without M or r')
-
+window._toggle_shortcuts()
+local shortcuts_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')
+assert(shortcuts_rows:find('KEYBOARD SHORTCUTS', 1, true), 'shortcuts page opens from tracking view')
+window._toggle_shortcuts()
 assert(not table.concat(rows, '\n'):find('Tools/'), 'group rows have no trailing slash')
 local preview = preview_at('Tools')
 assert(preview[2][1] == 'GROUP' and preview[4][1] == 'Nested' and not preview[5], 'group preview lists direct children')

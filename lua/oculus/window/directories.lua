@@ -393,35 +393,13 @@ function M.setup(window, internal)
       project_lines[#project_lines + 1] = empty_line
     end
 
-    local separator_line = nil
-    local commands_line = nil
-
-    if not internal.is_sidebar_visible() then
-      while #lines < window_height - 2 do
-        lines[#lines + 1] = ""
-      end
-
-      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-      separator_line = #lines
-      local nav = navigation.resolve(window.state.opts)
-
-      internal.footer(
-        lines,
-        ("%s/← back  a add  r rename  R remove  m move  ?: help"):format(
-          nav.left
-        )
-      )
-
-      commands_line = #lines
-    else
-      while #lines < window_height do
-        lines[#lines + 1] = ""
-      end
+    while #lines < window_height do
+      lines[#lines + 1] = ""
     end
 
     internal.set_lines(lines)
-    window.state.list_footer_line = commands_line
-    window.state.list_footer_text = commands_line and lines[commands_line]
+    window.state.list_footer_line = nil
+    window.state.list_footer_text = nil
     vim.wo[window.state.win].cursorline = false
     internal.highlight(2, 2, -1, "Title")
     internal.highlight(3, 2, -1, "OculusDirectory")

@@ -679,25 +679,34 @@ do
   -- r on the overview page is what loads and unloads them.
   inspect._show_inspection_overview(group)
   local overview_buf = vim.api.nvim_win_get_buf(group.overview_win)
+  assert(group.overview_footer_win == nil or not vim.api.nvim_win_is_valid(group.overview_footer_win))
 
-  local function footer_text()
-    return vim.api.nvim_buf_get_lines(
-      group.overview_footer_buf,
-      1,
-      2,
-      false
-    )[1] or ""
+  local function shortcuts_text()
+    inspect._overview_ui.open_shortcuts(group)
+
+    local lines = table.concat(
+      vim.api.nvim_buf_get_lines(
+        group.overview_shortcuts_buf,
+        0,
+        -1,
+        false
+      ),
+      "\n"
+    )
+
+    inspect._overview_ui.close_shortcuts(group)
+    return lines
   end
 
-  assert(footer_text():find("r threads", 1, true), footer_text())
+  assert(shortcuts_text():find("Show review threads", 1, true), shortcuts_text())
   assert(vim.api.nvim_get_current_buf() == overview_buf)
   local toggle_map = assert(vim.fn.maparg("r", "n", false, true).callback)
   toggle_map()
   assert(group.review_inline)
-  assert(footer_text():find("r hide threads", 1, true), footer_text())
+  assert(shortcuts_text():find("Hide review threads", 1, true), shortcuts_text())
   toggle_map()
   assert(not group.review_inline)
-  assert(footer_text():find("r threads", 1, true), footer_text())
+  assert(shortcuts_text():find("Show review threads", 1, true), shortcuts_text())
   inspect._close_overview_window(group)
   -- <C-r> in a file shows the threads on the chunk it is showing, on their own.
   vim.api.nvim_set_current_tabpage(change.tab)

@@ -341,9 +341,12 @@ window.open({
 })
 
 state = window.state
-assert(buffer_text():find("w work", 1, true))
--- The signed-in accounts appear only in the sidebar, never on the list.
+assert(not buffer_text():find("w work", 1, true))
 press("?")
+assert(buffer_text():find("Open your work", 1, true))
+press("?")
+-- The signed-in accounts appear only in the sidebar, never on the list.
+window._toggle_sidebar()
 assert(window._is_sidebar_visible())
 
 wait_for("signed-in account not shown", function()
@@ -368,7 +371,7 @@ local function list_mentions_account()
 end
 
 assert(not list_mentions_account())
-press("?")
+window._toggle_sidebar()
 assert(not window._is_sidebar_visible())
 assert(not list_mentions_account())
 press("w")
@@ -388,9 +391,14 @@ assert(preview:find("a/one#7 Review a/one", 1, true), preview)
 press("b")
 assert(opened_urls[1] == "https://github.com/pulls/review-requested")
 press("?")
+assert(state.view == "shortcuts")
+assert(buffer_text():find("Commands for My Work", 1, true))
+press("?")
+assert(state.view == "work")
+window._toggle_sidebar()
 assert(state.view == "work" and window._is_sidebar_visible())
 assert(buffer_text():find("Review requests", 1, true))
-press("?")
+window._toggle_sidebar()
 assert(state.view == "work" and not window._is_sidebar_visible())
 -- The selection wraps and the preview follows it.
 press("i")

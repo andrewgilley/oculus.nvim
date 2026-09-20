@@ -82,7 +82,16 @@ local project_start_lines = table.concat(
 
 assert(project_start_lines:find("PROJECTS", 1, true))
 assert(not project_start_lines:find("No users added.", 1, true))
-assert(project_start_lines:find("u users", 1, true))
+assert(not project_start_lines:find("u users", 1, true))
+window._toggle_shortcuts()
+
+local shortcuts_lines = table.concat(
+  vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
+  "\n"
+)
+
+assert(shortcuts_lines:find("Switch to user list", 1, true))
+window._toggle_shortcuts()
 local add_mapping = vim.fn.maparg("a", "n", false, true)
 add_mapping.callback()
 vim.fn.maparg("<CR>", "n", false, true).callback() -- Confirm provider before entering text.
@@ -105,20 +114,13 @@ assert(remove_mapping.desc
 assert(vim.fn.maparg("x", "n", false, true).desc == nil)
 remove_mapping.callback()
 assert(#state.opts.projects == 1, "remove waits for confirmation")
-
-local function footer_row()
-  return vim.api.nvim_buf_get_lines(state.buf, state.list_footer_line - 1, state.list_footer_line, false)[1]
-end
-
-assert(footer_row():find('Remove "', 1, true), footer_row())
-assert(footer_row():find("y remove", 1, true), footer_row())
-assert(not footer_row():find("⏎", 1, true), footer_row())
-assert(not footer_row():find("?: help", 1, true), "prompt replaces the footer commands")
+assert(state.footer_prompt ~= nil, "prompt is active")
+assert(state.footer_prompt.question:find('Remove "', 1, true))
 vim.fn.maparg("n", "n", false, true).callback()
 assert(#state.opts.projects == 1, "n cancels removal")
-assert(footer_row():find("?: help", 1, true), "cancel restores the footer commands")
-assert(not state.footer_prompt)
+assert(not state.footer_prompt, "cancel clears prompt")
 remove_mapping.callback()
+assert(state.footer_prompt ~= nil)
 vim.fn.maparg("<CR>", "n", false, true).callback()
 assert(#state.opts.projects == 0, "Enter confirms the default removal")
 

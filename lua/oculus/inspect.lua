@@ -3193,6 +3193,10 @@ local function close_overview_window(group)
     end)
   end
 
+  if M._overview_ui and M._overview_ui.close_shortcuts then
+    M._overview_ui.close_shortcuts(group)
+  end
+
   if M._overview_ui and M._overview_ui.close_footer then
     M._overview_ui.close_footer(group)
   end
@@ -3574,8 +3578,6 @@ show_inspection_overview = function(group)
     }
   )
 
-  M._overview_ui.render_footer(group)
-
   if group.overview_agent_mode == "loading_models"
     or group.overview_agent_mode == "generating"
   then
@@ -3759,6 +3761,15 @@ show_inspection_overview = function(group)
     nowait = true,
     silent = true,
     desc = "Close Oculus Inspect overview",
+  })
+
+  vim.keymap.set("n", "?", function()
+    M._overview_ui.toggle_shortcuts(group)
+  end, {
+    buffer = buf,
+    nowait = true,
+    silent = true,
+    desc = "Show Oculus Inspect overview shortcuts",
   })
 
   local overview_lhs = group.overview_toggle
@@ -4252,6 +4263,8 @@ function M._overview_ui.prepare_patch_sidebar(source_group, opened)
   group.colorscheme_suspended = nil
   group.overview_win = nil
   group.overview_buf = nil
+  group.overview_shortcuts_win = nil
+  group.overview_shortcuts_buf = nil
   group.overview_footer_win = nil
   group.overview_footer_buf = nil
   group.overview_return = nil

@@ -285,6 +285,10 @@ function M.setup(inspect, internal)
   end
 
   function inspect._overview_ui.render_footer(group)
+    inspect._overview_ui.close_footer(group)
+  end
+
+  function inspect._overview_ui.open_shortcuts(group)
     local overview_win = group.overview_win
 
     if not overview_win or not vim.api.nvim_win_is_valid(overview_win) then
@@ -296,180 +300,213 @@ function M.setup(inspect, internal)
     local height = vim.api.nvim_win_get_height(overview_win)
 
     local config = {
-      relative = "editor",
+      relative = overview_config.relative or "editor",
+      win = overview_config.win,
+      row = overview_config.row,
+      col = overview_config.col,
       width = width,
-      height = 2,
-      row = (tonumber(overview_config.row) or 0) + height - 1,
-      col = (tonumber(overview_config.col) or 0) + 1,
+      height = height,
+      border = overview_config.border or "rounded",
       style = "minimal",
-      focusable = false,
-      zindex = (tonumber(overview_config.zindex) or 70) + 1,
+      focusable = true,
+      zindex = (tonumber(overview_config.zindex) or 70) + 2,
     }
 
-    local buf = group.overview_footer_buf
+    local buf = group.overview_shortcuts_buf
 
     if not buf or not vim.api.nvim_buf_is_valid(buf) then
       buf = vim.api.nvim_create_buf(false, true)
-      group.overview_footer_buf = buf
+      group.overview_shortcuts_buf = buf
       vim.bo[buf].buftype = "nofile"
       vim.bo[buf].bufhidden = "wipe"
       vim.bo[buf].swapfile = false
 
       internal.without_colorscheme(function()
-        vim.bo[buf].filetype = "oculus-inspect-overview-footer"
+        vim.bo[buf].filetype = "oculus-inspect-overview-shortcuts"
       end)
 
-      vim.b[buf].oculus_inspect_overview_footer = true
+      vim.b[buf].oculus_inspect_overview_shortcuts = true
     end
+
+    local lines = {
+      "",
+      "  KEYBOARD SHORTCUTS",
+      "  Commands for Inspect Overview",
+    }
+
+    local headings = { 2 }
+
+    local function section(title, entries)
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = "  " .. title
+      headings[#headings + 1] = #lines
+
+      for _, entry in ipairs(entries) do
+        lines[#lines + 1] = ("  %-22s %s"):format(entry[1], entry[2])
+      end
+    end
+
+    local nav = require("oculus.navigation").resolve({
+      navigation = group.navigation,
+    })
+
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Scroll up" },
+      { nav.down .. " / <Down>", "Scroll down" },
+      { "<CR>", group.overview_agent_mode == "models" and "Select model" or "Open patch location" },
+    })
+
+    local actions = {
+      { "b", "Open in browser" },
+      { "d", "Describe change" },
+    }
 
     local issue_patches = require("oculus.agent").needs_patch_locations(group)
 
-    local exit_spinner = group.overview_close_spinner_frame
-        and inspect._overview_ui.agent_spinner_frames[
-          group.overview_close_spinner_frame
-        ]
-      or nil
-
-    local exit_command_label = exit_spinner
-        and ("exit " .. exit_spinner)
-      or "exit"
-
-    local view_command_key = (group.chunk_view_mode == "sidebar")
-        and "v"
-      or "s"
-
-    local view_command_label = (group.chunk_view_mode == "sidebar")
-        and "virtual"
-      or "sidebar"
-
-    local left_commands = "  b browser   d describe"
-
     if issue_patches then
-      left_commands = left_commands .. "   p path   w worktree"
+      actions[#actions + 1] = { "p", "Select patch locations" }
+      actions[#actions + 1] = { "w", "Create worktree for patch/fix" }
     end
-
-    if inspect._review.thread_count(group) > 0 then
-      left_commands = left_commands
-        .. (group.review_inline and "   r hide threads" or "   r threads")
-    end
-
-    left_commands = left_commands
-      .. "   "
-      .. view_command_key
-      .. " "
-      .. view_command_label
-      .. "   e "
-      .. exit_command_label
-
-    local right_commands = ""
 
     if #(group.overview_agent_locations or {}) > 0
       and group.overview_agent_mode == "patch_locations"
     then
-      right_commands = "<Space> toggle   <CR> open paths   "
+      actions[#actions + 1] = { "<Space>", "Toggle patch location" }
+      actions[#actions + 1] = { "<CR>", "Open selected paths" }
+      actions[#actions + 1] = { "<C-c>", "Unfocus patch locations" }
     end
 
-    right_commands = right_commands .. "c close"
-    local left_display_width = vim.fn.strdisplaywidth(left_commands)
-    local right_display_width = vim.fn.strdisplaywidth(right_commands)
-
-    local padding = math.max(
-      3,
-      width
-        - 2
-        - left_display_width
-        - right_display_width
-    )
-
-    local commands = left_commands .. string.rep(" ", padding) .. right_commands
-    local exit_spinner_col
-
-    if exit_spinner then
-      local spinner_start = commands:find(exit_spinner, 1, true)
-      exit_spinner_col = spinner_start and (spinner_start - 1) or nil
+    if inspect._review.thread_count(group) > 0 then
+      actions[#actions + 1] = {
+        "r",
+        group.review_inline and "Hide review threads" or "Show review threads",
+      }
     end
 
-    local footer_lines = {
-      "  " .. string.rep("─", math.max(1, width - 4)),
-      commands,
-    }
+    local view_key = (group.chunk_view_mode == "sidebar") and "v" or "s"
+    local view_label = (group.chunk_view_mode == "sidebar") and "Switch to virtual counters" or "Switch to sidebar"
+    actions[#actions + 1] = { view_key, view_label }
+    actions[#actions + 1] = { "e", "Exit inspection workflow" }
+    section("ACTIONS", actions)
+
+    section("GENERAL", {
+      { "c / q", "Close overview" },
+      { "?", "Close shortcuts page" },
+      { "<Esc>", "Close shortcuts page" },
+    })
 
     vim.bo[buf].modifiable = true
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, footer_lines)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
+    local ns = vim.api.nvim_create_namespace("oculus_inspect_overview_shortcuts")
+    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
 
-    vim.api.nvim_buf_clear_namespace(
-      buf,
-      inspect._overview_ui.footer_ns,
-      0,
-      -1
-    )
-
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      inspect._overview_ui.footer_ns,
-      0,
-      2,
-      {
-        end_col = #footer_lines[1],
-        hl_group = "Comment",
-        priority = 100,
-      }
-    )
-
-    vim.api.nvim_buf_set_extmark(
-      buf,
-      inspect._overview_ui.footer_ns,
-      1,
-      2,
-      {
-        end_col = #footer_lines[2],
-        hl_group = "OculusNormal",
-        priority = 100,
-      }
-    )
-
-    if exit_spinner_col then
-      vim.api.nvim_buf_set_extmark(
-        buf,
-        inspect._overview_ui.footer_ns,
-        1,
-        exit_spinner_col,
-        {
-          end_col = exit_spinner_col + #exit_spinner,
-          hl_group = "DiagnosticInfo",
-          priority = 110,
-        }
-      )
+    for _, line_num in ipairs(headings) do
+      vim.api.nvim_buf_add_highlight(buf, ns, line_num == 2 and "Title" or "Special", line_num - 1, 2, -1)
     end
 
-    local footer_win = group.overview_footer_win
+    vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 2, 2, -1)
+    local shortcuts_win = group.overview_shortcuts_win
 
-    if footer_win and vim.api.nvim_win_is_valid(footer_win) then
-      vim.api.nvim_win_set_config(footer_win, config)
+    if shortcuts_win and vim.api.nvim_win_is_valid(shortcuts_win) then
+      vim.api.nvim_win_set_config(shortcuts_win, config)
     else
-      footer_win = internal.without_colorscheme(function()
-        return vim.api.nvim_open_win(buf, false, config)
+      shortcuts_win = internal.without_colorscheme(function()
+        return vim.api.nvim_open_win(buf, true, config)
       end)
 
-      group.overview_footer_win = footer_win
+      group.overview_shortcuts_win = shortcuts_win
     end
 
-    vim.wo[footer_win].wrap = false
-    vim.wo[footer_win].cursorline = false
-    vim.wo[footer_win].number = false
-    vim.wo[footer_win].relativenumber = false
-    vim.wo[footer_win].signcolumn = "no"
+    vim.wo[shortcuts_win].wrap = false
+    vim.wo[shortcuts_win].cursorline = false
+    vim.wo[shortcuts_win].number = false
+    vim.wo[shortcuts_win].relativenumber = false
+    vim.wo[shortcuts_win].signcolumn = "no"
 
-    vim.wo[footer_win].winhighlight = table.concat({
+    vim.wo[shortcuts_win].winhighlight = table.concat({
       "Normal:OculusNormal",
       "NormalFloat:OculusNormal",
     }, ",")
 
     require("oculus.window").apply_overview_highlights(
-      footer_win,
+      shortcuts_win,
       group.overview_highlight_source_win
     )
+
+    local map_opts = { buffer = buf, nowait = true, silent = true }
+
+    local function close()
+      inspect._overview_ui.close_shortcuts(group)
+    end
+
+    vim.keymap.set("n", "?", close, map_opts)
+    vim.keymap.set("n", "q", close, map_opts)
+    vim.keymap.set("n", "<Esc>", close, map_opts)
+    vim.keymap.set("n", "c", close, map_opts)
+    vim.keymap.set("n", nav.left, close, map_opts)
+    vim.keymap.set("n", "<Left>", close, map_opts)
+
+    vim.keymap.set("n", nav.up, function()
+      local cur = vim.api.nvim_win_get_cursor(shortcuts_win)
+
+      if cur[1] > 1 then
+        vim.api.nvim_win_set_cursor(shortcuts_win, { cur[1] - 1, cur[2] })
+      end
+    end, map_opts)
+
+    vim.keymap.set("n", "<Up>", function()
+      local cur = vim.api.nvim_win_get_cursor(shortcuts_win)
+
+      if cur[1] > 1 then
+        vim.api.nvim_win_set_cursor(shortcuts_win, { cur[1] - 1, cur[2] })
+      end
+    end, map_opts)
+
+    vim.keymap.set("n", nav.down, function()
+      local cur = vim.api.nvim_win_get_cursor(shortcuts_win)
+      local cnt = vim.api.nvim_buf_line_count(buf)
+
+      if cur[1] < cnt then
+        vim.api.nvim_win_set_cursor(shortcuts_win, { cur[1] + 1, cur[2] })
+      end
+    end, map_opts)
+
+    vim.keymap.set("n", "<Down>", function()
+      local cur = vim.api.nvim_win_get_cursor(shortcuts_win)
+      local cnt = vim.api.nvim_buf_line_count(buf)
+
+      if cur[1] < cnt then
+        vim.api.nvim_win_set_cursor(shortcuts_win, { cur[1] + 1, cur[2] })
+      end
+    end, map_opts)
+  end
+
+  function inspect._overview_ui.close_shortcuts(group)
+    local win = group.overview_shortcuts_win
+    local buf = group.overview_shortcuts_buf
+    group.overview_shortcuts_win = nil
+    group.overview_shortcuts_buf = nil
+
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end
+
+    if group.overview_win and vim.api.nvim_win_is_valid(group.overview_win) then
+      vim.api.nvim_set_current_win(group.overview_win)
+    end
+  end
+
+  function inspect._overview_ui.toggle_shortcuts(group)
+    if group.overview_shortcuts_win and vim.api.nvim_win_is_valid(group.overview_shortcuts_win) then
+      inspect._overview_ui.close_shortcuts(group)
+    else
+      inspect._overview_ui.open_shortcuts(group)
+    end
   end
 
   function inspect._overview_ui.stop_close_spinner(group)
@@ -525,14 +562,7 @@ function M.setup(inspect, internal)
       return 1
     end
 
-    local height = vim.api.nvim_win_get_height(win)
-    local footer = group.overview_footer_win
-
-    if footer and vim.api.nvim_win_is_valid(footer) then
-      height = height - vim.api.nvim_win_get_height(footer)
-    end
-
-    return math.max(1, height)
+    return math.max(1, vim.api.nvim_win_get_height(win))
   end
 
   function inspect._overview_ui.clamp_scroll(group)
