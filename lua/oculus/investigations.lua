@@ -35,7 +35,7 @@ function M.open(config, nexus_config, id, submission)
   if M.state and not M.state.closed then M.state.close() end
   config = vim.deepcopy(config or {})
   config.store = vim.fn.fnamemodify(config.store or vim.fn.stdpath("data") .. "/oculus/plexus", ":p")
-  local state = { config = config, generation = 0, targets = {}, source_win = vim.api.nvim_get_current_win() }
+  local state = { config = config, generation = 0, targets = {}, source_win = vim.api.nvim_get_current_win(), decisions = {} }
   M.state = state
   vim.cmd("botright vnew")
   state.win, state.buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
@@ -98,11 +98,142 @@ function M.open(config, nexus_config, id, submission)
   end
 
   local function header(title)
-    return { "  PLEXUS · " .. title, "  Enter source/open · n queue · p composition · r reload · g catalog · c cancel · q close", "  Ready", "" }
+    return {
+      "  PLEXUS · " .. title,
+      "  Enter source · h promote · s select · d defer · x dismiss · n queue · p compose · r reload · q close",
+      "  Ready",
+      "",
+    }
+  end
+
+  local function obligation_resolution(obligation)
+    if type(obligation) ~= "table" then return nil end
+    if type(obligation.resolving_evidence) == "string" and obligation.resolving_evidence ~= "" then
+      return obligation.resolving_evidence
+    end
+    if type(obligation.resolution) == "string" and obligation.resolution ~= "" then
+      return obligation.resolution
+    end
+
+    local kind = obligation.kind or ""
+    local label = obligation.label or ""
+
+    if kind == "signature" or kind == "replacement_signature" then
+      return "compiler verification of matching callable signature"
+    elseif kind == "normalizer_fixture" then
+      return "fixture execution against the captured normalizer"
+    elseif kind == "consumer_integration" then
+      return "adapted consumer build and link against provider head"
+    elseif kind == "behavior" or kind == "behavioral_equivalence" then
+      return "passing behavioral test cases across consumer call sites"
+    elseif kind == "runtime_behavior" then
+      return "runtime execution trace or differential test run"
+    elseif kind == "wrapper_implementation" or kind == "implementation" then
+      return "concrete C ABI wrapper implementation"
+    elseif kind == "native_link" then
+      return "successful native C/Zig link without unresolved symbols"
+    elseif kind == "native_cases" or kind == "cases" then
+      return "passing execution cases with matching exit code and output"
+    elseif kind == "composition_execution" then
+      return "conforming component instantiation and value agreement across runtimes"
+    elseif kind == "adapted_build" then
+      return "consumer build passing against the adapted call sites"
+    elseif kind == "consumer_tests" then
+      return "passing consumer test suite on adapted calls"
+    elseif kind ~= "" then
+      return kind:gsub("_", " ") .. " evidence or test verification"
+    elseif label ~= "" then
+      return "evidence verifying " .. label:lower()
+    end
+    return "reproducible evidence verifying this obligation"
+  end
+
+  local function decisions_file(investigation_id)
+    if not investigation_id or type(investigation_id) ~= "string" then return nil end
+    local base = config.decisions_dir or (config.store and (config.store .. "/decisions")) or (vim.fn.stdpath("state") .. "/oculus-decisions")
+    pcall(vim.fn.mkdir, base, "p")
+    local safe_id = investigation_id:gsub("[^%w_-]", "_")
+    return base .. "/" .. safe_id .. ".json"
+  end
+
+  function state.load_decisions(investigation_id)
+    state.decisions = state.decisions or {}
+    if not investigation_id then return end
+    local file = decisions_file(investigation_id)
+    if file and vim.fn.filereadable(file) == 1 then
+      local ok, lines = pcall(vim.fn.readfile, file)
+      if ok and lines and #lines > 0 then
+        local ok_json, data = pcall(vim.json.decode, table.concat(lines, "\n"))
+        if ok_json and type(data) == "table" then
+          for k, v in pairs(data) do
+            state.decisions[k] = state.decisions[k] or v
+          end
+        end
+      end
+    end
+    if type(config.investigation_decisions) == "table" and type(config.investigation_decisions[investigation_id]) == "table" then
+      for k, v in pairs(config.investigation_decisions[investigation_id]) do
+        state.decisions[k] = state.decisions[k] or v
+      end
+    end
+    if state.view and state.view.evidence then
+      for _, item in ipairs(state.view.evidence) do
+        if item.kind == "developer_decision" and item.opportunity_id then
+          state.decisions[item.opportunity_id] = state.decisions[item.opportunity_id] or {
+            status = item.status or item.decision,
+            decision = item.decision or item.status,
+            actor = item.actor or item.validation_id,
+            diagnostic = item.diagnostic or item.rationale,
+            rationale = item.rationale or item.diagnostic,
+            created_unix_nanos = item.created_unix_nanos,
+          }
+        end
+      end
+    end
+  end
+
+  function state.save_decisions()
+    if not state.view or not state.view.investigation_id then return end
+    local file = decisions_file(state.view.investigation_id)
+    if file then
+      pcall(vim.fn.writefile, { vim.json.encode(state.decisions) }, file)
+    end
+    if type(config.investigation_decisions) == "table" then
+      config.investigation_decisions[state.view.investigation_id] = vim.deepcopy(state.decisions)
+      if config.state_file then
+        pcall(require("oculus.storage").save, config.state_file, config)
+      end
+    end
   end
 
   local function show(value)
     valid_view(value)
+    if value.investigation_id then
+      state.load_decisions(value.investigation_id)
+      for opp_id, dec in pairs(state.decisions or {}) do
+        local exists = false
+        for _, item in ipairs(value.evidence or {}) do
+          if item.kind == "developer_decision" and item.opportunity_id == opp_id then
+            exists = true
+            break
+          end
+        end
+        if not exists then
+          value.evidence = value.evidence or {}
+          table.insert(value.evidence, {
+            kind = "developer_decision",
+            opportunity_id = opp_id,
+            status = dec.status or dec.decision,
+            decision = dec.decision or dec.status,
+            validation_id = "developer:" .. (dec.actor or "developer"),
+            actor = dec.actor or "developer",
+            diagnostic = dec.diagnostic or dec.rationale,
+            rationale = dec.rationale or dec.diagnostic,
+            created_unix_nanos = dec.created_unix_nanos or tostring(vim.uv.hrtime()),
+          })
+        end
+      end
+    end
     local lines, targets = header("CHANGE INVESTIGATION"), {}
     local observation = value.observation
     lines[#lines + 1] = "  " .. text(value.status) .. " · " .. text(value.intent)
@@ -164,8 +295,16 @@ function M.open(config, nexus_config, id, submission)
         count = count + 1
         local target = { opportunity = opportunity, experiment = experiments[opportunity.id], source = opportunity.consumer_location }
         local start = #lines + 1
-        lines[#lines + 1] = "  " .. text(opportunity.title) .. " · " .. text(opportunity.status)
+        local dec = state.decisions and state.decisions[opportunity.id]
+        local title_suffix = dec and (" · [" .. (dec.status or dec.decision):upper() .. "]") or ""
+        lines[#lines + 1] = "  " .. text(opportunity.title) .. " · " .. text(opportunity.status) .. title_suffix
         lines[#lines + 1] = "    " .. text(opportunity.explanation)
+
+        if dec then
+          local note = dec.diagnostic or dec.rationale
+          local note_text = (note and note ~= "") and (" · " .. text(note)) or ""
+          lines[#lines + 1] = "    Decision: " .. text(dec.status or dec.decision) .. " · by " .. text(dec.actor or "developer") .. note_text
+        end
 
         if type(opportunity.substitution) == "table" then
           lines[#lines + 1] = "    Candidate substitution: " .. text(opportunity.substitution.previous_path)
@@ -200,6 +339,10 @@ function M.open(config, nexus_config, id, submission)
 
         for _, obligation in ipairs(obligations[opportunity.id] or {}) do
           lines[#lines + 1] = "    Obligation: " .. text(obligation.label) .. " · " .. text(obligation.status)
+          local resolution = obligation_resolution(obligation)
+          if resolution then
+            lines[#lines + 1] = "      Resolves with: " .. text(resolution)
+          end
           for _, artifact in ipairs(obligation.evidence or {}) do lines[#lines + 1] = "      Evidence: " .. text(artifact) end
         end
 
@@ -215,12 +358,21 @@ function M.open(config, nexus_config, id, submission)
           lines[#lines + 1] = "    p: adapt the consumer's calls and test them against the producer before and after the change."
         end
 
+        lines[#lines + 1] = "    h: promote to hypothesis · s: select · d: defer · x: dismiss"
+
         local attempts = evidence[opportunity.id] or {}
-        if #attempts > 0 then lines[#lines + 1] = "    Evidence attempts: " .. #attempts end
+        local execution_attempts = vim.tbl_filter(function(r) return r.kind ~= "developer_decision" end, attempts)
+        if #execution_attempts > 0 then lines[#lines + 1] = "    Evidence attempts: " .. #execution_attempts end
 
         for _, result in ipairs(attempts) do
           lines[#lines + 1] = "    Evidence: " .. text(result.status) .. " · " .. text(result.validation_id)
-          if type(result.diagnostic) == "string" then lines[#lines + 1] = "      " .. text(result.diagnostic) end
+          if type(result.diagnostic) == "string" and result.diagnostic ~= "" then
+            if result.kind == "developer_decision" then
+              lines[#lines + 1] = "      Rationale: " .. text(result.diagnostic)
+            else
+              lines[#lines + 1] = "      " .. text(result.diagnostic)
+            end
+          end
           if type(result.scope) == "string" and result.scope ~= "" then lines[#lines + 1] = "      Scope: " .. text(result.scope) end
 
           local function artifact_row(label, artifact)
@@ -276,16 +428,20 @@ function M.open(config, nexus_config, id, submission)
           end
         end
 
-        if #attempts > 0 then
+        local execution_attempts = vim.tbl_filter(function(r) return r.kind ~= "developer_decision" end, attempts)
+
+        if #execution_attempts > 0 then
           local compiler = (type(opportunity.validation) == "table" and opportunity.validation.kind == "rust_function_signature")
             or (target.experiment and target.experiment.kind == "rust_function_signature")
 
-          local adapted = vim.iter(attempts):any(function(result) return result.kind == "rust_call_site_adaptation" end)
+          local adapted = vim.iter(execution_attempts):any(function(result) return result.kind == "rust_call_site_adaptation" end)
 
           lines[#lines + 1] = adapted and "      Selected consumer tests only; behavioral equivalence remains unverified and relationship remains inferred."
             or compiler and "      Scoped to compiler signature checks; behavior remains unverified and relationship remains inferred."
             or (observation.analysis == "c_zig" and "      Selected cases only; general equivalence remains unverified and relationship remains inferred."
               or "      Scoped to this fixture; relationship remains inferred.")
+        elseif #attempts > 0 then
+          lines[#lines + 1] = "      Developer decision recorded; relationship remains inferred."
         end
 
         for row = start, #lines do targets[row] = targets[row] or target end
@@ -302,7 +458,15 @@ function M.open(config, nexus_config, id, submission)
     end
 
     state.view, state.targets, state.mode = value, targets, "investigation"
+    local cur
+    if vim.api.nvim_win_is_valid(state.win) then
+      cur = vim.api.nvim_win_get_cursor(state.win)
+    end
     set_lines(state.buf, lines)
+    if cur and vim.api.nvim_win_is_valid(state.win) then
+      local max_line = vim.api.nvim_buf_line_count(state.buf)
+      pcall(vim.api.nvim_win_set_cursor, state.win, { math.min(cur[1], max_line), cur[2] })
+    end
   end
 
   function state.load(investigation_id)
@@ -451,9 +615,168 @@ function M.open(config, nexus_config, id, submission)
     else vim.ui.input({ prompt = "C/Zig composition request (sources and cases): ", completion = "file" }, open) end
   end
 
-  local maps = { ["<CR>"] = function() state.navigate() end, n = function() state.queue() end,
+  local function record_decision(target, decision_name, rationale)
+    target = selected(target)
+    if state.mode ~= "investigation" or not target or not target.opportunity then
+      status("Place the cursor on an opportunity to steer it.")
+      return false
+    end
+
+    local opp_id = target.opportunity.id
+    local actor = (vim.env.USER and vim.env.USER ~= "") and vim.env.USER or "developer"
+    local now = tostring(vim.uv.hrtime())
+    local item = {
+      kind = "developer_decision",
+      opportunity_id = opp_id,
+      status = decision_name,
+      decision = decision_name,
+      validation_id = "developer:" .. actor,
+      actor = actor,
+      diagnostic = (type(rationale) == "string" and vim.trim(rationale) ~= "") and vim.trim(rationale) or nil,
+      rationale = (type(rationale) == "string" and vim.trim(rationale) ~= "") and vim.trim(rationale) or nil,
+      created_unix_nanos = now,
+    }
+
+    state.decisions = state.decisions or {}
+    state.decisions[opp_id] = item
+
+    state.view.evidence = vim.tbl_filter(function(e)
+      return not (e.kind == "developer_decision" and e.opportunity_id == opp_id)
+    end, state.view.evidence or {})
+    table.insert(state.view.evidence, item)
+
+    state.save_decisions()
+    show(state.view)
+    return true
+  end
+
+  function state.promote(target, note)
+    target = selected(target)
+    if state.mode ~= "investigation" or not target or not target.opportunity then
+      status("Place the cursor on an opportunity to steer it.")
+      return
+    end
+
+    if note ~= nil then
+      if record_decision(target, "promoted", note) then
+        status("Opportunity promoted to hypothesis.")
+      end
+      return
+    end
+
+    vim.ui.input({ prompt = "Promote to hypothesis (optional note): " }, function(input)
+      if state.closed or input == nil then return end
+      if record_decision(target, "promoted", input) then
+        status("Opportunity promoted to hypothesis.")
+      end
+    end)
+  end
+
+  function state.select_opportunity(target, note)
+    target = selected(target)
+    if state.mode ~= "investigation" or not target or not target.opportunity then
+      status("Place the cursor on an opportunity to steer it.")
+      return
+    end
+
+    if note ~= nil then
+      if record_decision(target, "selected", note) then
+        status("Opportunity selected for active investigation.")
+      end
+      return
+    end
+
+    vim.ui.input({ prompt = "Selection rationale (optional note): " }, function(input)
+      if state.closed or input == nil then return end
+      if record_decision(target, "selected", input) then
+        status("Opportunity selected for active investigation.")
+      end
+    end)
+  end
+
+  function state.defer(target, reason)
+    target = selected(target)
+    if state.mode ~= "investigation" or not target or not target.opportunity then
+      status("Place the cursor on an opportunity to steer it.")
+      return
+    end
+
+    if reason ~= nil then
+      if record_decision(target, "deferred", reason) then
+        status("Opportunity deferred.")
+      end
+      return
+    end
+
+    vim.ui.input({ prompt = "Reason for deferral (optional note): " }, function(input)
+      if state.closed or input == nil then return end
+      if record_decision(target, "deferred", input) then
+        status("Opportunity deferred.")
+      end
+    end)
+  end
+
+  function state.dismiss(target, reason)
+    target = selected(target)
+    if state.mode ~= "investigation" or not target or not target.opportunity then
+      status("Place the cursor on an opportunity to steer it.")
+      return
+    end
+
+    if reason ~= nil then
+      if record_decision(target, "dismissed", reason) then
+        status("Opportunity dismissed.")
+      end
+      return
+    end
+
+    vim.ui.input({ prompt = "Reason for dismissal (optional note): " }, function(input)
+      if state.closed or input == nil then return end
+      if record_decision(target, "dismissed", input) then
+        status("Opportunity dismissed.")
+      end
+    end)
+  end
+
+  function state.clear_decision(target)
+    target = selected(target)
+    if state.mode ~= "investigation" or not target or not target.opportunity then
+      status("Place the cursor on an opportunity to steer it.")
+      return
+    end
+
+    local opp_id = target.opportunity.id
+    if not (state.decisions and state.decisions[opp_id]) then
+      status("No decision recorded for this opportunity.")
+      return
+    end
+
+    state.decisions[opp_id] = nil
+    state.view.evidence = vim.tbl_filter(function(e)
+      return not (e.kind == "developer_decision" and e.opportunity_id == opp_id)
+    end, state.view.evidence or {})
+
+    state.save_decisions()
+    show(state.view)
+    status("Developer decision cleared.")
+  end
+
+  local maps = {
+    ["<CR>"] = function() state.navigate() end,
+    n = function() state.queue() end,
     p = function() state.compose() end,
-    r = state.refresh, g = state.catalog, c = state.cancel, ["<C-c>"] = state.cancel, q = state.close, ["<Esc>"] = state.close }
+    h = function() state.promote() end,
+    s = function() state.select_opportunity() end,
+    d = function() state.defer() end,
+    x = function() state.dismiss() end,
+    u = function() state.clear_decision() end,
+    r = state.refresh,
+    g = state.catalog,
+    c = state.cancel,
+    ["<C-c>"] = state.cancel,
+    q = state.close,
+    ["<Esc>"] = state.close,
+  }
 
   for key, callback in pairs(maps) do vim.keymap.set("n", key, callback, { buffer = state.buf, silent = true, nowait = true }) end
   set_lines(state.buf, header("INVESTIGATIONS"))

@@ -136,7 +136,10 @@ assert(rendered:find("Claim: inferred", 1, true) and rendered:find("Rule: signat
 assert(rendered:find("Claim: observed · A public replacement declaration was added.", 1, true))
 assert(rendered:find("Support: source", 1, true) and rendered:find("sha256:compiler", 1, true))
 assert(rendered:find("Replacement signature · supported_for_signature", 1, true))
+assert(rendered:find("Resolves with: compiler verification of matching callable signature", 1, true))
 assert(rendered:find("Behavioral compatibility · unresolved", 1, true))
+assert(rendered:find("Resolves with: passing behavioral test cases across consumer call sites", 1, true))
+assert(rendered:find("h: promote to hypothesis · s: select · d: defer · x: dismiss", 1, true))
 assert(rendered:find("behavior remains unverified and relationship remains inferred", 1, true))
 assert(rendered:find("Scope: Offline function pointer assertions with default features disabled; no consumer compilation.", 1, true))
 assert(rendered:find("Case: after_replacement · matched", 1, true))
@@ -335,6 +338,99 @@ assert(rendered:find("Expected exit: 6 · actual: 6", 1, true))
 assert(not rendered:find("nonzero-is-expected · failed", 1, true), "Nonzero expected exit is a passing case")
 assert(rendered:find("general_behavioral_equivalence", 1, true))
 state.close()
+
+-- Test O7 Opportunity Steering: promote, select, defer, dismiss, clear
+local steering_view = vim.deepcopy(compiler)
+state = bridge.open(config, nexus_config, steering_view.investigation_id)
+respond(calls[#calls], steering_view)
+assert(not state.error, state.error)
+
+local opp_target
+for _, t in pairs(state.targets) do
+  if t.opportunity and t.opportunity.id == "gap" then
+    opp_target = t
+    break
+  end
+end
+assert(opp_target, "Expected target for opportunity gap")
+
+-- Verify keybindings are mapped on the buffer
+for _, k in ipairs({ "h", "s", "d", "x", "u" }) do
+  local map = vim.fn.maparg(k, "n", false, true)
+  assert(type(map.callback) == "function", "Missing mapping for " .. k)
+end
+
+-- 1. Promote to hypothesis
+state.promote(opp_target, "promising substitution path")
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("[PROMOTED]", 1, true), "Opportunity title must show [PROMOTED] badge")
+assert(rendered:find("Decision: promoted · by", 1, true), "Expected decision line in opportunity")
+assert(rendered:find("promising substitution path", 1, true))
+assert(rendered:find("Evidence: promoted · developer:", 1, true), "Decision must be recorded as attributed evidence")
+assert(rendered:find("Rationale: promising substitution path", 1, true))
+-- Claim and opportunity status must remain "inferred"
+assert(steering_view.reports[1].opportunities[1].status == "inferred", "Opportunity claim status must never be edited")
+assert(rendered:find("relationship remains inferred", 1, true))
+
+-- 2. Select opportunity
+state.select_opportunity(opp_target, "focus for upcoming release")
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("[SELECTED]", 1, true))
+assert(rendered:find("Decision: selected · by", 1, true))
+assert(rendered:find("focus for upcoming release", 1, true))
+assert(rendered:find("Evidence: selected · developer:", 1, true))
+assert(not rendered:find("[PROMOTED]", 1, true))
+
+-- 3. Defer opportunity
+state.defer(opp_target, "awaiting upstream stabilization")
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("[DEFERRED]", 1, true))
+assert(rendered:find("Decision: deferred · by", 1, true))
+assert(rendered:find("awaiting upstream stabilization", 1, true))
+assert(rendered:find("Evidence: deferred · developer:", 1, true))
+
+-- 4. Dismiss opportunity
+state.dismiss(opp_target, "rejected by architectural design")
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("[DISMISSED]", 1, true))
+assert(rendered:find("Decision: dismissed · by", 1, true))
+assert(rendered:find("rejected by architectural design", 1, true))
+assert(rendered:find("Evidence: dismissed · developer:", 1, true))
+
+-- 5. Clear decision
+state.clear_decision(opp_target)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(not rendered:find("[DISMISSED]", 1, true))
+assert(not rendered:find("Decision:", 1, true))
+assert(not rendered:find("Evidence: dismissed", 1, true))
+
+-- 6. Interactive prompt via key mapping
+local mock_prompts, mock_responses = {}, { "interactive note via prompt" }
+vim.ui.input = function(opts, cb)
+  mock_prompts[#mock_prompts + 1] = opts.prompt
+  cb(table.remove(mock_responses, 1))
+end
+for row, t in pairs(state.targets) do
+  if t.opportunity and t.opportunity.id == "gap" then
+    vim.api.nvim_win_set_cursor(state.win, { row, 0 })
+    break
+  end
+end
+vim.fn.maparg("h", "n", false, true).callback()
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(#mock_prompts == 1 and mock_prompts[1]:find("Promote to hypothesis", 1, true))
+assert(rendered:find("[PROMOTED]", 1, true))
+assert(rendered:find("interactive note via prompt", 1, true))
+
+-- 7. Decisions persist across reload
+state.close()
+state = bridge.open(config, nexus_config, steering_view.investigation_id)
+respond(calls[#calls], steering_view)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("[PROMOTED]", 1, true), "Persisted decision must be restored on reopen")
+assert(rendered:find("interactive note via prompt", 1, true))
+state.close()
+
 vim.ui.input, vim.ui.select, vim.system, vim.notify = old_input, old_select, original_system, original_notify
 vim.fn.delete(directory, "rf")
-print("Rust and C/C++ to Zig prompts, durable catalog, archived navigation, Nexus submission/evidence and cancellation passed")
+print("Rust and C/C++ to Zig prompts, durable catalog, archived navigation, Nexus submission/evidence, opportunity steering and cancellation passed")

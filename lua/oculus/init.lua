@@ -422,6 +422,10 @@ function M.setup(opts)
       if opts.active_workspace == nil and saved.active_workspace ~= nil then
         M.config.active_workspace = saved.active_workspace
       end
+
+      if type(saved.investigation_decisions) == "table" then
+        M.config.investigation_decisions = vim.deepcopy(saved.investigation_decisions)
+      end
     end
   end
 
@@ -560,7 +564,11 @@ end
 function M.open_investigations(id)
   local window = require("oculus.window")
   if window.state.win and vim.api.nvim_win_is_valid(window.state.win) then window.close() end
-  return require("oculus.investigations").open(M.config.plexus, M.config.nexus, id)
+  local plexus_config = vim.tbl_extend("keep", M.config.plexus or {}, {
+    state_file = M.config.state_file,
+    investigation_decisions = M.config.investigation_decisions,
+  })
+  return require("oculus.investigations").open(plexus_config, M.config.nexus, id)
 end
 
 function M.open_capabilities(manifest)
