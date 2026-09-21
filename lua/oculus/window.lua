@@ -943,7 +943,78 @@ local function get_inspect_input_title()
 end
 
 local function render_activity_footer(force)
-  close_activity_footer()
+  if not M.state.footer_prompt and not is_inspect_input_open() then
+    close_activity_footer()
+    return
+  end
+
+  local config = footer_win_config()
+
+  if not config then
+    return
+  end
+
+  local buf = M.state.footer_buf
+
+  if not is_valid_buf(buf) then
+    buf = make_footer_buf()
+    M.state.footer_buf = buf
+  end
+
+  local width = config.width
+  local activity_commands = footer_commands_text()
+  local footer_line = activity_commands
+  local title_start = nil
+  local title_end = nil
+
+  if is_inspect_input_open() then
+    local tab_space = 4
+    local title_str = get_inspect_input_title()
+    title_start = #footer_line + tab_space
+    footer_line = footer_line .. string.rep(" ", tab_space) .. title_str
+    title_end = #footer_line
+  end
+
+  local lines = {
+    "  " .. string.rep("─", math.max(1, width - 4)),
+    footer_line,
+  }
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "Comment", 0, 2, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "OculusNormal", 1, 2, #activity_commands)
+
+  if M.state.footer_prompt then
+    local question_end = 2 + #M.state.footer_prompt.question
+    vim.api.nvim_buf_add_highlight(buf, ns, "WarningMsg", 1, 2, question_end)
+  end
+
+  if title_start and title_end then
+    local trimmed_len = #vim.trim(get_inspect_input_title())
+    vim.api.nvim_buf_add_highlight(buf, ns, "Title", 1, title_start, title_start + trimmed_len)
+  end
+
+  if is_valid_win(M.state.footer_win) then
+    vim.api.nvim_win_set_config(M.state.footer_win, config)
+  else
+    M.state.footer_win = vim.api.nvim_open_win(buf, false, config)
+  end
+
+  vim.wo[M.state.footer_win].wrap = false
+  vim.wo[M.state.footer_win].cursorline = false
+
+  vim.wo[M.state.footer_win].winhighlight = table.concat({
+    "Normal:OculusNormal",
+    "NormalFloat:OculusNormal",
+  }, ",")
+
+  use_window_highlights(M.state.footer_win)
+  vim.wo[M.state.footer_win].number = false
+  vim.wo[M.state.footer_win].relativenumber = false
+  vim.wo[M.state.footer_win].signcolumn = "no"
 end
 
 local function list_buffer_line_count()

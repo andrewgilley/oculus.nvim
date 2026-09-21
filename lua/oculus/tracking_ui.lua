@@ -41,6 +41,9 @@ end
 -- Mirror the legacy directory preview: header, then direct children without
 -- repeating the group's own name.
 function M.preview_items(state, target, max_visible)
+  if target and target.kind == 'directory_empty' then
+    return {{'',''}, {'GROUP','Title'}, {'',''}, {'(empty group)', 'Comment'}}
+  end
   local kind, path = scope(state)
   local tree = state.opts._tracking and state.opts._tracking.tree
   local group = vim.deepcopy(path)
@@ -94,6 +97,20 @@ function M.render(state)
 
   if #nodes == 0 and kind == 'projects' then
     lines[#lines + 1] = '  Empty list. a add item · f add group'
+    if #path > 0 then
+      local parent_path = vim.deepcopy(path)
+      local group_idx = table.remove(parent_path)
+      local parent_nodes = tree and children(tree, kind, parent_path)
+      local current_group = parent_nodes and parent_nodes[group_idx]
+      if current_group then
+        state.line_targets[#lines] = {
+          kind = 'directory_empty',
+          name = current_group.name,
+          tracking_index = group_idx,
+          parent_path = parent_path,
+        }
+      end
+    end
   elseif visible_count == 0 and filter_active then
     lines[#lines + 1] = "  (no projects in workspace '" .. active_ws.name .. "')"
   end
@@ -137,6 +154,9 @@ function M.rename(state, name)
   local kind, path = scope(state)
   path = vim.deepcopy(path)
   local target = state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
+  if target and target.kind == 'directory_empty' then
+    path = vim.deepcopy(target.parent_path or {})
+  end
   local snapshot = state.opts._tracking and state.opts._tracking.tree
   local nodes = snapshot and children(snapshot, kind, path)
   local index = target and target.tracking_index
@@ -258,6 +278,9 @@ end
 -- explain that their children are promoted rather than deleted.
 function M.removal_question(state, target)
   if not target or not target.tracking_index then return nil end
+  if target.kind == 'directory_empty' then
+    return ('Remove group "%s"?'):format(target.name or '')
+  end
   local kind, path = scope(state)
   local tree = state.opts._tracking and state.opts._tracking.tree
   local nodes = tree and children(tree, kind, path)
@@ -279,14 +302,14 @@ function M.handle(state, action, target)
     require('oculus.window').refresh_tracking()
     return true
   elseif action == 'move' then
-    if target and target.tracking_index then
+    if target and target.tracking_index and target.kind ~= 'directory_empty' then
       if state.tracking_move then M.move(state, path, target.tracking_index)
       else state.tracking_move = {kind=kind,path=vim.deepcopy(path),index=target.tracking_index} end
     end
 
     return true
   elseif action == 'destination' then
-    if not target or not target.tracking_index then return true end
+    if not target or not target.tracking_index or target.kind == 'directory_empty' then return true end
     local tree = state.opts._tracking and state.opts._tracking.tree
     if not tree then return true end
     state.tracking_move = {kind=kind,path=vim.deepcopy(path),index=target.tracking_index}
@@ -324,6 +347,19 @@ function M.handle(state, action, target)
     return true
   elseif action == 'remove' then
     if target and target.tracking_index then
+      if target.kind == 'directory_empty' then
+        local parent_path = target.parent_path or {}
+        local index = target.tracking_index
+        state.tracking_paths[kind] = vim.deepcopy(parent_path)
+
+        change(state, function(tree)
+          local nodes = children(tree, kind, parent_path)
+          table.remove(nodes, index)
+        end)
+
+        return true
+      end
+
       local index = target.tracking_index
 
       change(state, function(tree)

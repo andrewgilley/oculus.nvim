@@ -262,7 +262,34 @@ vim.notify = notify
 assert(vim.deep_equal(window.state.tracking_move, pending_before_failure), 'failed addition retains pending source')
 assert(table.concat(vim.fn.readfile(path, 'b'), '\n') == bytes_before_failure, 'failed addition preserves file')
 assert(current_target().project.repository == 'b/b', 'failed addition preserves cursor')
-key('<Esc>')
+-- Removing an empty folder from inside it via R confirms and returns to parent.
+write({version=1,projects={{name='EmptyFolder',children={}},{repository='stay/repo',provider='github'}},users={}})
+assert(oculus.reload_tracking())
+key('p')
+select_label('EmptyFolder'); key('<CR>')
+assert(#window.state.tracking_paths.projects == 1, 'entered empty folder')
+local empty_target = window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]]
+assert(empty_target and empty_target.kind == 'directory_empty', 'empty folder line target is directory_empty')
+key('R')
+assert(window.state.footer_prompt and window.state.footer_prompt.question == 'Remove group "EmptyFolder"?', 'question matches')
+assert(window.state.footer_win and vim.api.nvim_win_is_valid(window.state.footer_win), 'footer prompt window is visible')
+key('y')
+assert(window.state.footer_win == nil, 'footer prompt window closed after confirm')
+assert(#window.state.tracking_paths.projects == 0, 'returned to parent path')
+assert(#disk().projects == 1 and disk().projects[1].repository == 'stay/repo', 'empty folder removed from tracking file')
+
+-- Removing an empty folder from parent list via R shows prompt and removes it.
+write({version=1,projects={{name='EmptyParent',children={}},{repository='stay/repo',provider='github'}},users={}})
+assert(oculus.reload_tracking())
+key('p')
+select_label('EmptyParent')
+key('R')
+assert(window.state.footer_prompt and window.state.footer_prompt.question == 'Remove group "EmptyParent"?', 'parent question matches')
+assert(window.state.footer_win and vim.api.nvim_win_is_valid(window.state.footer_win), 'footer prompt window is visible on parent removal')
+key('y')
+assert(window.state.footer_win == nil, 'footer prompt window closed after confirm')
+assert(#disk().projects == 1 and disk().projects[1].repository == 'stay/repo', 'empty folder removed from tracking file')
+
 window.close()
 -- Failed initial load retains saved lists in the UI, not an empty screen.
 oculus.setup({tracking_file=dir..'/missing.json',state_file=dir..'/state.json',projects={{repository='saved/repo',provider='github'}},contributors={}})

@@ -3672,7 +3672,9 @@ do
   assert(r_map ~= nil and type(r_map.callback) == "function")
   r_map.callback()
   assert(window_mod.state.footer_prompt, "remove asks for confirmation first")
+  assert(window_mod.state.footer_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.footer_win), "footer prompt window is visible")
   vim.fn.maparg("y", "n", false, true).callback()
+  assert(window_mod.state.footer_win == nil, "footer prompt window closed after confirm")
   local has_core = false
 
   for _, d in ipairs(window_mod.state.opts.project_directories) do
@@ -3683,6 +3685,27 @@ do
 
   assert(not has_core, "expected Core Tools removed from directories")
   assert(alpha_proj.directory == nil, "expected Alpha moved to root when directory removed")
+
+  -- Test 7b: Remove empty directory via R on empty directory
+  window_mod.create_project_directory("Empty Tools")
+  local empty_dir_line = nil
+  for l, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "directory" and target.name == "Empty Tools" then
+      empty_dir_line = l
+    end
+  end
+  assert(empty_dir_line ~= nil, "expected Empty Tools in list")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { empty_dir_line, 0 })
+  r_map.callback()
+  assert(window_mod.state.footer_prompt ~= nil and window_mod.state.footer_prompt.question == 'Remove folder "Empty Tools"?')
+  assert(window_mod.state.footer_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.footer_win))
+  vim.fn.maparg("y", "n", false, true).callback()
+  assert(window_mod.state.footer_win == nil)
+  local has_empty_tools = false
+  for _, d in ipairs(window_mod.state.opts.project_directories) do
+    if d == "Empty Tools" then has_empty_tools = true end
+  end
+  assert(not has_empty_tools, "expected Empty Tools removed from directories")
   -- Test 8: Persistence across setup()
   local storage = require("oculus.storage")
   local saved_data = storage.load(test_state_file)
