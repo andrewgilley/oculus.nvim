@@ -2083,6 +2083,87 @@ local function render_contributors()
   render_sidebar()
 end
 
+local function reset_to_initial_page()
+  stop_activity_page_loading()
+  close_activity_footer()
+  M.state.view = "contributors"
+  M.state.community_view = "projects"
+  M.state.contributor = nil
+  M.state.activity_scope = nil
+  M.state.activity_project = nil
+  M.state.activity_milestone = nil
+  M.state.activity_saved = false
+  M.state.activity_work = nil
+  M.state.events = nil
+  M.state.line_targets = {}
+  M.state.inspect_targets = {}
+  M.state.activity_title_lines = {}
+  M.state.activity_expansion_targets = {}
+  M.state.preview_key = nil
+  M.state.preview_items = nil
+  M.state.preview_contributor = nil
+  M.state.preview_project = nil
+  M.state.selected_username = nil
+  M.state.selected_project = nil
+  M.state.selected_directory = nil
+  M.state.current_directory = nil
+  M.state.directory_return = nil
+  M.state.moving_item = nil
+  M.state.contributor_offset = 1
+  M.state.filter_scope = nil
+  M.state.activity_cached = nil
+  M.state.activity_notice = nil
+  M.state.activity_error = nil
+  M.state.activity_loaded = false
+  M.state.activity_page = 1
+  M.state.activity_loaded_pages = 1
+  M.state.activity_source_events = nil
+  M.state.activity_has_past = nil
+  M.state.project_activity_feed = nil
+  M.state.activity_commit_page = false
+  M.state.activity_issue_page = false
+  M.state.activity_return = nil
+  M.state.project_issue_return = nil
+  M.state.project_issue_feed = nil
+  M.state.project_milestones = nil
+  M.state.selected_milestone = nil
+  M.state.milestone_offset = 1
+  M.state.milestone_return = nil
+  M.state.milestone_items_feed = nil
+  M.state.saved_entries = nil
+  M.state.saved_expanded_source = nil
+  M.state.work_lists = nil
+  M.state.selected_work = nil
+  M.state.work_offset = 1
+  M.state.work_return = nil
+  M.state.work_items_feed = nil
+  M.state.activity_inspect_queue = {}
+  M.state.activity_inspect_queue_active = nil
+  M.state.activity_inspect_queue_batch = nil
+  M.state.activity_inspect_queue_total = nil
+  M.state.activity_inspect_queue_index = nil
+  M.state.activity_inspect_queue_completed = nil
+  M.state.activity_inspect_queue_continuing = false
+  M.state.activity_inspect_queue_deferred_group = nil
+  M.state.activity_inspect_queue_number_options = nil
+  M.state.activity_inspect_queue_lookup = {}
+  M.state.activity_inspect_queue_show_highlights = true
+  M.state.activity_queue_line_keys = {}
+  M.state.activity_inspect_queue_scope = nil
+  M.state.activity_inspect_queue_running = false
+  M.state.restore_cursor = nil
+  M.state.restore_view = nil
+  M.state.shortcut_return = nil
+  M.state.tracking_move = nil
+  M.state.tracking_selected = nil
+
+  if is_valid_win(M.state.win) then
+    render_contributors()
+  end
+end
+
+M.reset_to_initial_page = reset_to_initial_page
+
 local function filter_type_set(scope)
   local types
   local categories
@@ -5387,6 +5468,8 @@ open_next_queued_activity = function(ui_lifecycle)
     M.state.activity_inspect_queue_deferred_group = nil
 
     if deferred then
+      reset_to_initial_page()
+
       vim.schedule(function()
         require("oculus.inspect")._close_inspection_workflow(deferred)
       end)
@@ -5473,6 +5556,7 @@ open_next_queued_activity = function(ui_lifecycle)
       end
 
       if #M.state.activity_inspect_queue == 0 then
+        reset_to_initial_page()
         return false
       end
 

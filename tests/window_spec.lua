@@ -4591,3 +4591,36 @@ do
   window.close()
   vim.o.columns = saved_cols
 end
+
+do
+  local test_config = {
+    projects = {
+      { name = "Project Alpha", repository = "org/alpha", provider = "github" },
+      { name = "Project Beta", repository = "org/beta", provider = "github" },
+    },
+  }
+
+  window.open(test_config)
+  window.state.view = "activity"
+  window.state.activity_project = test_config.projects[1]
+  window.state.events = {}
+  window.state.activity_loaded = true
+  window.close()
+  window.open(test_config)
+  assert(window.state.view == "activity")
+  assert(window.state.activity_project.repository == "org/alpha")
+  window.close()
+  window.state.view = "activity"
+  window.state.activity_project = test_config.projects[1]
+  window.state.events = {}
+  window.state.activity_loaded = true
+  window.reset_to_initial_page()
+  window.open(test_config)
+  assert(window.state.view == "contributors")
+  assert(window.state.activity_project == nil)
+  local lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local text = table.concat(lines, "\n")
+  assert(text:find("PROJECTS", 1, true))
+  assert(text:find("Project Alpha", 1, true) or text:find("org/alpha", 1, true))
+  window.close()
+end

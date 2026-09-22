@@ -3728,8 +3728,22 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(replacement_tab)) do
   assert(not vim.b[buf].oculus_inspect_overview_footer)
 end
 
+local window_mod = require("oculus.window")
+window_mod.state.view = "activity"
+window_mod.state.activity_project = { repository = "andrewgilley/oculus.nvim" }
+window_mod.state.events = {}
+window_mod.state.activity_loaded = true
 close_workflow_mapping.callback()
 assert(not vim.api.nvim_tabpage_is_valid(replacement_tab))
+assert(window_mod.state.view == "contributors")
+assert(window_mod.state.activity_project == nil)
+
+window_mod.open({
+  projects = { { repository = "andrewgilley/oculus.nvim", provider = "github" } },
+})
+
+assert(window_mod.state.view == "contributors")
+window_mod.close()
 
 assert(vim.wait(1000, function()
   return replacement_closed

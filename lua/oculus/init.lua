@@ -680,4 +680,8 @@ function M.refresh_project_descriptions(target, callback)
   return require("oculus.window").refresh_project_descriptions(target, callback)
 end
 
+function M.reset_to_initial_page()
+  return require("oculus.window").reset_to_initial_page()
+end
+
 return M

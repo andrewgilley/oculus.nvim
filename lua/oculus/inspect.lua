@@ -3728,6 +3728,12 @@ show_inspection_overview = function(group)
       M._overview_ui.stop_close_spinner(group)
     end
 
+    local window_ok, window = pcall(require, "oculus.window")
+
+    if window_ok and window and type(window.reset_to_initial_page) == "function" then
+      window.reset_to_initial_page()
+    end
+
     M._close_inspection_workflow(group)
   end, {
     buffer = buf,
