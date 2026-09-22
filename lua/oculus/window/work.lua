@@ -312,20 +312,8 @@ function M.setup(window, work_view, internal)
       end
     end
 
-    local separator_line = nil
-
-    if not sidebar_visible then
-      while #lines < window_height - 2 do
-        lines[#lines + 1] = ""
-      end
-
-      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-      separator_line = #lines
-      lines[#lines + 1] = internal.pad_cell("", left_width)
-    else
-      while #lines < window_height do
-        lines[#lines + 1] = ""
-      end
+    while #lines < window_height do
+      lines[#lines + 1] = ""
     end
 
     internal.set_lines(lines)
@@ -334,10 +322,6 @@ function M.setup(window, work_view, internal)
     vim.wo[window.state.win].cursorline = false
     internal.highlight(2, 2, -1, "Title")
     internal.highlight(3, 2, -1, "Comment")
-
-    if separator_line then
-      internal.highlight(separator_line, 2, -1, "WinSeparator")
-    end
 
     for _, line in ipairs(headings) do
       internal.highlight(line, 2, -1, "OculusSectionTitle")
@@ -359,10 +343,6 @@ function M.setup(window, work_view, internal)
       if target.entry == selected then
         selected_line = line
       end
-    end
-
-    if separator_line then
-      internal.highlight(separator_line, 2, -1, "WinSeparator")
     end
 
     if commands_line then

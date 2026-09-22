@@ -52,8 +52,8 @@ local rows = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
 local height = vim.api.nvim_win_get_height(window.state.win)
 assert(#rows == height, 'tracking list pads to full window height')
 
-assert(not rows[height]:match('^  p projects') and rows[height - 1]:match('^  ─'),
-  'tracking separator sits on the bottom row below a separator without footer commands')
+assert(not rows[height]:match('^  p projects') and not rows[height - 1]:match('^  ─'),
+  'tracking footer is removed from the bottom row')
 
 window._toggle_shortcuts()
 local shortcuts_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')

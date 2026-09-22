@@ -2943,7 +2943,7 @@ do
   assert(not footer_text:find("a add", 1, true))
   assert(not footer_text:find("r remove", 1, true))
   assert(not footer_text:find("f folder", 1, true))
-  assert(footer_text:find("─", 1, true), "expected separator line when sidebar is hidden")
+  assert(not footer_text:find("─", 1, true), "expected no separator line when sidebar is hidden")
   window_mod._toggle_shortcuts()
   local sc_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local sc_text = table.concat(sc_lines, "\n")
@@ -3159,6 +3159,7 @@ do
 
   if window_mod.state.footer_buf and vim.api.nvim_buf_is_valid(window_mod.state.footer_buf) then
     local footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.footer_buf, 0, -1, false)
+    assert(footer_lines[1]:find("─", 1, true), "expected footer separator line when text input field is open")
     assert(footer_lines[2]:find("item ID#:", 1, true), "expected preceding title in footer buffer")
   end
 
@@ -3178,6 +3179,9 @@ do
   vim.api.nvim_buf_set_lines(window_mod.state.inspect_input_buf, 0, -1, false, { "" })
   i_esc.callback()
   assert(not window_mod._is_inspect_input_open(), "expected inspect input to close on empty insert-mode Esc")
+  assert(window_mod.state.footer_win == nil, "expected footer window to close when text input is closed")
+  local idle_main_text = table.concat(vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false), "\n")
+  assert(not idle_main_text:find("─", 1, true), "expected no separator line in main window when idle")
 
   if window_mod.state.footer_buf and vim.api.nvim_buf_is_valid(window_mod.state.footer_buf) then
     local closed_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.footer_buf, 0, -1, false)

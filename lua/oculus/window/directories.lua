@@ -393,20 +393,8 @@ function M.setup(window, internal)
       project_lines[#project_lines + 1] = empty_line
     end
 
-    local separator_line = nil
-
-    if not internal.is_sidebar_visible() then
-      while #lines < window_height - 2 do
-        lines[#lines + 1] = ""
-      end
-
-      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-      separator_line = #lines
-      lines[#lines + 1] = internal.pad_cell("", left_width)
-    else
-      while #lines < window_height do
-        lines[#lines + 1] = ""
-      end
+    while #lines < window_height do
+      lines[#lines + 1] = ""
     end
 
     internal.set_lines(lines)
@@ -423,10 +411,6 @@ function M.setup(window, internal)
       elseif target.kind == "directory_empty" then
         internal.highlight(line, 2, -1, "Comment")
       end
-    end
-
-    if separator_line then
-      internal.highlight(separator_line, 2, -1, "WinSeparator")
     end
 
     if commands_line then

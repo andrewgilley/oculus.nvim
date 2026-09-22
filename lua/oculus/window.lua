@@ -1780,17 +1780,7 @@ local function render_contributors()
     local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
     for index, line in ipairs(lines) do lines[index] = pad_cell(trim_to_width(line, left_width - 1), left_width) end
     local window_height = vim.api.nvim_win_get_height(M.state.win)
-    local separator_line = nil
-
-    if not is_sidebar_visible() then
-      while #lines < window_height - 2 do lines[#lines + 1] = "" end
-      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-      separator_line = #lines
-      lines[#lines + 1] = pad_cell("", left_width)
-    else
-      while #lines < window_height do lines[#lines + 1] = "" end
-    end
-
+    while #lines < window_height do lines[#lines + 1] = "" end
     set_lines(lines)
     M.state.list_footer_line = nil
     M.state.list_footer_text = nil
@@ -1798,10 +1788,6 @@ local function render_contributors()
     vim.wo[M.state.win].cursorline = false
     highlight(2, 2, -1, "Title")
     highlight(4, 2, -1, "Title")
-
-    if separator_line then
-      highlight(separator_line, 2, -1, "WinSeparator")
-    end
 
     -- Groups carry no trailing slash; mark them like legacy folders instead.
     for line, target in pairs(M.state.line_targets) do
@@ -1926,7 +1912,7 @@ local function render_contributors()
   )
 
   local window_height = vim.api.nvim_win_get_height(M.state.win)
-  local footer_space = is_sidebar_visible() and 0 or 4
+  local footer_space = 0
 
   list_limit = math.min(
     list_limit,
@@ -1964,20 +1950,8 @@ local function render_contributors()
     lines[#lines + 1] = "  a add account"
   end
 
-  local separator_line = nil
-
-  if not is_sidebar_visible() then
-    while #lines < window_height - 2 do
-      lines[#lines + 1] = ""
-    end
-
-    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
-    separator_line = #lines
-    lines[#lines + 1] = pad_cell("", left_width)
-  else
-    while #lines < window_height do
-      lines[#lines + 1] = ""
-    end
+  while #lines < window_height do
+    lines[#lines + 1] = ""
   end
 
   set_lines(lines)
@@ -1987,10 +1961,6 @@ local function render_contributors()
   vim.wo[M.state.win].cursorline = false
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
-
-  if separator_line then
-    highlight(separator_line, 2, -1, "WinSeparator")
-  end
 
   if project_heading_line then
     highlight(project_heading_line, 2, -1, "OculusSectionTitle")
@@ -2012,10 +1982,6 @@ local function render_contributors()
     else
       highlight(line, 2, 2 + username_width, "Identifier")
     end
-  end
-
-  if separator_line then
-    highlight(separator_line, 2, -1, "WinSeparator")
   end
 
   if commands_line then
@@ -2309,15 +2275,6 @@ local function render_filters(scope, selected_type)
     end
   end
 
-  local width = vim.api.nvim_win_get_width(M.state.win)
-  local separator_line = nil
-
-  if not is_sidebar_visible() then
-    lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 4))
-    separator_line = #lines
-    lines[#lines + 1] = ""
-  end
-
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
@@ -2334,10 +2291,6 @@ local function render_filters(scope, selected_type)
 
     highlight(line, 7, 35, "Function")
     highlight(line, 36, -1, "Comment")
-  end
-
-  if separator_line then
-    highlight(separator_line, 2, -1, "WinSeparator")
   end
 
   render_sidebar()
@@ -4275,10 +4228,8 @@ local function close_inspect_input()
     if is_valid_win(M.state.win) and is_sidebar_visible() then
       close_activity_footer()
       render_sidebar()
-    elseif is_valid_win(M.state.win) and M.state.view == "activity" then
+    elseif is_valid_win(M.state.win) then
       render_activity_footer()
-    elseif is_valid_win(M.state.win) and (M.state.view == "contributors" or M.state.view == "directory") then
-      close_activity_footer()
     end
   end
 
