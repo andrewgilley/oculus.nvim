@@ -6,6 +6,30 @@ local git = require("oculus.inspect.git")
 local agent = require("oculus.agent")
 local github = require("oculus.github")
 
+do
+  local original_system = vim.system
+  local requested_url
+
+  vim.system = function(command, _, callback)
+    requested_url = command[#command]
+    callback({ code = 0, stdout = "[]\n200" })
+    return { kill = function() end }
+  end
+
+  local completed = false
+
+  github.repository_updates("owner/repo", {
+    token = "test", path = "packages/editor", activity_types = { "push" }, force = true,
+  }, function(events, err)
+    assert(not err and #events == 0)
+    completed = true
+  end)
+
+  assert(vim.wait(1000, function() return completed end))
+  assert(requested_url:find("&path=packages%%2Feditor"))
+  vim.system = original_system
+end
+
 local function numbered(count, prefix)
   local lines = {}
 

@@ -187,6 +187,7 @@ local function project_key(project)
   return (project.provider == "codeberg" and "codeberg" or "github")
     .. ":"
     .. project.repository:lower()
+    .. (project.path and ("/" .. project.path:lower()) or "")
 end
 
 local function merge_projects(configured, saved)

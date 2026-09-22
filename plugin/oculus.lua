@@ -32,6 +32,7 @@ end, {
 
     for _, p in ipairs((require("oculus").config or {}).projects or {}) do
       local repository = type(p.repository) == "string" and p.repository or ""
+      if repository ~= "" and p.path then repository = repository .. "/" .. p.path end
 
       if repository ~= "" and repository:lower():sub(1, #arglead) == arglead:lower() then
         matches[#matches + 1] = repository
@@ -249,6 +250,7 @@ local function complete_projects(arglead)
 
   for _, p in ipairs(projects or {}) do
     local repository = type(p.repository) == "string" and p.repository or ""
+    if repository ~= "" and p.path then repository = repository .. "/" .. p.path end
 
     if repository ~= "" and repository:lower():sub(1, #arglead) == arglead:lower() then
       matches[#matches + 1] = repository

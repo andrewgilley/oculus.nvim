@@ -387,12 +387,14 @@ function M.setup(window, internal)
         and math.min(50, math.max(16, window.state.activity_page_size * 2))
       or 100
 
+    request_opts.path = project.path
     local activity_types = vim.deepcopy(internal.project_activity_types_for(project) or {})
     table.sort(activity_types)
 
     local feed_key = table.concat({
       project.provider == "codeberg" and "codeberg" or "github",
       project.repository:lower(),
+      project.path or "",
       table.concat(activity_types, ","),
     }, ":")
 
@@ -408,7 +410,7 @@ function M.setup(window, internal)
         local_commits = {},
         local_loaded = not vim.tbl_contains(activity_types, "push"),
         next_page = 1,
-        using_updates = project.provider == "codeberg"
+        using_updates = (project.path ~= nil or project.provider == "codeberg")
           and type(provider.repository_updates) == "function",
         complete = #activity_types == 0,
         cached = true,

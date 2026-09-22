@@ -95,6 +95,23 @@ for _, repository in ipairs({'owner/..','owner/.','../repo','./repo'}) do
   assert(not tracking.validate({version=1,projects={{repository=repository,provider='github'}},users={}}), 'dot path components rejected')
 end
 
+assert(tracking.validate({version=1,projects={
+  {repository='owner/repo',provider='github'},
+  {repository='owner/repo',provider='github',path='packages/editor'},
+  {repository='owner/repo',provider='github',path='packages/server'},
+},users={}}), 'distinct GitHub directories can be tracked beside their repository')
+
+for _, directory in ipairs({'', '.', '..', 'src/../other', '/src', 'src/', 'src//nested', 'src?bad'}) do
+  assert(not tracking.validate({version=1,projects={{repository='owner/repo',provider='github',path=directory}},users={}}), 'invalid directory rejected: ' .. directory)
+end
+
+assert(not tracking.validate({version=1,projects={{repository='owner/repo',provider='codeberg',path='src'}},users={}}))
+
+assert(not tracking.validate({version=1,projects={
+  {repository='owner/repo',provider='github',path='Src'},
+  {repository='owner/repo',provider='github',path='src'},
+},users={}}), 'duplicate directory rejected case-insensitively')
+
 for _, username in ipairs({'.','..'}) do
   assert(not tracking.validate({version=1,projects={},users={{username=username,provider='github'}}}), 'dot usernames rejected')
 end

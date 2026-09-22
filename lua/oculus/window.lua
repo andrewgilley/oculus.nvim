@@ -75,6 +75,10 @@ local project_activity_categories = {
 }
 
 local function project_activity_types_for(project)
+  if project.path then
+    return { "push" }
+  end
+
   if project.activity_types ~= nil then
     return project.activity_types
   end
@@ -1324,10 +1328,11 @@ local function project_key(project)
   return (project.provider == "codeberg" and "codeberg" or "github")
     .. ":"
     .. project.repository:lower()
+    .. (project.path and ("/" .. project.path:lower()) or "")
 end
 
 local function project_title(project)
-  return project.repository
+  return project.repository .. (project.path and ("/" .. project.path) or "")
 end
 
 local function has_project(projects, candidate)
@@ -4166,8 +4171,14 @@ local function add_project(project, target_project)
     :gsub("/+$", "")
     :gsub("%.git$", "")
 
-  local owner, repo_name = cleaned:match("^([%w%._%-]+)/([%w%._%-]+)")
+  local owner, repo_name, rest = cleaned:match("^([%w%._%-]+)/([%w%._%-]+)(.*)$")
   local repository = (owner and repo_name) and (owner .. "/" .. repo_name) or cleaned
+  local path = project.path
+
+  if rest and rest ~= "" then
+    local branch_path = rest:match("^/tree/[^/]+/(.+)$")
+    path = branch_path or rest:match("^/(.+)$")
+  end
 
   if not repository:match("^[%w%._%-]+/[%w%._%-]+$") then
     vim.notify(
@@ -4178,11 +4189,29 @@ local function add_project(project, target_project)
     return false
   end
 
+  if path and (detected_provider == "codeberg" or project.provider == "codeberg"
+    or not path:match("^[%w_.%-]+([/%w_.%-]*)$")
+    or path:find("//", 1, true)
+    or path:match("/$")) then
+    vim.notify("Oculus: enter a valid GitHub directory path", vim.log.levels.WARN)
+    return false
+  end
+
+  if path then
+    for component in path:gmatch("[^/]+") do
+      if component == "." or component == ".." then
+        vim.notify("Oculus: enter a valid GitHub directory path", vim.log.levels.WARN)
+        return false
+      end
+    end
+  end
+
   local added = vim.deepcopy(project)
   added.repository = repository
+  added.path = path
   local prov = detected_provider or added.provider
   added.provider = prov == "codeberg" and "codeberg" or "github"
-  added.name = added.name or repository:match("([^/]+)$")
+  added.name = added.name or (path and path:match("([^/]+)$")) or repo_name
 
   if M.state.opts.tracking_file then
     return require("oculus.tracking_ui").add(M.state, added, "projects")
@@ -7601,10 +7630,20 @@ end
 
 -- Open the Oculus window straight on one project's activity feed. `target` is
 -- "owner/repo", "github:owner/repo" or "codeberg:owner/repo"; untracked
--- repositories open too.
+-- repositories and GitHub directories open too.
 function M.open_project(target, opts)
   local provider, repository = tostring(target or ""):match("^(%a+):(.+)$")
   repository = vim.trim(repository or tostring(target or ""))
+  local path
+
+  if not provider or provider == "github" then
+    local owner, name, directory = repository:match("^([%w_.%-]+)/([%w_.%-]+)/(.+)$")
+
+    if owner then
+      repository = owner .. "/" .. name
+      path = directory
+    end
+  end
 
   if not repository:match("^[%w_.%-]+/[%w_.%-]+$") then
     return false, "expected owner/repo, github:owner/repo or codeberg:owner/repo"
@@ -7614,6 +7653,19 @@ function M.open_project(target, opts)
     return false, "provider must be github or codeberg"
   end
 
+  if path then
+    if not path:match("^[%w_.%-]+([/%w_.%-]*)$") or path:find("//", 1, true)
+      or path:match("/$") then
+      return false, "expected a valid GitHub directory path"
+    end
+
+    for component in path:gmatch("[^/]+") do
+      if component == "." or component == ".." then
+        return false, "expected a valid GitHub directory path"
+      end
+    end
+  end
+
   M.open(opts)
   local project = nil
 
@@ -7621,6 +7673,7 @@ function M.open_project(target, opts)
     if
       type(candidate.repository) == "string"
       and candidate.repository:lower() == repository:lower()
+      and (candidate.path or ""):lower() == (path or ""):lower()
       and (not provider or (candidate.provider or "github") == provider)
     then
       project = candidate
@@ -7630,6 +7683,7 @@ function M.open_project(target, opts)
 
   load_project_activity(project or {
     repository = repository,
+    path = path,
     provider = provider or "github",
   })
 

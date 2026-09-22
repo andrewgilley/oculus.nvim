@@ -215,7 +215,7 @@ function M.commits(project, opts, callback)
       return
     end
 
-    git.run_raw({
+    local command = {
       "git",
       "-C",
       repository,
@@ -224,7 +224,13 @@ function M.commits(project, opts, callback)
       "--format=%H%x1f%ct%x1f%an%x1f%ae%x1f%B%x1e",
       "HEAD",
       "--remotes=" .. remote,
-    }, function(output)
+    }
+
+    if project.path then
+      vim.list_extend(command, { "--", project.path })
+    end
+
+    git.run_raw(command, function(output)
       local commits = M.parse_log(output)
 
       if #commits == 0 then

@@ -250,6 +250,30 @@ do
   assert(events[1].actor.name == "Local Author")
   assert(events[2].payload.head == pushed_sha)
   assert(events[2].oculus_local.pushed == true)
+  vim.fn.mkdir(directory .. "/packages/editor", "p")
+  vim.fn.writefile({ "editor" }, directory .. "/packages/editor/main.lua")
+  git(directory, "add", "packages/editor/main.lua")
+  git(directory, "commit", "--quiet", "-m", "Edit editor")
+  local editor_sha = git(directory, "rev-parse", "HEAD")
+  vim.fn.writefile({ "unrelated" }, directory .. "/other.txt")
+  git(directory, "add", "other.txt")
+  git(directory, "commit", "--quiet", "-m", "Edit elsewhere")
+  local directory_events
+
+  local_activity.commits({
+    repository = project.repository,
+    provider = "github",
+    path = "packages/editor",
+  }, {
+    inspect_repositories = {},
+    inspect_search_paths = {},
+    cwd = directory,
+  }, function(result)
+    directory_events = result
+  end)
+
+  wait_for(function() return directory_events ~= nil end)
+  assert(#directory_events == 1 and directory_events[1].payload.head == editor_sha)
   local other
   local other_events
 

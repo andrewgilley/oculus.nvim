@@ -17,6 +17,12 @@ local sample_projects = {
 
 local unfiltered = oculus.filter_projects(sample_projects)
 assert(#unfiltered == 4, "filter_projects returns all projects when no workspace is active")
+local directory_project = { repository = "owner/repo", path = "packages/editor", provider = "github" }
+assert(workspace.project_matches(directory_project, "github:owner/repo/packages/editor"))
+assert(workspace.project_matches(directory_project, { repository = "owner/repo", path = "packages/editor" }))
+
+assert(workspace.normalize_entry({ name = "Editors", projects = { directory_project } }).projects[1]
+  == "github:owner/repo/packages/editor")
 
 -- 2. Normalization: list and map formats
 local ws_list = {

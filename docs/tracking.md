@@ -56,6 +56,10 @@ regular file and writable parent directory are required for edits.
 
 - Both root lists and every `children` value must be JSON arrays (`[]`, not `{}`).
 - Projects require `repository` (`owner/repo`) and `provider`.
+- GitHub projects may set `path` to a directory relative to the repository root,
+  such as `packages/editor`. Their activity feed shows commits touching that path.
+  The same repository can appear with distinct paths, or alongside a whole-repo
+  entry. A GitHub `/tree/branch/path` URL can be pasted into the add dialog.
 - Users require `username` and `provider`.
 - Providers are `github` or `codeberg`; optional `name` is a nonempty display name.
 - Groups have `name` and `children`, not a provider or leaf identity. Empty groups

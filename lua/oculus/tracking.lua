@@ -48,11 +48,24 @@ function M.validate(tree)
         if (field == 'repository' and not node[field]:match('^[%w_.%-]+/[%w_.%-]+$'))
           or (field == 'username' and not node[field]:match('^[%w_.%-]+$')) then fail('invalid ' .. field .. ' format') end
 
+        if node.path ~= nil then
+          if kind ~= 'projects' or node.provider ~= 'github' or not text(node.path)
+            or not node.path:match('^[%w_.%-]+([/%w_.%-]*)$')
+            or node.path:find('//', 1, true) or node.path:match('/$') then
+            fail('invalid GitHub directory path')
+          end
+
+          for component in node.path:gmatch('[^/]+') do
+            if component == '.' or component == '..' then fail('invalid GitHub directory path') end
+          end
+        end
+
         for component in node[field]:gmatch('[^/]+') do
           if component == '.' or component == '..' then fail('invalid identity path component') end
         end
 
         local key = node.provider .. ':' .. node[field]:lower()
+        if kind == 'projects' and node.path then key = key .. '/' .. node.path:lower() end
         if seen[key] then fail('duplicate ' .. field .. ': ' .. node[field]) end
         seen[key] = true
       end

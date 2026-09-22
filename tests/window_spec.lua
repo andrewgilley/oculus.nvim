@@ -3605,6 +3605,11 @@ do
   assert(window_mod.state.selected_project ~= nil)
   assert(window_mod.state.selected_project.repository == "tested-org/tested-repo")
   assert(window_mod.state.selected_project.provider == "github")
+  assert(window_mod._add_project({repository = "https://github.com/tested-org/tested-repo/tree/main/packages/editor", provider = "github"}))
+  assert(window_mod.state.selected_project.repository == "tested-org/tested-repo")
+  assert(window_mod.state.selected_project.path == "packages/editor")
+  assert(window_mod._add_project({repository = "tested-org/tested-repo/packages/server", provider = "github"}))
+  assert(window_mod.state.selected_project.path == "packages/server")
   -- Test 11: Submit Codeberg URL and verify provider auto-detection
   a_map = vim.fn.maparg("a", "n", false, true)
   a_map.callback()

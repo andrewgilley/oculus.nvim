@@ -162,6 +162,7 @@ require("oculus").setup()
 require("oculus").setup({
   projects = {
     { repository = "neovim/neovim", provider = "github", name = "Neovim" },
+    { repository = "owner/monorepo", path = "packages/editor", provider = "github" },
     { repository = "forgejo/forgejo", provider = "codeberg" },
   },
   contributors = {
@@ -181,6 +182,12 @@ entry to open its activity feed, and press `i` on any item to inspect it.
 Fresh installations start with empty lists. You can add entries from inside the
 window with `a`, list them in `setup()`, or load them from a
 [tracking file](#tracking-file).
+
+To track a GitHub subdirectory, set `path` to its path from the repository root,
+or paste a URL such as `https://github.com/owner/monorepo/tree/main/packages/editor`
+into the add dialog. Its activity feed shows commits that changed files under
+that directory, including matching recent commits from a local clone. The
+repository and its subdirectories can each have separate tracked entries.
 
 > [!TIP]
 > Set `GITHUB_TOKEN` in your environment. Unauthenticated GitHub requests are
@@ -838,7 +845,7 @@ require("oculus").setup({
   sidebar = false,
   sidebar_width = 26,
 
-  -- Tracked lists. Entries: { repository = "owner/repo", provider = "github"|"codeberg", name? }
+  -- Tracked lists. GitHub projects can also set path = "subdirectory/from/root".
   projects = {},
   -- Entries: { username = "name", provider = "github"|"codeberg", name? }
   contributors = {},

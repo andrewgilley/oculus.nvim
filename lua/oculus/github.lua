@@ -577,6 +577,7 @@ function M.repository_updates(repository, opts, callback)
 
   local key = table.concat({
     repository:lower(),
+    opts.path or "",
     tostring(page),
     table.concat(categories, ","),
   }, ":")
@@ -640,6 +641,12 @@ function M.repository_updates(repository, opts, callback)
     local url = (
       "https://api.github.com/repos/%s/commits?per_page=%d&page=%d"
     ):format(repository, per_page, page)
+
+    if opts.path then
+      url = url .. "&path=" .. opts.path:gsub("([^%w%-._~])", function(char)
+        return ("%%%02X"):format(char:byte())
+      end)
+    end
 
     request_json(url, opts, function(commits, err)
       if commits then

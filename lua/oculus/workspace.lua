@@ -9,31 +9,41 @@ function M.normalize_entry(raw, fallback_name)
   end
 
   local name = raw.name
+
   if type(name) ~= "string" or vim.trim(name) == "" then
     name = fallback_name
   end
+
   if type(name) ~= "string" or vim.trim(name) == "" then
     return nil
   end
-  name = vim.trim(name)
 
+  name = vim.trim(name)
   local description = ""
+
   if type(raw.description) == "string" then
     description = vim.trim(raw.description)
   end
 
   local raw_projects = raw.projects
+
   if raw_projects == nil and vim.islist(raw) then
     raw_projects = raw
   end
 
   local projects = {}
+
   if type(raw_projects) == "table" then
     for _, item in ipairs(raw_projects) do
       if type(item) == "string" and vim.trim(item) ~= "" then
         projects[#projects + 1] = vim.trim(item)
       elseif type(item) == "table" and type(item.repository) == "string" and vim.trim(item.repository) ~= "" then
         local repo = vim.trim(item.repository)
+
+        if type(item.path) == "string" and vim.trim(item.path) ~= "" then
+          repo = repo .. "/" .. vim.trim(item.path)
+        end
+
         if item.provider and type(item.provider) == "string" and vim.trim(item.provider) ~= "" then
           projects[#projects + 1] = vim.trim(item.provider) .. ":" .. repo
         else
@@ -54,14 +64,17 @@ end
 function M.list(config)
   config = config or {}
   local raw_workspaces = config.workspaces
+
   if type(raw_workspaces) ~= "table" then
     return {}
   end
 
   local result = {}
+
   if vim.islist(raw_workspaces) then
     for _, item in ipairs(raw_workspaces) do
       local ws = M.normalize_entry(item)
+
       if ws then
         result[#result + 1] = ws
       end
@@ -69,8 +82,10 @@ function M.list(config)
   else
     local keys = vim.tbl_keys(raw_workspaces)
     table.sort(keys)
+
     for _, key in ipairs(keys) do
       local ws = M.normalize_entry(raw_workspaces[key], tostring(key))
+
       if ws then
         result[#result + 1] = ws
       end
@@ -87,6 +102,7 @@ function M.find(config, name)
   end
 
   local target = vim.trim(name):lower()
+
   for _, ws in ipairs(M.list(config)) do
     if ws.name:lower() == target then
       return ws
@@ -99,6 +115,7 @@ end
 -- Gets the active workspace table, or nil if no workspace is active or found.
 function M.get_active(config)
   config = config or {}
+
   if type(config.active_workspace) ~= "string" or vim.trim(config.active_workspace) == "" then
     return nil
   end
@@ -119,48 +136,58 @@ function M.set_active(config, name)
     or vim.trim(name):lower() == "clear"
   then
     config.active_workspace = nil
+
     if config.persist_projects and config.state_file then
       pcall(require("oculus.storage").save, config.state_file, config)
     end
+
     return true, nil
   end
 
   local ws = M.find(config, name)
+
   if not ws then
     return false, "Workspace '" .. name .. "' not found"
   end
 
   config.active_workspace = ws.name
+
   if config.persist_projects and config.state_file then
     pcall(require("oculus.storage").save, config.state_file, config)
   end
+
   return true, ws
 end
 
 -- Adds or replaces a workspace definition in `config.workspaces`.
 function M.add(config, name, def)
   config = config or {}
+
   if type(name) ~= "string" or vim.trim(name) == "" then
     return nil, "Workspace name must be a nonempty string"
   end
-  name = vim.trim(name)
 
+  name = vim.trim(name)
   config.workspaces = config.workspaces or {}
   local normalized = M.normalize_entry(def or {}, name)
+
   if not normalized then
     return nil, "Invalid workspace definition"
   end
 
   if vim.islist(config.workspaces) then
     local replaced = false
+
     for i, item in ipairs(config.workspaces) do
       local existing_name = type(item) == "table" and item.name
+
       if existing_name and existing_name:lower() == name:lower() then
         config.workspaces[i] = normalized
         replaced = true
         break
       end
     end
+
     if not replaced then
       config.workspaces[#config.workspaces + 1] = normalized
     end
@@ -178,22 +205,27 @@ end
 -- Removes a workspace by name from `config.workspaces`.
 function M.remove(config, name)
   config = config or {}
+
   if type(name) ~= "string" or vim.trim(name) == "" then
     return false
   end
-  local target = vim.trim(name):lower()
 
+  local target = vim.trim(name):lower()
   local removed = false
+
   if vim.islist(config.workspaces) then
     local new_list = {}
+
     for _, item in ipairs(config.workspaces) do
       local item_name = type(item) == "table" and item.name
+
       if item_name and item_name:lower() == target then
         removed = true
       else
         new_list[#new_list + 1] = item
       end
     end
+
     config.workspaces = new_list
   elseif type(config.workspaces) == "table" then
     for k, _ in pairs(config.workspaces) do
@@ -223,7 +255,10 @@ function M.project_matches(project, pattern)
 
   if type(pattern) == "table" then
     if type(pattern.repository) == "string" then
-      pattern = pattern.repository
+      local repository = pattern.repository
+
+      pattern = repository .. (type(pattern.path) == "string" and pattern.path ~= ""
+        and ("/" .. pattern.path) or "")
     else
       return false
     end
@@ -235,15 +270,19 @@ function M.project_matches(project, pattern)
 
   local pat = vim.trim(pattern):lower()
   local repo = type(project.repository) == "string" and project.repository:lower() or ""
+  local directory = type(project.path) == "string" and project.path:lower() or ""
+  local target = directory ~= "" and (repo .. "/" .. directory) or repo
   local name = type(project.name) == "string" and project.name:lower() or ""
   local provider = type(project.provider) == "string" and project.provider:lower() or "github"
   local provider_repo = provider .. ":" .. repo
 
-  if pat == repo or pat == name or pat == provider_repo then
+  if pat == repo or pat == target or pat == name or pat == provider_repo
+    or pat == provider .. ":" .. target then
     return true
   end
 
   local pat_provider, pat_repo = pat:match("^([%w_]+):(.+)$")
+
   if pat_provider and pat_repo then
     if pat_provider == provider and pat_repo == repo then
       return true
@@ -259,14 +298,17 @@ function M.matches_workspace(project, ws)
   if not ws then
     return true
   end
+
   if not ws.projects or #ws.projects == 0 then
     return true
   end
+
   for _, pattern in ipairs(ws.projects) do
     if M.project_matches(project, pattern) then
       return true
     end
   end
+
   return false
 end
 
@@ -276,13 +318,14 @@ end
 function M.filter_projects(config, projects)
   config = config or {}
   projects = projects or config.projects or {}
-
   local active = M.get_active(config)
+
   if not active or not active.projects or #active.projects == 0 then
     return projects
   end
 
   local filtered = {}
+
   for _, project in ipairs(projects) do
     if M.matches_workspace(project, active) then
       filtered[#filtered + 1] = project
