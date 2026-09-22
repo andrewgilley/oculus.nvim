@@ -1786,7 +1786,11 @@ local function render_contributors()
     M.state.list_footer_text = nil
     work_view.accounts.render()
     vim.wo[M.state.win].cursorline = false
-    highlight(2, 2, -1, "Title")
+
+    if lines[2] and lines[2] ~= "" then
+      highlight(2, 2, -1, "Title")
+    end
+
     highlight(4, 2, -1, "Title")
 
     -- Groups carry no trailing slash; mark them like legacy folders instead.
@@ -1827,7 +1831,7 @@ local function render_contributors()
 
   local lines = {
     "",
-    "  ACTIVITY",
+    showing_users and "  ACTIVITY" or "",
     "",
     "",
   }
@@ -1959,8 +1963,11 @@ local function render_contributors()
   M.state.list_footer_text = nil
   work_view.accounts.render()
   vim.wo[M.state.win].cursorline = false
-  highlight(2, 2, -1, "Title")
-  highlight(3, 2, -1, "Comment")
+
+  if showing_users then
+    highlight(2, 2, -1, "Title")
+    highlight(3, 2, -1, "Comment")
+  end
 
   if project_heading_line then
     highlight(project_heading_line, 2, -1, "OculusSectionTitle")

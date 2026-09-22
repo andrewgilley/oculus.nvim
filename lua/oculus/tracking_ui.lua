@@ -27,14 +27,17 @@ local function node_matches_workspace(node, active_ws)
   if not active_ws or not active_ws.projects or #active_ws.projects == 0 then
     return true
   end
+
   if node.children then
     for _, child in ipairs(node.children) do
       if node_matches_workspace(child, active_ws) then
         return true
       end
     end
+
     return false
   end
+
   return require("oculus.workspace").matches_workspace(node, active_ws)
 end
 
@@ -44,6 +47,7 @@ function M.preview_items(state, target, max_visible)
   if target and target.kind == 'directory_empty' then
     return {{'',''}, {'GROUP','Title'}, {'',''}, {'(empty group)', 'Comment'}}
   end
+
   local kind, path = scope(state)
   local tree = state.opts._tracking and state.opts._tracking.tree
   local group = vim.deepcopy(path)
@@ -73,13 +77,15 @@ function M.render(state)
   local active_ws = require("oculus.workspace").get_active(state.opts)
   local filter_active = active_ws and state.workspace_filter_enabled ~= false and kind == "projects"
   local header_title = kind:upper()
+
   if filter_active then
     header_title = "PROJECTS · " .. active_ws.name:upper()
   end
-  local lines = {'', '  ACTIVITY', '', '  ' .. header_title}
-  if state.opts._tracking and state.opts._tracking.error then lines[#lines + 1] = '  Tracking error: :OculusReloadTracking' end
 
+  local lines = {'', (kind == 'projects' and '' or '  ACTIVITY'), '', '  ' .. header_title}
+  if state.opts._tracking and state.opts._tracking.error then lines[#lines + 1] = '  Tracking error: :OculusReloadTracking' end
   local visible_count = 0
+
   for index, node in ipairs(nodes) do
     if not filter_active or node_matches_workspace(node, active_ws) then
       visible_count = visible_count + 1
@@ -97,11 +103,13 @@ function M.render(state)
 
   if #nodes == 0 and kind == 'projects' then
     lines[#lines + 1] = '  Empty list. a add item · f add group'
+
     if #path > 0 then
       local parent_path = vim.deepcopy(path)
       local group_idx = table.remove(parent_path)
       local parent_nodes = tree and children(tree, kind, parent_path)
       local current_group = parent_nodes and parent_nodes[group_idx]
+
       if current_group then
         state.line_targets[#lines] = {
           kind = 'directory_empty',
@@ -114,6 +122,7 @@ function M.render(state)
   elseif visible_count == 0 and filter_active then
     lines[#lines + 1] = "  (no projects in workspace '" .. active_ws.name .. "')"
   end
+
   return lines
 end
 
@@ -154,9 +163,11 @@ function M.rename(state, name)
   local kind, path = scope(state)
   path = vim.deepcopy(path)
   local target = state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
+
   if target and target.kind == 'directory_empty' then
     path = vim.deepcopy(target.parent_path or {})
   end
+
   local snapshot = state.opts._tracking and state.opts._tracking.tree
   local nodes = snapshot and children(snapshot, kind, path)
   local index = target and target.tracking_index
@@ -278,9 +289,11 @@ end
 -- explain that their children are promoted rather than deleted.
 function M.removal_question(state, target)
   if not target or not target.tracking_index then return nil end
+
   if target.kind == 'directory_empty' then
     return ('Remove group "%s"?'):format(target.name or '')
   end
+
   local kind, path = scope(state)
   local tree = state.opts._tracking and state.opts._tracking.tree
   local nodes = tree and children(tree, kind, path)

@@ -253,8 +253,12 @@ local initial_project_text = table.concat(
   "\n"
 )
 
+local initial_project_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
+assert(initial_project_lines[2] == "")
+assert(initial_project_lines[5]:find("PROJECTS", 1, true))
+assert(initial_project_lines[6]:find("example/project", 1, true))
 assert(initial_project_text:find("  PROJECTS", 1, true))
-assert(initial_project_text:find("  ACTIVITY", 1, true))
+assert(not initial_project_text:find("  ACTIVITY", 1, true))
 assert(not initial_project_text:find("COMMUNITY ACTIVITY", 1, true))
 assert(initial_project_text:find("example/project", 1, true))
 assert(not initial_project_text:find("  USERS", 1, true))
@@ -307,6 +311,7 @@ local initial_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 
 local initial_user_text = table.concat(initial_user_lines, "\n")
+assert(initial_user_lines[2]:find("ACTIVITY", 1, true))
 assert(initial_user_lines[5]:find("USERS", 1, true))
 assert(initial_user_text:find("@mitchellh", 1, true))
 assert(initial_user_text:find("@andrewrk", 1, true))
@@ -1933,6 +1938,7 @@ do
 
   assert(startpage_text:find("  PROJECTS", 1, true))
   assert(not startpage_text:find("  USERS", 1, true))
+  assert(not startpage_text:find("  ACTIVITY", 1, true))
   assert(not startpage_text:find("PROJECT ACTIVITY", 1, true))
   assert(startpage_text:find("neovim/neovim", 1, true))
   assert(not startpage_text:find("u users", 1, true))
