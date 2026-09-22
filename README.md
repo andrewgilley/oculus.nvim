@@ -67,6 +67,11 @@ Offline help is in `:h oculus`, generated from this README.
   discuss, can be loaded into the code as full comment threads, and the
   overview shows each reviewer's verdict, check results and merge state.
 
+- **What a change makes possible.** Investigate a committed change against a
+  project that uses it. [Plexus](#plexus-investigations) reports what became
+  possible, what broke, which substitutions and adapters could connect them,
+  and how far each has been tested, with every claim traceable to its source.
+
 - **AI-assisted overview.** Generate a description of a change, or ask for
   likely patch locations for an issue, then spin up a `git worktree` to start
   the fix.
@@ -518,6 +523,7 @@ require("oculus").setup({
     -- Required for backend = "zug":
     -- zug_command = "/absolute/path/to/zug/zig-out/bin/zug-plexus",
     timeout_ms = 120000,
+    catalog_preview = true, -- derive catalog entries' findings in the background
   },
 })
 ```
@@ -629,39 +635,100 @@ obligations remain visible. Press `p` on a supported finding to prepare an
 `:OculusInvestigate rust` explicitly selects the existing Rust analysis; `gI`
 on local activity continues to use that default.
 
-`:OculusInvestigations`, `g` or `gP` opens the persistent project catalog in a float
-covering the same region as the main Oculus window. Select an investigation and
-press `Enter`; restarting Neovim does not erase its findings or evidence. In a
-finding, `Enter` opens digest-verified local source, falling back to a read-only
-archived snapshot when the local bytes changed or disappeared. Individual source
-references in an evidence path are navigable too.
+### Reading an investigation
 
-Opening a source location hands the screen over: the float closes and the cursor
-lands on the location in an ordinary window, because the float would otherwise
-cover it. Reopen the catalog with `:OculusInvestigations` or `g` to follow another
+An investigation answers its intent with the relationships Plexus found between
+the producer's change and the consumer, grouped by what each one means for the
+consumer:
+
+| Group | Meaning |
+| --- | --- |
+| `+` Newly possible | Nothing met the requirement before the change; a declaration meets it now |
+| `⇄` Substitution paths | Something the consumer relies on was removed or changed; a new capability has the shape to replace it |
+| `◇` One adapter away | A matching capability exists, but only an explicit adapter can connect it |
+| `!` Not yet handled | The producer now exposes a capability that reaches a consumer path which rejects it |
+| `✗` Broken by this change | The requirement was met before the change and is not met after it |
+| `≠` Incompatible | The provider declares it, in a shape the requirement does not accept |
+| `?` Unmet | Neither revision declares anything that meets the requirement |
+| `=` Unchanged | Met before and after the change; shown for context |
+
+Plexus assigns each finding its group (its `effect`); Oculus only arranges them.
+
+The view has two panes, side by side or stacked on a narrow screen. The list
+names the producer and consumer, the revisions, your intent and how many
+findings each group holds, then gives one line per finding. The glyphs at the
+end of a line are the finding's obligations in order: `✓` supported, `✗`
+contradicted, `≠` conflicting evidence, `?` inconclusive, `○` open. Your
+decision on a finding (promoted, selected, deferred or dismissed) shows beside
+them.
+
+The detail pane follows the list's cursor. For a finding it shows:
+
+- **Relationship**: the provider's capability and the consumer's requirement,
+  each with its revision, signature and source location.
+- **Why**: Plexus's explanation of the inference.
+- **Proof path**: the chain of observations Plexus followed, with their sources.
+- **Evidence state**: what was observed, what the rule inferred, and each
+  obligation with its outcome; an open one names the evidence that would
+  resolve it.
+- **Next step**: the experiment (`n`) or reviewable preparation (`p`) Plexus
+  accepts for the finding, what blocks it, or that none applies yet.
+- **Evidence**: every run, with its outcome, scope, cases and archived output.
+- **Related**: other findings about the same requirement, such as a removed
+  binding and the substitutions that could replace it.
+- **Decision** and **Limits**.
+
+On the header rows the detail answers the intent, lists the next steps across
+every finding, and records what was observed and its provenance. `API CHANGES`
+lists every declaration that differs between the revisions, and `SCOPE` the
+limitations that apply to the whole analysis.
+
+`:OculusInvestigations`, `g` or `gP` opens the persistent catalog in a float
+covering the same region as the main Oculus window. Each entry shows the
+producer and consumer, the analysis, when it was captured and your intent.
+Plexus derives findings per investigation, so the catalog loads them one at a
+time behind the list and each entry then counts them by group; the detail pane
+previews the selected investigation, or says why an unsupported capture
+stopped. Set `plexus.catalog_preview = false` to list entries without loading
+their findings. Restarting Neovim does not erase findings or evidence.
+
+`Enter` on a finding opens the consumer's source location, digest-verified
+locally, or a read-only archived snapshot when the local bytes changed or
+disappeared. In the detail pane, `Enter` opens the location, run output or
+related finding under the cursor, or takes the step on that line. Opening a
+source location hands the screen over: the float closes and the cursor lands on
+the location in an ordinary window, because the float would otherwise cover it.
+Reopen the catalog with `:OculusInvestigations` or `g` to follow another
 finding.
 
 | Key | Action |
 | --- | --- |
-| `Enter` | Open a catalog entry or the selected source reference |
-| `n` | Queue an explicitly supported finding experiment through Nexus |
-| `p` | Prepare a C/Zig composition, or adapt a Rust substitution in its consumer, and review it |
-| `r` | Reload the stored investigation or catalog |
+| `Enter` | Open a catalog entry or a finding's source; in the detail, what is under the cursor |
+| `Tab` | Move between the list and detail panes |
+| `]]` / `[[` | Next or previous finding, or catalog entry |
+| `Ctrl-d` / `Ctrl-u` | Scroll the detail pane from the list |
+| `n` | Queue the finding's experiment through Nexus |
+| `p` | Prepare the finding's composition or consumer adaptation, and review it |
+| `h` / `s` / `d` / `x` | Promote, select, defer or dismiss the finding |
+| `u` | Clear your decision on the finding |
+| `J` | Show the raw Plexus records behind the finding, and return |
+| `r` | Reload the investigation or catalog |
 | `g` | Return to the catalog |
-| `c` / `Ctrl-c` | Cancel the pending capture/read request |
-| `q` / `Esc` | Close the investigation view |
+| `c` / `Ctrl-c` | Stop waiting for the pending request |
+| `q` / `Esc` | Close the view |
 
-A supported native Plexus fixture or compiler signature check requires a Nexus resource with backend
-`plexus-native`; it does not run as a Wasm experiment. The Nexus view's `w` runs
-the queue and `o` reopens the investigation with its durable, check-scoped
-evidence. Findings without an applicable experiment say so and cannot be queued.
-Each finding displays Plexus's provenance-carrying claim and outstanding
-obligations when available. Compiler support for a candidate replacement's
-signature leaves behavioral compatibility unresolved; the relationship remains
-inferred. Source references attached to a claim are navigable with `Enter`.
-All evidence attempts remain visible, including conflicting results. Compiler
-attempts show their scope and each case's expected and actual outcome.
-Signature checks require a native resource wall budget of 120 seconds.
+The footer lists only the keys that apply to the selected row: `n` and `p`
+appear when Plexus offers that step for the finding. A decision is your own
+attributed record, kept beside the finding; it never changes Plexus's claims.
+
+A supported native Plexus fixture or compiler signature check requires a Nexus
+resource with backend `plexus-native`; it does not run as a Wasm experiment.
+The Nexus view's `w` runs the queue and `o` reopens the investigation with its
+durable, check-scoped evidence. Evidence resolves only the obligation it names,
+so a finding stays inferred, and conflicting results all remain visible.
+Compiler support for a candidate replacement's signature leaves behavioral
+compatibility open. Signature checks require a native resource wall budget of
+120 seconds.
 
 Run `nvim --headless -u NONE -l tests/investigations_spec.lua` for prompt, catalog,
 source provenance, cancellation and Nexus round-trip coverage. With the sibling
@@ -1153,6 +1220,17 @@ colours when the colorscheme loads, and are left alone if you have set them.
 | `OculusInspectThreadHeader`   | links to `Title`          | Comment authors in threads    |
 | `OculusInspectThreadBody`     | links to `Comment`        | Comment text of threads loaded into the files |
 | `OculusInspectThreadGutter`   | links to `LineNr`         | The line drawn beside that comment text |
+| `OculusInvestigationTitle`    | links to `Title`          | Investigation, finding and project names |
+| `OculusInvestigationHeading`  | links to `Keyword`        | Group and section headings    |
+| `OculusInvestigationMuted`    | links to `Comment`        | Context, provenance and open obligations |
+| `OculusInvestigationLocation` | links to `Directory`      | Navigable source locations    |
+| `OculusInvestigationKey`      | links to `Special`        | Keys in the footer and next steps |
+| `OculusInvestigationPositive` | links to `DiagnosticOk`   | Newly possible; supported evidence |
+| `OculusInvestigationInfo`     | links to `DiagnosticInfo` | Substitution paths; inferred claims |
+| `OculusInvestigationHint`     | links to `DiagnosticHint` | Findings one adapter away     |
+| `OculusInvestigationWarning`  | links to `DiagnosticWarn` | Unhandled or unmet; inconclusive evidence |
+| `OculusInvestigationNegative` | links to `DiagnosticError` | Broken or incompatible; contradicted evidence |
+| `OculusInvestigationSeparator` | links to `FloatBorder`   | Rules between the panes       |
 
 ## Contributing
 

@@ -66,9 +66,32 @@ assert(vim.wait(10000, function() return not state.busy end))
 assert(not state.error, state.error)
 assert(vim.deep_equal(state.view.reports, report))
 local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
-assert(rendered:find("Analysis: C/C++ ABI → Zig", 1, true))
-assert(rendered:find("Claim: observed", 1, true) and rendered:find("Claim: inferred", 1, true))
-assert(rendered:find("Native preparation requires explicit sources and behavioral cases", 1, true))
+assert(rendered:find("C/C++ ABI → Zig", 1, true))
+
+-- Each finding sits under what it means for the Zig consumer.
+for _, heading in ipairs({ "NEWLY POSSIBLE", "SUBSTITUTION PATHS", "ONE ADAPTER AWAY", "BROKEN BY THIS CHANGE" }) do
+  assert(rendered:find(heading, 1, true), heading)
+end
+
+local function detail_of(kind)
+  for row, target in pairs(state.targets) do
+    if target.kind == "finding" and target.opportunity.kind == kind then
+      vim.api.nvim_win_set_cursor(state.win, { row, 0 })
+      state.show_detail()
+      return (table.concat(vim.api.nvim_buf_get_lines(state.detail_buf, 0, -1, false), " "):gsub("%s+", " "))
+    end
+  end
+
+  error("no " .. kind .. " finding")
+end
+
+local wrapper = detail_of("requires_c_abi_wrapper")
+assert(wrapper:find("✓ observed", 1, true) and wrapper:find("◐ inferred", 1, true), wrapper)
+assert(wrapper:find("p Prepare a native composition from selected implementation sources and behavioral cases", 1, true), wrapper)
+-- Nothing links to a removed binding; its detail points to what could replace it.
+local removed = detail_of("c_abi_binding_removed")
+assert(removed:find("no executable step for this finding yet", 1, true) and removed:find("RELATED · same requirement", 1, true), removed)
+assert(removed:find("⇄ replacement may replace old", 1, true) and removed:find("⇄ ready may replace old", 1, true), removed)
 for _, obligation in ipairs(state.view.reasoning.obligations) do assert(obligation.status == "unresolved") end
 local selected
 

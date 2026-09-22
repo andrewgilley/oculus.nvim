@@ -67,13 +67,15 @@ for index, path in ipairs(repositories) do
     if target.opportunity and target.opportunity.kind == "candidate_substitution" then
       selected = target
       vim.api.nvim_win_set_cursor(state.win, { row, 0 })
+      state.show_detail()
       break
     end
   end
 
   assert(selected, "Expected a substitution finding")
-  local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
-  assert(rendered:find("p: adapt the consumer's calls", 1, true), rendered)
+  -- Plexus offers the adaptation because the consumer shares the producer's repository.
+  local rendered = table.concat(vim.api.nvim_buf_get_lines(state.detail_buf, 0, -1, false), " "):gsub("%s+", " ")
+  assert(rendered:find("p Adapt the consumer's calls and run the consumer tests you name", 1, true), rendered)
   -- The developer only names the tests; Oculus writes the contract request.
   vim.ui.input = function(_, callback) callback("reads_one") end
   state.compose(selected)
@@ -131,11 +133,12 @@ for index, plan in ipairs(plans) do
   assert(vim.wait(15000, function() return not state.busy end))
   assert(not state.error, state.error)
   assert(state.view.investigation_id == investigations[index])
-  local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
-  assert(rendered:find(index == 1 and "supported_for_cases" or "behavior_failed", 1, true), rendered)
+  local rendered = table.concat(vim.api.nvim_buf_get_lines(state.detail_buf, 0, -1, false), " "):gsub("%s+", " ")
+  assert(rendered:find((index == 1 and "supported_for_cases" or "behavior_failed") .. " · call-site adaptation", 1, true), rendered)
   assert(rendered:find("Adaptation needed: true", 1, true), rendered)
   assert(rendered:find("Case: reads_one · " .. (index == 1 and "passed" or "failed"), 1, true), rendered)
-  assert(rendered:find("Selected consumer tests only", 1, true), rendered)
+  assert(rendered:find("for the selected tests only", 1, true), rendered)
+  assert(rendered:find("the finding itself stays inferred", 1, true), rendered)
   state.close()
 end
 

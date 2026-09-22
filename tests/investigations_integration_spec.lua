@@ -57,7 +57,11 @@ assert(finding and finding.status == "inferred")
 assert(finding.consumer_location.path == repository .. "/consumer/src/lib.rs")
 local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
 assert(rendered:find("NewlyPossible", 1, true) and not rendered:find("OnlyDirtyWork", 1, true))
-assert(rendered:find("No supported experiment", 1, true))
+assert(rendered:find("NOT YET HANDLED", 1, true), "the enum finding is grouped by its effect")
+-- The view opens on the finding; its detail says what can and cannot test it.
+local detail = table.concat(vim.api.nvim_buf_get_lines(state.detail_buf, 0, -1, false), " "):gsub("%s+", " ")
+assert(detail:find("NewlyPossible", 1, true) and not detail:find("OnlyDirtyWork", 1, true))
+assert(detail:find("no executable step for this finding yet", 1, true), detail)
 state.close()
 -- Recreate the module to discard its in-memory state before reopening the catalog.
 package.loaded["oculus.investigations"] = nil
@@ -72,7 +76,7 @@ state.navigate(state.catalog_value.investigations[1])
 assert(vim.wait(10000, function() return not state.busy end))
 assert(not state.error, state.error)
 local target
-for _, value in pairs(state.targets) do target = value; break end
+for _, value in pairs(state.targets) do if value.kind == "finding" then target = value; break end end
 assert(target)
 state.navigate(target)
 assert(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.source_win)) == finding.consumer_location.path)
@@ -84,9 +88,11 @@ local function reopen()
   state = bridge.open(oculus.config.plexus, oculus.config.nexus, investigation_id)
   assert(vim.wait(10000, function() return not state.busy end))
   assert(not state.error, state.error)
+
   for _, value in pairs(state.targets) do
     if value.source then return value end
   end
+
   error("reopened investigation has no navigable finding")
 end
 

@@ -84,17 +84,26 @@ for _, report in ipairs(state.view.reports) do
   end
 end
 
-local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
-assert(rendered:find("Evidence: " .. expected_conclusion, 1, true) and rendered:find("relationship remains inferred", 1, true))
+-- The evidence appears in the finding's detail, beside its still-open obligations.
+for row, target in pairs(state.targets) do
+  if target.kind == "finding" and target.opportunity.id == selected.opportunity.id then
+    vim.api.nvim_win_set_cursor(state.win, { row, 0 })
+    state.show_detail()
+    break
+  end
+end
+
+local rendered = table.concat(vim.api.nvim_buf_get_lines(state.detail_buf, 0, -1, false), " "):gsub("%s+", " ")
+assert(rendered:find(expected_conclusion .. " · ", 1, true) and rendered:find("the finding itself stays inferred", 1, true), rendered)
 
 if selected.experiment.kind == "rust_function_signature" then
-  assert(rendered:find("Claim: observed", 1, true) and rendered:find("Claim: inferred", 1, true))
-  assert(rendered:find("behavior remains unverified", 1, true))
-  assert(type(evidence.scope) == "string" and rendered:find("Scope: " .. evidence.scope, 1, true))
+  assert(rendered:find("✓ observed", 1, true) and rendered:find("◐ inferred", 1, true))
+  assert(rendered:find("open Establish required behavioral equivalence", 1, true), rendered)
+  assert(type(evidence.scope) == "string" and rendered:find("Scope: " .. evidence.scope:gsub("%s+", " "), 1, true))
 
   for _, case in ipairs(evidence.cases) do
     assert(rendered:find("Case: " .. case.label .. " · " .. case.status, 1, true))
-    assert(rendered:find("Expected: " .. case.expected .. " · actual: " .. case.actual, 1, true))
+    assert(rendered:find("expected " .. case.expected .. " · actual " .. case.actual, 1, true))
   end
 
   local signature, behavior
