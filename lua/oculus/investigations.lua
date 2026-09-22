@@ -112,7 +112,7 @@ function M.open(config, nexus_config, id, submission)
   for name, link in pairs(highlights) do vim.api.nvim_set_hl(0, name, { link = link, default = true }) end
 
   local state = { config = config, generation = 0, targets = {}, detail_targets = {}, decisions = {}, previews = {},
-    source_win = vim.api.nvim_get_current_win(), mode = "loading", title = "INVESTIGATIONS", message = "Ready" }
+    source_win = vim.api.nvim_get_current_win(), mode = "loading", message = "Ready" }
 
   M.state = state
   state.frame_buf, state.buf, state.detail_buf, state.footer_buf = scratch(), scratch(), scratch(), scratch()
@@ -127,6 +127,16 @@ function M.open(config, nexus_config, id, submission)
     vim.wo[win].signcolumn, vim.wo[win].foldcolumn, vim.wo[win].list = "no", "0", false
     vim.wo[win].cursorline = win == state.win
   end
+
+  -- Every part of the float takes the Normal background of the code beneath
+  -- it, as the main Oculus window does, rather than the float background.
+  local function paint_background()
+    for _, win in ipairs({ state.frame_win, state.win, state.detail_win, state.footer_win }) do
+      if vim.api.nvim_win_is_valid(win) then require("oculus.window").apply_overview_highlights(win, state.source_win) end
+    end
+  end
+
+  paint_background()
 
   local function focused_detail()
     return not state.closed and vim.api.nvim_get_current_win() == state.detail_win
@@ -154,7 +164,7 @@ function M.open(config, nexus_config, id, submission)
   local function paint_frame()
     if state.closed or not vim.api.nvim_buf_is_valid(state.frame_buf) then return end
     local frame, panes = state.frame_config, state.panes
-    local title = " PLEXUS · " .. state.title
+    local title = " INVESTIGATIONS"
     local message = render.fit(text(state.message), math.max(0, frame.width - vim.fn.strdisplaywidth(title) - 3))
     local gap = math.max(1, frame.width - vim.fn.strdisplaywidth(title) - vim.fn.strdisplaywidth(message) - 1)
     local lines = { title .. string.rep(" ", gap) .. message, " " .. string.rep("─", math.max(1, frame.width - 2)) }
@@ -173,8 +183,10 @@ function M.open(config, nexus_config, id, submission)
     vim.api.nvim_buf_set_extmark(state.frame_buf, ns, 0, #title + gap, { end_col = #lines[1], hl_group = level })
 
     for row = 2, #lines do
-      if lines[row] ~= "" then
-        vim.api.nvim_buf_set_extmark(state.frame_buf, ns, row - 1, 0, { end_col = #lines[row], hl_group = "OculusInvestigationSeparator" })
+      local first = lines[row]:find("[│─]")
+
+      if first then
+        vim.api.nvim_buf_set_extmark(state.frame_buf, ns, row - 1, first - 1, { end_col = #lines[row], hl_group = "OculusInvestigationSeparator" })
       end
     end
   end
@@ -239,7 +251,7 @@ function M.open(config, nexus_config, id, submission)
 
     set_lines(state.footer_buf, { "  " .. string.rep("─", math.max(1, width - 4)), line })
     vim.api.nvim_buf_clear_namespace(state.footer_buf, ns, 0, -1)
-    vim.api.nvim_buf_set_extmark(state.footer_buf, ns, 0, 0, { end_col = #"  " + #string.rep("─", math.max(1, width - 4)), hl_group = "OculusInvestigationSeparator" })
+    vim.api.nvim_buf_set_extmark(state.footer_buf, ns, 0, 2, { end_col = 2 + #string.rep("─", math.max(1, width - 4)), hl_group = "OculusInvestigationSeparator" })
 
     for _, mark in ipairs(marks) do
       vim.api.nvim_buf_set_extmark(state.footer_buf, ns, 1, mark[1], { end_col = mark[2], hl_group = "OculusInvestigationKey" })
@@ -450,7 +462,7 @@ function M.open(config, nexus_config, id, submission)
     -- A blank row keeps the last detail, but never one from another view.
     if not same then state.detail_target = nil end
     state.load_decisions(value.investigation_id, value)
-    state.view, state.mode, state.title, state.raw = value, "investigation", "CHANGE INVESTIGATION", false
+    state.view, state.mode, state.raw = value, "investigation", false
     render_investigation(focus)
     status("Ready")
   end
@@ -509,7 +521,7 @@ function M.open(config, nexus_config, id, submission)
       end
 
       if state.mode ~= "catalog" then state.detail_target = nil end
-      state.catalog_value, state.mode, state.title, state.raw = value, "catalog", "INVESTIGATION CATALOG", false
+      state.catalog_value, state.mode, state.raw = value, "catalog", false
       render_catalog(focus)
       status("Ready")
       state.prefetch()
@@ -789,6 +801,12 @@ function M.open(config, nexus_config, id, submission)
   vim.api.nvim_create_autocmd("CursorMoved", { group = state.group, buffer = state.buf, callback = function() state.show_detail() end })
   vim.api.nvim_create_autocmd("CursorMoved", { group = state.group, buffer = state.detail_buf, callback = paint_footer })
   vim.api.nvim_create_autocmd("VimResized", { group = state.group, callback = function() state.relayout() end })
+
+  vim.api.nvim_create_autocmd("ColorScheme", { group = state.group, callback = function()
+    if state.closed then return end
+    for name, link in pairs(highlights) do vim.api.nvim_set_hl(0, name, { link = link, default = true }) end
+    paint_background()
+  end })
 
   vim.api.nvim_create_autocmd("WinEnter", { group = state.group, callback = function()
     if state.closed then return end

@@ -1,6 +1,9 @@
 vim.opt.runtimepath:prepend(vim.fn.getcwd())
 -- A realistic editor size puts the list and detail panes side by side.
 vim.o.columns, vim.o.lines = 200, 50
+-- Floats and code differ in background, as in most colorschemes.
+vim.api.nvim_set_hl(0, "Normal", { fg = 0xeff1f8, bg = 0x16181f })
+vim.api.nvim_set_hl(0, "NormalFloat", { fg = 0xeff1f8, bg = 0x353940 })
 local bridge = require("oculus.investigations")
 local directory = vim.fn.tempname()
 vim.fn.mkdir(directory, "p")
@@ -88,6 +91,18 @@ assert(calls[1].options.timeout == 300000 and #calls[1].argv == 4)
 respond(calls[1], view)
 assert(not state.error, state.error)
 assert(not state.busy and state.mode == "investigation")
+
+-- Every part of the float takes the code's Normal background, not the float one.
+for _, win in ipairs({ state.frame_win, state.win, state.detail_win, state.footer_win }) do
+  local namespace = vim.api.nvim_get_hl_ns({ winid = win })
+  assert(namespace > 0 and vim.api.nvim_get_hl(namespace, { name = "NormalFloat" }).bg == 0x16181f, "panes use the Normal background")
+end
+
+local function title(opened)
+  return vim.api.nvim_buf_get_lines(opened.frame_buf, 0, 1, false)[1]
+end
+
+assert(title(state):match("^ INVESTIGATIONS%s") and not title(state):find("PLEXUS", 1, true), title(state))
 local listed = text_of(state.buf)
 assert(listed:find("actual-base → actual-head", 1, true))
 assert(listed:find("1 finding: 1 not yet handled", 1, true))
@@ -151,6 +166,7 @@ local other = vim.deepcopy(view)
 other.investigation_id, other.intent = "sha256:other", "Another question"
 respond(calls[#calls], { schema_version = 1, investigations = { view, other } })
 assert(state.mode == "catalog")
+assert(title(state):match("^ INVESTIGATIONS%s"), "the catalog keeps the same title")
 listed = text_of(state.buf)
 assert(listed:find("producer → " .. consumer_project, 1, true) and listed:find("Find opportunities", 1, true))
 -- Findings are derived per investigation. The one already shown is summarized
