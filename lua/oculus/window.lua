@@ -3227,22 +3227,13 @@ local function render_shortcuts()
     subtitle = "Commands available in Oculus"
   end
 
-  local lines = {
-    "",
-    "  KEYBOARD SHORTCUTS",
-    "  " .. subtitle,
-  }
-
-  local headings = { 2 }
+  local sections = {}
 
   local function section(title, entries)
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "  " .. title
-    headings[#headings + 1] = #lines
-
-    for _, entry in ipairs(entries) do
-      lines[#lines + 1] = ("  %-22s %s"):format(entry[1], entry[2])
-    end
+    sections[#sections + 1] = {
+      title = title,
+      entries = entries,
+    }
   end
 
   local nav = navigation.resolve(M.state.opts)
@@ -3448,14 +3439,210 @@ local function render_shortcuts()
     })
   end
 
-  set_lines(lines)
-  vim.wo[M.state.win].cursorline = false
+  local win_width = is_valid_win(M.state.win) and vim.api.nvim_win_get_width(M.state.win) or 80
+  local win_height = is_valid_win(M.state.win) and vim.api.nvim_win_get_height(M.state.win) or 25
+  local footer_height = is_valid_win(M.state.footer_win) and 2 or 0
+  local avail_height = math.max(1, win_height - 4 - footer_height)
+  local items = {}
 
-  for _, line in ipairs(headings) do
-    highlight(line, 2, -1, line == 2 and "Title" or "Special")
+  for s_idx, sec in ipairs(sections) do
+    if s_idx > 1 then
+      items[#items + 1] = { type = "blank" }
+    end
+
+    items[#items + 1] = {
+      type = "header",
+      title = sec.title,
+    }
+
+    for _, entry in ipairs(sec.entries) do
+      items[#items + 1] = {
+        type = "entry",
+        key = entry[1],
+        desc = entry[2],
+        section_title = sec.title,
+      }
+    end
   end
 
+  local sec_key_widths = {}
+
+  for _, sec in ipairs(sections) do
+    local max_k = 0
+
+    for _, entry in ipairs(sec.entries) do
+      max_k = math.max(max_k, #entry[1])
+    end
+
+    sec_key_widths[sec.title] = max_k + 2
+  end
+
+  local function partition_into_columns(num_cols)
+    local target_rows = math.ceil(#items / num_cols)
+    local max_rows = math.min(avail_height, target_rows)
+
+    if max_rows < target_rows and avail_height > 0 then
+      max_rows = avail_height
+    end
+
+    local cols = {}
+
+    for c = 1, num_cols do
+      cols[c] = {}
+    end
+
+    local cur_col = 1
+
+    for _, item in ipairs(items) do
+      if #cols[cur_col] >= max_rows and cur_col < num_cols then
+        cur_col = cur_col + 1
+      end
+
+      if item.type == "header" and #cols[cur_col] == max_rows - 1 and cur_col < num_cols then
+        cur_col = cur_col + 1
+      end
+
+      if #cols[cur_col] == 0 and item.type == "blank" then
+        -- skip leading blank
+      else
+        if #cols[cur_col] == 0 and item.type == "entry" and item.section_title then
+          cols[cur_col][#cols[cur_col] + 1] = {
+            type = "header",
+            title = item.section_title .. " (cont.)",
+          }
+        end
+
+        cols[cur_col][#cols[cur_col] + 1] = item
+      end
+    end
+
+    local col_widths = {}
+
+    for c = 1, num_cols do
+      local max_w = 0
+
+      for _, el in ipairs(cols[c]) do
+        if el.type == "header" then
+          max_w = math.max(max_w, #el.title)
+        elseif el.type == "entry" then
+          local base_kw = sec_key_widths[el.section_title] or 4
+          local kw = num_cols == 1 and math.max(base_kw, 22) or math.max(base_kw, 4)
+          max_w = math.max(max_w, kw + #el.desc)
+        end
+      end
+
+      col_widths[c] = max_w
+    end
+
+    local gap = 3
+    local total_w = 2
+
+    for c = 1, num_cols do
+      total_w = total_w + col_widths[c]
+
+      if c < num_cols then
+        total_w = total_w + gap
+      end
+    end
+
+    return cols, col_widths, total_w
+  end
+
+  local chosen_cols = 1
+  local chosen_data = nil
+  local candidates = {}
+
+  if win_width >= 140 and #items >= 24 then
+    candidates = { 3, 2, 1 }
+  elseif win_width >= 90 and #items >= 10 then
+    candidates = { 2, 1 }
+  else
+    candidates = { 1 }
+  end
+
+  for _, c_count in ipairs(candidates) do
+    local cols, col_widths, total_w = partition_into_columns(c_count)
+
+    if c_count == 1 or total_w <= win_width then
+      chosen_cols = c_count
+
+      chosen_data = {
+        cols = cols,
+        col_widths = col_widths,
+      }
+
+      break
+    end
+  end
+
+  local lines = {
+    "",
+    "  KEYBOARD SHORTCUTS",
+    "  " .. subtitle,
+    "",
+  }
+
+  local header_count = #lines
+  local heading_spans = {}
+  local cols = chosen_data.cols
+  local col_widths = chosen_data.col_widths
+  local gap = 3
+  local max_col_len = 0
+
+  for c = 1, chosen_cols do
+    max_col_len = math.max(max_col_len, #cols[c])
+  end
+
+  for r = 1, max_col_len do
+    local line_parts = {}
+    local current_col_offset = 2
+
+    for c = 1, chosen_cols do
+      local el = cols[c][r]
+      local cell_text = ""
+
+      if el then
+        if el.type == "header" then
+          cell_text = el.title
+
+          heading_spans[#heading_spans + 1] = {
+            line = header_count + r,
+            col_start = current_col_offset,
+            col_end = current_col_offset + #el.title,
+          }
+        elseif el.type == "entry" then
+          local base_kw = sec_key_widths[el.section_title] or 4
+          local kw = chosen_cols == 1 and math.max(base_kw, 22) or math.max(base_kw, 4)
+          cell_text = ("%-" .. kw .. "s%s"):format(el.key, el.desc)
+        end
+      end
+
+      if c == 1 then
+        line_parts[#line_parts + 1] = "  " .. cell_text
+      else
+        line_parts[#line_parts + 1] = cell_text
+      end
+
+      if c < chosen_cols then
+        local pad = col_widths[c] - #cell_text + gap
+        line_parts[#line_parts + 1] = string.rep(" ", math.max(pad, gap))
+        current_col_offset = current_col_offset + col_widths[c] + gap
+      end
+    end
+
+    local raw_line = table.concat(line_parts)
+    lines[#lines + 1] = raw_line:gsub("%s+$", "")
+  end
+
+  set_lines(lines)
+  vim.wo[M.state.win].cursorline = false
+  highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
+
+  for _, span in ipairs(heading_spans) do
+    highlight(span.line, span.col_start, span.col_end, "Special")
+  end
+
   render_sidebar()
   vim.api.nvim_win_set_cursor(M.state.win, { 2, 0 })
 end

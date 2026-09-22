@@ -4417,3 +4417,44 @@ do
   window_mod.close()
   os.remove(state_file)
 end
+
+do
+  local oculus = require("oculus")
+  local saved_cols = vim.o.columns
+  vim.o.columns = 120
+  -- Verify keymaps help page renders as a multi-column table when width permits
+  window.open(oculus.config or {})
+  window._toggle_shortcuts()
+  local lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local full_text = table.concat(lines, "\n")
+  assert(lines[2]:find("KEYBOARD SHORTCUTS", 1, true))
+  assert(full_text:find("Switch to user list", 1, true))
+  assert(full_text:find("Open your work", 1, true))
+  assert(full_text:find("Close Oculus", 1, true))
+  -- In multi-column layout, line count is bounded and significantly less than single-column total
+  assert(#lines < 22, "expected multi-column shortcuts to be compact in lines, got " .. #lines)
+  -- Verify line contains multiple columns side-by-side
+  local has_side_by_side = false
+
+  for _, line in ipairs(lines) do
+    if line:find("NAVIGATION", 1, true) and line:find("ACTIONS", 1, true) then
+      has_side_by_side = true
+      break
+    end
+  end
+
+  assert(has_side_by_side, "expected side-by-side columns on keymaps help page")
+  window._toggle_shortcuts()
+  window.close()
+  -- Verify narrow window renders cleanly as single column
+  vim.o.columns = 80
+  window.open(oculus.config or {})
+  window._toggle_shortcuts()
+  local narrow_lines = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
+  local narrow_text = table.concat(narrow_lines, "\n")
+  assert(narrow_text:find("Switch to user list", 1, true))
+  assert(#narrow_lines >= 25, "expected single column shortcuts in narrow window")
+  window._toggle_shortcuts()
+  window.close()
+  vim.o.columns = saved_cols
+end
