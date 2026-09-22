@@ -223,7 +223,6 @@ assert(request.base == "v1" and request.head == "v2" and request.consumer_revisi
 assert(request.producer_manifest == "crates/provider/Cargo.toml" and request.consumer_manifest == "crates/consumer/Cargo.toml")
 respond(calls[#calls], view)
 bridge.state.close()
-answers = { "/native-producer", "v3", "v2", "include/math.hpp", "c++", directory, "zig-tag", "src/adapter.zig", "Find the missing C ABI wrapper" }
 prompts = {}
 local prompt_options = {}
 
@@ -232,14 +231,25 @@ vim.ui.input = function(options, callback)
   callback(table.remove(answers, 1))
 end
 
+-- An empty answer is a real one: a self-contained header needs no directories,
+-- and the field is omitted rather than sent as an empty JSON object.
+answers = { "/native-producer", "v3", "v2", "include/math.hpp", "c", "  ", directory, "zig-tag", "src/adapter.zig", "Find it" }
 bridge.prompt({ plexus = config, nexus = nexus_config, projects = {} }, { analysis = "c_zig" })
-assert(#answers == 0 and #prompts == 9)
-assert(prompt_options[5].default == "c", "C is the default standalone header language")
+assert(#answers == 0)
+assert(vim.json.decode(calls[#calls].argv[3]).producer_include_dirs == nil)
+bridge.state.close()
+
+answers = { "/native-producer", "v3", "v2", "include/math.hpp", "c++", "include, vendor/include", directory, "zig-tag", "src/adapter.zig", "Find the missing C ABI wrapper" }
+prompts = {}
+bridge.prompt({ plexus = config, nexus = nexus_config, projects = {} }, { analysis = "c_zig" })
+assert(#answers == 0 and #prompts == 10)
+assert(prompt_options[#prompt_options - 5].default == "c", "C is the default header language")
 request = vim.json.decode(calls[#calls].argv[3])
 
 assert(vim.deep_equal(request, {
   schema_version = 1, analysis = "c_zig", repository = "/native-producer", base = "v2", head = "v3",
   producer_header = "include/math.hpp", header_language = "c++", consumer_repository = directory,
+  producer_include_dirs = { "include", "vendor/include" },
   consumer_revision = "zig-tag", consumer_source = "src/adapter.zig", intent = "Find the missing C ABI wrapper",
 }), "C/C++ to Zig requests must not contain Rust Cargo inputs")
 

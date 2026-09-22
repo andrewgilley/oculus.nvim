@@ -32,7 +32,9 @@ local oculus = require("oculus")
 oculus.config.plexus = { command = { binary }, store = directory .. "/store" }
 oculus.config.projects = {}
 local old_input = vim.ui.input
-local answers = { producer, head, base, "include/api.h", "c++", consumer, revision, "src/bindings.zig", "Which C++ changes help the Zig consumer?" }
+-- The include directories prompt accepts an empty answer: this header is
+-- self-contained, so the repository root and its own directory suffice.
+local answers = { producer, head, base, "include/api.h", "c++", "", consumer, revision, "src/bindings.zig", "Which C++ changes help the Zig consumer?" }
 vim.ui.input = function(_, callback) callback(table.remove(answers, 1)) end
 vim.cmd.runtime("plugin/oculus.lua")
 vim.cmd("OculusInvestigate c-zig")

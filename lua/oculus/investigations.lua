@@ -244,6 +244,11 @@ function M.open(config, nexus_config, id, submission)
 
     if observation.analysis == "c_zig" then
       lines[#lines + 1] = "  Header: " .. text(observation.producer_header) .. " · language " .. text(observation.header_language)
+      local directories = observation.producer_include_dirs
+
+      if type(directories) == "table" and #directories > 0 then
+        lines[#lines + 1] = "  Include directories: " .. table.concat(directories, ", ")
+      end
       lines[#lines + 1] = "  Zig source: " .. text(observation.consumer_source)
     end
 
@@ -819,6 +824,8 @@ function M.prompt(config, context)
   if c_zig then request.analysis = "c_zig"
   else request.producer_manifest, request.consumer_manifest = "Cargo.toml", "Cargo.toml" end
 
+  local include_dirs
+
   local function ask(key, prompt, default, next_step, completion)
     vim.ui.input({ prompt = prompt, default = request[key] or default, completion = completion }, function(value)
       if not value or vim.trim(value) == "" then return end
@@ -874,6 +881,25 @@ function M.prompt(config, context)
     next_project()
   end
 
+  -- Repository-relative directories searched for angled includes, in order.
+  -- Empty is a real answer: the repository root and the header's own directory
+  -- are always searched, so a self-contained header needs nothing here.
+  function include_dirs()
+    vim.ui.input({ prompt = "Producer include directories, comma separated (optional): ", default = "include", completion = "dir" }, function(value)
+      if value == nil then return end
+      local directories = {}
+
+      for part in tostring(value):gmatch("[^,]+") do
+        local trimmed = vim.trim(part)
+        if trimmed ~= "" then directories[#directories + 1] = trimmed end
+      end
+
+      -- An empty list would encode as a JSON object, so the field is omitted.
+      request.producer_include_dirs = #directories > 0 and directories or nil
+      consumer()
+    end)
+  end
+
   local function header_language()
     ask("header_language", "Header language (c or c++): ", "c", function()
       if request.header_language ~= "c" and request.header_language ~= "c++" then
@@ -881,12 +907,12 @@ function M.prompt(config, context)
         return
       end
 
-      consumer()
+      include_dirs()
     end)
   end
 
   local function producer_input()
-    if c_zig then ask("producer_header", "Producer standalone header (relative to repository): ", "include/api.h", header_language)
+    if c_zig then ask("producer_header", "Producer header (relative to repository): ", "include/api.h", header_language)
     else ask("producer_manifest", "Producer Cargo manifest (relative to repository): ", "Cargo.toml", consumer) end
   end
 

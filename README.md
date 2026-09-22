@@ -600,16 +600,26 @@ opportunities remain visible records.
 Workspace packages can be selected using paths such as `crates/parser/Cargo.toml`.
 
 Run `:OculusInvestigate c-zig` to investigate a C or C++ producer against a Zig
-consumer. The prompts collect the producer's standalone header, its language
-(`c` or `c++`, default `c`), and the consumer's explicit Zig source file instead
-of Cargo manifests. For example, select `include/api.hpp` and `src/adapter.zig`.
-The investigation shows the header language and both selected paths; source
-references and archived navigation work as they do for Rust findings.
+consumer. The prompts collect the producer's entry header, its language
+(`c` or `c++`, default `c`), the include directories to search, and the
+consumer's explicit Zig source file instead of Cargo manifests. For example,
+select `include/api.hpp`, `include` and `src/adapter.zig`. The investigation
+shows the header language, the include directories and both selected paths;
+source references and archived navigation work as they do for Rust findings.
 
-This analysis requires Clang 22 on the machine running Plexus. Its initial scope
-is standalone headers and explicit Zig `extern` declarations. Plexus can expose
-compatible declarations and missing C ABI wrappers, including C++ declarations
-that require C linkage. These findings describe declarations, not completed
+Include directories are repository-relative and comma separated, searched in the
+order given. The repository root and the header's own directory are always
+searched, so a self-contained header needs no answer. A finding opens whichever
+captured file actually holds its declaration, including a header the entry
+header includes, or a macro table that generates the symbol.
+
+This analysis requires Clang 22 on the machine running Plexus. It observes the
+entry header together with the committed files it includes, plus the pinned
+compiler's own freestanding headers; a header needing hosted C library or
+build-generated headers is reported as unsupported and names what it could not
+resolve. Plexus can expose compatible declarations and missing C ABI wrappers,
+including C++ declarations that require C linkage, and records whether each
+declaration was written out or produced by expanding a macro. These findings describe declarations, not completed
 implementations, successful linking, or verified runtime behavior. Unresolved
 obligations remain visible. Press `p` on a supported finding to prepare an
 [executable composition](#executable-compositions) with explicit sources and cases.

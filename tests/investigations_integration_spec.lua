@@ -76,8 +76,23 @@ for _, value in pairs(state.targets) do target = value; break end
 assert(target)
 state.navigate(target)
 assert(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.source_win)) == finding.consumer_location.path)
+assert(state.closed, "following a location hands the screen to the source")
+
+-- Following a location closes the float, so reopen the stored investigation
+-- before navigating again.
+local function reopen()
+  state = bridge.open(oculus.config.plexus, oculus.config.nexus, investigation_id)
+  assert(vim.wait(10000, function() return not state.busy end))
+  assert(not state.error, state.error)
+  for _, value in pairs(state.targets) do
+    if value.source then return value end
+  end
+  error("reopened investigation has no navigable finding")
+end
+
 -- The archived source is still navigable after removing the entire repository.
 vim.fn.delete(repository, "rf")
+target = reopen()
 state.navigate(target)
 assert(vim.wait(10000, function() return not state.busy end))
 assert(not state.error, state.error)
@@ -86,6 +101,7 @@ assert(vim.b[archived].oculus_archived_source == finding.consumer_location.artif
 assert(vim.bo[archived].readonly and not vim.bo[archived].modifiable)
 local content = table.concat(vim.api.nvim_buf_get_lines(archived, 0, -1, false), "\n")
 assert(content == table.concat(consumer_lines, "\n") .. "\n")
+target = reopen()
 state.refresh()
 assert(vim.wait(10000, function() return not state.busy end))
 assert(not state.error and state.view.investigation_id == investigation_id, state.error)
