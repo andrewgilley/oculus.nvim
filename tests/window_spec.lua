@@ -226,6 +226,35 @@ assert(
   main_window_config.title == nil or main_window_config.title == ""
 )
 
+-- Sizes may be given as a fraction, an absolute size, or a callable resolved
+-- when the window opens. The full config covers the sidebar's share too, so a
+-- standalone float lands on exactly the region the main window occupies.
+local fractional = window.full_window_config({ width = 0.5, height = 0.5 })
+local callable = window.full_window_config({
+  width = function() return 0.5 end,
+  height = function() return 0.5 end,
+})
+
+assert(vim.deep_equal(fractional, callable), "a callable size resolves to its returned value")
+assert(fractional.relative == "editor")
+assert(fractional.col == math.floor((vim.o.columns - fractional.width) / 2), "the float is centered")
+
+-- Sizes stay within the editor and grow with the requested fraction, whichever
+-- terminal the suite runs in.
+local wide = window.full_window_config({ width = 0.95, height = 0.95 })
+assert(wide.width >= fractional.width and wide.width <= math.max(1, vim.o.columns - 4))
+assert(wide.height >= fractional.height and wide.row + wide.height <= vim.o.lines)
+
+-- A callable that fails or returns a nonnumber falls back exactly as an absent
+-- option does, so a broken size never prevents a window from opening.
+local default_width = window.full_window_config({}).width
+assert(window.full_window_config({ width = function() error("no") end }).width == default_width)
+assert(window.full_window_config({ width = function() return "wide" end }).width == default_width)
+
+-- The full config never claims less room than the main window inside it.
+local sidebar_share = window.window_config({ width = 0.95, height = 0.95 })
+assert(wide.width >= sidebar_share.width and wide.height == sidebar_share.height)
+
 local inspection_window_options = window.inspection_window_options()
 assert(inspection_window_options.number == true)
 assert(inspection_window_options.relativenumber == true)

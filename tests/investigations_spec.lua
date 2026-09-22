@@ -58,7 +58,23 @@ local count = #calls
 state.navigate(target)
 assert(#calls == count and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.source_win)) == source)
 assert(vim.api.nvim_win_get_cursor(state.source_win)[1] == 2)
+assert(state.closed and vim.api.nvim_win_get_config(0).relative == "", "following a location hands over the screen")
+
+-- Following a source location closes the float, so each navigation below opens
+-- the stored investigation again rather than reusing a dismissed view.
+local function reopen(stored, pick)
+  local opened = bridge.open(config, nexus_config, stored.investigation_id)
+  respond(calls[#calls], stored)
+  assert(not opened.error, opened.error)
+  assert(vim.api.nvim_win_get_config(opened.win).relative == "editor", "the catalog is a float")
+  for _, item in pairs(opened.targets) do
+    if not pick or pick(item) then return opened, item end
+  end
+  error("reopened investigation has no matching finding")
+end
+
 vim.fn.writefile({ "changed source" }, source)
+state, target = reopen(view, function(item) return item.experiment end)
 state.navigate(target)
 assert(calls[#calls].argv[2] == "investigation-source" and calls[#calls].argv[3] == digest)
 respond(calls[#calls], { schema_version = 1, content = bytes })
@@ -66,6 +82,7 @@ assert(not state.error, state.error)
 local archived_buf = vim.api.nvim_win_get_buf(state.source_win)
 assert(vim.b[archived_buf].oculus_archived_source == digest and vim.bo[archived_buf].readonly)
 assert(not vim.bo[archived_buf].modifiable)
+state, target = reopen(view, function(item) return item.experiment end)
 state.navigate(target)
 respond(calls[#calls], { schema_version = 1, content = "corrupt" })
 assert(state.error:find("digest mismatch", 1, true))
@@ -272,6 +289,7 @@ respond(calls[#calls], { schema_version = 1, content = zig_bytes })
 archived_buf = vim.api.nvim_win_get_buf(state.source_win)
 assert(vim.b[archived_buf].oculus_archived_source == zig_digest and vim.bo[archived_buf].readonly)
 assert(vim.bo[archived_buf].filetype == "zig")
+state = reopen(c_zig_view)
 state.catalog()
 respond(calls[#calls], { schema_version = 1, investigations = { c_zig_view } })
 rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")

@@ -323,6 +323,13 @@ end
 local function dimension(value, total, fallback, minimum)
   local result
 
+  -- A callable option is resolved at open time so a size can follow the editor.
+  -- A failing or nonnumeric result falls back exactly as an absent option does.
+  if type(value) == "function" then
+    local ok, computed = pcall(value, total)
+    value = ok and computed or nil
+  end
+
   if type(value) == "number" and value > 0 and value <= 1 then
     result = math.floor(total * value)
   else
@@ -369,6 +376,30 @@ end
 
 function M.window_config(opts)
   return make_win_config(opts or {})
+end
+
+-- The whole Oculus footprint: the main window plus any sidebar and the gap
+-- between them. Standalone views float at this size so they cover the same
+-- region as the main window whether or not the sidebar is currently shown.
+local function full_win_config(opts)
+  opts = opts or {}
+  local width = dimension(opts.width, vim.o.columns, 0.89, 54)
+  local height = dimension(opts.height, vim.o.lines, 0.80, 16)
+  local row = math.max(0, math.min(opts.row or 1, vim.o.lines - height - 2))
+
+  return {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    style = "minimal",
+    border = opts.main_border or opts.border or "rounded",
+  }
+end
+
+function M.full_window_config(opts)
+  return full_win_config(opts or {})
 end
 
 local function sidebar_win_config(opts)

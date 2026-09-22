@@ -616,11 +616,17 @@ obligations remain visible. Press `p` on a supported finding to prepare an
 `:OculusInvestigate rust` explicitly selects the existing Rust analysis; `gI`
 on local activity continues to use that default.
 
-`:OculusInvestigations` or `gP` opens the persistent project catalog. Select an
-investigation and press `Enter`; restarting Neovim does not erase its findings or
-evidence. In a finding, `Enter` opens digest-verified local source, falling back
-to a read-only archived snapshot when the local bytes changed or disappeared.
-Individual source references in an evidence path are navigable too.
+`:OculusInvestigations` or `gP` opens the persistent project catalog in a float
+covering the same region as the main Oculus window. Select an investigation and
+press `Enter`; restarting Neovim does not erase its findings or evidence. In a
+finding, `Enter` opens digest-verified local source, falling back to a read-only
+archived snapshot when the local bytes changed or disappeared. Individual source
+references in an evidence path are navigable too.
+
+Opening a source location hands the screen over: the float closes and the cursor
+lands on the location in an ordinary window, because the float would otherwise
+cover it. Reopen the catalog with `:OculusInvestigations` to follow another
+finding.
 
 | Key | Action |
 | --- | --- |
@@ -827,7 +833,8 @@ These are the defaults. You only need to pass the options you want to change.
 
 ```lua
 require("oculus").setup({
-  -- Window size, as a fraction of the editor (<= 1) or an absolute size
+  -- Window size, as a fraction of the editor (<= 1), an absolute size, or a
+  -- function returning either. A function is called each time a window opens.
   width = 0.90,
   height = 0.80,
   row = 1,

@@ -37,10 +37,10 @@ function M.open(config, nexus_config, id, submission)
   config.store = vim.fn.fnamemodify(config.store or vim.fn.stdpath("data") .. "/oculus/plexus", ":p")
   local state = { config = config, generation = 0, targets = {}, source_win = vim.api.nvim_get_current_win(), decisions = {} }
   M.state = state
-  vim.cmd("botright vnew")
-  state.win, state.buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+  state.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[state.buf].buftype, vim.bo[state.buf].bufhidden = "nofile", "wipe"
   vim.bo[state.buf].swapfile, vim.bo[state.buf].filetype = false, "oculus-investigations"
+  state.win = vim.api.nvim_open_win(state.buf, true, require("oculus.window").full_window_config(config))
   vim.wo[state.win].wrap, vim.wo[state.win].number, vim.wo[state.win].relativenumber = true, false, false
 
   local function status(message)
@@ -504,15 +504,26 @@ function M.open(config, nexus_config, id, submission)
     return target or state.targets[vim.api.nvim_win_get_cursor(state.win)[1]]
   end
 
+  -- A source location always lands in an ordinary window: the investigations
+  -- float cannot be split and would cover whatever opened behind it.
   local function source_window()
-    if not vim.api.nvim_win_is_valid(state.source_win)
-      or vim.api.nvim_win_get_config(state.source_win).relative ~= ""
-      or vim.bo[vim.api.nvim_win_get_buf(state.source_win)].modified then
-      vim.api.nvim_set_current_win(state.win)
-      vim.cmd("leftabove vnew")
-      state.source_win = vim.api.nvim_get_current_win()
+    local function ordinary(win)
+      return type(win) == "number" and win ~= state.win and vim.api.nvim_win_is_valid(win)
+        and vim.api.nvim_win_get_config(win).relative == ""
     end
 
+    if ordinary(state.source_win) and not vim.bo[vim.api.nvim_win_get_buf(state.source_win)].modified then
+      return state.source_win
+    end
+
+    local anchor
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if ordinary(win) then anchor = win break end
+    end
+
+    if anchor then vim.api.nvim_set_current_win(anchor) end
+    vim.cmd(anchor and "leftabove vnew" or "noautocmd tabnew")
+    state.source_win = vim.api.nvim_get_current_win()
     return state.source_win
   end
 
@@ -533,8 +544,10 @@ function M.open(config, nexus_config, id, submission)
       local row = math.min(location.line, vim.api.nvim_buf_line_count(buf))
       local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
       vim.api.nvim_win_set_cursor(win, { row, math.min(location.column - 1, #line) })
+      -- Hand the screen to the source; the catalog reopens with the same command.
+      state.close()
       vim.api.nvim_set_current_win(win)
-      status(message)
+      vim.notify("Oculus investigations: " .. text(message), vim.log.levels.INFO)
     end
 
     local loaded = vim.fn.bufnr(location.path)
