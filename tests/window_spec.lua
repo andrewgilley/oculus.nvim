@@ -2734,6 +2734,110 @@ do
 
   assert(loaded_done == true)
   assert(requested_repo == nil, "expected no network call when description is already present")
+  -- Test refresh_project_descriptions: DOES make a network call even when description is already present
+  requested_repo = nil
+  local requested_force = nil
+
+  gh.repository_info = function(repo, opts, cb_fn)
+    requested_repo = repo
+    requested_force = opts and opts.force
+    cb_fn({ description = "Fresh refreshed description for " .. repo })
+  end
+
+  local refresh_done = false
+
+  oculus.refresh_project_descriptions(test_config, function(projects, updated)
+    refresh_done = true
+  end)
+
+  assert(refresh_done == true, "expected refresh callback called")
+  assert(requested_repo == "custom/test", "expected network call made on refresh")
+  assert(requested_force == true, "expected force = true passed to repository_info")
+  assert(test_config.projects[1].description == "Fresh refreshed description for custom/test", "expected description updated")
+
+  -- Test refresh with target filtering
+  test_config.projects[#test_config.projects + 1] = {
+    repository = "another/repo",
+    provider = "github",
+    description = "Old another description",
+  }
+
+  requested_repo = nil
+  refresh_done = false
+
+  oculus.refresh_project_descriptions({ config = test_config, target = "another/repo" }, function(projects, updated)
+    refresh_done = true
+  end)
+
+  assert(refresh_done == true)
+  assert(requested_repo == "another/repo")
+  assert(test_config.projects[2].description == "Fresh refreshed description for another/repo")
+  -- Test user commands: OculusRefreshProjectDescriptions and OculusRefreshDescriptions
+  vim.g.loaded_oculus = nil
+  vim.cmd("runtime plugin/oculus.lua")
+  local saved_config = oculus.config
+  oculus.config = test_config
+  requested_repo = nil
+  local notified_messages = {}
+  local orig_notify = vim.notify
+
+  vim.notify = function(msg, level)
+    notified_messages[#notified_messages + 1] = { msg = msg, level = level }
+  end
+
+  vim.cmd("OculusRefreshProjectDescriptions custom/test")
+  assert(requested_repo == "custom/test")
+  assert(#notified_messages > 0)
+  assert(notified_messages[#notified_messages].msg:find("custom/test", 1, true))
+  notified_messages = {}
+  requested_repo = nil
+  vim.cmd("OculusRefreshDescriptions")
+  assert(requested_repo ~= nil)
+  assert(#notified_messages > 0)
+  assert(notified_messages[#notified_messages].msg:find("saved project", 1, true))
+  -- Test live preview update in window when open
+  test_config.projects[1].description = "Before live refresh"
+  window.state.opts = test_config
+  window.state.view = "contributors"
+  window.state.preview_project = test_config.projects[1]
+  local test_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, { "line 1", "line 2", "line 3", "line 4", "line 5", "line 6", "line 7", "line 8", "line 9", "line 10" })
+
+  local test_win = vim.api.nvim_open_win(test_buf, true, {
+    relative = "editor",
+    row = 0,
+    col = 0,
+    width = 80,
+    height = 24,
+  })
+
+  window.state.buf = test_buf
+  window.state.win = test_win
+
+  gh.repository_info = function(repo, opts, cb_fn)
+    cb_fn({ description = "Live updated description" })
+  end
+
+  oculus.refresh_project_descriptions("custom/test")
+  assert(test_config.projects[1].description == "Live updated description")
+  local preview_text = ""
+
+  for _, it in pairs(window.state.preview_items or {}) do
+    preview_text = preview_text .. "\n" .. (it[1] or "")
+  end
+
+  assert(preview_text:find("Live updated description", 1, true), "expected preview_items to contain refreshed description")
+
+  if vim.api.nvim_win_is_valid(test_win) then
+    vim.api.nvim_win_close(test_win, true)
+  end
+
+  window.state.win = nil
+  window.state.buf = nil
+  window.state.view = nil
+  window.state.preview_project = nil
+  vim.notify = orig_notify
+  oculus.config = saved_config
   gh.repository_info = original_repo_info
 end
 

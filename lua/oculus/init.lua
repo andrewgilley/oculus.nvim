@@ -481,7 +481,7 @@ function M.load_project_descriptions(config, callback)
       type(project) == "table"
       and type(project.repository) == "string"
       and project.repository ~= ""
-      and (not project.description or project.description == "")
+      and (config.force or not project.description or project.description == "")
     then
       local provider = project.provider == "codeberg" and codeberg or github
 
@@ -564,10 +564,12 @@ end
 function M.open_investigations(id)
   local window = require("oculus.window")
   if window.state.win and vim.api.nvim_win_is_valid(window.state.win) then window.close() end
+
   local plexus_config = vim.tbl_extend("keep", M.config.plexus or {}, {
     state_file = M.config.state_file,
     investigation_decisions = M.config.investigation_decisions,
   })
+
   return require("oculus.investigations").open(plexus_config, M.config.nexus, id)
 end
 
@@ -672,6 +674,10 @@ end
 
 function M.prompt_select_workspace()
   return require("oculus.window").prompt_select_workspace()
+end
+
+function M.refresh_project_descriptions(target, callback)
+  return require("oculus.window").refresh_project_descriptions(target, callback)
 end
 
 return M

@@ -81,12 +81,14 @@ vim.api.nvim_create_user_command("OculusWorkspace", function(opts)
   if arg == "" then
     local active = workspace.get_active(oculus.config)
     local all = workspace.list(oculus.config)
+
     if #all == 0 then
       vim.notify("Oculus: No workspaces configured.", vim.log.levels.INFO)
       return
     end
 
     local lines = { "Oculus Workspaces:" }
+
     for _, ws in ipairs(all) do
       local is_active = active and (active.name:lower() == ws.name:lower())
       local mark = is_active and "* " or "  "
@@ -95,6 +97,7 @@ vim.api.nvim_create_user_command("OculusWorkspace", function(opts)
       local proj_str = string.format(" [%d project%s]", proj_count, proj_count == 1 and "" or "s")
       lines[#lines + 1] = string.format("%s%s%s%s%s", mark, ws.name, is_active and " (active)" or "", desc, proj_str)
     end
+
     vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
     return
   end
@@ -106,6 +109,7 @@ vim.api.nvim_create_user_command("OculusWorkspace", function(opts)
   end
 
   local ok, err_or_ws = workspace.set_active(oculus.config, arg)
+
   if ok then
     local count = #(err_or_ws.projects or {})
     vim.notify(string.format("Oculus: Active workspace set to '%s' (%d project%s).", err_or_ws.name, count, count == 1 and "" or "s"), vim.log.levels.INFO)
@@ -122,15 +126,19 @@ end, {
     local workspace = require("oculus.workspace")
     local config = require("oculus").config or {}
     local completions = { "clear", "none" }
+
     for _, ws in ipairs(workspace.list(config)) do
       completions[#completions + 1] = ws.name
     end
+
     local matches = {}
+
     for _, c in ipairs(completions) do
       if c:lower():sub(1, #arglead) == arglead:lower() then
         matches[#matches + 1] = c
       end
     end
+
     return matches
   end,
 })
@@ -226,6 +234,79 @@ end, {
   desc = "Move a project to a directory in Oculus",
 })
 
+local function complete_projects(arglead)
+  local matches = {}
+  local config = require("oculus").config or {}
+  local projects = config.projects
+
+  if not projects or #projects == 0 then
+    local win = package.loaded["oculus.window"]
+
+    if win and win.state and win.state.opts and win.state.opts.projects then
+      projects = win.state.opts.projects
+    end
+  end
+
+  for _, p in ipairs(projects or {}) do
+    local repository = type(p.repository) == "string" and p.repository or ""
+
+    if repository ~= "" and repository:lower():sub(1, #arglead) == arglead:lower() then
+      matches[#matches + 1] = repository
+    end
+
+    if type(p.name) == "string" and p.name ~= "" and p.name:lower():sub(1, #arglead) == arglead:lower() then
+      matches[#matches + 1] = p.name
+    end
+  end
+
+  return matches
+end
+
+local function refresh_project_descriptions_cmd(opts)
+  local target = vim.trim(opts.args or "")
+  local oculus = require("oculus")
+
+  local ok, err = oculus.refresh_project_descriptions(target ~= "" and target or nil, function(projects, updated)
+    if target ~= "" then
+      if #projects > 0 then
+        vim.notify(string.format("Oculus: Refreshed project description for '%s'.", target), vim.log.levels.INFO)
+      else
+        vim.notify(string.format("Oculus: Project '%s' not found.", target), vim.log.levels.WARN)
+      end
+    else
+      local count = type(projects) == "table" and #projects or 0
+
+      if count == 0 then
+        vim.notify("Oculus: No saved projects to refresh.", vim.log.levels.INFO)
+      else
+        vim.notify(string.format("Oculus: Refreshed descriptions for %d saved project%s.", count, count == 1 and "" or "s"), vim.log.levels.INFO)
+      end
+    end
+  end)
+
+  if ok == false and err then
+    vim.notify("Oculus: " .. err, vim.log.levels.WARN)
+  end
+end
+
+vim.api.nvim_create_user_command("OculusRefreshProjectDescriptions", refresh_project_descriptions_cmd, {
+  nargs = "?",
+  desc = "Refresh project description text of saved projects from GitHub or Codeberg",
+  complete = complete_projects,
+})
+
+vim.api.nvim_create_user_command("OculusRefreshDescriptions", refresh_project_descriptions_cmd, {
+  nargs = "?",
+  desc = "Refresh project description text of saved projects (alias)",
+  complete = complete_projects,
+})
+
+vim.api.nvim_create_user_command("OculusRefreshProjectDescription", refresh_project_descriptions_cmd, {
+  nargs = "?",
+  desc = "Refresh project description text of saved projects (alias)",
+  complete = complete_projects,
+})
+
 -- <Plug> mappings, so a keymap can be bound without going through setup().
 for lhs, mapping in pairs({
   ["<Plug>(oculus-toggle)"] = {
@@ -256,6 +337,12 @@ for lhs, mapping in pairs({
     desc = "Inspect an issue, pull request or commit",
     run = function()
       require("oculus").inspect()
+    end,
+  },
+  ["<Plug>(oculus-refresh-project-descriptions)"] = {
+    desc = "Refresh project description text of saved projects",
+    run = function()
+      require("oculus").refresh_project_descriptions()
     end,
   },
 }) do

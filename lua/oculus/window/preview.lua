@@ -607,7 +607,7 @@ function M.setup(window, internal)
         type(project) == "table"
         and type(project.repository) == "string"
         and project.repository ~= ""
-        and (not project.description or project.description == "")
+        and (config.force or not project.description or project.description == "")
       then
         local provider = project.provider == "codeberg" and codeberg or github
 
@@ -661,6 +661,156 @@ function M.setup(window, internal)
     end
   end
 
+  function window.refresh_project_descriptions(opts_or_target, callback)
+    local target = nil
+    local config = nil
+
+    if type(opts_or_target) == "function" then
+      callback = opts_or_target
+    elseif type(opts_or_target) == "string" then
+      target = opts_or_target
+    elseif type(opts_or_target) == "table" then
+      if opts_or_target.projects then
+        config = opts_or_target
+      else
+        target = opts_or_target.target or opts_or_target.repository
+        config = opts_or_target.config
+      end
+    end
+
+    local oculus = require("oculus")
+
+    config = config
+      or (oculus.config and oculus.config.projects and #oculus.config.projects > 0 and oculus.config)
+      or (window.state and window.state.opts and window.state.opts.projects and #window.state.opts.projects > 0 and window.state.opts)
+      or oculus.config
+      or {}
+
+    local projects = config.projects or {}
+    local target_str = (type(target) == "string" and vim.trim(target) ~= "") and vim.trim(target):lower() or nil
+    local to_refresh = {}
+
+    for _, project in ipairs(projects) do
+      if
+        type(project) == "table"
+        and type(project.repository) == "string"
+        and project.repository ~= ""
+      then
+        if
+          not target_str
+          or project.repository:lower() == target_str
+          or (type(project.name) == "string" and project.name:lower() == target_str)
+        then
+          to_refresh[#to_refresh + 1] = project
+        end
+      end
+    end
+
+    if #to_refresh == 0 then
+      if callback then
+        callback(to_refresh, false)
+      end
+
+      return false, target_str and ("Project '" .. tostring(target) .. "' not found") or "No saved projects found"
+    end
+
+    local pending = 0
+    local updated_any = false
+    local req_opts = vim.tbl_deep_extend("force", vim.deepcopy(config), { force = true })
+
+    local cache = (window.state and window.state.opts and window.state.opts.project_descriptions)
+      or config.project_descriptions
+      or {}
+
+    config.project_descriptions = cache
+
+    if window.state and window.state.opts then
+      window.state.opts.project_descriptions = cache
+    end
+
+    for _, project in ipairs(to_refresh) do
+      local provider = project.provider == "codeberg" and codeberg or github
+
+      if provider and type(provider.repository_info) == "function" then
+        pending = pending + 1
+
+        provider.repository_info(project.repository, req_opts, function(info)
+          pending = pending - 1
+
+          if
+            info
+            and type(info.description) == "string"
+            and info.description ~= ""
+          then
+            local key = internal.project_key(project)
+            cache[key] = info.description
+
+            if oculus.config and oculus.config.project_descriptions then
+              oculus.config.project_descriptions[key] = info.description
+            end
+
+            if project.description ~= info.description then
+              project.description = info.description
+              updated_any = true
+            end
+
+            if window.state and window.state.opts and window.state.opts.projects then
+              for _, p in ipairs(window.state.opts.projects) do
+                if type(p) == "table" and internal.project_key(p) == key then
+                  p.description = info.description
+                end
+              end
+            end
+
+            if oculus.config and oculus.config.projects then
+              for _, p in ipairs(oculus.config.projects) do
+                if type(p) == "table" and internal.project_key(p) == key then
+                  p.description = info.description
+                end
+              end
+            end
+
+            if
+              window.state
+              and window.state.preview_project
+              and internal.project_key(window.state.preview_project) == key
+              and internal.is_valid_win(window.state.win)
+            then
+              window.state.preview_project.description = info.description
+              local window_width = vim.api.nvim_win_get_width(window.state.win)
+              local left_width = internal.preview_left_width(window_width)
+              local preview_width = math.max(15, window_width - left_width - 5)
+
+              render_preview_panel(
+                project_preview_items(project, preview_width)
+              )
+            end
+          end
+
+          if pending == 0 then
+            if config.state_file then
+              pcall(require("oculus.storage").save, config.state_file, config)
+            end
+
+            if config.persist_projects then
+              pcall(internal.persist_projects)
+            end
+
+            if callback then
+              callback(to_refresh, updated_any)
+            end
+          end
+        end)
+      end
+    end
+
+    if pending == 0 and callback then
+      callback(to_refresh, updated_any)
+    end
+
+    return true
+  end
+
   return {
     activity_title_highlight_end = activity_title_highlight_end,
     activity_item_line = activity_item_line,
@@ -679,6 +829,8 @@ function M.setup(window, internal)
     queue_preview = queue_preview,
     fetch_project_description = fetch_project_description,
     queue_project_preview = queue_project_preview,
+    load_project_descriptions = window.load_project_descriptions,
+    refresh_project_descriptions = window.refresh_project_descriptions,
   }
 end
 

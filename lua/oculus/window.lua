@@ -7579,6 +7579,7 @@ M.move_to_parent_directory = move_to_parent_directory
 M._move_to_parent_directory = move_to_parent_directory
 M._startup_project_items = startup_project_items
 M._directory_preview_items = directory_preview_items
+M.refresh_project_descriptions = preview.refresh_project_descriptions
 
 function M.toggle_workspace_filter()
   M.state.workspace_filter_enabled = not (M.state.workspace_filter_enabled ~= false)
