@@ -535,6 +535,7 @@ local function sidebar_sections_for_view(view)
           { "s", "Saved" },
           { "P", "Plexus" },
           { "C", "Capabilities" },
+          { "g", "Investigations" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
           { "r", "Rename" },
@@ -550,6 +551,7 @@ local function sidebar_sections_for_view(view)
           { "s", "Saved" },
           { "P", "Plexus" },
           { "C", "Capabilities" },
+          { "g", "Investigations" },
           { "a", "Add" },
           { "f", "Folder" },
           { "M", "Move Dir" },
@@ -3331,6 +3333,7 @@ local function render_shortcuts()
         { "s", "Open saved activity items" },
         { "P", "Open Plexus investigations" },
         { "C", "Discover Rust capability opportunities" },
+        { "g", "Browse durable change investigations" },
         { "m", "Move the selected user" },
         { "a", "Add a GitHub or Codeberg account" },
         { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
@@ -3360,6 +3363,7 @@ local function render_shortcuts()
         { "s", "Open saved activity items" },
         { "P", "Open Plexus investigations" },
         { "C", "Discover Rust capability opportunities" },
+        { "g", "Browse durable change investigations" },
         { "f", "Create a project folder" },
         { "m", "Move the selected project or folder" },
         { "M", "Move project to folder" },
@@ -3389,6 +3393,7 @@ local function render_shortcuts()
     section("ACTIONS", {
       { "w", "Open your work: review requests, PRs, mentions" },
       { "s", "Open saved activity items" },
+      { "g", "Browse durable change investigations" },
       { "a", "Add a GitHub or Codeberg project" },
       { "r", "Rename the selected project" },
       { "R", "Remove the selected project" },
@@ -3431,7 +3436,7 @@ local function render_shortcuts()
     end
 
     actions[#actions + 1] = { "gI", "Investigate the selected local commit" }
-    actions[#actions + 1] = { "gP", "Browse durable change investigations" }
+    actions[#actions + 1] = { "g", "Browse durable change investigations" }
     section("ACTIONS", actions)
 
     section("GENERAL", {
@@ -6916,7 +6921,16 @@ local function map_keys(buf)
     require("oculus.investigations").from_activity(M.state.opts, M.state.activity_events[line], M.state.line_targets[line])
   end, "Investigate selected local commit")
 
+  map("g", function() require("oculus").open_investigations() end, "Browse durable change investigations")
   map("gP", function() require("oculus").open_investigations() end, "Browse durable change investigations")
+
+  local investigations_nav_key = type(M.state.opts) == "table"
+      and type(M.state.opts.navigation) == "table"
+      and M.state.opts.navigation.investigations
+
+  if investigations_nav_key and investigations_nav_key ~= "g" and investigations_nav_key ~= "gP" then
+    map(investigations_nav_key, function() require("oculus").open_investigations() end, "Browse durable change investigations")
+  end
 
   map("C", function()
     local win = M.state.win

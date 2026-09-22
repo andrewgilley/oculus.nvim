@@ -2890,6 +2890,56 @@ do
   -- Test Plug mapping
   local plug_map = vim.fn.maparg("<Plug>(oculus-refresh-project-description)", "n", false, true)
   assert(plug_map ~= nil and type(plug_map.callback) == "function", "expected <Plug>(oculus-refresh-project-description)")
+
+  -- Test investigations keymaps: g and gP in window buffer
+  window.open(test_config)
+  local g_map = vim.fn.maparg("g", "n", false, true)
+  assert(g_map ~= nil and type(g_map.callback) == "function", "expected g keymap on Oculus window")
+  local gp_map = vim.fn.maparg("gP", "n", false, true)
+  assert(gp_map ~= nil and type(gp_map.callback) == "function", "expected gP keymap on Oculus window")
+
+  local opened_investigations = false
+  local orig_open_inv = oculus.open_investigations
+  oculus.open_investigations = function() opened_investigations = true end
+  g_map.callback()
+  assert(opened_investigations == true, "expected g callback to open investigations")
+
+  opened_investigations = false
+  gp_map.callback()
+  assert(opened_investigations == true, "expected gP callback to open investigations")
+  window.close()
+
+  -- Test custom navigation.investigations key
+  window.open(vim.tbl_extend("force", test_config, { navigation = { investigations = "gi" } }))
+  local custom_inv_map = vim.fn.maparg("gi", "n", false, true)
+  assert(custom_inv_map ~= nil and type(custom_inv_map.callback) == "function", "expected custom navigation keymap on Oculus window")
+  window.close()
+
+  -- Test Plug mappings for investigations
+  local plug_inv_map = vim.fn.maparg("<Plug>(oculus-investigations)", "n", false, true)
+  assert(plug_inv_map ~= nil and type(plug_inv_map.callback) == "function", "expected <Plug>(oculus-investigations)")
+  opened_investigations = false
+  plug_inv_map.callback()
+  assert(opened_investigations == true, "expected <Plug>(oculus-investigations) to open investigations")
+
+  local plug_inv_alias = vim.fn.maparg("<Plug>(oculus-investigation)", "n", false, true)
+  assert(plug_inv_alias ~= nil and type(plug_inv_alias.callback) == "function", "expected <Plug>(oculus-investigation)")
+  opened_investigations = false
+  plug_inv_alias.callback()
+  assert(opened_investigations == true, "expected <Plug>(oculus-investigation) to open investigations")
+
+  -- Test user commands: OculusInvestigations and OculusInvestigation
+  vim.g.loaded_oculus = nil
+  vim.cmd("runtime plugin/oculus.lua")
+  local inv_cmd_called = nil
+  oculus.open_investigations = function(id) inv_cmd_called = id or true end
+  vim.cmd("OculusInvestigations")
+  assert(inv_cmd_called == true, "expected :OculusInvestigations to call open_investigations")
+  inv_cmd_called = nil
+  vim.cmd("OculusInvestigation test-id-456")
+  assert(inv_cmd_called == "test-id-456", "expected :OculusInvestigation with id")
+  oculus.open_investigations = orig_open_inv
+
   vim.notify = orig_notify
   oculus.config = saved_config
   gh.repository_info = original_repo_info

@@ -70,9 +70,15 @@ end, {
   desc = "Investigate a local committed Rust or C/C++ to Zig relationship",
 })
 
-vim.api.nvim_create_user_command("OculusInvestigations", function()
-  require("oculus").open_investigations()
-end, { desc = "Browse durable project change investigations" })
+vim.api.nvim_create_user_command("OculusInvestigations", function(opts)
+  local arg = opts.args and vim.trim(opts.args) or ""
+  require("oculus").open_investigations(arg ~= "" and arg or nil)
+end, { nargs = "?", desc = "Browse durable project change investigations" })
+
+vim.api.nvim_create_user_command("OculusInvestigation", function(opts)
+  local arg = opts.args and vim.trim(opts.args) or ""
+  require("oculus").open_investigations(arg ~= "" and arg or nil)
+end, { nargs = "?", desc = "Browse durable project change investigations (alias)" })
 
 vim.api.nvim_create_user_command("OculusWorkspace", function(opts)
   local workspace = require("oculus.workspace")
@@ -351,6 +357,18 @@ for lhs, mapping in pairs({
     desc = "Refresh project description text of saved projects",
     run = function()
       require("oculus").refresh_project_descriptions()
+    end,
+  },
+  ["<Plug>(oculus-investigations)"] = {
+    desc = "Browse durable project change investigations",
+    run = function()
+      require("oculus").open_investigations()
+    end,
+  },
+  ["<Plug>(oculus-investigation)"] = {
+    desc = "Browse durable project change investigations",
+    run = function()
+      require("oculus").open_investigations()
     end,
   },
 }) do

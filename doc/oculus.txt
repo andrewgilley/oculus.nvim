@@ -579,6 +579,9 @@ COMMANDS ~
   :OculusInvestigations                         Browse and reopen durable project
                                                 investigations
 
+  :OculusInvestigation                          Browse and reopen durable project
+                                                investigations (alias)
+
   :OculusNexus                                  Manage local deployment resources and
                                                 queued experiments
 
@@ -602,13 +605,15 @@ COMMANDS ~
   --------------------------------------------------------------------------------------
 To bind your own keys without going through `setup()`, map these:
 
-  Mapping                  Action
-  ------------------------ ---------------------------------
-  <Plug>(oculus-toggle)    Toggle the window
-  <Plug>(oculus-open)      Open the window
-  <Plug>(oculus-close)     Close the window
-  <Plug>(oculus-work)      Open the window on my work
-  <Plug>(oculus-inspect)   Inspect an issue, PR, or commit
+  Mapping                        Action
+  ------------------------------ ---------------------------------
+  <Plug>(oculus-toggle)          Toggle the window
+  <Plug>(oculus-open)            Open the window
+  <Plug>(oculus-close)           Close the window
+  <Plug>(oculus-work)            Open the window on my work
+  <Plug>(oculus-inspect)         Inspect an issue, PR, or commit
+  <Plug>(oculus-investigations)  Browse durable project change investigations
+  <Plug>(oculus-investigation)   Browse durable project change investigations (alias)
 >lua
     vim.keymap.set("n", "<leader>oo", "<Plug>(oculus-toggle)")
 <
@@ -769,7 +774,7 @@ a supported finding to prepare an executable composition with explicit sources
 and cases. `:OculusInvestigate rust` explicitly selects the existing Rust
 analysis; `gI` on local activity continues to use that default.
 
-`:OculusInvestigations` or `gP` opens the persistent project catalog in a float
+`:OculusInvestigations`, `g` or `gP` opens the persistent project catalog in a float
 covering the same region as the main Oculus window. Select an investigation and
 press `Enter`; restarting Neovim does not erase its findings or evidence. In a
 finding, `Enter` opens digest-verified local source, falling back to a
@@ -778,7 +783,7 @@ Individual source references in an evidence path are navigable too.
 
 Opening a source location hands the screen over: the float closes and the
 cursor lands on the location in an ordinary window, because the float would
-otherwise cover it. Reopen the catalog with `:OculusInvestigations` to follow
+otherwise cover it. Reopen the catalog with `:OculusInvestigations` or `g` to follow
 another finding.
 
   -----------------------------------------------------------------------

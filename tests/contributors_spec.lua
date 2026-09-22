@@ -138,7 +138,7 @@ local empty_lines = table.concat(
 
 assert(empty_lines:find("No users added.", 1, true))
 assert(empty_lines:find("a add account", 1, true))
-assert(vim.fn.maparg("g", "n", false, true).desc == nil)
+assert(vim.fn.maparg("g", "n", false, true).desc == "Browse durable change investigations")
 add_mapping.callback()
 vim.fn.maparg("<Tab>", "n", false, true).callback()
 vim.fn.maparg("<CR>", "n", false, true).callback() -- Confirm provider before entering text.

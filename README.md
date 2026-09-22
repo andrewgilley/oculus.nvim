@@ -476,6 +476,7 @@ Set `inspect_colorscheme = false` to turn this off.
 | `:OculusComposition [manifest.json\|plan-id]` | Inspect parts, connections, cases and archived composition attempts |
 | `:OculusInvestigate [rust\|c-zig]` | Investigate a committed local change against a consumer project |
 | `:OculusInvestigations` | Browse and reopen durable project investigations |
+| `:OculusInvestigation`  | Browse and reopen durable project investigations (alias) |
 | `:OculusNexus` | Manage local deployment resources and queued experiments |
 | `:OculusCapabilities discovery.json` | Discover API opportunities beside source |
 | `:OculusClose`                           | Close it                                               |
@@ -495,6 +496,8 @@ To bind your own keys without going through `setup()`, map these:
 | `<Plug>(oculus-close)`     | Close the window                    |
 | `<Plug>(oculus-work)`      | Open the window on [my work](#my-work) |
 | `<Plug>(oculus-inspect)`   | Inspect an issue, PR, or commit     |
+| `<Plug>(oculus-investigations)` | Browse durable project change investigations |
+| `<Plug>(oculus-investigation)`  | Browse durable project change investigations (alias) |
 
 ```lua
 vim.keymap.set("n", "<leader>oo", "<Plug>(oculus-toggle)")
@@ -626,7 +629,7 @@ obligations remain visible. Press `p` on a supported finding to prepare an
 `:OculusInvestigate rust` explicitly selects the existing Rust analysis; `gI`
 on local activity continues to use that default.
 
-`:OculusInvestigations` or `gP` opens the persistent project catalog in a float
+`:OculusInvestigations`, `g` or `gP` opens the persistent project catalog in a float
 covering the same region as the main Oculus window. Select an investigation and
 press `Enter`; restarting Neovim does not erase its findings or evidence. In a
 finding, `Enter` opens digest-verified local source, falling back to a read-only
@@ -635,7 +638,7 @@ references in an evidence path are navigable too.
 
 Opening a source location hands the screen over: the float closes and the cursor
 lands on the location in an ordinary window, because the float would otherwise
-cover it. Reopen the catalog with `:OculusInvestigations` to follow another
+cover it. Reopen the catalog with `:OculusInvestigations` or `g` to follow another
 finding.
 
 | Key | Action |
