@@ -1335,10 +1335,10 @@ colours when the colorscheme loads, and are left alone if you have set them.
   OculusMoveTarget              links to              The item being moved
                                 DiagnosticWarn
 
-  OculusInspectAdded            from DiffAdd          Added lines in inspected
+  OculusInspectAdded            #dcfce7 on #166534    Added lines in inspected
                                                       files
 
-  OculusInspectRemoved          from DiffDelete       Removed lines in
+  OculusInspectRemoved          #fee2e2 on #991b1b    Removed lines in
                                                       inspected files
 
   OculusOilChange               from WarningMsg       Changed entries in oil

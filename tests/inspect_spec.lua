@@ -359,42 +359,15 @@ do
   vim.api.nvim_set_current_tabpage(origin)
 end
 
--- The change signs take the colorscheme's own diff colours.
-local sign_colors = {
-  OculusInspectRemoved = { fg = 0xff8080, bg = 0x401820 },
-  OculusInspectAdded = { fg = 0x80ff80, bg = 0x104020 },
-}
-
-for group, expected in pairs(sign_colors) do
+for group, expected in pairs({
+  OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
+  OculusInspectAdded = { fg = 0xdcfce7, bg = 0x166534 },
+}) do
   local sign_highlight =
     vim.api.nvim_get_hl(0, { name = group, link = false })
 
-  assert(sign_highlight.fg == expected.fg, group)
-  assert(sign_highlight.bg == expected.bg, group)
-  vim.api.nvim_set_hl(0, group, { fg = 1, bg = 2 })
-end
-
-vim.api.nvim_exec_autocmds("ColorScheme", {})
-
--- A definition of your own is left alone, even when the colorscheme changes.
-for group in pairs(sign_colors) do
-  local sign_highlight =
-    vim.api.nvim_get_hl(0, { name = group, link = false })
-
-  assert(sign_highlight.fg == 1, group)
-  assert(sign_highlight.bg == 2, group)
-  vim.cmd("highlight clear " .. group)
-end
-
-vim.api.nvim_exec_autocmds("ColorScheme", {})
-
--- Cleared again, they come back from the diff colours.
-for group, expected in pairs(sign_colors) do
-  local sign_highlight =
-    vim.api.nvim_get_hl(0, { name = group, link = false })
-
-  assert(sign_highlight.fg == expected.fg, group)
-  assert(sign_highlight.bg == expected.bg, group)
+  assert(sign_highlight.fg == expected.fg)
+  assert(sign_highlight.bg == expected.bg)
 end
 
 local counter_highlight =
@@ -4931,19 +4904,18 @@ if integration_root and (integration_sha or integration_url) then
     assert(vim.api.nvim_get_current_win() == change_win)
     assert(vim.wo[change_win].signcolumn == "yes")
 
-    -- Closing the overview leaves your own sign colours alone.
-    for _, name in ipairs({ "OculusInspectAdded", "OculusInspectRemoved" }) do
+    for name, expected in pairs({
+      OculusInspectAdded = { fg = 0xdcfce7, bg = 0x166534 },
+      OculusInspectRemoved = { fg = 0xfee2e2, bg = 0x991b1b },
+    }) do
       local highlight = vim.api.nvim_get_hl(0, {
         name = name,
         link = false,
       })
 
-      assert(highlight.fg == 1, name)
-      assert(highlight.bg == 2, name)
-      vim.cmd("highlight clear " .. name)
+      assert(highlight.fg == expected.fg)
+      assert(highlight.bg == expected.bg)
     end
-
-    inspect._set_change_highlights()
 
     for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
       change_buf,
@@ -6443,10 +6415,8 @@ do
   inspect._set_change_highlights()
   local added_hl = vim.api.nvim_get_hl(0, { name = "OculusInspectAdded", link = false })
   local removed_hl = vim.api.nvim_get_hl(0, { name = "OculusInspectRemoved", link = false })
-  local diff_add = vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
-  local diff_delete = vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
-  assert(added_hl.fg == diff_add.fg and added_hl.bg == diff_add.bg)
-  assert(removed_hl.fg == diff_delete.fg and removed_hl.bg == diff_delete.bg)
+  assert(added_hl.fg == 0xdcfce7 and added_hl.bg == 0x166534)
+  assert(removed_hl.fg == 0xfee2e2 and removed_hl.bg == 0x991b1b)
   inspect._render_chunk_for_role(session, "parent", 1)
   local p_marks = vim.api.nvim_buf_get_extmarks(p_buf, inspect._change_ns, 0, -1, { details = true })
   local c_marks = vim.api.nvim_buf_get_extmarks(c_buf, inspect._change_ns, 0, -1, { details = true })

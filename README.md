@@ -1118,8 +1118,8 @@ colours when the colorscheme loads, and are left alone if you have set them.
 | `OculusActivityPreview`       | links to `DiagnosticOk`   | Activity previews             |
 | `OculusContributorSelected`   | links to `Title`          | The selected list entry       |
 | `OculusMoveTarget`            | links to `DiagnosticWarn` | The item being moved          |
-| `OculusInspectAdded`          | from `DiffAdd`            | Added lines in inspected files |
-| `OculusInspectRemoved`        | from `DiffDelete`         | Removed lines in inspected files |
+| `OculusInspectAdded`          | `#dcfce7` on `#166534`    | Added lines in inspected files |
+| `OculusInspectRemoved`        | `#fee2e2` on `#991b1b`    | Removed lines in inspected files |
 | `OculusOilChange`             | from `WarningMsg`         | Changed entries in oil listings |
 | `OculusInspectThread`         | links to `DiagnosticInfo` | Open review thread labels     |
 | `OculusInspectThreadResolved` | links to `Comment`        | Resolved review thread labels |

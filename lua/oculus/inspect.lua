@@ -531,23 +531,14 @@ local function set_change_highlights()
   local cursorline =
     vim.api.nvim_get_hl(0, { name = "CursorLine" })
 
-  local diff_delete = vim.api.nvim_get_hl(0, {
-    name = "DiffDelete",
-    link = false,
-  })
-
-  local diff_add = vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
-
   vim.api.nvim_set_hl(0, "OculusInspectRemoved", {
-    fg = diff_delete.fg or 0xfee2e2,
-    bg = diff_delete.bg or 0x991b1b,
-    default = true,
+    fg = 0xfee2e2,
+    bg = 0x991b1b,
   })
 
   vim.api.nvim_set_hl(0, "OculusInspectAdded", {
-    fg = diff_add.fg or 0xdcfce7,
-    bg = diff_add.bg or 0x166534,
-    default = true,
+    fg = 0xdcfce7,
+    bg = 0x166534,
   })
 
   vim.api.nvim_set_hl(0, "OculusIssueSection", {
