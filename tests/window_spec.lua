@@ -254,8 +254,8 @@ local initial_project_text = table.concat(
 )
 
 local initial_project_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
-assert(initial_project_lines[2] == "")
-assert(initial_project_lines[5]:find("PROJECTS", 1, true))
+assert(initial_project_lines[2]:find("PROJECTS", 1, true))
+assert(initial_project_lines[5] == "")
 assert(initial_project_lines[6]:find("example/project", 1, true))
 assert(initial_project_text:find("  PROJECTS", 1, true))
 assert(not initial_project_text:find("  ACTIVITY", 1, true))
@@ -2842,6 +2842,25 @@ do
   window.state.buf = nil
   window.state.view = nil
   window.state.preview_project = nil
+  -- Test keymaps: <C-r> and gR in window buffer
+  window.open(test_config)
+  local cr_map = vim.fn.maparg("<C-r>", "n", false, true)
+  assert(cr_map ~= nil and type(cr_map.callback) == "function", "expected <C-r> keymap on Oculus window")
+  local gr_map = vim.fn.maparg("gR", "n", false, true)
+  assert(gr_map ~= nil and type(gr_map.callback) == "function", "expected gR keymap on Oculus window")
+  requested_repo = nil
+
+  gh.repository_info = function(repo, opts, cb_fn)
+    requested_repo = repo
+    cb_fn({ description = "Keymap updated description for " .. repo })
+  end
+
+  cr_map.callback()
+  assert(requested_repo ~= nil, "expected <C-r> callback to trigger repository_info")
+  window.close()
+  -- Test Plug mapping
+  local plug_map = vim.fn.maparg("<Plug>(oculus-refresh-project-description)", "n", false, true)
+  assert(plug_map ~= nil and type(plug_map.callback) == "function", "expected <Plug>(oculus-refresh-project-description)")
   vim.notify = orig_notify
   oculus.config = saved_config
   gh.repository_info = original_repo_info

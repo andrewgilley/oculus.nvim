@@ -519,6 +519,7 @@ local function sidebar_sections_for_view(view)
           { "f", "Folder" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
+          { "<C-r>", "Refresh desc" },
           { "r", "Rename" },
           { "R", "Remove" },
           { "m", "Move" },
@@ -1828,10 +1829,18 @@ local function render_contributors()
 
   local community_view = M.state.community_view or "projects"
   local showing_users = community_view == "users"
+  local active_ws = require("oculus.workspace").get_active(M.state.opts)
+  local project_title_text
+
+  if active_ws and M.state.workspace_filter_enabled ~= false then
+    project_title_text = "  PROJECTS · " .. active_ws.name:upper()
+  else
+    project_title_text = "  PROJECTS"
+  end
 
   local lines = {
     "",
-    showing_users and "  ACTIVITY" or "",
+    showing_users and "  ACTIVITY" or project_title_text,
     "",
     "",
   }
@@ -1849,15 +1858,8 @@ local function render_contributors()
   local project_heading_line
 
   if not showing_users then
-    project_heading_line = #lines + 1
-    local active_ws = require("oculus.workspace").get_active(M.state.opts)
-
-    if active_ws and M.state.workspace_filter_enabled ~= false then
-      lines[#lines + 1] = "  PROJECTS · " .. active_ws.name:upper()
-    else
-      lines[#lines + 1] = "  PROJECTS"
-    end
-
+    lines[5] = ""
+    project_heading_line = 2
     local items = startup_project_items()
 
     if #items == 0 and active_ws and M.state.workspace_filter_enabled ~= false then
@@ -3246,6 +3248,7 @@ local function render_shortcuts()
         { "M", "Move project to folder" },
         { "a", "Add a GitHub or Codeberg project" },
         { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
+        { "<C-r>", "Refresh project descriptions from forge" },
         { "r", "Rename the selected project or folder" },
         { "R", "Remove the selected project or folder" },
         { "F", "Edit global activity filters" },
@@ -6919,6 +6922,44 @@ local function map_keys(buf)
       request_removal()
     end
   end, "Remove the selected Oculus group or item")
+
+  local function refresh_project_descriptions_action()
+    local target = target_on_cursor()
+    local repo = nil
+
+    if type(target) == "table" and target.kind == "project" and target.project then
+      repo = target.project.repository or target.project.name
+    end
+
+    M.refresh_project_descriptions(repo, function(projects, updated)
+      if repo then
+        if #projects > 0 then
+          vim.notify(string.format("Oculus: Refreshed project description for '%s'.", repo), vim.log.levels.INFO)
+        else
+          vim.notify(string.format("Oculus: Project '%s' not found.", repo), vim.log.levels.WARN)
+        end
+      else
+        local count = type(projects) == "table" and #projects or 0
+
+        if count == 0 then
+          vim.notify("Oculus: No saved projects to refresh.", vim.log.levels.INFO)
+        else
+          vim.notify(string.format("Oculus: Refreshed descriptions for %d saved project%s.", count, count == 1 and "" or "s"), vim.log.levels.INFO)
+        end
+      end
+    end)
+  end
+
+  map("<C-r>", refresh_project_descriptions_action, "Refresh project description of selected or saved projects")
+  map("gR", refresh_project_descriptions_action, "Refresh project description of selected or saved projects")
+
+  local refresh_nav_key = type(M.state.opts) == "table"
+      and type(M.state.opts.navigation) == "table"
+      and M.state.opts.navigation.refresh_descriptions
+
+  if refresh_nav_key and refresh_nav_key ~= "<C-r>" and refresh_nav_key ~= "gR" then
+    map(refresh_nav_key, refresh_project_descriptions_action, "Refresh project description of selected or saved projects")
+  end
 
   map("d", reset_filter_types_to_default, "Reset Oculus activity types")
   local inspect_key = nav.inspect

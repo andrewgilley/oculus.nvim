@@ -82,7 +82,14 @@ function M.render(state)
     header_title = "PROJECTS · " .. active_ws.name:upper()
   end
 
-  local lines = {'', (kind == 'projects' and '' or '  ACTIVITY'), '', '  ' .. header_title}
+  local lines
+
+  if kind == "projects" then
+    lines = { "", "  " .. header_title, "", "" }
+  else
+    lines = { "", "  ACTIVITY", "", "  " .. header_title }
+  end
+
   if state.opts._tracking and state.opts._tracking.error then lines[#lines + 1] = '  Tracking error: :OculusReloadTracking' end
   local visible_count = 0
 

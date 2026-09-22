@@ -345,6 +345,12 @@ for lhs, mapping in pairs({
       require("oculus").refresh_project_descriptions()
     end,
   },
+  ["<Plug>(oculus-refresh-project-description)"] = {
+    desc = "Refresh project description text of saved projects",
+    run = function()
+      require("oculus").refresh_project_descriptions()
+    end,
+  },
 }) do
   vim.keymap.set("n", lhs, mapping.run, { silent = true, desc = mapping.desc })
 end
