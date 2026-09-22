@@ -393,8 +393,20 @@ function M.setup(window, internal)
       project_lines[#project_lines + 1] = empty_line
     end
 
-    while #lines < window_height do
-      lines[#lines + 1] = ""
+    local separator_line = nil
+
+    if not internal.is_sidebar_visible() then
+      while #lines < window_height - 2 do
+        lines[#lines + 1] = ""
+      end
+
+      lines[#lines + 1] = "  " .. string.rep("─", math.max(1, left_width - 2))
+      separator_line = #lines
+      lines[#lines + 1] = internal.pad_cell("", left_width)
+    else
+      while #lines < window_height do
+        lines[#lines + 1] = ""
+      end
     end
 
     internal.set_lines(lines)

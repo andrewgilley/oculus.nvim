@@ -52,8 +52,8 @@ local rows = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
 local height = vim.api.nvim_win_get_height(window.state.win)
 assert(#rows == height, 'tracking list pads to full window height')
 
-assert(not rows[height]:match('^  p projects') and not rows[height - 1]:match('^  ─'),
-  'tracking footer is removed from the bottom row')
+assert(not rows[height]:match('^  p projects') and rows[height - 1]:match('^  ─'),
+  'tracking separator sits on the bottom row below a separator without footer commands')
 
 window._toggle_shortcuts()
 local shortcuts_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')
@@ -277,7 +277,6 @@ key('y')
 assert(window.state.footer_win == nil, 'footer prompt window closed after confirm')
 assert(#window.state.tracking_paths.projects == 0, 'returned to parent path')
 assert(#disk().projects == 1 and disk().projects[1].repository == 'stay/repo', 'empty folder removed from tracking file')
-
 -- Removing an empty folder from parent list via R shows prompt and removes it.
 write({version=1,projects={{name='EmptyParent',children={}},{repository='stay/repo',provider='github'}},users={}})
 assert(oculus.reload_tracking())
@@ -289,7 +288,6 @@ assert(window.state.footer_win and vim.api.nvim_win_is_valid(window.state.footer
 key('y')
 assert(window.state.footer_win == nil, 'footer prompt window closed after confirm')
 assert(#disk().projects == 1 and disk().projects[1].repository == 'stay/repo', 'empty folder removed from tracking file')
-
 window.close()
 -- Failed initial load retains saved lists in the UI, not an empty screen.
 oculus.setup({tracking_file=dir..'/missing.json',state_file=dir..'/state.json',projects={{repository='saved/repo',provider='github'}},contributors={}})

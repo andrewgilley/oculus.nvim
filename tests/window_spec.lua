@@ -2943,7 +2943,7 @@ do
   assert(not footer_text:find("a add", 1, true))
   assert(not footer_text:find("r remove", 1, true))
   assert(not footer_text:find("f folder", 1, true))
-  assert(not footer_text:find("─", 1, true), "expected no separator line when sidebar is hidden")
+  assert(footer_text:find("─", 1, true), "expected separator line when sidebar is hidden")
   window_mod._toggle_shortcuts()
   local sc_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local sc_text = table.concat(sc_lines, "\n")
@@ -3685,15 +3685,16 @@ do
 
   assert(not has_core, "expected Core Tools removed from directories")
   assert(alpha_proj.directory == nil, "expected Alpha moved to root when directory removed")
-
   -- Test 7b: Remove empty directory via R on empty directory
   window_mod.create_project_directory("Empty Tools")
   local empty_dir_line = nil
+
   for l, target in pairs(window_mod.state.line_targets) do
     if target.kind == "directory" and target.name == "Empty Tools" then
       empty_dir_line = l
     end
   end
+
   assert(empty_dir_line ~= nil, "expected Empty Tools in list")
   vim.api.nvim_win_set_cursor(window_mod.state.win, { empty_dir_line, 0 })
   r_map.callback()
@@ -3702,9 +3703,11 @@ do
   vim.fn.maparg("y", "n", false, true).callback()
   assert(window_mod.state.footer_win == nil)
   local has_empty_tools = false
+
   for _, d in ipairs(window_mod.state.opts.project_directories) do
     if d == "Empty Tools" then has_empty_tools = true end
   end
+
   assert(not has_empty_tools, "expected Empty Tools removed from directories")
   -- Test 8: Persistence across setup()
   local storage = require("oculus.storage")
