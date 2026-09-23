@@ -64,7 +64,7 @@ function M.request(config, arguments, callback)
         or (type(value.replay) == "table" and type(value.replay.record) == "table"
           and value.replay.record.schema_version))
 
-      local component_run = arguments[1] == "component-checksum-run" and version == 2
+      local component_run = arguments[1] == "component-checksum-run" and (version == 2 or version == 3)
 
       if version ~= 1 and not component_run then
         callback(nil, "Plexus returned invalid or unsupported JSON")

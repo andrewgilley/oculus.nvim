@@ -24,7 +24,7 @@ local plan = { schema_version = 1, kind = "component_reference", plan_id = "sha2
   properties = { instance_lifecycle = "fresh_per_case", retained_state = false, granted_host_imports = {} },
   cases = { { name = "text", value = "héllo", expected = { bytes = 6 } } }, blockers = {}, scope = "Selected typed cases only" }
 
-local run = { run_id = "sha256:run", record = { schema_version = 2, plan = plan.plan_id, profile = plan.profile,
+local run = { run_id = "sha256:run", record = { schema_version = 3, plan = plan.plan_id, profile = plan.profile,
   source = plan.source, component = plan.component, wit = plan.wit, export = plan.export, runtime = plan.runtime,
   fuel_per_case = 100000, memory_bytes = 65536, host_grants = {}, host_trace = {}, conclusion = "contradicted_by_case",
   cases = { { case = plan.cases[1], outcome = { status = "returned", value = { bytes = 5 } } } }, scope = plan.scope } }
@@ -60,6 +60,11 @@ state.load_run(run.run_id)
 respond(run)
 assert(not state.error, state.error)
 assert(rendered():find("contradicted_by_case", 1, true) and rendered():find('Observed: {"bytes":5}', 1, true))
+local legacy = vim.deepcopy(run)
+legacy.record.schema_version, legacy.record.plan = 2, nil
+state.load_run(legacy.run_id)
+respond(legacy)
+assert(not state.error and state.run.record.schema_version == 2, "Legacy direct component runs remain readable")
 state.compare(run.run_id, "sha256:other")
 respond(comparison)
 respond(run)
