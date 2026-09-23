@@ -577,6 +577,9 @@ COMMANDS ~
   :OculusComposition [manifest.json\|plan-id]   Inspect parts, connections, cases and
                                                 archived composition attempts
 
+  :OculusComponent [component.wat cases.json]   Review typed component experiments,
+                                                queue them, or browse archived evidence
+
   :OculusInvestigate [rust\|c-zig]              Investigate a committed local change
                                                 against a consumer project
 
@@ -956,29 +959,34 @@ after deleting the source repositories.
 
 COMPONENT EXPERIMENTS ~
 
-:OculusComponent [component.wat cases.json]
-    With two files, archive and review a typed Component Model experiment without
-    execution. With no arguments, browse archived plans, runs and comparisons.
-    Review source/WIT (Enter), selected export, runtime, typed cases, limits and
-    scope. plexus.component_export defaults to checksum; use scan or summarize
-    for those exports. plexus.backend and plexus.zug_command select the runtime.
+`:OculusComponent /path/to/component.wat /path/to/cases.json` archives a typed
+Component Model experiment without executing it. Review the source and WIT
+(`Enter` opens archived bytes), export, runtime identity, typed inputs and
+expected values, limits, execution properties and evidence scope. Set
+`plexus.backend` to `wasmtime` or `zug` (with `plexus.zug_command`); set
+`plexus.component_export` to `scan` or `summarize` for those exports, or leave
+it unset for `checksum`. The sibling
+`plexus/fixtures/fixed-length-lists/component/` contains all four supported
+profiles: fixed lists, variable lists, returned lists, and UTF-8 strings with
+record results.
 
-Press n to queue a reviewed plan, w in Nexus to execute, and o to reopen expected
-values, observations and conclusions. A successful job can contain contradicted
-case evidence. Archived source files may be removed after preparing a plan.
-Press h for history, Enter to reopen, r to reload, and d on a run to explicitly
-select another run ID for comparison. Runtime agreement is separate from both
-case conclusions and does not establish general Component Model conformance.
+Press `n` to queue the reviewed plan, `w` in Nexus to execute the queue, and
+`o` to reopen per-case expected values, observations, failures and scoped
+conclusions. Nexus can reopen queued plans before any evidence exists. Source
+files can disappear after preparation; execution and reopening use archived
+inputs.
 
-Reopen a persisted plan, run, or comparison through the Lua API:
-    require("oculus").open_component({ plan_id = id })
-    require("oculus").open_component({ run_id = id })
-    require("oculus").open_component({ comparison_id = id })
-
-The component fixtures in plexus/fixtures/fixed-length-lists/component/ cover
-fixed lists, variable lists, returned lists, and UTF-8 strings/record results.
-tests/component_integration_spec.lua queues all four profiles on both runtimes
-and verifies archived evidence and agreement on contradicted behavior.
+With no arguments, `:OculusComponent` lists archived plans, runs and
+comparisons. `Enter` reopens the selected record; `h` returns to history; `r`
+reloads. On a run, `d` asks for another explicitly selected run ID. Plexus
+checks compatibility and compares the runtimes. The view shows runtime
+agreement separately from both case conclusions: two runtimes agreeing on wrong
+answers remain contradicted. No comparison is inferred or launched
+automatically. Reopen a persisted record with
+`require("oculus").open_component({ plan_id = id })`, `{ run_id = id }`, or `{
+comparison_id = id }`. `tests/component_integration_spec.lua` exercises all
+four profiles through Nexus on both runtimes and checks archived reopening and
+agreement on contradicted behavior.
 
 
 EXECUTABLE COMPOSITIONS ~
