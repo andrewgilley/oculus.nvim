@@ -795,7 +795,7 @@ function M.catalog(entries, previews, width)
 
   if #entries == 0 then
     b.blank()
-    b.para("No investigations. Use :OculusInvestigate or gI on local activity.")
+    b.para("No investigations. Use :OculusInvestigate or g on local activity.")
   end
 
   return b
