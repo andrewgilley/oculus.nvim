@@ -1,5 +1,5 @@
 *oculus.txt*
-                          For Neovim >= 0.10    Last change: 2026 September 22
+                          For Neovim >= 0.10    Last change: 2026 September 23
 
 ==============================================================================
 Table of Contents                                   *oculus-table-of-contents*
