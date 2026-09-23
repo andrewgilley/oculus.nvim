@@ -233,7 +233,7 @@ The keys below are the defaults.
 | `w`                   | Open [my work](#my-work)                                   |
 | `s`                   | Open [saved items](#saved-items)                           |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
-| `L`                   | Read the selected project's [devlog](#devlogs)             |
+| `d`                   | Read the selected project's [devlog](#devlogs) (on the Users list, reset activity filters to defaults) |
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Rename (display name, or the username for users)           |
 | `R`                   | Remove the selected item or group                          |
@@ -255,7 +255,7 @@ The keys below are the defaults.
 | `<Tab>`         | Queue the item for inspection. Queued items open together      |
 | `b`             | Open the item in your browser                                  |
 | `u`             | Show the project's issues                                      |
-| `L`             | Read the project's [devlog](#devlogs)                          |
+| `d`             | Read the project's [devlog](#devlogs)                          |
 | `f`             | Issue filters (in the issues view) or newer activity           |
 | `m`             | Milestones (in the issues view)                                |
 | `s`             | Save the item under the cursor, or remove it from saved items  |
@@ -325,18 +325,20 @@ go back.
 
 **Devlogs**
 
-Press `L` on a project, or in its activity feed, to list the posts of its
+Press `d` on a project, or in its activity feed, to list the posts of its
 official devlog, blog or news feed, newest first, or run
 `:OculusDevlog {project}` with a tracked project's name or repository. The
-preview beside the list shows the selected post's date, author and opening
-lines. Press `<CR>` or `l` to read the post, `b` to open it in your browser,
-`r` to refresh and `h`/`←` to go back.
+preview beside the list shows the selected post's title, date and author.
+Press `<CR>` or `l` to read the post, `b` to open it in your browser, `r` to
+refresh and `h`/`←` to go back.
 
 A post opens in a reader over the Oculus window, rendered as text: headings,
 lists, quotes and code blocks keep their shape, and links are underlined. Every
 pull request, issue and commit the post mentions is highlighted, whether it is
 a GitHub or Codeberg link, `owner/repo#123`, or `#123` in the post's own
-project, and the footer counts them.
+project, and the footer counts them. After the post, a **Referenced activity**
+section lists each of them once, with its kind and the words the post linked;
+the entries are references too, so `<Tab>` reaches them and `i` inspects them.
 
 | Key                  | Action                                                   |
 | -------------------- | -------------------------------------------------------- |

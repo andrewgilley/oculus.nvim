@@ -561,21 +561,6 @@ local function feed_post(block, atom, feed_url)
     end
   end
 
-  -- The summary is what the post says, not its title and byline again.
-  local summary = strip_tags(excerpt or content or "")
-
-  if summary:sub(1, #title) == title then
-    summary = vim.trim(summary:sub(#title + 1))
-  end
-
-  if authors[1] then
-    local byline = "Author: " .. authors[1]
-
-    if summary:sub(1, #byline) == byline then
-      summary = vim.trim(summary:sub(#byline + 1))
-    end
-  end
-
   local id = collapse(xml_value(block, atom and "id" or "guid") or "")
 
   return {
@@ -585,7 +570,6 @@ local function feed_post(block, atom, feed_url)
     timestamp = timestamp,
     date = timestamp and timestamp:sub(1, 10) or nil,
     author = #authors > 0 and table.concat(authors, ", ") or nil,
-    summary = summary ~= "" and summary or nil,
     content = content,
     excerpt = excerpt,
   }

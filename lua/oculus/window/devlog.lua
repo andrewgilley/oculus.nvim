@@ -14,6 +14,12 @@ local max_text_width = 100
 local margin = "  "
 local header_lines = 4
 
+local kind_names = {
+  pull_request = "pull request",
+  issue = "issue",
+  commit = "commit",
+}
+
 local highlight_links = {
   OculusDevlogHeading = "Title",
   OculusDevlogStrong = "@markup.strong",
@@ -53,7 +59,7 @@ function M.setup(window, devlog_view, internal)
     return posts and posts[1] and 1 or nil
   end
 
-  function devlog_view.preview_items(post, width, height)
+  function devlog_view.preview_items(post, width)
     local items = { [2] = { "POST", "Title" } }
     local row = 4
 
@@ -79,16 +85,6 @@ function M.setup(window, devlog_view, internal)
 
     if post.url then
       items[row] = { devlog.display_url(post.url), "Comment" }
-      row = row + 1
-    end
-
-    row = row + 1
-
-    local summary_lines = math.max(1, (height or 20) - row - 1)
-
-    for _, line in ipairs(internal.wrapped_preview_text(post.summary, width, summary_lines)) do
-      items[row] = { line, "NormalFloat" }
-      row = row + 1
     end
 
     return items
@@ -110,11 +106,7 @@ function M.setup(window, devlog_view, internal)
     local left_width = internal.preview_left_width(window_width)
     local preview_width = math.max(15, window_width - left_width - 5)
 
-    internal.render_preview_panel(devlog_view.preview_items(
-      post,
-      preview_width,
-      vim.api.nvim_win_get_height(state.win)
-    ))
+    internal.render_preview_panel(devlog_view.preview_items(post, preview_width))
   end
 
   local function source_label(list)
@@ -781,6 +773,74 @@ function M.setup(window, devlog_view, internal)
       end
     end
 
+    -- After the post, each pull request, issue and commit it mentions, once.
+    -- An entry is a reference of its own: Tab stops on it and it inspects.
+    local section_heading
+    local section_labels = {}
+    current.section_start = nil
+
+    if current.doc and not current.loading then
+      local unique = {}
+      local seen = {}
+
+      for _, reference in ipairs(current.doc.references) do
+        if not seen[reference.label] then
+          seen[reference.label] = true
+          unique[#unique + 1] = reference
+        end
+      end
+
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = margin .. ("REFERENCED ACTIVITY (%d)"):format(#unique)
+      section_heading = #lines
+      lines[#lines + 1] = ""
+      current.section_start = #lines + 1
+
+      if #unique == 0 then
+        lines[#lines + 1] = margin .. "The post mentions no pull requests, issues or commits."
+        notice_lines[#notice_lines + 1] = #lines
+      end
+
+      for _, reference in ipairs(unique) do
+        local parts = {}
+
+        -- The words the post linked, when they say more than the address.
+        for _, segment in ipairs(reference.segments) do
+          local body_line = current.doc.lines[segment.line] or ""
+          parts[#parts + 1] = body_line:sub(segment.start + 1, segment.finish)
+        end
+
+        local context = table.concat(parts, " ")
+
+        -- A bare number, SHA or address only repeats the reference.
+        if not reference.url
+          or context:match("^https?://")
+          or context:match("^#?%d+$")
+          or context:match("^%x+$")
+        then
+          context = ""
+        end
+
+        local text = internal.trim_to_width(
+          margin .. reference.label .. "  " .. (kind_names[reference.kind] or "issue or pull request")
+            .. (context ~= "" and (" · " .. context) or ""),
+          width + #margin
+        )
+
+        lines[#lines + 1] = text
+
+        reference.segments[#reference.segments + 1] = {
+          line = #lines - current.body_start,
+          start = 0,
+          finish = #text - #margin,
+          listed = true,
+        }
+
+        section_labels[#section_labels + 1] = { #lines, #reference.label }
+      end
+    end
+
     -- Room for the last lines to scroll above the footer.
     lines[#lines + 1] = ""
     lines[#lines + 1] = ""
@@ -795,6 +855,15 @@ function M.setup(window, devlog_view, internal)
 
     for _, line in ipairs(notice_lines) do
       vim.api.nvim_buf_add_highlight(buf, reader_ns, notice_group, line - 1, #margin, -1)
+    end
+
+    if section_heading then
+      vim.api.nvim_buf_add_highlight(buf, reader_ns, "OculusSectionTitle", section_heading - 1, #margin, -1)
+    end
+
+    for _, entry in ipairs(section_labels) do
+      vim.api.nvim_buf_add_highlight(buf, reader_ns, "Comment", entry[1] - 1, #margin, -1)
+      vim.api.nvim_buf_add_highlight(buf, reader_ns, "OculusDevlogReference", entry[1] - 1, #margin, #margin + entry[2])
     end
 
     for _, item in ipairs(current.doc and current.doc.highlights or {}) do
@@ -963,15 +1032,17 @@ function M.setup(window, devlog_view, internal)
     local stops = {}
 
     for _, reference in ipairs(current.doc.references) do
-      for _, segment in ipairs(reference.segments) do
-        stops[#stops + 1] = {
-          line = current.body_start + segment.line,
-          col = #margin + segment.start,
-          reference = reference,
-        }
-
-        -- A link wrapped over several lines is one stop.
-        break
+      -- A link wrapped over several lines is one stop; its entry in the list
+      -- after the post is another.
+      for index, segment in ipairs(reference.segments) do
+        if index == 1 or segment.listed then
+          stops[#stops + 1] = {
+            line = current.body_start + segment.line,
+            col = #margin + segment.start,
+            reference = reference,
+            listed = segment.listed == true,
+          }
+        end
       end
     end
 
@@ -984,7 +1055,13 @@ function M.setup(window, devlog_view, internal)
     end)
 
     local under = reference_at_cursor(current)
+    local in_list = current.section_start ~= nil and cursor[1] >= current.section_start
     local target
+
+    -- The stop the cursor is already on, wherever on it the cursor sits.
+    local function current_stop(stop)
+      return stop.reference == under and stop.listed == in_list
+    end
 
     local function after(stop)
       return stop.line > cursor[1] or (stop.line == cursor[1] and stop.col > cursor[2])
@@ -992,7 +1069,7 @@ function M.setup(window, devlog_view, internal)
 
     if direction > 0 then
       for _, stop in ipairs(stops) do
-        if after(stop) and stop.reference ~= under then
+        if after(stop) and not current_stop(stop) then
           target = stop
           break
         end
@@ -1003,7 +1080,7 @@ function M.setup(window, devlog_view, internal)
       for index = #stops, 1, -1 do
         local stop = stops[index]
 
-        if not after(stop) and stop.reference ~= under
+        if not after(stop) and not current_stop(stop)
           and not (stop.line == cursor[1] and stop.col == cursor[2])
         then
           target = stop

@@ -555,7 +555,7 @@ local function sidebar_sections_for_view(view)
           { "W", "Workspace" },
           { "s", "Saved" },
           { "a", "Add" },
-          { "L", "Devlog" },
+          { "d", "Devlog" },
           { "f", "Folder" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
@@ -592,7 +592,7 @@ local function sidebar_sections_for_view(view)
       end
 
       if M.state.activity_project and not M.state.activity_milestone then
-        actions[#actions + 1] = { "L", "Devlog" }
+        actions[#actions + 1] = { "d", "Devlog" }
       end
     end
 
@@ -746,13 +746,13 @@ local function sidebar_sections_for_view(view)
           { "w", "My work" },
           { "s", "Saved" },
           { "a", "Add" },
+          { "d", "Devlog" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
           { "r", "Rename" },
           { "R", "Remove" },
           { "m", "Move" },
           { "F", "Filters" },
-          { "d", "Defaults" },
           { "o", "Profile" },
         },
       },
@@ -998,7 +998,7 @@ local function footer_commands_text()
     end
 
     if M.state.activity_project and not M.state.activity_milestone then
-      activity_commands = activity_commands .. "   L devlog"
+      activity_commands = activity_commands .. "   d devlog"
     end
   end
 
@@ -2525,14 +2525,21 @@ local function reset_filter_types_to_default()
     return
   end
 
-  if M.state.view ~= "contributors" then
+  if M.state.view ~= "contributors"
+    and not (M.state.view == "filters" and M.state.filter_scope and M.state.filter_scope.global)
+  then
     return
   end
 
   M.state.opts.activity_types = nil
   M.state.opts.user_activity_types = {}
   persist_filter_config()
-  render_contributors()
+
+  if M.state.view == "filters" then
+    render_filters(M.state.filter_scope)
+  else
+    render_contributors()
+  end
 end
 
 local issue_filter_options = {
@@ -3414,13 +3421,12 @@ local function render_shortcuts()
         { "m", "Move the selected project or folder" },
         { "M", "Move project to folder" },
         { "a", "Add a GitHub or Codeberg project" },
-        { "L", "Read the selected project's devlog" },
+        { "d", "Read the selected project's devlog" },
         { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
         { "<C-r>", "Refresh project descriptions from forge" },
         { "r", "Rename the selected project or folder" },
         { "R", "Remove the selected project or folder" },
         { "F", "Edit global activity filters" },
-        { "d", "Reset activity filters to defaults" },
         { "o", "Open the selected contributor profile" },
       })
 
@@ -3446,10 +3452,9 @@ local function render_shortcuts()
       { "m", "Move the selected project" },
       { "M", "Move project to folder" },
       { "f", "Create a project folder" },
-      { "L", "Read the selected project's devlog" },
+      { "d", "Read the selected project's devlog" },
       { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
       { "F", "Edit global activity filters" },
-      { "d", "Reset activity filters to defaults" },
       { "o", "Open the selected contributor profile" },
     })
 
@@ -3483,7 +3488,7 @@ local function render_shortcuts()
     end
 
     if ret and ret.activity_project and not ret.activity_milestone and not ret.activity_commit_page then
-      actions[#actions + 1] = { "L", "Read the project's devlog" }
+      actions[#actions + 1] = { "d", "Read the project's devlog" }
     end
 
     section("ACTIONS", actions)
@@ -7119,22 +7124,6 @@ local function map_keys(buf)
     end
   end, "Move selected Oculus project or user, or open project milestones")
 
-  map("L", function()
-    if M.state.view == "activity" then
-      if M.state.activity_project
-        and not M.state.activity_milestone
-        and not M.state.activity_commit_page
-      then
-        devlog_view.open(M.state.activity_project)
-      end
-    elseif M.state.view == "contributors" or M.state.view == "directory" then
-      local target = target_on_cursor()
-
-      if type(target) == "table" and target.kind == "project" then
-        devlog_view.open(target.project)
-      end
-    end
-  end, "Read the selected Oculus project's devlog")
 
   map("e", function()
     if M.state.view == "devlog" then
@@ -7283,7 +7272,28 @@ local function map_keys(buf)
     map(refresh_nav_key, refresh_project_descriptions_action, "Refresh project description of selected or saved projects")
   end
 
-  map("d", reset_filter_types_to_default, "Reset Oculus activity types")
+  -- d reads a project's devlog wherever a project is at hand, and resets
+  -- activity filters on the user list and in the filters view.
+  map("d", function()
+    if M.state.view == "activity" then
+      if M.state.activity_project
+        and not M.state.activity_milestone
+        and not M.state.activity_commit_page
+      then
+        devlog_view.open(M.state.activity_project)
+      end
+    elseif M.state.view == "directory"
+      or (M.state.view == "contributors" and M.state.community_view ~= "users")
+    then
+      local target = target_on_cursor()
+
+      if type(target) == "table" and target.kind == "project" then
+        devlog_view.open(target.project)
+      end
+    else
+      reset_filter_types_to_default()
+    end
+  end, "Read the Oculus project's devlog, or reset activity types")
   local inspect_key = nav.inspect
   local inspect_id_key = nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")

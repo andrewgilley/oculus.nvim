@@ -89,9 +89,7 @@ do
   assert(post.date == "2026-08-27")
   assert(post.author == "Robbie Lyman", tostring(post.author))
   assert(post.content and post.content:find("17719", 1, true))
-  assert(post.summary:sub(1, 5) == "Locks", post.summary)
   assert(feed.posts[2].content == nil, "a short description is an excerpt")
-  assert(feed.posts[2].summary == "Short.")
 
   local atom = assert(devlog.parse_feed([[<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom"><title>TB Blog</title>
@@ -319,7 +317,7 @@ local function footer_text(current)
 end
 
 assert(window.state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].kind == "project")
-press("L")
+press("d")
 
 wait_for("the devlog did not load", function()
   return state.view == "devlog" and state.project_devlog and not state.project_devlog.loading
@@ -331,6 +329,24 @@ assert(text:find("ziglang/zig · Zig Devlog", 1, true), text)
 assert(text:find("2026-08-27  Pointer Stability", 1, true))
 assert(text:find("2026-06-30  Older Post", 1, true))
 assert(state.selected_devlog_post == "https://ziglang.org/devlog/2026/#2026-08-27")
+
+-- The preview names the post without quoting it.
+local preview = {}
+
+for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.buf, -1, 0, -1, { details = true })) do
+  local chunks = mark[4].virt_text
+
+  if chunks and chunks[2] and chunks[2][1]:match("%S") then
+    preview[#preview + 1] = vim.trim(chunks[2][1])
+  end
+end
+
+assert(vim.deep_equal(preview, {
+  "POST",
+  "Pointer Stability",
+  "2026-08-27 · Robbie Lyman",
+  "ziglang.org/devlog/2026/#2026-08-27",
+}), vim.inspect(preview))
 
 press("k")
 assert(state.selected_devlog_post == "https://ziglang.org/devlog/2026/#2026-06-30")
@@ -389,13 +405,32 @@ assert(opened_urls[#opened_urls] == "https://codeberg.org/ziglang/zig/issues/305
 press("<S-Tab>")
 assert(footer_text(reader):find("ziglang/zig#31000", 1, true), footer_text(reader))
 
--- Tab wraps from the last reference to the first.
+-- After the post, each reference is listed once, and Tab goes on to the
+-- list and then wraps back to the first reference in the post.
+text = buffer_text(reader.buf)
+assert(text:find("\n  REFERENCED ACTIVITY %(5%)\n\n  ziglang/zig#17719  pull request · added to the hash maps in 2024\n"), text)
+assert(text:find("\n  ziglang/zig#30500  issue or pull request\n", 1, true), text)
+assert(text:find("\n  ziglang/zig@0123456789  commit\n", 1, true), text)
 press("<Tab>")
 press("<Tab>")
 press("<Tab>")
 assert(footer_text(reader):find("ziglang/zig@0123456789", 1, true), footer_text(reader))
 press("<Tab>")
 assert(footer_text(reader):find("ziglang/zig#17719", 1, true), footer_text(reader))
+assert(vim.api.nvim_win_get_cursor(reader.win)[1] == reader.section_start, "the list entry, not the post")
+press("<Tab>")
+press("<Tab>")
+assert(vim.api.nvim_get_current_line():find("^  ziglang/zig#30500"), vim.api.nvim_get_current_line())
+press("h")
+assert(inspected[#inspected].target == "ziglang/zig#30500", vim.inspect(inspected[#inspected]))
+press("<Tab>")
+press("<Tab>")
+assert(vim.api.nvim_get_current_line():find("^  ziglang/zig@0123456789"))
+press("<Tab>")
+assert(vim.api.nvim_win_get_cursor(reader.win)[1] < reader.section_start, "Tab wraps to the post")
+assert(footer_text(reader):find("ziglang/zig#17719", 1, true), footer_text(reader))
+press("<S-Tab>")
+assert(vim.api.nvim_get_current_line():find("^  ziglang/zig@0123456789"), "S-Tab wraps to the list")
 
 -- Closing Oculus, as inspecting does, remembers the post, and reopening
 -- returns to it.
