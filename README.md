@@ -383,6 +383,22 @@ with a link is a post, read from the page it links to. Mainline commits linked
 on `git.kernel.org` count as `torvalds/linux` commits, so they can be inspected
 from the post; `b` still opens them on kernel.org.
 
+To read new LWN articles with a subscription, export your logged-in LWN
+browser cookies to a private Netscape-format cookie file and set:
+
+```lua
+require("oculus").setup({
+  devlogs = { ["torvalds/linux"] = "https://lwn.net/Kernel/" },
+  lwn_cookie_file = "~/.config/oculus/lwn-cookies.txt",
+})
+```
+
+Then open `:OculusDevlog torvalds/linux`. Oculus passes that cookie file to
+`curl` only for HTTPS requests to `lwn.net` and `www.lwn.net`; it does not save
+the cookies in `state_file`. You can set `$LWN_COOKIE_FILE` instead of the
+option. Re-export the file when the browser session expires. Keep the file
+readable only by your user.
+
 A feed found on the homepage is remembered in `state_file`. When a project has
 none, or the wrong one is picked, press `e` in the devlog list to set the feed
 URL (an empty answer looks for it again). When a feed carries only an excerpt
@@ -610,6 +626,9 @@ require("oculus").setup({
   -- feed URLs, keyed by "@login" or "codeberg:@login"; false turns one off
   -- (see "Devlogs")
   devlogs = {},
+  -- Netscape-format browser cookies for subscriber articles on HTTPS lwn.net;
+  -- falls back to $LWN_COOKIE_FILE (see "Devlogs")
+  lwn_cookie_file = nil,
   -- Seconds to cache API responses (and devlog feeds and posts)
   cache_ttl = 300,
   request_timeout = 15,

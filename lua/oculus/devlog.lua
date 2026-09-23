@@ -186,6 +186,39 @@ local function host_of(url)
   return type(url) == "string" and url:match("^%a[%w+.-]*://([^/?#]+)") or nil
 end
 
+local function lwn_cookie_file(url, opts)
+  local host = host_of(url)
+
+  if not url:match("^https://") or (host ~= "lwn.net" and host ~= "www.lwn.net") then
+    return nil
+  end
+
+  local path = opts.lwn_cookie_file
+
+  if path == nil then
+    path = vim.env.LWN_COOKIE_FILE
+  end
+
+  if type(path) ~= "string" or path == "" then
+    return nil
+  end
+
+  return vim.fn.expand(path)
+end
+
+local function cache_key(url, opts)
+  local path = lwn_cookie_file(url, opts)
+
+  if not path then
+    return url
+  end
+
+  local stat = vim.uv.fs_stat(path)
+  local changed = stat and stat.mtime and (stat.mtime.sec .. "." .. stat.mtime.nsec) or "missing"
+
+  return url .. "\0" .. path .. "\0" .. changed
+end
+
 -- The feed's address without its scheme, e.g. "ziglang.org/devlog/index.xml".
 function M.display_url(url)
   return (tostring(url or ""):gsub("^%a[%w+.-]*://", ""):gsub("/$", ""))
@@ -211,8 +244,23 @@ local function request(url, opts, callback, timeout)
     user_agent,
     "-w",
     "\n%{http_code}",
-    url,
   }
+
+  local cookie_file = lwn_cookie_file(url, opts)
+
+  if cookie_file then
+    if vim.fn.filereadable(cookie_file) ~= 1 then
+      vim.schedule(function()
+        callback(nil, "Oculus cannot read the LWN cookie file: " .. cookie_file)
+      end)
+
+      return
+    end
+
+    vim.list_extend(command, { "--proto-redir", "=https", "--cookie", cookie_file })
+  end
+
+  command[#command + 1] = url
 
   vim.system(command, { text = true }, function(result)
     vim.schedule(function()
@@ -2143,7 +2191,8 @@ end
 -- Load and parse the feed at `url`: callback(feed, err, cached).
 function M.fetch_feed(url, opts, callback)
   opts = opts or {}
-  local cached = feed_cache[url]
+  local key = cache_key(url, opts)
+  local cached = feed_cache[key]
 
   if fresh(cached, opts) then
     vim.schedule(function()
@@ -2172,7 +2221,7 @@ function M.fetch_feed(url, opts, callback)
       return
     end
 
-    feed_cache[url] = { fetched_at = os.time(), feed = feed }
+    feed_cache[key] = { fetched_at = os.time(), feed = feed }
     callback(feed, nil, false)
   end)
 end
@@ -2556,7 +2605,8 @@ function M.post_html(post, opts, callback)
   end
 
   local page_url = post.url:gsub("#.*$", "")
-  local cached = page_cache[page_url]
+  local key = cache_key(page_url, opts)
+  local cached = page_cache[key]
 
   if fresh(cached, opts) then
     vim.schedule(function()
@@ -2573,7 +2623,7 @@ function M.post_html(post, opts, callback)
       return
     end
 
-    page_cache[page_url] = { fetched_at = os.time(), html = html }
+    page_cache[key] = { fetched_at = os.time(), html = html }
     callback(html, post.url, nil, false)
   end)
 end

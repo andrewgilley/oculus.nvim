@@ -43,6 +43,7 @@ local defaults = {
   -- turn one off. See "Devlogs".
   devlogs = {},
   devlog_feeds = {},
+  lwn_cookie_file = nil,
   persist_filters = true,
   persist_contributors = true,
   persist_projects = true,

@@ -22,7 +22,7 @@ local original_system = vim.system
 
 vim.system = function(command, _, on_exit)
   local url = command[#command]
-  requests[#requests + 1] = url
+  requests[#requests + 1] = { url = url, command = vim.deepcopy(command) }
   local body = routes[url]
 
   if type(body) == "table" then
@@ -36,6 +36,20 @@ vim.system = function(command, _, on_exit)
   })
 
   return {}
+end
+
+local function request_for(url)
+  for index = #requests, 1, -1 do
+    if requests[index].url == url then
+      return requests[index].command
+    end
+  end
+
+  return nil
+end
+
+local function has_argument(command, value)
+  return command and vim.list_contains(command, value)
 end
 
 -- Entities and URLs.
@@ -123,7 +137,6 @@ do
   assert(not text:find("Pointer Stability", 1, true), "the title is shown once, in the header")
   assert(text:find("• First #99999", 1, true), text)
   assert(text:find("\n    const x = 1; // #12345\n      indented", 1, true), text)
-
   local labels = {}
 
   for _, reference in ipairs(doc.references) do
@@ -149,12 +162,10 @@ do
 
   local first = pull.segments[1]
   assert(doc.lines[first.line]:sub(first.start + 1, first.finish):find("^added"))
-
   local bare = doc.references[3]
   assert(bare.target == "ziglang/zig#30500" and not bare.url)
   assert(bare.web_url == "https://codeberg.org/ziglang/zig/issues/30500")
   assert(doc.references[4].url == "https://codeberg.org/ziglang/zig/issues/42")
-
   local plain = false
 
   for _, link in ipairs(doc.links) do
@@ -218,6 +229,7 @@ do
 </div></body></html>]]
 
   routes["https://shell.org/changelog/"] = page
+
   routes["https://api.github.com/repos/owner/shell/releases?per_page=100"] = {
     { tag_name = "v0.3.1", published_at = "2026-08-21T02:37:12Z" },
     { tag_name = "v0.3.0", published_at = "2026-05-04T09:39:49Z" },
@@ -237,7 +249,6 @@ do
   assert(#feed.posts == 2, #feed.posts)
   assert(feed.posts[1].title == "v0.3.1" and feed.posts[1].url == "https://shell.org/changelog/#v0.3.1")
   assert(feed.posts[1].date == nil)
-
   local project = { repository = "owner/shell", provider = "github" }
   local dated = false
 
@@ -291,10 +302,8 @@ do
   assert(#flat.posts == 2, #flat.posts)
   assert(flat.posts[1].title == "[1.2.0] - 2026-01-05" and flat.posts[1].date == "2026-01-05")
   assert(flat.posts[2].date == "2025-03-03", tostring(flat.posts[2].date))
-
   local flat_doc = devlog.render(flat.posts[1].content, { width = 60, skip_title = flat.posts[1].title, whole = true })
   assert(vim.deep_equal(flat_doc.lines, { "Added", "", "A." }), vim.inspect(flat_doc.lines))
-
   assert(not devlog.parse_page("<body><h2>About</h2><p>Nothing dated.</p></body>", "https://x.org/"))
 
   -- An index of articles, as on LWN's kernel page: each row pairs a date with
@@ -326,6 +335,72 @@ do
   assert(article.references[1].url == "https://github.com/torvalds/linux/commit/252d36716326")
   assert(article.references[1].web_url:find("^https://git%.kernel%.org/pub/scm/"))
   assert(article.references[2].url == "https://github.com/torvalds/linux/commit/30abb3a67f4b2aa160feeb3c0b771f730cbcca67")
+end
+
+-- Subscriber cookies are sent only to HTTPS LWN pages, and switching to a
+-- cookie file does not reuse an unauthenticated article from the cache.
+do
+  local article_url = "https://lwn.net/Articles/1095553/"
+  local cookie_file = vim.fs.joinpath(workspace, "lwn-cookies.txt")
+  local post = { url = article_url }
+  routes[article_url] = "<p>Public preview.</p>"
+  local html
+
+  devlog.post_html(post, {}, function(body)
+    html = body
+  end)
+
+  wait_for("the public LWN article did not load", function()
+    return html ~= nil
+  end)
+
+  assert(html:find("Public preview", 1, true))
+  assert(not has_argument(request_for(article_url), "--cookie"))
+  assert(vim.fn.writefile({ "# Netscape HTTP Cookie File" }, cookie_file) == 0)
+  routes[article_url] = "<p>Subscriber article.</p>"
+  html = nil
+
+  devlog.post_html(post, { lwn_cookie_file = cookie_file }, function(body)
+    html = body
+  end)
+
+  wait_for("the subscriber LWN article did not load", function()
+    return html ~= nil
+  end)
+
+  assert(html:find("Subscriber article", 1, true), html)
+  assert(has_argument(request_for(article_url), "--cookie"))
+  assert(has_argument(request_for(article_url), cookie_file))
+  assert(has_argument(request_for(article_url), "=https"))
+  local other_url = "https://elsewhere.org/feed.xml"
+  routes[other_url] = "<rss><channel><title>Elsewhere</title></channel></rss>"
+  local feed
+
+  devlog.fetch_feed(other_url, { lwn_cookie_file = cookie_file }, function(result)
+    feed = result
+  end)
+
+  wait_for("the other feed did not load", function()
+    return feed ~= nil
+  end)
+
+  assert(not has_argument(request_for(other_url), "--cookie"))
+  local before = #requests
+  local error_message
+
+  devlog.post_html(post, {
+    force = true,
+    lwn_cookie_file = cookie_file .. ".missing",
+  }, function(_, _, err)
+    error_message = err
+  end)
+
+  wait_for("the missing cookie file was not reported", function()
+    return error_message ~= nil
+  end)
+
+  assert(error_message:find("cannot read the LWN cookie file", 1, true))
+  assert(#requests == before, "curl must not treat a missing cookie file as a cookie string")
 end
 
 -- Discovery prefers a blog or devlog feed a homepage advertises.
@@ -363,18 +438,15 @@ do
   assert(result.url == "https://s.org/feed" and result.source == "setup")
   result = resolve(project, { devlog_feeds = { ["github:owner/repo"] = { url = "https://saved.org/feed" } } })
   assert(result.url == "https://saved.org/feed" and result.source == "saved")
-
   routes["https://api.github.com/repos/owner/repo"] = { name = "repo", homepage = "https://repo.dev" }
   routes["https://repo.dev"] = "<html><head></head></html>"
   routes["https://repo.dev/blog/atom.xml"] = "<feed></feed>"
   routes["https://repo.dev/rss.xml"] = "<rss></rss>"
   result = resolve(project, { force = true })
   assert(result.url == "https://repo.dev/blog/atom.xml" and result.source == "discovered", vim.inspect(result))
-
   routes["https://api.github.com/repos/owner/other"] = { name = "other" }
   result = resolve({ repository = "owner/other", provider = "github" }, { force = true })
   assert(result.url == nil and result.err:find("homepage", 1, true), vim.inspect(result))
-
   -- A user's blog: named on the entry, set up by "@login", or found from the
   -- website on their profile, following a link to the blog when the website
   -- has no feed of its own, but only to its own site or a blogging service.
@@ -384,19 +456,16 @@ do
   result = resolve(writer, { devlogs = { ["@writer"] = "https://s.org/w.xml" } })
   assert(result.url == "https://s.org/w.xml" and result.source == "setup")
   assert(devlog.project_key(writer) == "github:@writer")
-
   routes["https://api.github.com/users/Writer"] = { login = "Writer", blog = "writer.dev" }
   routes["https://writer.dev"] = [[<a href="https://elsewhere.org/blog">Blog</a> <a href="/writing/">Writing</a>]]
   routes["https://writer.dev/writing/"] = [[<link rel="alternate" type="application/atom+xml" href="/writing/atom.xml">]]
   result = resolve(writer, { force = true })
   assert(result.url == "https://writer.dev/writing/atom.xml" and result.source == "discovered", vim.inspect(result))
-
   routes["https://api.github.com/users/Moved"] = { login = "Moved", blog = "https://moved.io" }
   routes["https://moved.io"] = [[<a href="https://github.blog">Blog</a> <a href="https://world.hey.com/moved">HEY World</a>]]
   routes["https://world.hey.com/moved"] = [[<link rel="alternate" type="application/atom+xml" href="https://world.hey.com/moved/feed.atom">]]
   result = resolve({ username = "Moved", provider = "github" }, { force = true })
   assert(result.url == "https://world.hey.com/moved/feed.atom", vim.inspect(result))
-
   routes["https://api.github.com/users/Quiet"] = { login = "Quiet" }
   result = resolve({ username = "Quiet", provider = "github" }, { force = true })
   assert(result.url == nil and result.err:find("website", 1, true), vim.inspect(result))
@@ -439,7 +508,6 @@ local zig = {
 
 routes["https://ziglang.org/devlog/index.xml"] = zig_feed
 routes["https://ziglang.org/devlog/2026/"] = "<html><body><div id=\"2026-06-30\"><p>The older post, from its page.</p></div></body></html>"
-
 vim.o.columns = 160
 vim.o.lines = 50
 
@@ -477,7 +545,6 @@ assert(text:find("ziglang/zig · Zig Devlog", 1, true), text)
 assert(text:find("2026-08-27  Pointer Stability", 1, true))
 assert(text:find("2026-06-30  Older Post", 1, true))
 assert(state.selected_devlog_post == "https://ziglang.org/devlog/2026/#2026-08-27")
-
 -- The preview names the post without quoting it.
 local preview = {}
 
@@ -500,7 +567,6 @@ press("k")
 assert(state.selected_devlog_post == "https://ziglang.org/devlog/2026/#2026-06-30")
 press("b")
 assert(opened_urls[#opened_urls] == "https://ziglang.org/devlog/2026/#2026-06-30")
-
 -- A post whose feed entry is an excerpt is read from its page.
 press("<CR>")
 local reader = state.devlog_reader
@@ -515,7 +581,6 @@ assert(window.state.win and vim.api.nvim_win_is_valid(window.state.win), "the re
 press("q")
 assert(state.devlog_reader == nil and not vim.api.nvim_win_is_valid(reader.win))
 assert(vim.api.nvim_get_current_win() == state.win)
-
 press("i")
 assert(state.selected_devlog_post == "https://ziglang.org/devlog/2026/#2026-08-27")
 press("l")
@@ -529,30 +594,24 @@ text = buffer_text(reader.buf)
 assert(text:find("  Pointer Stability\n  2026-08-27 · Robbie Lyman · ziglang/zig devlog", 1, true), text)
 assert(vim.api.nvim_win_is_valid(reader.footer_win))
 assert(footer_text(reader):find("5 activity references", 1, true), footer_text(reader))
-
 -- Tab walks the references; the footer names the one under the cursor.
 press("<Tab>")
 assert(footer_text(reader):find("ziglang/zig#17719", 1, true), footer_text(reader))
 local line = vim.api.nvim_get_current_line()
 assert(line:sub(vim.api.nvim_win_get_cursor(reader.win)[2] + 1):find("^added"), line)
-
 press("h")
 assert(inspected[1].url == "https://github.com/ziglang/zig/pull/17719")
 assert(footer_text(reader):find("inspecting ziglang/zig#17719", 1, true), footer_text(reader))
 reader.inspecting = nil
-
 press("<Tab>")
 press("<Tab>")
 press("<CR>")
 assert(inspected[2].target == "ziglang/zig#30500", vim.inspect(inspected[2]))
 assert(inspected[2].project == zig)
-
 press("b")
 assert(opened_urls[#opened_urls] == "https://codeberg.org/ziglang/zig/issues/30500")
-
 press("<S-Tab>")
 assert(footer_text(reader):find("ziglang/zig#31000", 1, true), footer_text(reader))
-
 -- After the post, each reference is listed once, and Tab goes on to the
 -- list and then wraps back to the first reference in the post.
 text = buffer_text(reader.buf)
@@ -579,14 +638,12 @@ assert(vim.api.nvim_win_get_cursor(reader.win)[1] < reader.section_start, "Tab w
 assert(footer_text(reader):find("ziglang/zig#17719", 1, true), footer_text(reader))
 press("<S-Tab>")
 assert(vim.api.nvim_get_current_line():find("^  ziglang/zig@0123456789"), "S-Tab wraps to the list")
-
 -- Closing Oculus, as inspecting does, remembers the post, and reopening
 -- returns to it.
 local cursor = vim.api.nvim_win_get_cursor(reader.win)
 window.close()
 assert(not vim.api.nvim_win_is_valid(reader.win) and not vim.api.nvim_win_is_valid(reader.footer_win))
 assert(state.devlog_resume and state.devlog_resume.post.title == "Pointer Stability")
-
 window.open(window.state.opts)
 reader = state.devlog_reader
 assert(reader and reader.post.title == "Pointer Stability")
@@ -596,7 +653,6 @@ wait_for("the resumed post did not load", function()
 end)
 
 assert(vim.deep_equal(vim.api.nvim_win_get_cursor(reader.win), cursor))
-
 -- Opening another view over a remembered post closes the post.
 window.close()
 assert(window.open_project("github:owner/nolog-yet", window.state.opts))
@@ -609,7 +665,6 @@ assert(state.view == "devlog" and state.devlog_reader == nil, "the replaced post
 press("l")
 reader = state.devlog_reader
 assert(reader and reader.post.title == "Pointer Stability")
-
 -- Back out of the reader, then out of the devlog to the project list.
 press("j")
 assert(state.view == "devlog" and state.devlog_reader == nil)
@@ -650,7 +705,6 @@ press("q")
 press("j")
 assert(state.view == "contributors" and state.community_view == "users", state.view)
 press("p")
-
 -- A project with no devlog to be found offers to set a feed URL, which is
 -- saved and used.
 routes["https://api.github.com/repos/owner/nolog"] = { name = "nolog" }
@@ -684,7 +738,6 @@ assert(buffer_text():find("First", 1, true))
 assert(window.state.opts.devlog_feeds["github:owner/nolog"].url == "https://nolog.dev/feed.xml")
 local saved = require("oculus.storage").load(state_file)
 assert(saved.devlog_feeds["github:owner/nolog"].url == "https://nolog.dev/feed.xml")
-
 window.close()
 vim.system = original_system
 print("devlog spec ok")
