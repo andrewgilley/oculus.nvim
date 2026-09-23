@@ -982,8 +982,17 @@ local function footer_commands_text()
       nav.left
     )
   elseif M.state.view == "devlog" then
-    return ("  %s/← back   ⏎ read   b browser   r refresh   e feed   ?: help"):format(
-      nav.left
+    local list = M.state.project_devlog
+
+    if list and list.selecting_source then
+      return ("  %s/← back   ⏎ open   b browser   ?: help"):format(nav.left)
+    end
+
+    local edit = list and list.sources and "" or "   e feed"
+
+    return ("  %s/← back   ⏎ read   b browser   r refresh%s   ?: help"):format(
+      nav.left,
+      edit
     )
   end
 
@@ -5285,6 +5294,11 @@ local function select_current()
     and target.kind == "devlog_post"
   then
     devlog_view.open_post(target.post)
+  elseif M.state.view == "devlog"
+    and type(target) == "table"
+    and target.kind == "devlog_source"
+  then
+    devlog_view.open_source(target.index)
   end
 end
 
@@ -6495,6 +6509,10 @@ end
 
 local function go_back()
   if M.state.view == "devlog" then
+    if devlog_view.back_to_sources() then
+      return
+    end
+
     local return_state = M.state.devlog_return
     M.state.devlog_return = nil
     M.state.request_id = M.state.request_id + 1
@@ -7137,7 +7155,6 @@ local function map_keys(buf)
     end
   end, "Move selected Oculus project or user, or open project milestones")
 
-
   map("e", function()
     if M.state.view == "devlog" then
       devlog_view.prompt_feed()
@@ -7312,6 +7329,7 @@ local function map_keys(buf)
       reset_filter_types_to_default()
     end
   end, "Read the Oculus project's devlog or user's blog, or reset activity types")
+
   local inspect_key = nav.inspect
   local inspect_id_key = nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")
@@ -7756,6 +7774,9 @@ function M.open(opts)
         if type(target) == "table" and target.kind == "devlog_post" then
           M.state.selected_devlog_post = target.post.id
           devlog_view.queue_preview(target.post)
+        elseif type(target) == "table" and target.kind == "devlog_source" then
+          M.state.project_devlog.selected_source = target.index
+          devlog_view.render()
         end
 
         update_contributor_selection()

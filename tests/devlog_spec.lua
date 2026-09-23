@@ -436,6 +436,17 @@ do
   assert(result.url == nil and result.err)
   result = resolve(project, { devlogs = { ["owner/repo"] = "https://s.org/feed" } })
   assert(result.url == "https://s.org/feed" and result.source == "setup")
+
+  assert(vim.deep_equal(devlog.sources(project, { devlogs = {
+    ["owner/repo"] = {
+      { name = "Release notes", url = "https://s.org/feed" },
+      { name = "Mailing list", url = "https://s.org/mail.atom" },
+    },
+  } }), {
+    { name = "Release notes", url = "https://s.org/feed" },
+    { name = "Mailing list", url = "https://s.org/mail.atom" },
+  }))
+
   result = resolve(project, { devlog_feeds = { ["github:owner/repo"] = { url = "https://saved.org/feed" } } })
   assert(result.url == "https://saved.org/feed" and result.source == "saved")
   routes["https://api.github.com/repos/owner/repo"] = { name = "repo", homepage = "https://repo.dev" }
@@ -738,6 +749,80 @@ assert(buffer_text():find("First", 1, true))
 assert(window.state.opts.devlog_feeds["github:owner/nolog"].url == "https://nolog.dev/feed.xml")
 local saved = require("oculus.storage").load(state_file)
 assert(saved.devlog_feeds["github:owner/nolog"].url == "https://nolog.dev/feed.xml")
+
+-- A project with two named devlogs opens a source list. Each source has its
+-- own posts and reader, and back returns through the source list.
+local linux = {
+  repository = "torvalds/linux",
+  provider = "github",
+  name = "linux",
+  devlog = {
+    { name = "LWN kernel coverage", url = "https://lwn.net/Kernel/" },
+    { name = "Linux kernel mailing list", url = "https://lore.kernel.org/lkml/new.atom" },
+  },
+}
+
+window.state.opts.projects[#window.state.opts.projects + 1] = linux
+
+routes["https://lwn.net/Kernel/"] = [[<html><head><title>Kernel coverage</title></head><body><main>
+<table><tr><td>September 22, 2026</td><td><a href="/Articles/1099999/">Kernel article</a></td></tr>
+<tr><td>September 21, 2026</td><td><a href="/Articles/1095552/">Earlier article</a></td></tr></table>
+</main></body></html>]]
+
+routes["https://lwn.net/Articles/1099999/"] = "<main><p>LWN article body.</p></main>"
+
+routes["https://lore.kernel.org/lkml/new.atom"] = [[<feed xmlns="http://www.w3.org/2005/Atom">
+<title>linux-kernel.vger.kernel.org archive mirror</title><entry><author><name>Kernel Writer</name></author>
+<title>LKML message</title><updated>2026-09-23T22:12:38Z</updated>
+<link href="https://lore.kernel.org/lkml/message@example.org/"/>
+<content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><pre>Hi &lt;reader&gt;,
+The kernel mailing list body.</pre></div></content></entry></feed>]]
+
+assert(window.open_devlog("torvalds/linux", window.state.opts))
+assert(state.project_devlog.selecting_source)
+assert(buffer_text():find("LWN kernel coverage", 1, true))
+assert(buffer_text():find("Linux kernel mailing list", 1, true))
+press("<CR>")
+
+wait_for("the LWN source did not load", function()
+  return not state.project_devlog.loading and not state.project_devlog.selecting_source
+end)
+
+assert(state.project_devlog.posts[1].title == "Kernel article")
+press("<CR>")
+reader = state.devlog_reader
+
+wait_for("the LWN article did not load", function()
+  return reader.doc ~= nil
+end)
+
+assert(buffer_text(reader.buf):find("LWN article body.", 1, true))
+press("q")
+press("j")
+assert(state.project_devlog.selecting_source)
+press("k")
+assert(state.project_devlog.selected_source == 2)
+press("<CR>")
+
+wait_for("the LKML source did not load", function()
+  return not state.project_devlog.loading and state.project_devlog.source_index == 2
+end)
+
+assert(state.project_devlog.posts[1].title == "LKML message")
+press("<CR>")
+reader = state.devlog_reader
+
+wait_for("the LKML message did not load", function()
+  return reader.doc ~= nil
+end)
+
+assert(buffer_text(reader.buf):find("Hi <reader>", 1, true))
+assert(buffer_text(reader.buf):find("The kernel mailing list body.", 1, true))
+press("q")
+press("j")
+assert(state.project_devlog.selecting_source)
+press("j")
+assert(state.view == "contributors")
 window.close()
 vim.system = original_system
 print("devlog spec ok")

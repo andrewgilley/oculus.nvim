@@ -333,6 +333,8 @@ the blog of someone you follow; it works the same way. The
 preview beside the list shows the selected post's title, date and author.
 Press `<CR>` or `l` to read the post, `b` to open it in your browser, `r` to
 refresh and `h`/`←` to go back.
+When a project has multiple devlog sources, select a source first; going back
+from its posts returns to the source list.
 
 A post opens in a reader over the Oculus window, rendered as text: headings,
 lists, quotes and code blocks keep their shape, and links are underlined. Every
@@ -356,10 +358,10 @@ as usual, and reopening Oculus returns to the post where you left it.
 Oculus finds a project's feed, or a user's, in this order:
 
 1. A `devlog` field on the project, or a `blog` (or `devlog`) field on the
-   user, in `setup()` or the [tracking file](#tracking-file) (`false` turns it
-   off)
+   user, in `setup()` or the [tracking file](#tracking-file): a URL or an ordered
+   list of `{ name, url }` sources (`false` turns it off)
 2. The [`devlogs`](#options) option, keyed by `owner/repo`,
-   `codeberg:owner/repo`, `@login` or `codeberg:@login`
+   `codeberg:owner/repo`, `@login` or `codeberg:@login`: a URL or the same list
 3. A URL set with `e` in the list of posts, or found earlier
 4. The project's homepage, or the website on the user's GitHub or Codeberg
    profile: the RSS or Atom feed it advertises, preferring a devlog, blog or
@@ -383,19 +385,32 @@ with a link is a post, read from the page it links to. Mainline commits linked
 on `git.kernel.org` count as `torvalds/linux` commits, so they can be inspected
 from the post; `b` still opens them on kernel.org.
 
-To read new LWN articles with a subscription, export your logged-in LWN
-browser cookies to a private Netscape-format cookie file and set:
+For Linux, an ordered source list can include both LWN coverage and the Linux
+kernel mailing list. In a tracking file, replace the project's single
+`devlog` URL with:
+
+```json
+"devlog": [
+  { "name": "LWN kernel coverage", "url": "https://lwn.net/Kernel/" },
+  { "name": "Linux kernel mailing list", "url": "https://lore.kernel.org/lkml/new.atom" }
+]
+```
+
+The same list can be set at `devlogs["torvalds/linux"]` in `setup()` when the
+project has no `devlog` field. To read new LWN articles with a subscription,
+export your logged-in LWN browser cookies to a private Netscape-format cookie
+file and set:
 
 ```lua
 require("oculus").setup({
-  devlogs = { ["torvalds/linux"] = "https://lwn.net/Kernel/" },
   lwn_cookie_file = "~/.config/oculus/lwn-cookies.txt",
 })
 ```
 
-Then open `:OculusDevlog torvalds/linux`. Oculus passes that cookie file to
-`curl` only for HTTPS requests to `lwn.net` and `www.lwn.net`; it does not save
-the cookies in `state_file`. You can set `$LWN_COOKIE_FILE` instead of the
+Then open `:OculusDevlog torvalds/linux`, select a source, and read its posts.
+Oculus passes the cookie file to `curl` only for HTTPS requests to `lwn.net`
+and `www.lwn.net`. It does not save the cookies in `state_file`. You can set
+`$LWN_COOKIE_FILE` instead of the
 option. Re-export the file when the browser session expires. Keep the file
 readable only by your user.
 
@@ -623,7 +638,8 @@ require("oculus").setup({
   project_activity_types = { "push", "merged_pull_request", "assigned_issue" },
   project_issue_filters = {},
   -- Devlog feed URLs, keyed by "owner/repo" or "codeberg:owner/repo", and blog
-  -- feed URLs, keyed by "@login" or "codeberg:@login"; false turns one off
+  -- feed URLs or lists of { name, url }, keyed by "@login" or
+  -- "codeberg:@login"; false turns one off
   -- (see "Devlogs")
   devlogs = {},
   -- Netscape-format browser cookies for subscriber articles on HTTPS lwn.net;

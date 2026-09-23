@@ -4,10 +4,8 @@
 local devlog = require("oculus.devlog")
 local navigation = require("oculus.navigation")
 local M = {}
-
 local reader_ns = vim.api.nvim_create_namespace("oculus_devlog_post")
 local current_ns = vim.api.nvim_create_namespace("oculus_devlog_reference")
-
 -- The reader's text column is capped so long lines stay readable in a wide
 -- window; the rest of the window is left blank.
 local max_text_width = 100
@@ -57,7 +55,6 @@ function M.setup(window, devlog_view, internal)
   end
 
   -- The list ------------------------------------------------------------------
-
   local function list_posts()
     local list = state.project_devlog
     return list and list.posts or {}
@@ -119,11 +116,14 @@ function M.setup(window, devlog_view, internal)
     local window_width = vim.api.nvim_win_get_width(state.win)
     local left_width = internal.preview_left_width(window_width)
     local preview_width = math.max(15, window_width - left_width - 5)
-
     internal.render_preview_panel(devlog_view.preview_items(post, preview_width))
   end
 
   local function source_label(list)
+    if list.source_entry then
+      return list.source_entry.name
+    end
+
     if list.feed and list.feed.title and list.feed.title ~= "" then
       return list.feed.title
     end
@@ -151,6 +151,76 @@ function M.setup(window, devlog_view, internal)
     local sidebar_visible = internal.is_sidebar_visible()
     local subtitle = { source_title(project) }
     local source = source_label(list)
+
+    if list.selecting_source then
+      local sources = list.sources or {}
+      local selected = math.min(list.selected_source or 1, #sources)
+
+      local lines = {
+        "",
+        "  " .. noun(project):upper() .. "S",
+        internal.trim_to_width("  " .. source_title(project) .. " · select a source", left_width - 1),
+        "",
+      }
+
+      local capacity = math.max(1, window_height - #lines - (sidebar_visible and 0 or 2))
+
+      local offset = math.min(
+        math.max(1, list.source_offset or 1),
+        math.max(1, #sources - capacity + 1)
+      )
+
+      if selected < offset then
+        offset = selected
+      elseif selected >= offset + capacity then
+        offset = selected - capacity + 1
+      end
+
+      list.selected_source = selected
+      list.source_offset = offset
+
+      for index = offset, math.min(#sources, offset + capacity - 1) do
+        local entry = sources[index]
+
+        lines[#lines + 1] = internal.pad_cell(
+          internal.trim_to_width("  " .. entry.name, left_width - 1),
+          left_width
+        )
+
+        state.line_targets[#lines] = { kind = "devlog_source", source = entry, index = index }
+      end
+
+      while #lines < window_height do
+        lines[#lines + 1] = ""
+      end
+
+      internal.set_lines(lines)
+      state.list_footer_line = nil
+      state.list_footer_text = nil
+      vim.wo[state.win].cursorline = false
+      internal.highlight(2, 2, -1, "Title")
+      internal.highlight(3, 2, -1, "Comment")
+
+      for line, target in pairs(state.line_targets) do
+        internal.highlight(line, 2, -1, "Identifier")
+
+        if target.index == selected then
+          vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+        end
+      end
+
+      local entry = sources[selected]
+
+      internal.render_preview_panel(entry and {
+        [2] = { "SOURCE", "Title" },
+        [4] = { entry.name, "Identifier" },
+        [5] = { devlog.display_url(entry.url), "Comment" },
+      } or {})
+
+      internal.update_contributor_selection()
+      internal.render_sidebar()
+      return
+    end
 
     if source then
       subtitle[#subtitle + 1] = source
@@ -268,6 +338,14 @@ function M.setup(window, devlog_view, internal)
   end
 
   function devlog_view.select_adjacent(direction)
+    local list = state.project_devlog
+
+    if list and list.selecting_source then
+      list.selected_source = ((list.selected_source - 1 + direction) % #list.sources) + 1
+      devlog_view.render()
+      return
+    end
+
     local posts = list_posts()
     local index = devlog_view.selected_index(posts)
 
@@ -296,13 +374,16 @@ function M.setup(window, devlog_view, internal)
     end
   end
 
-  function devlog_view.load(project, force)
+  function devlog_view.load(project, force, source_index)
     state.request_id = state.request_id + 1
     local request_id = state.request_id
     local key = devlog.project_key(project)
     local previous = state.project_devlog
+    local sources = devlog.sources(project, state.opts)
+    source_index = source_index or (previous and previous.key == key and previous.source_index)
+    local source_entry = sources and sources[source_index or (#sources == 1 and 1 or 0)] or nil
 
-    if not previous or previous.key ~= key then
+    if not previous or previous.key ~= key or previous.source_index ~= source_index then
       state.selected_devlog_post = nil
       state.devlog_offset = 1
       previous = nil
@@ -311,13 +392,26 @@ function M.setup(window, devlog_view, internal)
     state.project_devlog = {
       key = key,
       project = project,
+      sources = sources,
+      source_index = source_index,
+      selected_source = source_index or (previous and previous.selected_source) or 1,
+      selecting_source = sources and #sources > 1 and not source_index or false,
+      source_entry = source_entry,
       loading = true,
-      feed_url = previous and previous.feed_url,
+      feed_url = source_entry and source_entry.url or (previous and previous.feed_url),
       feed = previous and previous.feed,
       posts = previous and previous.posts,
     }
 
+    if state.project_devlog.selecting_source then
+      state.project_devlog.loading = false
+    end
+
     devlog_view.render()
+
+    if state.project_devlog.selecting_source then
+      return
+    end
 
     local opts = vim.tbl_extend("force", state.opts, { force = force or false })
 
@@ -330,7 +424,7 @@ function M.setup(window, devlog_view, internal)
     local function attempt(rediscover)
       opts.rediscover = rediscover
 
-      devlog.resolve_feed(project, opts, function(url, source, missing)
+      local function resolved(url, source, missing)
         if stale() then
           return
         end
@@ -395,10 +489,42 @@ function M.setup(window, devlog_view, internal)
             show()
           end
         end)
-      end)
+      end
+
+      if source_entry then
+        vim.schedule(function()
+          resolved(source_entry.url, "project")
+        end)
+      else
+        devlog.resolve_feed(project, opts, resolved)
+      end
     end
 
     attempt(false)
+  end
+
+  function devlog_view.open_source(index)
+    local list = state.project_devlog
+
+    if list and list.selecting_source and list.sources[index] then
+      devlog_view.load(list.project, false, index)
+    end
+  end
+
+  function devlog_view.back_to_sources()
+    local list = state.project_devlog
+
+    if not list or not list.sources or #list.sources < 2 or list.selecting_source then
+      return false
+    end
+
+    state.request_id = state.request_id + 1
+    list.selecting_source = true
+    list.selected_source = list.source_index
+    list.source_index = nil
+    list.source_entry = nil
+    devlog_view.render()
+    return true
   end
 
   -- Open the devlog of `project`, returning to the current view on back.
@@ -440,6 +566,11 @@ function M.setup(window, devlog_view, internal)
     }
 
     state.devlog_resume = nil
+
+    if devlog.sources(project, state.opts) then
+      state.project_devlog = nil
+    end
+
     devlog_view.load(project, false)
   end
 
@@ -448,7 +579,7 @@ function M.setup(window, devlog_view, internal)
   function devlog_view.prompt_feed()
     local list = state.project_devlog
 
-    if state.view ~= "devlog" or not list then
+    if state.view ~= "devlog" or not list or list.sources then
       return
     end
 
@@ -487,6 +618,8 @@ function M.setup(window, devlog_view, internal)
 
     if type(target) == "table" and target.kind == "devlog_post" then
       return target.post.url
+    elseif type(target) == "table" and target.kind == "devlog_source" then
+      return target.source.url
     end
 
     local list = state.project_devlog
@@ -494,7 +627,6 @@ function M.setup(window, devlog_view, internal)
   end
 
   -- The reader ----------------------------------------------------------------
-
   local function reader()
     local current = state.devlog_reader
 
@@ -507,6 +639,7 @@ function M.setup(window, devlog_view, internal)
 
   function devlog_view.owns(win)
     local current = state.devlog_reader
+
     return current ~= nil
       and win ~= nil
       and (current.opening or win == current.win or win == current.footer_win)
@@ -623,6 +756,7 @@ function M.setup(window, devlog_view, internal)
 
     local nav = navigation.resolve(state.opts)
     local config = footer_config(current)
+
     local commands = ("  %s inspect   ⇥ next reference   b browser   r refresh   %s/q back"):format(
       nav.inspect,
       nav.left
@@ -642,6 +776,7 @@ function M.setup(window, devlog_view, internal)
         status_group = "OculusDevlogReference"
       elseif current.doc then
         local count = reference_count(current)
+
         status = count == 1 and "1 activity reference"
           or (count == 0 and "no activity references" or (count .. " activity references"))
       end
@@ -751,7 +886,9 @@ function M.setup(window, devlog_view, internal)
       meta[#meta + 1] = post.author
     end
 
-    meta[#meta + 1] = source_title(current.project) .. " " .. noun(current.project)
+    meta[#meta + 1] = current.source_entry
+        and (source_title(current.project) .. " · " .. current.source_entry.name)
+      or (source_title(current.project) .. " " .. noun(current.project))
 
     local lines = {
       "",
@@ -876,7 +1013,6 @@ function M.setup(window, devlog_view, internal)
     -- Room for the last lines to scroll above the footer.
     lines[#lines + 1] = ""
     lines[#lines + 1] = ""
-
     local buf = current.buf
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -939,7 +1075,6 @@ function M.setup(window, devlog_view, internal)
       current.error = err
       local cursor = current.restore_cursor
       current.restore_cursor = nil
-
       draw(current, cursor or "body")
     end)
   end
@@ -1135,6 +1270,7 @@ function M.setup(window, devlog_view, internal)
     end
 
     local reference = reference_at_cursor(current)
+
     local url = reference and (reference.web_url or reference.url)
       or link_at_cursor(current)
       or current.post.url
@@ -1213,6 +1349,7 @@ function M.setup(window, devlog_view, internal)
     local current = {
       post = post,
       project = list.project,
+      source_entry = list.source_entry,
       restore_cursor = cursor,
       body_start = header_lines,
     }
@@ -1224,7 +1361,6 @@ function M.setup(window, devlog_view, internal)
     vim.bo[buf].filetype = "oculus_devlog"
     vim.bo[buf].modifiable = false
     current.buf = buf
-
     local config = window.full_window_config(state.opts)
     config.zindex = 55
     -- Entering the window fires before its id is known, and must not read as
@@ -1250,7 +1386,6 @@ function M.setup(window, devlog_view, internal)
     vim.wo[win].signcolumn = "no"
     vim.wo[win].winfixbuf = true
     map_reader_keys(current)
-
     local group = vim.api.nvim_create_augroup("OculusDevlogReader", { clear = true })
 
     vim.api.nvim_create_autocmd("CursorMoved", {

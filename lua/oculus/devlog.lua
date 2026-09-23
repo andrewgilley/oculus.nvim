@@ -3,7 +3,6 @@
 -- requests, issues and commits the post refers to so they can be inspected.
 local patch = require("oculus.inspect.patch")
 local M = {}
-
 local user_agent = "oculus.nvim (+https://github.com/andrewgilley/oculus.nvim)"
 local feed_cache = {}
 local page_cache = {}
@@ -215,7 +214,6 @@ local function cache_key(url, opts)
 
   local stat = vim.uv.fs_stat(path)
   local changed = stat and stat.mtime and (stat.mtime.sec .. "." .. stat.mtime.nsec) or "missing"
-
   return url .. "\0" .. path .. "\0" .. changed
 end
 
@@ -326,7 +324,6 @@ end
 M._attributes = attributes
 
 -- Feed parsing ---------------------------------------------------------------
-
 -- CDATA sections are taken as they are; everything else in an XML element is
 -- entity-escaped.
 local function xml_text(value)
@@ -598,6 +595,10 @@ local function feed_post(block, atom, feed_url)
       content = "<p>"
         .. content:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub("\n%s*\n", "</p><p>")
         .. "</p>"
+    elseif content and content_element.attrs.type == "xhtml" then
+      -- XHTML content is already markup. Keep its entities escaped until the
+      -- HTML renderer reads its text, so '<' in a message stays text.
+      content = content_element.content
     end
   end
 
@@ -677,7 +678,6 @@ function M.parse_feed(xml, feed_url)
 end
 
 -- HTML parsing ---------------------------------------------------------------
-
 local void_elements = {
   area = true,
   base = true,
@@ -1002,7 +1002,6 @@ function M.main_content(tree, url)
 end
 
 -- References ------------------------------------------------------------------
-
 local function forge_host(provider)
   return provider == "codeberg" and "codeberg.org" or "github.com"
 end
@@ -1159,7 +1158,6 @@ function M.text_references(text, project, projects)
 end
 
 -- Rendering -------------------------------------------------------------------
-
 local skipped_elements = {
   script = true,
   style = true,
@@ -1392,7 +1390,6 @@ end
 function Renderer:flush(ctx)
   local runs = self.runs
   self.runs = {}
-
   local pieces = {}
   local space = false
 
@@ -1453,7 +1450,6 @@ function Renderer:flush(ctx)
 
   self.seen_content = true
   self:blank_if_pending()
-
   -- Group pieces into words: pieces with no space between them wrap together.
   local words = {}
 
@@ -1640,6 +1636,7 @@ function Renderer:walk(node, ctx)
     if not self.seen_content then
       return
     end
+
     self.pending_blank = true
     self:blank_if_pending()
     local indent = ctx.indent or ""
@@ -1733,6 +1730,7 @@ function Renderer:walk(node, ctx)
 
   if tag == "blockquote" then
     self.pending_blank = true
+
     local quote_ctx = vim.tbl_extend("force", ctx, {
       indent = (ctx.indent or "") .. "│ ",
       prefix_group = "OculusDevlogQuote",
@@ -1848,7 +1846,6 @@ local function fresh(entry, opts)
 end
 
 -- Pages -----------------------------------------------------------------------
-
 -- What a changelog heading announces: a version ("v0.3.1", "[1.2.0] -
 -- 2026-01-01", "Release 2.0") or a date.
 local function release_heading(text)
@@ -2013,7 +2010,6 @@ function M.parse_page(html, page_url)
   end
 
   collect(content)
-
   -- Posts start at the heading level that names the most releases.
   local headings
 
@@ -2049,7 +2045,6 @@ function M.parse_page(html, page_url)
   end
 
   mark(content)
-
   -- Walk the page in order, handing each piece to the post it falls in. A
   -- piece that holds a post's heading is taken apart so the heading, and
   -- whatever sits beside it, go to the right post. Anything before the first
@@ -2187,7 +2182,6 @@ function M.date_releases(feed, project, opts, callback)
 end
 
 -- Fetching --------------------------------------------------------------------
-
 -- Load and parse the feed at `url`: callback(feed, err, cached).
 function M.fetch_feed(url, opts, callback)
   opts = opts or {}
@@ -2442,6 +2436,53 @@ local function linked_feed(html, page_url, opts, callback)
   try_feed(1)
 end
 
+-- An ordered set of named feeds can be supplied on a project/user or in the
+-- `devlogs` option. Single URL values continue through normal discovery.
+function M.sources(project, opts)
+  opts = opts or {}
+  local own = project.devlog
+
+  if own == nil and type(project.username) == "string" then
+    own = project.blog
+  end
+
+  local value = own
+
+  if value == nil and type(opts.devlogs) == "table" then
+    local key = M.project_key(project)
+
+    local name = type(project.username) == "string"
+        and ("@" .. project.username)
+      or tostring(project.repository or "")
+
+    value = opts.devlogs[key]
+      or opts.devlogs[name:lower()]
+      or opts.devlogs[name]
+  end
+
+  if type(value) ~= "table" or not vim.islist(value) then
+    return nil
+  end
+
+  local sources = {}
+
+  for _, entry in ipairs(value) do
+    local url = type(entry) == "string" and entry
+      or type(entry) == "table" and entry.url
+
+    local name = type(entry) == "table" and entry.name or nil
+
+    if type(url) == "string" and url:match("^https?://") then
+      sources[#sources + 1] = {
+        name = type(name) == "string" and name ~= "" and name or M.display_url(url),
+        url = url,
+      }
+    end
+  end
+
+  return #sources > 0 and sources or nil
+end
+
 -- Find a project's devlog feed, or a tracked user's blog (a table with
 -- `username` rather than `repository`). Returns through callback(url, source,
 -- err) where source is "project", "setup", "saved" or "discovered".
@@ -2554,6 +2595,7 @@ function M.resolve_feed(project, opts, callback)
       finish(nil, info_err and tostring(info_err)
         or (user and "the profile names no website to find a blog on"
           or "the project has no homepage to find a devlog on"))
+
       return
     end
 
