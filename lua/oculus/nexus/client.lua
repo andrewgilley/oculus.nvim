@@ -36,6 +36,21 @@ local function validate(command, value)
   elseif command == "resources" then
     assert(type(value.resources) == "table" and vim.islist(value.resources), "Missing resources list")
 
+    if value.scheduler ~= nil then
+      assert(type(value.scheduler) == "table", "Invalid scheduler")
+
+      for _, key in ipairs({ "max_concurrent_jobs", "max_memory_bytes", "max_disk_bytes",
+        "running_jobs", "reserved_memory_bytes", "reserved_disk_bytes" }) do
+        local count = value.scheduler[key]
+        local minimum = key:match("^max_") and 1 or 0
+
+        assert(type(count) == "number" and count >= minimum and count < math.huge and count == math.floor(count),
+          "Invalid scheduler " .. key)
+      end
+
+      assert(value.scheduler.max_concurrent_jobs <= 32, "Invalid scheduler slot limit")
+    end
+
     for _, resource in ipairs(value.resources) do
       assert(type(resource) == "table" and string(resource.id) and string(resource.backend), "Invalid resource")
       assert(type(resource.available) == "boolean" and optional_string(resource.reason), "Invalid resource availability")

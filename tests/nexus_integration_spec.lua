@@ -10,6 +10,7 @@ local nexus_dir, store = directory .. "/nexus", directory .. "/artifacts"
 
 local config = {
   schema_version = 1, plexus_command = { binary },
+  scheduler = { max_concurrent_jobs = 2, max_memory_bytes = 134217728, max_disk_bytes = 268435456 },
   resources = { { id = "local-wasmtime", backend = "wasmtime" },
     { id = "local-zug", backend = "zug", zug_command = worker } },
 }
@@ -54,6 +55,7 @@ key(jobs_view, "s")
 assert(vim.wait(15000, function() return jobs_view.error or jobs_view.resources end))
 assert(not jobs_view.error, jobs_view.error)
 assert(#jobs_view.resources == 2 and jobs_view.resources[1].available and jobs_view.resources[2].available)
+assert(jobs_view.scheduler.max_concurrent_jobs == 2 and jobs_view.scheduler.running_jobs == 0)
 key(jobs_view, "g")
 key(jobs_view, "w")
 
@@ -73,6 +75,17 @@ for _, job in ipairs(jobs_view.jobs) do
 end
 
 assert(zug_job)
+assert(jobs_view.jobs[1].run_id ~= jobs_view.jobs[2].run_id, "both backends must retain their own run")
+local started, finished = {}, {}
+
+for index, job in ipairs(jobs_view.jobs) do
+  for _, event in ipairs(job.events) do
+    if event.state == "running" and not started[index] then started[index] = event.at_ns end
+    if event.state == "succeeded" then finished[index] = event.at_ns end
+  end
+end
+
+assert(math.max(unpack(started)) < math.min(unpack(finished)), "real Wasmtime and Zug jobs must overlap")
 local rendered = table.concat(vim.api.nvim_buf_get_lines(jobs_view.buf, 0, -1, false), "\n")
 assert(rendered:find("Evidence conclusion: supported_for_cases", 1, true))
 

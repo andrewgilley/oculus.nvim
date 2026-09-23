@@ -63,6 +63,9 @@ retried.id, retried.retry_of = "job-2", "job-1"
 respond(calls[#calls], { schema_version = 1, job = retried })
 respond(calls[#calls], { schema_version = 1, jobs = { job("cancelled"), retried } })
 assert(state.last_job.retry_of == "job-1" and #state.jobs == 2)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("Queue: 1 queued · 0 running", 1, true))
+assert(rendered:find("Finished: 0 succeeded · 0 failed · 1 cancelled · 0 interrupted", 1, true))
 state.refresh("jobs")
 local old_read = calls[#calls]
 state.refresh("resources")
@@ -77,6 +80,33 @@ assert(state.mode == "resources" and #state.jobs == 2, "stale reads must not ove
 rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
 assert(rendered:find("unavailable", 1, true) and rendered:find("Worker missing", 1, true))
 assert(rendered:find("Guest linear memory bytes: 65536", 1, true))
+state.refresh("resources")
+
+local resource_response = {
+  schema_version = 1, resources = {}, total_execution_slots = 3,
+  scheduler = { max_concurrent_jobs = 3, max_memory_bytes = 131072, max_disk_bytes = 268435456,
+    running_jobs = 2, reserved_memory_bytes = 65536, reserved_disk_bytes = 4096 },
+}
+
+respond(calls[#calls], resource_response)
+rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+assert(rendered:find("Shared slots: 2/3", 1, true))
+assert(rendered:find("Reserved guest memory bytes: 65536/131072", 1, true))
+assert(rendered:find("Reserved declared disk bytes: 4096/268435456", 1, true))
+assert(rendered:find("host RSS is unmeasured", 1, true))
+
+for _, invalid in ipairs({ -1, 1.5, "2", false }) do
+  local response = vim.deepcopy(resource_response)
+  response.scheduler.running_jobs = invalid
+  state.refresh("resources")
+  respond(calls[#calls], response)
+  assert(state.error:find("invalid or unsupported JSON", 1, true))
+  assert(state.scheduler.running_jobs == 2, "invalid counts must not replace the last valid snapshot")
+end
+
+state.refresh("resources")
+respond(calls[#calls], { schema_version = 1, resources = {} })
+assert(state.scheduler == nil, "older Nexus responses must clear stale reservation counts")
 
 for _, invalid in ipairs({
   { schema_version = 2, jobs = {} }, { schema_version = 1, jobs = { job("invented") } },

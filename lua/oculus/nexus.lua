@@ -65,6 +65,20 @@ function M.open(config, plexus_config, submission)
     state.targets = {}
 
     if state.mode == "resources" then
+      if state.scheduler then
+        local scheduler = state.scheduler
+        lines[#lines + 1] = "  Shared slots: " .. text(scheduler.running_jobs) .. "/" .. text(scheduler.max_concurrent_jobs)
+
+        lines[#lines + 1] = "  Reserved guest memory bytes: " .. text(scheduler.reserved_memory_bytes)
+          .. "/" .. text(scheduler.max_memory_bytes)
+
+        lines[#lines + 1] = "  Reserved declared disk bytes: " .. text(scheduler.reserved_disk_bytes)
+          .. "/" .. text(scheduler.max_disk_bytes)
+
+        lines[#lines + 1] = "  Reservations cover guest memory and declared disk; host RSS is unmeasured."
+        lines[#lines + 1] = ""
+      end
+
       for _, resource in ipairs(state.resources or {}) do
         lines[#lines + 1] = "  " .. text(resource.id) .. " · " .. text(resource.backend)
           .. " · " .. (resource.available and "available" or "unavailable")
@@ -84,6 +98,15 @@ function M.open(config, plexus_config, submission)
 
       if #(state.resources or {}) == 0 then lines[#lines + 1] = "  No resources configured." end
     else
+      local counts = { queued = 0, running = 0, succeeded = 0, failed = 0, cancelled = 0, interrupted = 0 }
+      for _, job in ipairs(state.jobs) do counts[job.state] = counts[job.state] + 1 end
+      lines[#lines + 1] = string.format("  Queue: %d queued · %d running", counts.queued, counts.running)
+
+      lines[#lines + 1] = string.format("  Finished: %d succeeded · %d failed · %d cancelled · %d interrupted",
+        counts.succeeded, counts.failed, counts.cancelled, counts.interrupted)
+
+      lines[#lines + 1] = ""
+
       for _, job in ipairs(state.jobs) do
         local start = #lines + 1
         lines[#lines + 1] = "  " .. text(job.id) .. " · " .. text(job.state) .. " · " .. text(job.resource_id)
@@ -141,7 +164,14 @@ function M.open(config, plexus_config, submission)
       if state.closed or generation ~= state.generation then return end
       if err then failure(err); return end
       state.error = nil
-      if requested_mode == "resources" then state.resources = value.resources else state.jobs = value.jobs end
+
+      if requested_mode == "resources" then
+        state.resources = value.resources
+        state.scheduler = value.scheduler
+      else
+        state.jobs = value.jobs
+      end
+
       render()
     end)
   end
