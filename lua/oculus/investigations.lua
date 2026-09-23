@@ -106,126 +106,31 @@ end
 
 -- Both the catalog and details are projections of durable engine records.
 function M.open(config, nexus_config, id, submission)
-  if M.state and not M.state.closed and M.state.close() == false then return M.state end
+  if M.state and not M.state.closed then M.state.close() end
   config = vim.deepcopy(config or {})
   config.store = vim.fn.fnamemodify(config.store or vim.fn.stdpath("data") .. "/oculus/plexus", ":p")
   for name, link in pairs(highlights) do vim.api.nvim_set_hl(0, name, { link = link, default = true }) end
 
   local state = { config = config, generation = 0, targets = {}, detail_targets = {}, decisions = {}, previews = {},
-    origin_win = vim.api.nvim_get_current_win(), source_win = vim.api.nvim_get_current_win(), mode = "loading", message = "Ready" }
+    source_win = vim.api.nvim_get_current_win(), mode = "loading", message = "Ready" }
 
   M.state = state
-  state.frame_buf, state.buf, state.detail_buf, state.footer_buf, state.source_buf = scratch(), scratch(), scratch(), scratch(), scratch()
-  for _, buf in ipairs({ state.frame_buf, state.buf, state.detail_buf, state.footer_buf }) do vim.bo[buf].bufhidden = "hide" end
-  state.group = vim.api.nvim_create_augroup("OculusInvestigations" .. state.buf, { clear = true })
+  state.frame_buf, state.buf, state.detail_buf, state.footer_buf = scratch(), scratch(), scratch(), scratch()
+  state.frame_config, state.panes = layout(config)
+  state.frame_win = vim.api.nvim_open_win(state.frame_buf, false, state.frame_config)
+  state.win = vim.api.nvim_open_win(state.buf, true, pane_config(state.frame_win, state.panes.list, true, 51))
+  state.detail_win = vim.api.nvim_open_win(state.detail_buf, false, pane_config(state.frame_win, state.panes.detail, true, 51))
+  state.footer_win = vim.api.nvim_open_win(state.footer_buf, false, pane_config(state.frame_win, state.panes.footer, false, 52))
 
-  local function setup_pane(win)
+  for _, win in ipairs({ state.frame_win, state.win, state.detail_win, state.footer_win }) do
     vim.wo[win].wrap, vim.wo[win].number, vim.wo[win].relativenumber = false, false, false
     vim.wo[win].signcolumn, vim.wo[win].foldcolumn, vim.wo[win].list = "no", "0", false
     vim.wo[win].cursorline = win == state.win
   end
 
-  local function watch_window(win)
-    vim.api.nvim_create_autocmd("WinClosed", { group = state.group, pattern = tostring(win), once = true,
-      callback = function() if not state.switching_layout then state.close() end end })
-  end
-
-  local function open_float()
-    state.layout_mode = "float"
-    state.frame_config, state.panes = layout(config)
-    state.frame_win = vim.api.nvim_open_win(state.frame_buf, false, state.frame_config)
-    state.win = vim.api.nvim_open_win(state.buf, true, pane_config(state.frame_win, state.panes.list, true, 51))
-    state.detail_win = vim.api.nvim_open_win(state.detail_buf, false, pane_config(state.frame_win, state.panes.detail, true, 51))
-    state.footer_win = vim.api.nvim_open_win(state.footer_buf, false, pane_config(state.frame_win, state.panes.footer, false, 52))
-    for _, win in ipairs({ state.frame_win, state.win, state.detail_win, state.footer_win }) do setup_pane(win) end
-    for _, win in ipairs({ state.frame_win, state.win, state.detail_win }) do watch_window(win) end
-  end
-
-  local function workspace_widths()
-    local columns = vim.o.columns
-    local sidebar = math.max(18, math.min(52, math.floor(columns * 0.26)))
-    local detail = math.max(20, math.min(76, math.floor(columns * 0.39)))
-    return sidebar, detail
-  end
-
-  local function update_workspace_panes()
-    state.panes = { list = { width = vim.api.nvim_win_get_width(state.win) },
-      detail = { width = vim.api.nvim_win_get_width(state.detail_win) }, footer = { width = vim.o.columns } }
-  end
-
-  local function open_workspace()
-    if state.layout_mode == "workspace" then return end
-    state.switching_layout = true
-
-    for _, win in ipairs({ state.footer_win, state.detail_win, state.win, state.frame_win }) do
-      if win and vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
-    end
-
-    vim.cmd("tabnew")
-    state.workspace_tab = vim.api.nvim_get_current_tabpage()
-    state.source_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(state.source_win, state.source_buf)
-    set_lines(state.source_buf, { "Select a source location from the investigation sidebar." })
-    vim.cmd("leftabove vsplit")
-    state.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(state.win, state.buf)
-    vim.cmd("wincmd l")
-    vim.cmd("rightbelow vsplit")
-    state.detail_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(state.detail_win, state.detail_buf)
-    local list_width, detail_width = workspace_widths()
-    vim.api.nvim_win_set_width(state.win, list_width)
-    vim.api.nvim_win_set_width(state.detail_win, detail_width)
-    vim.wo[state.win].winfixwidth, vim.wo[state.detail_win].winfixwidth = true, true
-    vim.wo[state.win].winbar = " Findings · ⏎ source · ⇥ details · g catalog · q close "
-    vim.wo[state.detail_win].winbar = " Evidence and actions · ⇥ findings "
-    vim.wo[state.source_win].winbar = " Investigation source "
-    setup_pane(state.win)
-    setup_pane(state.detail_win)
-    update_workspace_panes()
-    state.layout_mode = "workspace"
-    state.switching_layout = false
-    watch_window(state.win)
-    watch_window(state.detail_win)
-    watch_window(state.source_win)
-    vim.api.nvim_set_current_win(state.win)
-  end
-
-  local function leave_workspace()
-    if state.layout_mode ~= "workspace" then return end
-    state.switching_layout = true
-
-    if state.workspace_tab and vim.api.nvim_tabpage_is_valid(state.workspace_tab) then
-      vim.api.nvim_set_current_tabpage(state.workspace_tab)
-
-      if #vim.api.nvim_list_tabpages() > 1 then
-        vim.cmd("tabclose")
-      else
-        for _, win in ipairs({ state.detail_win, state.win }) do
-          if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
-        end
-
-        if vim.api.nvim_win_is_valid(state.source_win) then
-          vim.api.nvim_win_set_buf(state.source_win, vim.api.nvim_create_buf(true, false))
-          vim.wo[state.source_win].winbar = ""
-        end
-      end
-    end
-
-    state.workspace_tab = nil
-    if not vim.api.nvim_win_is_valid(state.origin_win) then state.origin_win = vim.api.nvim_get_current_win() end
-    state.source_win = state.origin_win
-    state.layout_mode = nil
-    state.switching_layout = false
-  end
-
-  open_float()
-
   -- Every part of the float takes the Normal background of the code beneath
   -- it, as the main Oculus window does, rather than the float background.
   local function paint_background()
-    if state.layout_mode ~= "float" then return end
-
     for _, win in ipairs({ state.frame_win, state.win, state.detail_win, state.footer_win }) do
       if vim.api.nvim_win_is_valid(win) then require("oculus.window").apply_overview_highlights(win, state.source_win) end
     end
@@ -257,7 +162,7 @@ function M.open(config, nexus_config, id, submission)
   end
 
   local function paint_frame()
-    if state.closed or state.layout_mode ~= "float" or not vim.api.nvim_buf_is_valid(state.frame_buf) then return end
+    if state.closed or not vim.api.nvim_buf_is_valid(state.frame_buf) then return end
     local frame, panes = state.frame_config, state.panes
     local title = " INVESTIGATIONS"
     local message = render.fit(text(state.message), math.max(0, frame.width - vim.fn.strdisplaywidth(title) - 3))
@@ -357,10 +262,6 @@ function M.open(config, nexus_config, id, submission)
     if state.closed then return end
     state.message, state.message_level = message, level
     paint_frame()
-
-    if state.layout_mode == "workspace" and vim.api.nvim_win_is_valid(state.detail_win) then
-      vim.wo[state.detail_win].statusline = " " .. text(message):gsub("%%", "%%%%")
-    end
   end
 
   local function failure(message)
@@ -380,32 +281,19 @@ function M.open(config, nexus_config, id, submission)
     if state.pending then state.pending.cancel() end
     stop_prefetch()
     state.pending, state.busy = nil, false
-    state.source_request_key, state.source_focus = nil, nil
     status("Stopped waiting; previously stored investigations remain in the catalog.")
   end
 
   function state.close()
     if state.closed then return end
-
-    if state.layout_mode == "workspace" and vim.api.nvim_win_is_valid(state.source_win)
-      and vim.bo[vim.api.nvim_win_get_buf(state.source_win)].modified then
-      status("Save or discard source edits before closing the investigation.", "error")
-      return false
-    end
-
     state.cancel()
     state.closed = true
     pcall(vim.api.nvim_del_augroup_by_id, state.group)
-    leave_workspace()
 
     for _, win in ipairs({ state.footer_win, state.detail_win, state.win, state.frame_win }) do
-      if win and vim.api.nvim_win_is_valid(win) and not pcall(vim.api.nvim_win_close, win, true) then
+      if vim.api.nvim_win_is_valid(win) and not pcall(vim.api.nvim_win_close, win, true) then
         vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(true, false))
       end
-    end
-
-    for _, buf in ipairs({ state.frame_buf, state.buf, state.detail_buf, state.footer_buf, state.source_buf }) do
-      if vim.api.nvim_buf_is_valid(buf) then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
     end
   end
 
@@ -420,13 +308,7 @@ function M.open(config, nexus_config, id, submission)
     local handle = client.request(config, arguments, function(value, err)
       if state.closed or generation ~= state.generation then return end
       state.pending, state.busy = nil, false
-
-      if err then
-        if arguments[1] == "investigation-source" then state.source_request_key = nil end
-        failure(err)
-        return
-      end
-
+      if err then failure(err); return end
       local ok, reason = pcall(callback, value)
       if not ok then failure("Invalid engine response: " .. tostring(reason)) end
     end)
@@ -542,10 +424,6 @@ function M.open(config, nexus_config, id, submission)
       paint(state.detail_buf, page)
       state.detail_targets = page.targets
       if vim.api.nvim_win_is_valid(state.detail_win) then pcall(vim.api.nvim_win_set_cursor, state.detail_win, { 1, 0 }) end
-
-      if state.mode == "investigation" and state.layout_mode == "workspace" and target and target.source then
-        state.show_source(target.source, false)
-      end
     end
 
     paint_footer()
@@ -585,9 +463,8 @@ function M.open(config, nexus_config, id, submission)
     if not same then state.detail_target = nil end
     state.load_decisions(value.investigation_id, value)
     state.view, state.mode, state.raw = value, "investigation", false
-    open_workspace()
-    status("Ready")
     render_investigation(focus)
+    status("Ready")
   end
 
   local function render_catalog(focus)
@@ -633,13 +510,6 @@ function M.open(config, nexus_config, id, submission)
   end
 
   function state.catalog()
-    if state.layout_mode == "workspace" and vim.bo[vim.api.nvim_win_get_buf(state.source_win)].modified then
-      status("Save or discard source edits before returning to the catalog.", "error")
-      return
-    end
-
-    if state.source_request_key then state.cancel(); state.source_request_key = nil end
-
     local focus = state.mode == "catalog" and state.detail_key
       or (state.view and ("entry:" .. state.view.investigation_id)) or nil
 
@@ -651,18 +521,6 @@ function M.open(config, nexus_config, id, submission)
       end
 
       if state.mode ~= "catalog" then state.detail_target = nil end
-
-      if state.layout_mode == "workspace" and vim.bo[vim.api.nvim_win_get_buf(state.source_win)].modified then
-        status("Save or discard source edits before returning to the catalog.", "error")
-        return
-      end
-
-      if state.layout_mode == "workspace" then
-        leave_workspace()
-        open_float()
-        paint_background()
-      end
-
       state.catalog_value, state.mode, state.raw = value, "catalog", false
       render_catalog(focus)
       status("Ready")
@@ -672,12 +530,34 @@ function M.open(config, nexus_config, id, submission)
 
   function state.refresh()
     if state.mode == "investigation" then
-      if state.source_request_key then state.cancel(); state.source_request_key = nil end
       state.load(state.view.investigation_id)
     else
       state.previews = {}
       state.catalog()
     end
+  end
+
+  -- A source location always lands in an ordinary window: the investigations
+  -- float cannot be split and would cover whatever opened behind it.
+  local function source_window()
+    local function ordinary(win)
+      return type(win) == "number" and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).relative == ""
+    end
+
+    if ordinary(state.source_win) and not vim.bo[vim.api.nvim_win_get_buf(state.source_win)].modified then
+      return state.source_win
+    end
+
+    local anchor
+
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if ordinary(win) then anchor = win break end
+    end
+
+    if anchor then vim.api.nvim_set_current_win(anchor) end
+    vim.cmd(anchor and "leftabove vnew" or "noautocmd tabnew")
+    state.source_win = vim.api.nvim_get_current_win()
+    return state.source_win
   end
 
   -- The list keeps focus while the detail pane scrolls.
@@ -719,47 +599,35 @@ function M.open(config, nexus_config, id, submission)
     end
   end
 
-  function state.show_source(location, focus)
+  function state.navigate(target)
+    target = target or current_target()
+    if not target then status("Place the cursor on an investigation or finding."); return end
+    if state.mode == "catalog" then state.load(target.investigation_id); return end
+    if target.kind == "related" then state.focus_finding(target.finding.id); return end
+
+    if target.kind == "action" then
+      if target.action == "queue" then state.queue(target) else state.compose(target) end
+      return
+    end
+
+    local location = target.source
+    if location == nil then state.focus("detail"); return end
+
     if type(location) ~= "table" or type(location.path) ~= "string" or type(location.digest) ~= "string"
       or not location.digest:match("^sha256:%x+$") or type(location.line) ~= "number" or location.line < 1
       or location.line % 1 ~= 0 or type(location.column) ~= "number" or location.column < 1
       or location.column % 1 ~= 0 then failure("Invalid source location."); return end
 
-    local key = location.path .. "\0" .. location.digest .. "\0" .. text(location.artifact)
-    state.selected_source = key
-
-    if state.source_request_key == key then
-      state.source_focus = state.source_focus or focus
-      return
-    end
-
     local function display(buf, message)
-      if state.closed or state.layout_mode ~= "workspace" or state.selected_source ~= key then return end
-      local win = state.source_win
-      local previous = vim.api.nvim_win_get_buf(win)
-
-      if previous ~= buf and vim.bo[previous].modified then
-        status("Save or discard edits in the source buffer before switching locations.", "error")
-        return
-      end
-
+      local win = source_window()
       vim.api.nvim_win_set_buf(win, buf)
       local row = math.min(location.line, vim.api.nvim_buf_line_count(buf))
       local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
       vim.api.nvim_win_set_cursor(win, { row, math.min(location.column - 1, #line) })
-      vim.wo[win].winbar = " Source · " .. location.path:gsub("%%", "%%%%")
-      state.source_buffers = state.source_buffers or {}
-      state.source_buffers[key] = buf
-      if focus or state.source_focus then vim.api.nvim_set_current_win(win) end
-      state.source_focus = nil
-      status(message)
-    end
-
-    local cached = state.source_buffers and state.source_buffers[key]
-
-    if cached and vim.api.nvim_buf_is_valid(cached) then
-      display(cached, "Showing investigation source.")
-      return
+      -- Hand the screen to the source; the catalog reopens with the same command.
+      state.close()
+      vim.api.nvim_set_current_win(win)
+      vim.notify("Oculus investigations: " .. text(message), vim.log.levels.INFO)
     end
 
     local loaded = vim.fn.bufnr(location.path)
@@ -776,11 +644,8 @@ function M.open(config, nexus_config, id, submission)
     end
 
     if type(location.artifact) ~= "string" then failure("Archived source is unavailable."); return end
-    if state.busy then state.cancel() end
-    state.source_request_key, state.source_focus = key, focus
 
     request({ "investigation-source", location.artifact, config.store }, function(value)
-      state.source_request_key = nil
       assert(type(value.content) == "string" and "sha256:" .. vim.fn.sha256(value.content) == location.digest, "Archived source digest mismatch")
       local buf = vim.api.nvim_create_buf(false, true)
       vim.bo[buf].bufhidden, vim.bo[buf].swapfile = "wipe", false
@@ -790,20 +655,6 @@ function M.open(config, nexus_config, id, submission)
       vim.b[buf].oculus_archived_source = location.artifact
       display(buf, "Showing archived source; local file is missing, changed, or modified.")
     end)
-  end
-
-  function state.navigate(target)
-    target = target or current_target()
-    if not target then status("Place the cursor on an investigation or finding."); return end
-    if state.mode == "catalog" then state.load(target.investigation_id); return end
-    if target.kind == "related" then state.focus_finding(target.finding.id); return end
-
-    if target.kind == "action" then
-      if target.action == "queue" then state.queue(target) else state.compose(target) end
-      return
-    end
-
-    if target.source then state.show_source(target.source, true) else state.focus("detail") end
   end
 
   function state.queue(target)
@@ -839,7 +690,7 @@ function M.open(config, nexus_config, id, submission)
 
     local function open(manifest)
       if state.closed or type(manifest) ~= "string" or vim.trim(manifest) == "" then return end
-      if state.close() == false then return end
+      state.close()
       require("oculus.compositions").open(config, nexus_config, manifest, options)
     end
 
@@ -928,18 +779,7 @@ function M.open(config, nexus_config, id, submission)
   end
 
   function state.relayout()
-    if state.closed then return end
-
-    if state.layout_mode == "workspace" then
-      local list_width, detail_width = workspace_widths()
-      vim.api.nvim_win_set_width(state.win, list_width)
-      vim.api.nvim_win_set_width(state.detail_win, detail_width)
-      update_workspace_panes()
-      render_investigation(state.detail_key)
-      return
-    end
-
-    if not vim.api.nvim_win_is_valid(state.frame_win) then return end
+    if state.closed or not vim.api.nvim_win_is_valid(state.frame_win) then return end
     state.frame_config, state.panes = layout(config)
     vim.api.nvim_win_set_config(state.frame_win, state.frame_config)
     vim.api.nvim_win_set_config(state.win, pane_config(state.frame_win, state.panes.list, true, 51))
@@ -949,6 +789,12 @@ function M.open(config, nexus_config, id, submission)
 
     if state.mode == "investigation" then render_investigation(state.detail_key)
     elseif state.mode == "catalog" then render_catalog(state.detail_key) end
+  end
+
+  state.group = vim.api.nvim_create_augroup("OculusInvestigations" .. state.buf, { clear = true })
+
+  for _, win in ipairs({ state.frame_win, state.win, state.detail_win }) do
+    vim.api.nvim_create_autocmd("WinClosed", { group = state.group, pattern = tostring(win), once = true, callback = state.close })
   end
 
   vim.api.nvim_create_autocmd("BufWipeout", { group = state.group, buffer = state.buf, once = true, callback = state.close })

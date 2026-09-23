@@ -56,11 +56,11 @@ local finding = state.view.reports[1].opportunities[1]
 assert(finding and finding.status == "inferred")
 assert(finding.consumer_location.path == repository .. "/consumer/src/lib.rs")
 local rendered = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
-assert(vim.json.encode(finding):find("NewlyPossible", 1, true) and not vim.json.encode(finding):find("OnlyDirtyWork", 1, true), rendered)
+assert(rendered:find("NewlyPossible", 1, true) and not rendered:find("OnlyDirtyWork", 1, true))
 assert(rendered:find("NOT YET HANDLED", 1, true), "the enum finding is grouped by its effect")
 -- The view opens on the finding; its detail says what can and cannot test it.
 local detail = table.concat(vim.api.nvim_buf_get_lines(state.detail_buf, 0, -1, false), " "):gsub("%s+", " ")
-assert(detail:gsub("%s+", ""):find("NewlyPossible", 1, true) and not detail:find("OnlyDirtyWork", 1, true))
+assert(detail:find("NewlyPossible", 1, true) and not detail:find("OnlyDirtyWork", 1, true))
 assert(detail:find("no executable step for this finding yet", 1, true), detail)
 state.close()
 -- Recreate the module to discard its in-memory state before reopening the catalog.
@@ -80,9 +80,10 @@ for _, value in pairs(state.targets) do if value.kind == "finding" then target =
 assert(target)
 state.navigate(target)
 assert(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.source_win)) == finding.consumer_location.path)
-assert(not state.closed and state.layout_mode == "workspace", "source navigation keeps the sidebars open")
+assert(state.closed, "following a location hands the screen to the source")
 
--- Reopen the stored investigation to verify its source selection survives.
+-- Following a location closes the float, so reopen the stored investigation
+-- before navigating again.
 local function reopen()
   state = bridge.open(oculus.config.plexus, oculus.config.nexus, investigation_id)
   assert(vim.wait(10000, function() return not state.busy end))

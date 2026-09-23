@@ -655,8 +655,7 @@ consumer:
 
 Plexus assigns each finding its group (its `effect`); Oculus only arranges them.
 
-Selecting an investigation opens an editor tab with three ordinary windows:
-findings on the left, source code in the center, and details on the right. The list
+The view has two panes, side by side or stacked on a narrow screen. The list
 names the producer and consumer, the revisions, your intent and how many
 findings each group holds, then gives one line per finding. The glyphs at the
 end of a line are the finding's obligations in order: `✓` supported, `✗`
@@ -664,10 +663,7 @@ contradicted, `≠` conflicting evidence, `?` inconclusive, `○` open. Your
 decision on a finding (promoted, selected, deferred or dismissed) shows beside
 them.
 
-The source editor follows the selected finding's consumer location. It opens
-digest-verified local code when available, or a read-only archived snapshot when
-the local bytes differ. `Enter` on a source location moves focus to that code.
-The detail sidebar also follows the list's cursor. For a finding it shows:
+The detail pane follows the list's cursor. For a finding it shows:
 
 - **Relationship**: the provider's capability and the consumer's requirement,
   each with its revision, signature and source location.
@@ -697,11 +693,14 @@ previews the selected investigation, or says why an unsupported capture
 stopped. Set `plexus.catalog_preview = false` to list entries without loading
 their findings. Restarting Neovim does not erase findings or evidence.
 
-In the detail sidebar, `Enter` opens the location, run output or related
-finding under the cursor, or takes the step on that line. Source navigation
-keeps both sidebars visible. Use `Ctrl-w` window commands to move into or out
-of the source editor; `g` in either sidebar returns to the floating catalog.
-Closing the investigation tab returns to the editor you came from.
+`Enter` on a finding opens the consumer's source location, digest-verified
+locally, or a read-only archived snapshot when the local bytes changed or
+disappeared. In the detail pane, `Enter` opens the location, run output or
+related finding under the cursor, or takes the step on that line. Opening a
+source location hands the screen over: the float closes and the cursor lands on
+the location in an ordinary window, because the float would otherwise cover it.
+Reopen the catalog with `:OculusInvestigations` or `g` to follow another
+finding.
 
 | Key | Action |
 | --- | --- |
@@ -719,9 +718,8 @@ Closing the investigation tab returns to the editor you came from.
 | `c` / `Ctrl-c` | Stop waiting for the pending request |
 | `q` / `Esc` | Close the view |
 
-In the catalog, the footer lists only the keys that apply to the selected row.
-In the investigation, the sidebar headings and detail status line show navigation
-and loading state; `n` and `p` apply when Plexus offers those steps. A decision is your own
+The footer lists only the keys that apply to the selected row: `n` and `p`
+appear when Plexus offers that step for the finding. A decision is your own
 attributed record, kept beside the finding; it never changes Plexus's claims.
 
 A supported native Plexus fixture or compiler signature check requires a Nexus
