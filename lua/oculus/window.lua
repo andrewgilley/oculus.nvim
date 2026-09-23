@@ -547,7 +547,7 @@ local function sidebar_sections_for_view(view)
           { "R", "Remove" },
           { "m", "Move" },
           { "f", "Filters" },
-          { "d", "Defaults" },
+          { "d", "Blog" },
           { "o", "Profile" },
         } or {
           { "u", "Users" },
@@ -593,6 +593,8 @@ local function sidebar_sections_for_view(view)
 
       if M.state.activity_project and not M.state.activity_milestone then
         actions[#actions + 1] = { "d", "Devlog" }
+      elseif M.state.contributor and not M.state.activity_project then
+        actions[#actions + 1] = { "d", "Blog" }
       end
     end
 
@@ -999,6 +1001,8 @@ local function footer_commands_text()
 
     if M.state.activity_project and not M.state.activity_milestone then
       activity_commands = activity_commands .. "   d devlog"
+    elseif M.state.contributor and not M.state.activity_project then
+      activity_commands = activity_commands .. "   d blog"
     end
   end
 
@@ -3356,7 +3360,9 @@ local function render_shortcuts()
   elseif from_view == "milestones" then
     subtitle = "Commands for Milestones"
   elseif from_view == "devlog" then
-    subtitle = "Commands for the Devlog"
+    subtitle = (M.state.project_devlog and M.state.project_devlog.project.username)
+        and "Commands for the Blog"
+      or "Commands for the Devlog"
   elseif from_view == "work" then
     subtitle = "Commands for My Work"
   elseif from_view == "filters" then
@@ -3397,7 +3403,7 @@ local function render_shortcuts()
         { "R", "Remove the selected account" },
         { "f", "Edit filters for the selected user" },
         { "F", "Edit global activity filters" },
-        { "d", "Reset activity filters to defaults" },
+        { "d", "Read the selected user's blog" },
         { "o", "Open the selected contributor profile" },
       })
 
@@ -3489,6 +3495,8 @@ local function render_shortcuts()
 
     if ret and ret.activity_project and not ret.activity_milestone and not ret.activity_commit_page then
       actions[#actions + 1] = { "d", "Read the project's devlog" }
+    elseif ret and ret.activity_user and not ret.activity_commit_page then
+      actions[#actions + 1] = { "d", "Read the user's blog" }
     end
 
     section("ACTIONS", actions)
@@ -6492,7 +6500,11 @@ local function go_back()
     M.state.request_id = M.state.request_id + 1
     devlog_view.close_post(false)
 
-    if return_state and return_state.view == "activity" and return_state.project then
+    if return_state and return_state.view == "activity" and return_state.contributor
+      and not return_state.project
+    then
+      load_activity(return_state.contributor, false, return_state.page)
+    elseif return_state and return_state.view == "activity" and return_state.project then
       if not return_state.events then
         load_project_activity(return_state.project, false, return_state.page)
         return
@@ -6885,6 +6897,7 @@ local function toggle_shortcuts()
     activity_issue_page = M.state.activity_issue_page,
     activity_project = M.state.activity_project,
     activity_milestone = M.state.activity_milestone,
+    activity_user = M.state.contributor ~= nil and not M.state.activity_project,
     activity_saved = M.state.activity_saved,
     activity_work = M.state.activity_work,
     current_directory = M.state.current_directory,
@@ -7272,8 +7285,8 @@ local function map_keys(buf)
     map(refresh_nav_key, refresh_project_descriptions_action, "Refresh project description of selected or saved projects")
   end
 
-  -- d reads a project's devlog wherever a project is at hand, and resets
-  -- activity filters on the user list and in the filters view.
+  -- d reads a project's devlog, or a user's blog, wherever one is at hand,
+  -- and resets activity filters in the filters view.
   map("d", function()
     if M.state.view == "activity" then
       if M.state.activity_project
@@ -7281,19 +7294,24 @@ local function map_keys(buf)
         and not M.state.activity_commit_page
       then
         devlog_view.open(M.state.activity_project)
+      elseif M.state.contributor
+        and not M.state.activity_project
+        and not M.state.activity_commit_page
+      then
+        devlog_view.open(M.state.contributor)
       end
-    elseif M.state.view == "directory"
-      or (M.state.view == "contributors" and M.state.community_view ~= "users")
-    then
+    elseif M.state.view == "directory" or M.state.view == "contributors" then
       local target = target_on_cursor()
 
       if type(target) == "table" and target.kind == "project" then
         devlog_view.open(target.project)
+      elseif type(target) == "table" and type(target.username) == "string" then
+        devlog_view.open(target)
       end
     else
       reset_filter_types_to_default()
     end
-  end, "Read the Oculus project's devlog, or reset activity types")
+  end, "Read the Oculus project's devlog or user's blog, or reset activity types")
   local inspect_key = nav.inspect
   local inspect_id_key = nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")
@@ -7970,9 +7988,42 @@ function M.open_project(target, opts)
 end
 
 -- Open the devlog of a tracked project, named by its display name or
--- repository (optionally "codeberg:owner/repo"), or of any owner/repo.
+-- repository (optionally "codeberg:owner/repo"), or of any owner/repo; or the
+-- blog of a user, as "@login" or "@codeberg:login".
 function M.open_devlog(target, opts)
   local text = vim.trim(tostring(target or ""))
+  local handle = text:match("^@(.+)$")
+
+  if handle then
+    local user_provider, login = handle:match("^(%a+):(.+)$")
+    login = login or handle
+
+    if user_provider and user_provider ~= "github" and user_provider ~= "codeberg" then
+      return false, "provider must be github or codeberg"
+    end
+
+    if not login:match("^[%w_.%-]+$") then
+      return false, "expected @login or @codeberg:login"
+    end
+
+    local user
+
+    for _, candidate in ipairs((opts or M.state.opts or {}).contributors or {}) do
+      if type(candidate) == "table"
+        and type(candidate.username) == "string"
+        and candidate.username:lower() == login:lower()
+        and (not user_provider or (candidate.provider or "github") == user_provider)
+      then
+        user = candidate
+        break
+      end
+    end
+
+    M.open(opts)
+    devlog_view.open(user or { username = login, provider = user_provider or "github" })
+    return true
+  end
+
   local provider, repository = text:match("^(%a+):(.+)$")
   repository = repository or text
 

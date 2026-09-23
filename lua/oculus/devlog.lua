@@ -31,10 +31,16 @@ M.feed_paths = {
 -- so the post's own page is fetched for the full text.
 local full_description_length = 1000
 
-function M.project_key(project)
-  return (project.provider == "codeberg" and "codeberg" or "github")
-    .. ":"
-    .. tostring(project.repository or ""):lower()
+-- The key a project's devlog, or a user's blog, is saved under:
+-- "github:owner/repo" or "github:@login".
+function M.project_key(source)
+  local provider = source.provider == "codeberg" and "codeberg" or "github"
+
+  if type(source.username) == "string" then
+    return provider .. ":@" .. source.username:lower()
+  end
+
+  return provider .. ":" .. tostring(source.repository or ""):lower()
 end
 
 local function utf8_char(code)
@@ -2254,24 +2260,174 @@ local function probe_feed_paths(homepage, opts, callback)
   end
 end
 
--- Find a project's devlog feed. Returns through callback(url, source, err)
--- where source is "project", "setup", "saved" or "discovered".
+-- Words a homepage uses for the link to its blog.
+local blog_words = {
+  blog = true,
+  ["the blog"] = true,
+  devlog = true,
+  articles = true,
+  posts = true,
+  writing = true,
+  writings = true,
+  journal = true,
+  notes = true,
+  news = true,
+}
+
+-- Hosts of blogging services.
+local blog_hosts = {
+  "^world%.hey%.com$",
+  "substack%.com$",
+  "^medium%.com$",
+  "bearblog%.dev$",
+  "ghost%.io$",
+  "wordpress%.com$",
+  "blogspot%.com$",
+  "^micro%.blog$",
+  "^write%.as$",
+  "mataroa%.blog$",
+  "hashnode%.dev$",
+}
+
+local function blog_host(url)
+  local host = (host_of(url) or ""):lower()
+
+  if host:match("^blog%.") then
+    return true
+  end
+
+  for _, pattern in ipairs(blog_hosts) do
+    if host:match(pattern) then
+      return true
+    end
+  end
+
+  return false
+end
+
+-- "blog.example.org" and "example.org" are one site.
+local function site(url)
+  local host = (host_of(url) or ""):lower():gsub(":%d+$", "")
+  return host:match("([^.]+%.[^.]+)$") or host
+end
+
+-- The last resort on a homepage with no feed of its own: the feed it links to
+-- ("Subscribe", "/feed.xml"), else the feed of the blog it links to ("Blog",
+-- blog.example.org, a blogging service), else that blog page itself when it
+-- reads as an index of posts.
+local function linked_feed(html, page_url, opts, callback)
+  local feeds = {}
+  local blogs = {}
+  local seen = {}
+
+  for tag, inner in (html or ""):gmatch("<[aA](%s[^>]*)>(.-)</[aA]%s*>") do
+    local attrs = attributes(tag)
+    local href = attrs.href and M.resolve_url(attrs.href, page_url)
+
+    -- Only the homepage's own site, or a blogging service, can be its blog; a
+    -- homepage that redirects elsewhere links to someone else's.
+    if href
+      and href:match("^https?://")
+      and not seen[href]
+      and href ~= page_url
+      and (site(href) == site(page_url) or blog_host(href))
+    then
+      seen[href] = true
+      local text = strip_tags(inner):lower()
+      local path = href:gsub("[?#].*$", ""):lower()
+
+      if path:match("%.xml$")
+        or path:match("%.rss$")
+        or path:match("%.atom$")
+        or path:match("/feed/?$")
+        or path:match("/rss/?$")
+        or path:match("/atom/?$")
+        or text == "rss"
+        or text == "atom"
+        or text == "feed"
+        or text == "subscribe"
+      then
+        feeds[#feeds + 1] = href
+      elseif blog_words[text] or blog_host(href) then
+        blogs[#blogs + 1] = href
+      end
+    end
+  end
+
+  local function try_blog(index)
+    if index > math.min(#blogs, 3) then
+      callback(nil)
+      return
+    end
+
+    local blog = blogs[index]
+
+    request(blog, opts, function(body)
+      local advertised = body and M.advertised_feed(body, blog)
+
+      if advertised then
+        callback(advertised)
+      elseif body and (M.parse_feed(body, blog) or M.parse_page(body, blog)) then
+        callback(blog)
+      else
+        try_blog(index + 1)
+      end
+    end)
+  end
+
+  local function try_feed(index)
+    if index > math.min(#feeds, 3) then
+      try_blog(1)
+      return
+    end
+
+    request(feeds[index], opts, function(body)
+      if body and M.parse_feed(body, feeds[index]) then
+        callback(feeds[index])
+      else
+        try_feed(index + 1)
+      end
+    end)
+  end
+
+  try_feed(1)
+end
+
+-- Find a project's devlog feed, or a tracked user's blog (a table with
+-- `username` rather than `repository`). Returns through callback(url, source,
+-- err) where source is "project", "setup", "saved" or "discovered".
 function M.resolve_feed(project, opts, callback)
   opts = opts or {}
   local key = M.project_key(project)
-  local repository = tostring(project.repository or ""):lower()
+  local user = type(project.username) == "string"
+  local noun = user and "blog" or "devlog"
+  local names
 
-  if project.devlog == false then
+  if user then
+    names = { key, "@" .. project.username:lower(), "@" .. project.username }
+  else
+    local repository = tostring(project.repository or "")
+    names = { key, repository:lower(), repository }
+  end
+
+  -- A user entry may name its feed `blog` as well as `devlog`.
+  local own = project.devlog
+
+  if own == nil and user then
+    own = project.blog
+  end
+
+  if own == false then
     vim.schedule(function()
-      callback(nil, nil, "the devlog is turned off for this project")
+      callback(nil, nil, ("the %s is turned off here"):format(noun))
     end)
 
     return
   end
 
-  if type(project.devlog) == "string" and project.devlog ~= "" then
+  if type(own) == "string" and own ~= "" then
     vim.schedule(function()
-      callback(project.devlog, "project")
+      callback(own, "project")
     end)
 
     return
@@ -2280,7 +2436,7 @@ function M.resolve_feed(project, opts, callback)
   local configured
 
   if type(opts.devlogs) == "table" then
-    for _, name in ipairs({ key, repository, project.repository }) do
+    for _, name in ipairs(names) do
       if opts.devlogs[name] ~= nil then
         configured = opts.devlogs[name]
         break
@@ -2290,7 +2446,7 @@ function M.resolve_feed(project, opts, callback)
 
   if configured == false then
     vim.schedule(function()
-      callback(nil, nil, "the devlog is turned off for this project")
+      callback(nil, nil, ("the %s is turned off here"):format(noun))
     end)
 
     return
@@ -2333,11 +2489,22 @@ function M.resolve_feed(project, opts, callback)
     callback(url, url and "discovered" or nil, err)
   end
 
-  provider.repository_info(project.repository, opts, function(info, info_err)
+  -- A project's homepage, or the website on a user's profile.
+  local lookup = user
+      and function(done)
+        provider.user_info(project.username, opts, done)
+      end
+    or function(done)
+      provider.repository_info(project.repository, opts, done)
+    end
+
+  lookup(function(info, info_err)
     local homepage = info and info.homepage
 
     if type(homepage) ~= "string" or homepage == "" then
-      finish(nil, info_err and tostring(info_err) or "the project has no homepage to find a devlog on")
+      finish(nil, info_err and tostring(info_err)
+        or (user and "the profile names no website to find a blog on"
+          or "the project has no homepage to find a devlog on"))
       return
     end
 
@@ -2354,7 +2521,14 @@ function M.resolve_feed(project, opts, callback)
       end
 
       probe_feed_paths(homepage, opts, function(url)
-        finish(url, not url and ("no devlog feed found on " .. M.display_url(homepage)) or nil)
+        if url then
+          finish(url)
+          return
+        end
+
+        linked_feed(html, homepage, opts, function(linked)
+          finish(linked, not linked and (("no %s feed found on %s"):format(noun, M.display_url(homepage))) or nil)
+        end)
       end)
     end)
   end)

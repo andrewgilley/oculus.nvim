@@ -51,10 +51,18 @@ vim.api.nvim_create_user_command("OculusDevlog", function(opts)
   end
 end, {
   nargs = 1,
-  desc = "Open Oculus on a project's devlog",
+  desc = "Open Oculus on a project's devlog, or a user's blog (@login)",
   complete = function(arglead)
     local matches = {}
     local seen = {}
+
+    for _, user in ipairs((require("oculus").config or {}).contributors or {}) do
+      local handle = type(user.username) == "string" and ("@" .. user.username) or nil
+
+      if handle and handle:lower():sub(1, #arglead) == arglead:lower() then
+        matches[#matches + 1] = handle
+      end
+    end
 
     for _, p in ipairs((require("oculus").config or {}).projects or {}) do
       for _, candidate in ipairs({ p.name, p.repository }) do

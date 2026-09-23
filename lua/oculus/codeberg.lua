@@ -1716,6 +1716,27 @@ function M.repository_info(repository, opts, callback)
   end)
 end
 
+-- A user's public profile: { login, name, homepage }.
+function M.user_info(username, opts, callback)
+  local url = ("%s/api/v1/users/%s"):format(base_url, vim.uri_encode(username))
+
+  request_json(url, opts or {}, function(payload, err)
+    if err or type(payload) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    callback({
+      login = type(payload.login) == "string" and payload.login or username,
+      name = type(payload.full_name) == "string" and payload.full_name ~= "" and payload.full_name or nil,
+      homepage = type(payload.website) == "string"
+          and payload.website ~= ""
+          and payload.website
+        or nil,
+    })
+  end)
+end
+
 -- The repository's releases, newest first: { tag, name, published_at, html_url }.
 function M.repository_releases(repository, opts, callback)
   local url = ("%s/api/v1/repos/%s/releases?limit=50"):format(base_url, repository)

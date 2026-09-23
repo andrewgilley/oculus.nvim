@@ -52,8 +52,8 @@ Offline help is in `:h oculus`, generated from this README.
   requests, and assigned issues, and per-user feeds of any public event type.
   Filters persist between sessions.
 
-- **Read project devlogs.** List a project's official devlog, blog or news
-  posts, read one in the window, and inspect any pull request, issue or commit
+- **Read project devlogs and people's blogs.** List a project's official
+  devlog, blog or news posts, or the blog of someone you follow, read one in the window, and inspect any pull request, issue or commit
   it mentions straight from the post.
 
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
@@ -233,7 +233,7 @@ The keys below are the defaults.
 | `w`                   | Open [my work](#my-work)                                   |
 | `s`                   | Open [saved items](#saved-items)                           |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
-| `d`                   | Read the selected project's [devlog](#devlogs) (on the Users list, reset activity filters to defaults) |
+| `d`                   | Read the selected project's [devlog](#devlogs), or user's blog |
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Rename (display name, or the username for users)           |
 | `R`                   | Remove the selected item or group                          |
@@ -255,7 +255,7 @@ The keys below are the defaults.
 | `<Tab>`         | Queue the item for inspection. Queued items open together      |
 | `b`             | Open the item in your browser                                  |
 | `u`             | Show the project's issues                                      |
-| `d`             | Read the project's [devlog](#devlogs)                          |
+| `d`             | Read the project's [devlog](#devlogs), or the user's blog      |
 | `f`             | Issue filters (in the issues view) or newer activity           |
 | `m`             | Milestones (in the issues view)                                |
 | `s`             | Save the item under the cursor, or remove it from saved items  |
@@ -327,7 +327,9 @@ go back.
 
 Press `d` on a project, or in its activity feed, to list the posts of its
 official devlog, blog or news feed, newest first, or run
-`:OculusDevlog {project}` with a tracked project's name or repository. The
+`:OculusDevlog {project}` with a tracked project's name or repository. Press
+`d` on a user, or in their activity feed, or run `:OculusDevlog @login`, for
+the blog of someone you follow; it works the same way. The
 preview beside the list shows the selected post's title, date and author.
 Press `<CR>` or `l` to read the post, `b` to open it in your browser, `r` to
 refresh and `h`/`←` to go back.
@@ -351,17 +353,21 @@ the entries are references too, so `<Tab>` reaches them and `i` inspects them.
 The footer names the reference under the cursor. Inspecting one closes Oculus
 as usual, and reopening Oculus returns to the post where you left it.
 
-Oculus finds a project's feed in this order:
+Oculus finds a project's feed, or a user's, in this order:
 
-1. A `devlog` field on the project, in `setup()` or the
-   [tracking file](#tracking-file) (`false` turns the devlog off)
-2. The [`devlogs`](#options) option, keyed by `owner/repo` or
-   `codeberg:owner/repo`
-3. A URL set with `e` in the devlog list, or found earlier
-4. The project's homepage from GitHub or Codeberg: the RSS or Atom feed it
-   advertises, preferring a devlog, blog or news feed, else the first of the
-   usual paths (`/devlog/index.xml`, `/blog/atom.xml`, `/feed.xml`, …) that
-   serves one
+1. A `devlog` field on the project, or a `blog` (or `devlog`) field on the
+   user, in `setup()` or the [tracking file](#tracking-file) (`false` turns it
+   off)
+2. The [`devlogs`](#options) option, keyed by `owner/repo`,
+   `codeberg:owner/repo`, `@login` or `codeberg:@login`
+3. A URL set with `e` in the list of posts, or found earlier
+4. The project's homepage, or the website on the user's GitHub or Codeberg
+   profile: the RSS or Atom feed it advertises, preferring a devlog, blog or
+   news feed, else the first of the usual paths (`/devlog/index.xml`,
+   `/blog/atom.xml`, `/feed.xml`, …) that serves one, else the feed it links
+   to ("Subscribe"), else the feed of the blog it links to ("Blog",
+   `blog.example.org`, or a service such as HEY World or Substack). Only links
+   to the same site, or to a blogging service, are followed.
 
 A devlog can also be a web page with no feed, such as a changelog: set its
 URL like a feed's, for example
@@ -536,7 +542,7 @@ Set `inspect_colorscheme = false` to turn this off.
 | ---------------------------------------- | ------------------------------------------------------ |
 | `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
-| `:OculusDevlog {project}`                | Open the Oculus window on a project's [devlog](#devlogs) (a tracked project's name, `owner/repo` or `codeberg:owner/repo`) |
+| `:OculusDevlog {project\|@user}`         | Open the Oculus window on a project's [devlog](#devlogs) (a tracked project's name, `owner/repo` or `codeberg:owner/repo`) or a user's blog (`@login` or `@codeberg:login`) |
 | `:OculusClose`                           | Close it                                               |
 | `:OculusToggle`                          | Toggle it                                              |
 | `:OculusInspect [target]`                | Inspect an issue, PR, or commit (prompts if no target) |
@@ -600,8 +606,9 @@ require("oculus").setup({
   user_activity_types = {},
   project_activity_types = { "push", "merged_pull_request", "assigned_issue" },
   project_issue_filters = {},
-  -- Devlog feed URLs, keyed by "owner/repo" or "codeberg:owner/repo"; false
-  -- turns a project's devlog off (see "Devlogs")
+  -- Devlog feed URLs, keyed by "owner/repo" or "codeberg:owner/repo", and blog
+  -- feed URLs, keyed by "@login" or "codeberg:@login"; false turns one off
+  -- (see "Devlogs")
   devlogs = {},
   -- Seconds to cache API responses (and devlog feeds and posts)
   cache_ttl = 300,
@@ -831,6 +838,8 @@ oculus.open_work()
 
 -- Open on a project's devlog: a tracked project's name, or a repository
 local ok, err = oculus.open_devlog("zig")
+-- Or on a user's blog
+local ok, err = oculus.open_devlog("@codeberg:andrewrk")
 
 -- The signed-in account: { provider, login, name?, html_url?, avatar_url? }
 oculus.viewer("github", function(viewer, err)

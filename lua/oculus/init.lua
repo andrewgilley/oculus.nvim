@@ -39,7 +39,8 @@ local defaults = {
   active_workspace = nil,
   project_descriptions = {},
   -- Devlog feed URLs by repository ("owner/repo" or "codeberg:owner/repo"),
-  -- or false to turn a project's devlog off. See "Devlogs".
+  -- and blog feed URLs by user ("@login" or "codeberg:@login"), or false to
+  -- turn one off. See "Devlogs".
   devlogs = {},
   devlog_feeds = {},
   persist_filters = true,

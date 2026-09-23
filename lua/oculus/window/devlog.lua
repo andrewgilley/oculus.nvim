@@ -1,6 +1,6 @@
--- A project's official devlog: its posts listed like milestones, and a reader
--- that shows one post and inspects the pull requests, issues and commits the
--- post refers to.
+-- A project's official devlog, or a tracked user's blog: its posts listed like
+-- milestones, and a reader that shows one post and inspects the pull requests,
+-- issues and commits the post refers to.
 local devlog = require("oculus.devlog")
 local navigation = require("oculus.navigation")
 local M = {}
@@ -35,6 +35,20 @@ local highlight_links = {
 
 function M.setup(window, devlog_view, internal)
   local state = window.state
+
+  -- A devlog belongs to a project; a blog, shown the same way, to a tracked
+  -- user.
+  local function is_user(source)
+    return type(source) == "table" and type(source.username) == "string"
+  end
+
+  local function source_title(source)
+    return is_user(source) and ("@" .. source.username) or internal.project_title(source)
+  end
+
+  local function noun(source)
+    return is_user(source) and "blog" or "devlog"
+  end
 
   local function define_highlights()
     for group, link in pairs(highlight_links) do
@@ -135,7 +149,7 @@ function M.setup(window, devlog_view, internal)
     local left_width = internal.preview_left_width(window_width)
     local window_height = vim.api.nvim_win_get_height(state.win)
     local sidebar_visible = internal.is_sidebar_visible()
-    local subtitle = { internal.project_title(project) }
+    local subtitle = { source_title(project) }
     local source = source_label(list)
 
     if source then
@@ -144,7 +158,7 @@ function M.setup(window, devlog_view, internal)
 
     local lines = {
       "",
-      list.loading and list.posts and "  DEVLOG · refreshing…" or "  DEVLOG",
+      "  " .. noun(project):upper() .. (list.loading and list.posts and " · refreshing…" or ""),
       internal.trim_to_width("  " .. table.concat(subtitle, " · "), left_width - 1),
       "",
     }
@@ -161,20 +175,20 @@ function M.setup(window, devlog_view, internal)
     if list.loading and not list.posts then
       comment(list.feed_url and "Loading posts…" or "Finding the devlog…")
     elseif not list.feed_url then
-      comment("No devlog found for this project.")
+      comment(is_user(project) and "No blog found for this user." or "No devlog found for this project.")
 
       if list.missing then
         comment(list.missing)
       end
 
       lines[#lines + 1] = ""
-      comment("e set the devlog's feed URL")
+      comment(("e set the %s's feed URL"):format(noun(project)))
     elseif list.error and #posts == 0 then
-      lines[#lines + 1] = "  Could not load the devlog"
+      lines[#lines + 1] = "  Could not load the " .. noun(project)
       error_line = #lines
       comment(list.error)
       lines[#lines + 1] = ""
-      comment("r retry   e set the devlog's feed URL")
+      comment(("r retry   e set the %s's feed URL"):format(noun(project)))
     elseif #posts == 0 then
       comment("The devlog has no posts.")
     else
@@ -389,7 +403,7 @@ function M.setup(window, devlog_view, internal)
 
   -- Open the devlog of `project`, returning to the current view on back.
   function devlog_view.open(project)
-    if not project or type(project.repository) ~= "string" then
+    if not project or (type(project.repository) ~= "string" and not is_user(project)) then
       return
     end
 
@@ -409,6 +423,7 @@ function M.setup(window, devlog_view, internal)
     state.devlog_return = {
       view = state.view,
       project = state.activity_project,
+      contributor = state.contributor,
       events = state.events,
       cached = state.activity_cached,
       notice = state.activity_notice,
@@ -440,8 +455,9 @@ function M.setup(window, devlog_view, internal)
     local project = list.project
 
     vim.ui.input({
-      prompt = ("Devlog feed URL for %s (empty to find it again): "):format(
-        internal.project_title(project)
+      prompt = ("%s feed URL for %s (empty to find it again): "):format(
+        is_user(project) and "Blog" or "Devlog",
+        source_title(project)
       ),
       default = list.feed_url or "",
     }, function(input)
@@ -735,7 +751,7 @@ function M.setup(window, devlog_view, internal)
       meta[#meta + 1] = post.author
     end
 
-    meta[#meta + 1] = internal.project_title(current.project) .. " devlog"
+    meta[#meta + 1] = source_title(current.project) .. " " .. noun(current.project)
 
     local lines = {
       "",
@@ -771,7 +787,8 @@ function M.setup(window, devlog_view, internal)
       current.doc = devlog.render(current.html, {
         width = width,
         base_url = current.base_url,
-        project = current.project,
+        -- "#123" means an issue of the post's project; a person has none.
+        project = not is_user(current.project) and current.project or nil,
         projects = state.opts.projects,
         skip_title = post.title,
         author = post.author,
@@ -1019,7 +1036,7 @@ function M.setup(window, devlog_view, internal)
       ok, err = inspect.inspect_by_id(
         reference.target,
         state.opts,
-        { project = reference.project or current.project },
+        { project = reference.project or (not is_user(current.project) and current.project or nil) },
         nil,
         lifecycle
       )
@@ -1143,10 +1160,10 @@ function M.setup(window, devlog_view, internal)
       devlog_view.close_post(false)
     end
 
-    map("q", back, "Back to the devlog")
-    map("<Esc>", back, "Back to the devlog")
-    map(nav.left, back, "Back to the devlog")
-    map("<Left>", back, "Back to the devlog")
+    map("q", back, "Back to the posts")
+    map("<Esc>", back, "Back to the posts")
+    map(nav.left, back, "Back to the posts")
+    map("<Left>", back, "Back to the posts")
     map("<C-c>", window.close, "Close Oculus")
 
     map(nav.down, function()

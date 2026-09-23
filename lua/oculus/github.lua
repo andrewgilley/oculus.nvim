@@ -1504,6 +1504,27 @@ function M.repository_info(repository, opts, callback)
   end)
 end
 
+-- A user's public profile: { login, name, homepage }.
+function M.user_info(username, opts, callback)
+  local url = ("https://api.github.com/users/%s"):format(vim.uri_encode(username))
+
+  request_json(url, opts or {}, function(payload, err)
+    if err or type(payload) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    callback({
+      login = type(payload.login) == "string" and payload.login or username,
+      name = type(payload.name) == "string" and payload.name ~= "" and payload.name or nil,
+      homepage = type(payload.blog) == "string"
+          and payload.blog ~= ""
+          and payload.blog
+        or nil,
+    })
+  end)
+end
+
 -- The repository's releases, newest first: { tag, name, published_at, html_url }.
 function M.repository_releases(repository, opts, callback)
   local url = ("https://api.github.com/repos/%s/releases?per_page=100"):format(repository)

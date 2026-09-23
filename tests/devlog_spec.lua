@@ -374,6 +374,32 @@ do
   routes["https://api.github.com/repos/owner/other"] = { name = "other" }
   result = resolve({ repository = "owner/other", provider = "github" }, { force = true })
   assert(result.url == nil and result.err:find("homepage", 1, true), vim.inspect(result))
+
+  -- A user's blog: named on the entry, set up by "@login", or found from the
+  -- website on their profile, following a link to the blog when the website
+  -- has no feed of its own, but only to its own site or a blogging service.
+  local writer = { username = "Writer", provider = "github" }
+  result = resolve(vim.tbl_extend("force", writer, { blog = "https://w.org/feed" }), {})
+  assert(result.url == "https://w.org/feed" and result.source == "project")
+  result = resolve(writer, { devlogs = { ["@writer"] = "https://s.org/w.xml" } })
+  assert(result.url == "https://s.org/w.xml" and result.source == "setup")
+  assert(devlog.project_key(writer) == "github:@writer")
+
+  routes["https://api.github.com/users/Writer"] = { login = "Writer", blog = "writer.dev" }
+  routes["https://writer.dev"] = [[<a href="https://elsewhere.org/blog">Blog</a> <a href="/writing/">Writing</a>]]
+  routes["https://writer.dev/writing/"] = [[<link rel="alternate" type="application/atom+xml" href="/writing/atom.xml">]]
+  result = resolve(writer, { force = true })
+  assert(result.url == "https://writer.dev/writing/atom.xml" and result.source == "discovered", vim.inspect(result))
+
+  routes["https://api.github.com/users/Moved"] = { login = "Moved", blog = "https://moved.io" }
+  routes["https://moved.io"] = [[<a href="https://github.blog">Blog</a> <a href="https://world.hey.com/moved">HEY World</a>]]
+  routes["https://world.hey.com/moved"] = [[<link rel="alternate" type="application/atom+xml" href="https://world.hey.com/moved/feed.atom">]]
+  result = resolve({ username = "Moved", provider = "github" }, { force = true })
+  assert(result.url == "https://world.hey.com/moved/feed.atom", vim.inspect(result))
+
+  routes["https://api.github.com/users/Quiet"] = { login = "Quiet" }
+  result = resolve({ username = "Quiet", provider = "github" }, { force = true })
+  assert(result.url == nil and result.err:find("website", 1, true), vim.inspect(result))
 end
 
 -- The window: L opens a project's devlog, a post opens in the reader, and a
@@ -589,6 +615,41 @@ press("j")
 assert(state.view == "devlog" and state.devlog_reader == nil)
 press("j")
 assert(state.view == "contributors", state.view)
+
+-- d on a user reads their blog: "#123" means nothing without a project, and
+-- back returns to the users.
+routes["https://writer.dev/writing/atom.xml"] = [[<feed><title>Writing</title><entry><id>w1</id><title>On tools</title>
+<updated>2026-09-01T00:00:00Z</updated><link href="https://writer.dev/writing/tools"/>
+<content type="html">&lt;p&gt;Fixed #1234 and neovim/neovim#5678. ]] .. string.rep("Words. ", 200) .. [[&lt;/p&gt;</content></entry></feed>]]
+
+local writer = { username = "Writer", provider = "github" }
+window.state.opts.contributors = { writer }
+window.state.contributors = { writer }
+press("u")
+assert(state.community_view == "users", state.community_view)
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].username == "Writer")
+press("d")
+
+wait_for("the blog did not load", function()
+  return state.view == "devlog" and state.project_devlog.project == writer and not state.project_devlog.loading
+end)
+
+text = buffer_text()
+assert(text:find("  BLOG\n  @Writer · Writing\n"), text)
+press("<CR>")
+reader = state.devlog_reader
+
+wait_for("the blog post did not load", function()
+  return reader.doc ~= nil
+end)
+
+text = buffer_text(reader.buf)
+assert(text:find("  On tools\n  2026-09-01 · @Writer blog\n", 1, true), text)
+assert(#reader.doc.references == 1 and reader.doc.references[1].label == "neovim/neovim#5678")
+press("q")
+press("j")
+assert(state.view == "contributors" and state.community_view == "users", state.view)
+press("p")
 
 -- A project with no devlog to be found offers to set a feed URL, which is
 -- saved and used.
