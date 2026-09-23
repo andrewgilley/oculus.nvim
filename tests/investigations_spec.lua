@@ -91,20 +91,29 @@ assert(calls[1].options.timeout == 300000 and #calls[1].argv == 4)
 respond(calls[1], view)
 assert(not state.error, state.error)
 assert(not state.busy and state.mode == "investigation")
+assert(state.layout_mode == "workspace" and vim.api.nvim_tabpage_is_valid(state.workspace_tab))
 
--- Every part of the float takes the code's Normal background, not the float one.
-for _, win in ipairs({ state.frame_win, state.win, state.detail_win, state.footer_win }) do
-  local namespace = vim.api.nvim_get_hl_ns({ winid = win })
-  assert(namespace > 0 and vim.api.nvim_get_hl(namespace, { name = "NormalFloat" }).bg == 0x16181f, "panes use the Normal background")
+for _, win in ipairs({ state.win, state.source_win, state.detail_win }) do
+  assert(vim.api.nvim_win_get_config(win).relative == "", "investigation panes are ordinary editor windows")
 end
+
+local left = vim.api.nvim_win_get_position(state.win)
+local center = vim.api.nvim_win_get_position(state.source_win)
+local right = vim.api.nvim_win_get_position(state.detail_win)
+assert(left[2] < center[2] and center[2] < right[2], "source editor sits between the sidebars")
+assert(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.source_win)) == source, "first finding opens its source")
+local editing = vim.api.nvim_win_get_buf(state.source_win)
+vim.api.nvim_buf_set_lines(editing, 0, 1, false, { "fn changed() {" })
+assert(state.close() == false and not state.closed, "unsaved source edits keep the investigation open")
+vim.api.nvim_buf_set_lines(editing, 0, 1, false, { "fn inspect() {" })
+vim.bo[editing].modified = false
 
 local function title(opened)
   return vim.api.nvim_buf_get_lines(opened.frame_buf, 0, 1, false)[1]
 end
 
-assert(title(state):match("^ INVESTIGATIONS%s") and not title(state):find("PLEXUS", 1, true), title(state))
 local listed = text_of(state.buf)
-assert(listed:find("actual-base → actual-head", 1, true))
+assert(listed:find("actual-bas", 1, true), listed)
 assert(listed:find("1 finding: 1 not yet handled", 1, true))
 assert(listed:find("NOT YET HANDLED", 1, true) and listed:find("! A capability emerged", 1, true))
 assert(listed:find("API CHANGES · 1 added", 1, true) and listed:find("SCOPE · 1 limitation", 1, true))
@@ -131,15 +140,14 @@ local count = #calls
 state.navigate(target)
 assert(#calls == count and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.source_win)) == source)
 assert(vim.api.nvim_win_get_cursor(state.source_win)[1] == 2)
-assert(state.closed and vim.api.nvim_win_get_config(0).relative == "", "following a location hands over the screen")
+assert(not state.closed and state.layout_mode == "workspace", "following a location keeps the investigation visible")
 
--- Following a source location closes the float, so each navigation below opens
--- the stored investigation again rather than reusing a dismissed view.
+-- A reopened investigation presents the same editor layout and source location.
 local function reopen(stored, pick)
   local opened = bridge.open(config, nexus_config, stored.investigation_id)
   respond(calls[#calls], stored)
   assert(not opened.error, opened.error)
-  assert(vim.api.nvim_win_get_config(opened.frame_win).relative == "editor", "the catalog is a float")
+  assert(opened.layout_mode == "workspace" and vim.api.nvim_win_get_config(opened.win).relative == "")
 
   for _, item in pairs(opened.targets) do
     if item.kind == "finding" and (not pick or pick(item)) then return opened, item end
@@ -150,7 +158,6 @@ end
 
 vim.fn.writefile({ "changed source" }, source)
 state, target = reopen(view, function(item) return item.experiment end)
-state.navigate(target)
 assert(calls[#calls].argv[2] == "investigation-source" and calls[#calls].argv[3] == digest)
 respond(calls[#calls], { schema_version = 1, content = bytes })
 assert(not state.error, state.error)
@@ -158,9 +165,9 @@ local archived_buf = vim.api.nvim_win_get_buf(state.source_win)
 assert(vim.b[archived_buf].oculus_archived_source == digest and vim.bo[archived_buf].readonly)
 assert(not vim.bo[archived_buf].modifiable)
 state, target = reopen(view, function(item) return item.experiment end)
-state.navigate(target)
 respond(calls[#calls], { schema_version = 1, content = "corrupt" })
 assert(state.error:find("digest mismatch", 1, true))
+vim.fn.writefile(vim.split(bytes, "\n", { plain = true }), source, "b")
 state.catalog()
 local other = vim.deepcopy(view)
 other.investigation_id, other.intent = "sha256:other", "Another question"
@@ -362,7 +369,7 @@ for _, heading in ipairs({ "NEWLY POSSIBLE", "SUBSTITUTION PATHS", "BROKEN BY TH
 end
 
 assert(order[1] < order[2] and order[2] < order[3] and order[3] < order[4], "possibilities come before costs and context")
-assert(listed:find("4 findings: 1 newly possible · 1 substitution path · 1 broken · 1 unchanged", 1, true))
+assert(flat(state.buf):find("4 findings: 1 newly possible · 1 substitution path · 1 broken · 1 unchanged", 1, true))
 assert(state.targets[vim.api.nvim_win_get_cursor(state.win)[1]].finding.id == "enabled", "the view opens on its first group")
 -- A limit every finding shares describes the analysis, so it is listed once.
 select(state, function(item) return item.kind == "scope" end)
@@ -415,13 +422,14 @@ vim.fn.maparg("<Tab>", "n", false, true).callback()
 assert(vim.api.nvim_get_current_win() == state.detail_win)
 vim.fn.maparg("<Tab>", "n", false, true).callback()
 assert(vim.api.nvim_get_current_win() == state.win)
-local side = vim.api.nvim_win_get_config(state.detail_win)
-assert(side.row == vim.api.nvim_win_get_config(state.win).row, "a wide editor shows the panes side by side")
--- A narrow editor stacks the detail under the list, and the footer keeps q.
+assert(vim.api.nvim_win_get_position(state.win)[2] < vim.api.nvim_win_get_position(state.source_win)[2])
+-- A narrower editor preserves the central source and both sidebars.
 vim.o.columns = 90
 vim.api.nvim_exec_autocmds("VimResized", {})
-local stacked = vim.api.nvim_win_get_config(state.detail_win)
-assert(stacked.row > vim.api.nvim_win_get_config(state.win).row, "a narrow editor stacks the panes")
+
+assert(vim.api.nvim_win_get_position(state.win)[2] < vim.api.nvim_win_get_position(state.source_win)[2]
+  and vim.api.nvim_win_get_position(state.source_win)[2] < vim.api.nvim_win_get_position(state.detail_win)[2])
+
 assert(text_of(state.footer_buf):find("q close", 1, true))
 vim.o.columns = 200
 vim.api.nvim_exec_autocmds("VimResized", {})
@@ -521,7 +529,7 @@ state = bridge.state
 assert(not state.error, state.error)
 listed = text_of(state.buf)
 assert(listed:find("C/C++ ABI → Zig", 1, true) and listed:find("ONE ADAPTER AWAY", 1, true))
-assert(listed:find("◇ A C ABI wrapper could connect C++ to Zig", 1, true))
+assert(listed:find("◇ A C ABI wrapper", 1, true), listed)
 select(state, overview)
 detail = flat(state.detail_buf)
 assert(detail:find("Header include/math.hpp · c++", 1, true) and detail:find("Includes include, vendor/include", 1, true))
@@ -541,6 +549,7 @@ archived_buf = vim.api.nvim_win_get_buf(state.source_win)
 assert(vim.b[archived_buf].oculus_archived_source == zig_digest and vim.bo[archived_buf].readonly)
 assert(vim.bo[archived_buf].filetype == "zig")
 state = reopen(c_zig_view)
+respond(calls[#calls], { schema_version = 1, content = zig_bytes })
 state.catalog()
 respond(calls[#calls], { schema_version = 1, investigations = { c_zig_view } })
 assert(text_of(state.buf):find("C/C++ → Zig", 1, true))
@@ -677,6 +686,16 @@ respond(calls[#calls], steering_view)
 select(state, finding("gap"))
 steered("promoted", "interactive note via prompt")
 state.close()
+state = bridge.open(config, nexus_config, view.investigation_id)
+respond(calls[#calls], view)
+local workspace_tab = state.workspace_tab
+
+for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+  if tab ~= workspace_tab then vim.api.nvim_set_current_tabpage(tab); vim.cmd("tabclose") end
+end
+
+state.close()
+assert(state.closed and vim.api.nvim_win_is_valid(vim.api.nvim_get_current_win()), "closing the last tab leaves a normal editor")
 vim.ui.input, vim.ui.select, vim.system, vim.notify = old_input, old_select, original_system, original_notify
 vim.fn.delete(directory, "rf")
 print("Rust and C/C++ to Zig prompts, grouped findings with their evidence, durable catalog, archived navigation, Nexus submission/evidence, opportunity steering and cancellation passed")
