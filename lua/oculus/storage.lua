@@ -54,6 +54,7 @@ function M.save(path, config)
     removed_projects = config.removed_projects or {},
     inspect_overviews = config.inspect_overviews or {},
     search_history = config.search_history or {},
+    devlog_feeds = config.devlog_feeds or {},
     active_workspace = config.active_workspace,
     workspaces = config.workspaces or {},
   }

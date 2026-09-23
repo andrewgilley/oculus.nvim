@@ -1701,6 +1701,10 @@ function M.repository_info(repository, opts, callback)
         or nil,
       name = payload.name,
       full_name = payload.full_name,
+      homepage = type(payload.website) == "string"
+          and payload.website ~= ""
+          and payload.website
+        or nil,
     }
 
     repository_info_cache[key] = {

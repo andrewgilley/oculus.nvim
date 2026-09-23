@@ -55,6 +55,7 @@ local commit_activity_url
 local load_project_activity
 local load_project_issues
 local milestone_view = {}
+local devlog_view = {}
 local saved_view = { ns = vim.api.nvim_create_namespace("oculus_saved_items") }
 -- `accounts` lists the signed-in accounts in the start screen's sidebar.
 local work_view = { accounts = { requested = {} } }
@@ -158,6 +159,12 @@ M.state = {
   milestone_return = nil,
   milestone_items_feed = nil,
   activity_milestone = nil,
+  project_devlog = nil,
+  selected_devlog_post = nil,
+  devlog_offset = 1,
+  devlog_return = nil,
+  devlog_reader = nil,
+  devlog_resume = nil,
   activity_saved = false,
   saved_entries = nil,
   saved_expanded_source = nil,
@@ -548,6 +555,7 @@ local function sidebar_sections_for_view(view)
           { "W", "Workspace" },
           { "s", "Saved" },
           { "a", "Add" },
+          { "L", "Devlog" },
           { "f", "Folder" },
           { "M", "Move Dir" },
           { nav.inspect_id, "Inspect ID" },
@@ -581,6 +589,10 @@ local function sidebar_sections_for_view(view)
         actions[#actions + 1] = { "m", "Milestones" }
       elseif M.state.activity_project and not M.state.activity_milestone then
         actions[#actions + 1] = { "u", "Issues" }
+      end
+
+      if M.state.activity_project and not M.state.activity_milestone then
+        actions[#actions + 1] = { "L", "Devlog" }
       end
     end
 
@@ -630,6 +642,33 @@ local function sidebar_sections_for_view(view)
           { "a", "All on" },
           { "n", "All off" },
           { "d", "Defaults" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "?", "Sidebar" },
+          { "q", "Close" },
+        },
+      },
+    }
+  elseif view == "devlog" then
+    return {
+      {
+        title = "NAVIGATION",
+        items = {
+          { nav_down, "Down" },
+          { nav_up, "Up" },
+          { nav_left, "Back" },
+          { nav_right, "Read" },
+        },
+      },
+      {
+        title = "ACTIONS",
+        items = {
+          { "b", "Browser" },
+          { "r", "Refresh" },
+          { "e", "Feed URL" },
         },
       },
       {
@@ -940,6 +979,10 @@ local function footer_commands_text()
     return ("  %s/← back   ⏎ open   b browser   r refresh   ?: help"):format(
       nav.left
     )
+  elseif M.state.view == "devlog" then
+    return ("  %s/← back   ⏎ read   b browser   r refresh   e feed   ?: help"):format(
+      nav.left
+    )
   end
 
   local inspect_key = nav.inspect
@@ -952,6 +995,10 @@ local function footer_commands_text()
       if M.state.activity_project and not M.state.activity_milestone then
         activity_commands = activity_commands .. "   u issues"
       end
+    end
+
+    if M.state.activity_project and not M.state.activity_milestone then
+      activity_commands = activity_commands .. "   L devlog"
     end
   end
 
@@ -1138,6 +1185,7 @@ local function clamp_list_cursor()
     or M.state.view == "directory"
     or M.state.view == "milestones"
     or M.state.view == "work"
+    or M.state.view == "devlog"
   then
     local selectable = {}
     local selected_line
@@ -1163,6 +1211,10 @@ local function clamp_list_cursor()
           end
         elseif target.kind == "milestone" then
           if target.milestone.id == M.state.selected_milestone then
+            selected_line = line
+          end
+        elseif target.kind == "devlog_post" then
+          if target.post.id == M.state.selected_devlog_post then
             selected_line = line
           end
         elseif target.username == M.state.selected_username then
@@ -1256,6 +1308,11 @@ end
 local function set_lines(lines)
   if not is_valid_buf(M.state.buf) then
     return
+  end
+
+  -- Drawing any other view takes the place of an open devlog post.
+  if M.state.devlog_reader and M.state.view ~= "devlog" then
+    devlog_view.close_post(false)
   end
 
   vim.bo[M.state.buf].modifiable = true
@@ -2155,6 +2212,11 @@ local function reset_to_initial_page()
   M.state.milestone_offset = 1
   M.state.milestone_return = nil
   M.state.milestone_items_feed = nil
+  devlog_view.close_post(false)
+  M.state.project_devlog = nil
+  M.state.selected_devlog_post = nil
+  M.state.devlog_offset = 1
+  M.state.devlog_return = nil
   M.state.saved_entries = nil
   M.state.saved_expanded_source = nil
   M.state.work_lists = nil
@@ -3286,6 +3348,8 @@ local function render_shortcuts()
     subtitle = "Commands for Activity"
   elseif from_view == "milestones" then
     subtitle = "Commands for Milestones"
+  elseif from_view == "devlog" then
+    subtitle = "Commands for the Devlog"
   elseif from_view == "work" then
     subtitle = "Commands for My Work"
   elseif from_view == "filters" then
@@ -3350,6 +3414,7 @@ local function render_shortcuts()
         { "m", "Move the selected project or folder" },
         { "M", "Move project to folder" },
         { "a", "Add a GitHub or Codeberg project" },
+        { "L", "Read the selected project's devlog" },
         { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
         { "<C-r>", "Refresh project descriptions from forge" },
         { "r", "Rename the selected project or folder" },
@@ -3381,6 +3446,7 @@ local function render_shortcuts()
       { "m", "Move the selected project" },
       { "M", "Move project to folder" },
       { "f", "Create a project folder" },
+      { "L", "Read the selected project's devlog" },
       { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
       { "F", "Edit global activity filters" },
       { "d", "Reset activity filters to defaults" },
@@ -3416,10 +3482,40 @@ local function render_shortcuts()
       actions[#actions + 1] = { "u", "Open project issues" }
     end
 
+    if ret and ret.activity_project and not ret.activity_milestone and not ret.activity_commit_page then
+      actions[#actions + 1] = { "L", "Read the project's devlog" }
+    end
+
     section("ACTIONS", actions)
 
     section("GENERAL", {
       { "? / " .. nav.left .. " / <Left>", "Return to activity" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  elseif from_view == "devlog" then
+    section("NAVIGATION", {
+      { nav.up .. " / <Up>", "Select the previous post" },
+      { nav.down .. " / <Down>", "Select the next post" },
+      { nav.right .. " / <Right> / <CR>", "Read the selected post" },
+      { nav.left .. " / <Left>", "Return to the previous page" },
+    })
+
+    section("ACTIONS", {
+      { "b", "Open the selected post in a browser" },
+      { "r", "Refresh the devlog" },
+      { "e", "Set the devlog's feed URL" },
+    })
+
+    section("READING A POST", {
+      { "<Tab> / <S-Tab>", "Next / previous pull request, issue or commit" },
+      { nav.inspect .. " / <CR>", "Inspect the reference under the cursor" },
+      { "b", "Open the link under the cursor, or the post" },
+      { "r", "Reload the post" },
+      { "q / " .. nav.left .. " / <Esc>", "Return to the posts" },
+    })
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", "Return to the devlog" },
       { "q / <Esc> / <C-c>", "Close Oculus" },
     })
   elseif from_view == "milestones" then
@@ -3821,6 +3917,20 @@ require("oculus.window.milestones").setup(M, milestone_view, view_internal)
 require("oculus.window.work").setup(M, work_view, view_internal)
 require("oculus.window.saved").setup(M, saved_view, view_internal)
 
+require("oculus.window.devlog").setup(M, devlog_view, vim.tbl_extend("force", view_internal, {
+  use_window_highlights = use_window_highlights,
+  target_on_cursor = function()
+    return target_on_cursor()
+  end,
+  open_url = function(url)
+    local ok, err = browser.open(url, M.state.opts)
+
+    if not ok and err then
+      vim.notify("Oculus: " .. tostring(err), vim.log.levels.ERROR)
+    end
+  end,
+}))
+
 local function load_activity(contributor, force, page)
   local preserve_activity_page = page ~= nil
     and M.state.view == "activity"
@@ -4038,6 +4148,11 @@ local function previous_activity_page()
 end
 
 local function refresh_activity()
+  if M.state.view == "devlog" and M.state.project_devlog then
+    devlog_view.load(M.state.project_devlog.project, true)
+    return
+  end
+
   if M.state.view == "milestones" and M.state.project_milestones then
     milestone_view.load(M.state.project_milestones.project, true)
     return
@@ -5152,6 +5267,11 @@ local function select_current()
   then
     M.state.selected_work = target.entry.key
     work_view.load_items(target.entry, false)
+  elseif M.state.view == "devlog"
+    and type(target) == "table"
+    and target.kind == "devlog_post"
+  then
+    devlog_view.open_post(target.post)
   end
 end
 
@@ -5250,6 +5370,16 @@ local function open_current()
 end
 
 local function open_activity_in_browser()
+  if M.state.view == "devlog" then
+    local url = devlog_view.browser_url()
+
+    if url then
+      open_url(url)
+    end
+
+    return
+  end
+
   if M.state.view == "work" then
     local target = target_on_cursor()
 
@@ -5859,6 +5989,9 @@ local function active_list_key()
     return "milestones:" .. (project.repository or project.name or "project")
   elseif M.state.view == "work" then
     return "work"
+  elseif M.state.view == "devlog" and M.state.project_devlog then
+    local project = M.state.project_devlog.project
+    return "devlog:" .. (project.repository or project.name or "project")
   elseif M.state.view == "issue_filters" and M.state.activity_project then
     local repo = M.state.activity_project.repository
       or M.state.activity_project.name
@@ -6178,6 +6311,8 @@ local function toggle_sidebar()
     milestone_view.render()
   elseif M.state.view == "work" then
     work_view.render()
+  elseif M.state.view == "devlog" then
+    devlog_view.render()
   elseif M.state.view == "shortcuts" then
     render_shortcuts()
   end
@@ -6192,8 +6327,14 @@ local function move_cursor(direction)
     and M.state.view ~= "activity"
     and M.state.view ~= "milestones"
     and M.state.view ~= "work"
+    and M.state.view ~= "devlog"
   then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
+    return
+  end
+
+  if M.state.view == "devlog" then
+    devlog_view.select_adjacent(direction)
     return
   end
 
@@ -6340,6 +6481,50 @@ local function move_cursor(direction)
 end
 
 local function go_back()
+  if M.state.view == "devlog" then
+    local return_state = M.state.devlog_return
+    M.state.devlog_return = nil
+    M.state.request_id = M.state.request_id + 1
+    devlog_view.close_post(false)
+
+    if return_state and return_state.view == "activity" and return_state.project then
+      if not return_state.events then
+        load_project_activity(return_state.project, false, return_state.page)
+        return
+      end
+
+      M.state.activity_scope = "project"
+      M.state.activity_project = return_state.project
+      M.state.contributor = nil
+      M.state.activity_page = return_state.page
+      M.state.activity_loaded_pages = return_state.loaded_pages
+      M.state.activity_source_events = return_state.source_events
+      M.state.activity_has_past = return_state.has_past
+
+      render_activity(
+        return_state.events,
+        return_state.cached,
+        return_state.notice,
+        { issue_page = return_state.issue_page }
+      )
+
+      if return_state.cursor and is_valid_win(M.state.win) then
+        pcall(vim.api.nvim_win_set_cursor, M.state.win, return_state.cursor)
+        update_activity_cursorline()
+      end
+    elseif return_state
+      and return_state.view == "directory"
+      and return_state.current_directory
+    then
+      render_directory(return_state.current_directory)
+    else
+      M.state.tracking_selected = return_state and return_state.tracking_index
+      render_contributors()
+    end
+
+    return
+  end
+
   if M.state.view == "activity"
     and M.state.activity_work
     and not M.state.activity_commit_page
@@ -6514,6 +6699,8 @@ local function go_back()
       render_filters(M.state.filter_scope, return_state.selected_type)
     elseif return_state.view == "milestones" and M.state.project_milestones then
       milestone_view.render()
+    elseif return_state.view == "devlog" and M.state.project_devlog then
+      devlog_view.render()
     elseif return_state.view == "issue_filters"
       and M.state.activity_project
     then
@@ -6584,6 +6771,7 @@ local function move_left()
   if M.state.view == "directory"
     or M.state.view == "milestones"
     or M.state.view == "work"
+    or M.state.view == "devlog"
   then
     go_back()
     return
@@ -6904,6 +7092,7 @@ local function map_keys(buf)
     if M.state.view == "directory"
       or M.state.view == "milestones"
       or M.state.view == "work"
+      or M.state.view == "devlog"
       or M.state.view == "shortcuts"
     then
       go_back()
@@ -6929,6 +7118,29 @@ local function map_keys(buf)
       milestone_view.open()
     end
   end, "Move selected Oculus project or user, or open project milestones")
+
+  map("L", function()
+    if M.state.view == "activity" then
+      if M.state.activity_project
+        and not M.state.activity_milestone
+        and not M.state.activity_commit_page
+      then
+        devlog_view.open(M.state.activity_project)
+      end
+    elseif M.state.view == "contributors" or M.state.view == "directory" then
+      local target = target_on_cursor()
+
+      if type(target) == "table" and target.kind == "project" then
+        devlog_view.open(target.project)
+      end
+    end
+  end, "Read the selected Oculus project's devlog")
+
+  map("e", function()
+    if M.state.view == "devlog" then
+      devlog_view.prompt_feed()
+    end
+  end, "Set the Oculus project's devlog feed URL")
 
   map("M", function()
     if (M.state.view == "contributors" and M.state.community_view == "projects")
@@ -7143,6 +7355,7 @@ function M.close()
   M.state.moving_item = nil
   stop_activity_page_loading()
   vim.api.nvim_clear_autocmds({ group = autocmd_group })
+  devlog_view.close_post(true)
 
   if is_valid_buf(M.state.buf) then
     vim.api.nvim_buf_clear_namespace(
@@ -7340,6 +7553,9 @@ function M.open(opts)
     milestone_view.render()
   elseif M.state.view == "work" and M.state.work_lists then
     work_view.render()
+  elseif M.state.view == "devlog" and M.state.project_devlog then
+    devlog_view.render()
+    devlog_view.resume_post()
   elseif M.state.view == "activity"
     and M.state.activity_work
     and not M.state.activity_commit_page
@@ -7459,6 +7675,9 @@ function M.open(opts)
           milestone_view.render()
         elseif M.state.view == "work" then
           work_view.render()
+        elseif M.state.view == "devlog" then
+          devlog_view.render()
+          devlog_view.resize_post()
         elseif M.state.view == "shortcuts" then
           render_shortcuts()
         end
@@ -7495,6 +7714,20 @@ function M.open(opts)
         if type(target) == "table" and target.kind == "work" then
           M.state.selected_work = target.entry.key
           work_view.queue_preview(target.entry)
+        end
+
+        update_contributor_selection()
+        return
+      end
+
+      if M.state.view == "devlog" then
+        local target = M.state.line_targets[
+          vim.api.nvim_win_get_cursor(M.state.win)[1]
+        ]
+
+        if type(target) == "table" and target.kind == "devlog_post" then
+          M.state.selected_devlog_post = target.post.id
+          devlog_view.queue_preview(target.post)
         end
 
         update_contributor_selection()
@@ -7583,6 +7816,7 @@ function M.open(opts)
         or entered == M.state.add_dialog_win
         or entered == M.state.add_input_win
         or entered == M.state.inspect_input_win
+        or devlog_view.owns(entered)
         or is_add_dialog_open()
         or is_inspect_input_open()
         or M.state.closing_add_dialog
@@ -7722,6 +7956,50 @@ function M.open_project(target, opts)
     provider = provider or "github",
   })
 
+  return true
+end
+
+-- Open the devlog of a tracked project, named by its display name or
+-- repository (optionally "codeberg:owner/repo"), or of any owner/repo.
+function M.open_devlog(target, opts)
+  local text = vim.trim(tostring(target or ""))
+  local provider, repository = text:match("^(%a+):(.+)$")
+  repository = repository or text
+
+  if text == "" then
+    return false, "expected a project name, owner/repo or codeberg:owner/repo"
+  end
+
+  if provider and provider ~= "github" and provider ~= "codeberg" then
+    return false, "provider must be github or codeberg"
+  end
+
+  local project
+
+  for _, candidate in ipairs((opts or M.state.opts or {}).projects or {}) do
+    if type(candidate) == "table"
+      and type(candidate.repository) == "string"
+      and (not provider or (candidate.provider or "github") == provider)
+      and (
+        candidate.repository:lower() == repository:lower()
+        or (type(candidate.name) == "string" and candidate.name:lower() == text:lower())
+      )
+    then
+      project = candidate
+      break
+    end
+  end
+
+  if not project then
+    if not repository:match("^[%w_.%-]+/[%w_.%-]+$") then
+      return false, ("no tracked project named '%s'"):format(text)
+    end
+
+    project = { repository = repository, provider = provider or "github" }
+  end
+
+  M.open(opts)
+  devlog_view.open(project)
   return true
 end
 
