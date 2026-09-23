@@ -357,15 +357,29 @@ function M.setup(window, devlog_view, internal)
             return
           end
 
-          list.loading = false
-          list.error = err and tostring(err) or nil
+          local function show()
+            if stale() then
+              return
+            end
 
-          if feed then
-            list.feed = feed
-            list.posts = feed.posts
+            list.loading = false
+            list.error = err and tostring(err) or nil
+
+            if feed then
+              list.feed = feed
+              list.posts = feed.posts
+            end
+
+            devlog_view.render()
           end
 
-          devlog_view.render()
+          -- Changelog pages name versions but not dates; the project's
+          -- releases of those versions have them.
+          if feed then
+            devlog.date_releases(feed, project, opts, show)
+          else
+            show()
+          end
         end)
       end)
     end
@@ -761,6 +775,7 @@ function M.setup(window, devlog_view, internal)
         projects = state.opts.projects,
         skip_title = post.title,
         author = post.author,
+        whole = post.whole,
       })
 
       for _, line in ipairs(current.doc.lines) do

@@ -398,7 +398,13 @@ function M.parse_date(value)
   end
 
   local day_number, month_name, full_year, time =
-    value:match("(%d%d?)%s+(%a%a%a)%a*%s+(%d%d%d?%d?)%s*(.*)")
+    value:match("(%d%d?)%s+(%a%a%a)%a*%.?%s+(%d%d%d?%d?)%s*(.*)")
+
+  -- "August 27, 2026"
+  if not (month_name and month_numbers[month_name:lower()]) then
+    month_name, day_number, full_year = value:match("(%a%a%a)%a*%.?%s+(%d%d?)%a*,?%s+(%d%d%d%d)")
+    time = ""
+  end
 
   local month_number = month_name and month_numbers[month_name:lower()]
 
@@ -1533,6 +1539,11 @@ function Renderer:walk(node, ctx)
 
   if tag == "hr" then
     self:flush(ctx)
+
+    -- A rule before any text only separates the post from its title.
+    if not self.seen_content then
+      return
+    end
     self.pending_blank = true
     self:blank_if_pending()
     local indent = ctx.indent or ""
@@ -1719,13 +1730,241 @@ function M.render(html, opts)
   }
 end
 
--- Fetching --------------------------------------------------------------------
-
 local function fresh(entry, opts)
   return entry
     and not opts.force
     and os.time() - entry.fetched_at < (opts.cache_ttl or 300)
 end
+
+-- Pages -----------------------------------------------------------------------
+
+-- What a changelog heading announces: a version ("v0.3.1", "[1.2.0] -
+-- 2026-01-01", "Release 2.0") or a date.
+local function release_heading(text)
+  local bare = text:gsub("^[%[%(%s]+", "")
+
+  if bare:match("^[vV]?%d+%.%d+")
+    or bare:match("^[Vv]ersion%s+v?%d")
+    or bare:match("^[Rr]elease%s+v?%d")
+    or M.parse_date(text)
+  then
+    return true
+  end
+
+  return false
+end
+
+-- Read an HTML page that has no feed, such as a changelog, as a devlog: each
+-- heading that names a release or a date starts a post, which runs to the
+-- next such heading. Returns a feed like M.parse_feed, or nil.
+function M.parse_page(html, page_url)
+  local tree = M.parse_html(html)
+  local content = M.main_content(tree)
+  local by_level = {}
+
+  local function collect(node)
+    if node.tag and node.tag:match("^h[1-4]$") then
+      if release_heading(collapse(table.concat(node_text(node)))) then
+        by_level[node.tag] = by_level[node.tag] or {}
+        table.insert(by_level[node.tag], node)
+      end
+
+      return
+    end
+
+    for _, child in ipairs(node.children or {}) do
+      if child.tag then
+        collect(child)
+      end
+    end
+  end
+
+  collect(content)
+
+  -- Posts start at the heading level that names the most releases.
+  local headings
+
+  for _, level in ipairs({ "h1", "h2", "h3", "h4" }) do
+    if by_level[level] and (not headings or #by_level[level] > #headings) then
+      headings = by_level[level]
+    end
+  end
+
+  if not headings then
+    return nil
+  end
+
+  local starts = {}
+  local holds = {}
+
+  for _, heading in ipairs(headings) do
+    starts[heading] = true
+  end
+
+  local function mark(node)
+    local found = starts[node] == true
+
+    for _, child in ipairs(node.children or {}) do
+      if child.tag and mark(child) then
+        found = true
+      end
+    end
+
+    holds[node] = found
+    return found
+  end
+
+  mark(content)
+
+  -- Walk the page in order, handing each piece to the post it falls in. A
+  -- piece that holds a post's heading is taken apart so the heading, and
+  -- whatever sits beside it, go to the right post. Anything before the first
+  -- heading introduces the page and is left out.
+  local posts = {}
+  local current
+
+  local function place(node)
+    if starts[node] then
+      current = { heading = node, children = { node } }
+      posts[#posts + 1] = current
+    elseif holds[node] then
+      local own = 0
+
+      for _, child in ipairs(node.children) do
+        if starts[child] then
+          own = own + 1
+        end
+      end
+
+      for _, child in ipairs(node.children) do
+        -- A heading sharing a row with one release's heading, like a link to
+        -- that release's documentation, belongs to the release's title rather
+        -- than opening a section of it.
+        if own == 1
+          and node ~= content
+          and not starts[child]
+          and child.tag
+          and child.tag:match("^h%d$")
+        then
+          child = { tag = "p", attrs = child.attrs, children = child.children }
+        end
+
+        place(child)
+      end
+    elseif current then
+      current.children[#current.children + 1] = node
+    end
+  end
+
+  place(content)
+
+  local page = page_url:gsub("#.*$", "")
+  local title_node = find_node(tree, function(node)
+    return node.tag == "title"
+  end)
+
+  local feed = {
+    title = title_node and collapse(table.concat(node_text({ children = title_node.children }))) or nil,
+    link = page,
+    page = true,
+    posts = {},
+  }
+
+  for index, post in ipairs(posts) do
+    local title = collapse(table.concat(node_text(post.heading)))
+    local id = post.heading.attrs.id
+    local url = id and id ~= "" and (page .. "#" .. id) or page
+    local timestamp = M.parse_date(title)
+
+    feed.posts[index] = {
+      id = url ~= page and url or (page .. "#" .. index),
+      title = title,
+      url = url,
+      timestamp = timestamp,
+      date = timestamp and timestamp:sub(1, 10) or nil,
+      -- The post is already a piece of the page, so it renders whole.
+      content = { tag = "div", attrs = {}, children = post.children },
+      whole = true,
+      order = index,
+    }
+  end
+
+  return feed
+end
+
+local release_cache = {}
+
+local function version_key(text)
+  local version = tostring(text or ""):gsub("^[%[%(%s]+", ""):match("^[vV]?(%d+%.%d+[%w.%-+]*)")
+    or tostring(text or ""):match("[vV]?(%d+%.%d+[%w.%-+]*)")
+
+  return version and version:lower() or nil
+end
+
+-- Give undated posts named after a version the date of the project's release
+-- of that version. callback() runs once the posts that could be dated are.
+function M.date_releases(feed, project, opts, callback)
+  local undated = {}
+
+  for _, post in ipairs(feed.posts or {}) do
+    if not post.timestamp and version_key(post.title) then
+      undated[#undated + 1] = post
+    end
+  end
+
+  if #undated == 0 or type(project) ~= "table" or type(project.repository) ~= "string" then
+    vim.schedule(callback)
+    return
+  end
+
+  local function apply(releases)
+    local dates = {}
+
+    for _, release in ipairs(releases or {}) do
+      for _, name in ipairs({ release.tag, release.name }) do
+        local key = version_key(name)
+
+        if key and release.published_at and not dates[key] then
+          dates[key] = release.published_at
+        end
+      end
+    end
+
+    for _, post in ipairs(undated) do
+      local published = dates[version_key(post.title)]
+      local timestamp = published and M.parse_date(published)
+
+      if timestamp then
+        post.timestamp = timestamp
+        post.date = timestamp:sub(1, 10)
+      end
+    end
+
+    callback()
+  end
+
+  local key = M.project_key(project)
+  local cached = release_cache[key]
+
+  if fresh(cached, opts or {}) then
+    vim.schedule(function()
+      apply(cached.releases)
+    end)
+
+    return
+  end
+
+  local provider = project.provider == "codeberg"
+      and require("oculus.codeberg")
+    or require("oculus.github")
+
+  provider.repository_releases(project.repository, opts or {}, function(releases)
+    release_cache[key] = { fetched_at = os.time(), releases = releases or {} }
+    apply(releases)
+  end)
+end
+
+-- Fetching --------------------------------------------------------------------
 
 -- Load and parse the feed at `url`: callback(feed, err, cached).
 function M.fetch_feed(url, opts, callback)
@@ -1747,6 +1986,12 @@ function M.fetch_feed(url, opts, callback)
     end
 
     local feed, parse_err = M.parse_feed(body, url)
+
+    -- Not a feed: read the page as a changelog, a post per release heading.
+    if not feed and body:find("<[hH][1-6][%s>]") then
+      feed = M.parse_page(body, url)
+      parse_err = "found no releases or dated headings on the page"
+    end
 
     if not feed then
       callback(nil, ("%s: %s"):format(M.display_url(url), parse_err))
@@ -1992,6 +2237,7 @@ function M.post_html(post, opts, callback)
 end
 
 function M.clear()
+  release_cache = {}
   feed_cache = {}
   page_cache = {}
   discovery_cache = {}

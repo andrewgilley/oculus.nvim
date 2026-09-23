@@ -363,6 +363,14 @@ Oculus finds a project's feed in this order:
    usual paths (`/devlog/index.xml`, `/blog/atom.xml`, `/feed.xml`, …) that
    serves one
 
+A devlog can also be a web page with no feed, such as a changelog: set its
+URL like a feed's, for example
+`{ "repository": "quickshell-mirror/quickshell", "provider": "github", "devlog": "https://quickshell.org/changelog/" }`
+in the tracking file. Each heading that names a version (`v0.3.1`,
+`[1.2.0] - 2026-01-05`, `Release 2.0`) or a date becomes a post, holding the
+page up to the next such heading. A version with no date on the page takes the
+date of the project's GitHub or Codeberg release of that version.
+
 A feed found on the homepage is remembered in `state_file`. When a project has
 none, or the wrong one is picked, press `e` in the devlog list to set the feed
 URL (an empty answer looks for it again). When a feed carries only an excerpt

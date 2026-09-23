@@ -206,6 +206,98 @@ do
   assert(vim.deep_equal(section.lines, { "Two", "", "Second", "", "Sub", "", "More" }), vim.inspect(section.lines))
 end
 
+-- A page with no feed reads as a changelog: a post per release heading,
+-- dated from the heading or from the project's release of that version.
+do
+  local page = [[<html><head><title>Changelog</title></head><body><nav>Menu</nav>
+<div class="docs"><h1>Changelog</h1><p>Intro.</p>
+<div style="display: flex"><h2 id="v0.3.1">v0.3.1</h2><h2><a href="/docs/v0.3.1/guide">Documentation</a></h2></div><hr>
+<section><h2 id="bug-fixes">Bug Fixes</h2><ul><li>Fixed a crash, see #120.</li></ul></section>
+<div style="display: flex"><h2 id="v0.3.0">v0.3.0</h2><h2><a href="/docs/v0.3.0/guide">Documentation</a></h2></div><hr>
+<section><h2 id="new-features">New Features</h2><h3 id="bt">Bluetooth</h3><p>Added it.</p></section>
+</div></body></html>]]
+
+  routes["https://shell.org/changelog/"] = page
+  routes["https://api.github.com/repos/owner/shell/releases?per_page=100"] = {
+    { tag_name = "v0.3.1", published_at = "2026-08-21T02:37:12Z" },
+    { tag_name = "v0.3.0", published_at = "2026-05-04T09:39:49Z" },
+  }
+
+  local feed
+
+  devlog.fetch_feed("https://shell.org/changelog/", { force = true }, function(result, err)
+    feed = assert(result, err)
+  end)
+
+  wait_for("the changelog page did not load", function()
+    return feed ~= nil
+  end)
+
+  assert(feed.page and feed.title == "Changelog", vim.inspect(feed.title))
+  assert(#feed.posts == 2, #feed.posts)
+  assert(feed.posts[1].title == "v0.3.1" and feed.posts[1].url == "https://shell.org/changelog/#v0.3.1")
+  assert(feed.posts[1].date == nil)
+
+  local project = { repository = "owner/shell", provider = "github" }
+  local dated = false
+
+  devlog.date_releases(feed, project, {}, function()
+    dated = true
+  end)
+
+  wait_for("the releases did not date the posts", function()
+    return dated
+  end)
+
+  assert(feed.posts[1].date == "2026-08-21" and feed.posts[2].date == "2026-05-04")
+
+  local doc = devlog.render(feed.posts[2].content, {
+    width = 60,
+    base_url = feed.posts[2].url,
+    project = project,
+    skip_title = feed.posts[2].title,
+    whole = feed.posts[2].whole,
+  })
+
+  assert(vim.deep_equal(doc.lines, {
+    "Documentation",
+    "",
+    "────────────────────────────────────────",
+    "",
+    "New Features",
+    "",
+    "Bluetooth",
+    "",
+    "Added it.",
+  }), vim.inspect(doc.lines))
+
+  assert(doc.highlights[1][4] == "OculusDevlogLink", "the documentation link is a link, not a heading")
+
+  local first = devlog.render(feed.posts[1].content, {
+    width = 60,
+    base_url = feed.posts[1].url,
+    project = project,
+    skip_title = "v0.3.1",
+    whole = true,
+  })
+
+  assert(first.references[1] and first.references[1].label == "owner/shell#120")
+
+  -- Dates in the headings themselves, as in a keep-a-changelog file.
+  local flat = assert(devlog.parse_page([[<body><main><h1>Changes</h1><h2>[Unreleased]</h2><p>Soon.</p>
+<h2>[1.2.0] - 2026-01-05</h2><h3>Added</h3><p>A.</p><h2>Release 1.1.0 (March 3, 2025)</h2><p>B.</p></main></body>]],
+    "https://x.org/CHANGELOG"))
+
+  assert(#flat.posts == 2, #flat.posts)
+  assert(flat.posts[1].title == "[1.2.0] - 2026-01-05" and flat.posts[1].date == "2026-01-05")
+  assert(flat.posts[2].date == "2025-03-03", tostring(flat.posts[2].date))
+
+  local flat_doc = devlog.render(flat.posts[1].content, { width = 60, skip_title = flat.posts[1].title, whole = true })
+  assert(vim.deep_equal(flat_doc.lines, { "Added", "", "A." }), vim.inspect(flat_doc.lines))
+
+  assert(not devlog.parse_page("<body><h2>About</h2><p>Nothing dated.</p></body>", "https://x.org/"))
+end
+
 -- Discovery prefers a blog or devlog feed a homepage advertises.
 do
   local html = [[<link rel="alternate" type="application/rss+xml" title="Comments Feed" href="/comments/feed/">

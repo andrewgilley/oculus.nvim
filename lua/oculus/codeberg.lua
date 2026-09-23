@@ -1716,6 +1716,35 @@ function M.repository_info(repository, opts, callback)
   end)
 end
 
+-- The repository's releases, newest first: { tag, name, published_at, html_url }.
+function M.repository_releases(repository, opts, callback)
+  local url = ("%s/api/v1/repos/%s/releases?limit=50"):format(base_url, repository)
+
+  request_json(url, opts or {}, function(payload, err)
+    if err or type(payload) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    local releases = {}
+
+    for _, release in ipairs(payload) do
+      if type(release) == "table" and type(release.tag_name) == "string" then
+        releases[#releases + 1] = {
+          tag = release.tag_name,
+          name = type(release.name) == "string" and release.name or nil,
+          published_at = type(release.published_at) == "string"
+              and release.published_at
+            or (type(release.created_at) == "string" and release.created_at or nil),
+          html_url = type(release.html_url) == "string" and release.html_url or nil,
+        }
+      end
+    end
+
+    callback(releases)
+  end)
+end
+
 function M.viewer(opts, callback)
   request_json(base_url .. "/api/v1/user", opts or {}, function(user, err)
     local login = account_login(user)
