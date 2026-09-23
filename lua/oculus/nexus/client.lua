@@ -17,7 +17,8 @@ local function job(value)
   end
 
   for _, key in ipairs({ "hypothesis_id", "binding_id" }) do
-    assert(value.kind == "composition" and optional_string(value[key]) or string(value[key]), "Missing job " .. key)
+    local standalone = value.kind == "composition" or value.kind == "component_reference"
+    assert(standalone and optional_string(value[key]) or string(value[key]), "Missing job " .. key)
   end
 
   for _, key in ipairs({ "run_id", "result_hypothesis_id", "result_investigation_id", "error", "retry_of", "conclusion" }) do
@@ -28,7 +29,17 @@ local function job(value)
 end
 
 local function validate(command, value)
-  assert(type(value) == "table" and value.schema_version == 1, "Unsupported schema")
+  assert(type(value) == "table" and (value.schema_version == 1 or value.schema_version == 2 and command ~= "resources"), "Unsupported schema")
+
+  if command ~= "resources" then
+    local component = false
+
+    for _, record in ipairs(value.jobs or { value.job }) do
+      if record.kind == "component_reference" then component = true end
+    end
+
+    assert(value.schema_version == (component and 2 or 1), "Unsupported job schema")
+  end
 
   if command == "list" or command == "work" then
     assert(type(value.jobs) == "table" and vim.islist(value.jobs), "Missing jobs list")

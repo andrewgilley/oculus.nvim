@@ -158,6 +158,15 @@ vim.api.nvim_create_user_command("OculusComposition", function(opts)
   require("oculus").open_composition(opts.args ~= "" and opts.args or nil)
 end, { nargs = "?", complete = "file", desc = "Inspect, queue and reopen a linked Plexus composition" })
 
+vim.api.nvim_create_user_command("OculusComponent", function(opts)
+  if #opts.fargs ~= 0 and #opts.fargs ~= 2 then
+    vim.notify("OculusComponent expects a component file and a cases file, or no arguments for history.", vim.log.levels.WARN)
+    return
+  end
+
+  require("oculus").open_component({ source = opts.fargs[1], cases = opts.fargs[2] })
+end, { nargs = "*", complete = "file", desc = "Review, queue and reopen typed component experiments" })
+
 vim.api.nvim_create_user_command("OculusClose", function()
   require("oculus").close()
 end, { desc = "Close Oculus" })

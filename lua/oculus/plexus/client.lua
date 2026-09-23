@@ -19,7 +19,7 @@ function M.request(config, arguments, callback)
   end
 
   vim.list_extend(argv, arguments)
-  local runtime_commands = { hypothesize = true, revise = true, run = true, replay = true, compose = true, ["compose-run"] = true }
+  local runtime_commands = { hypothesize = true, revise = true, run = true, replay = true, compose = true, ["compose-run"] = true, ["component-plan"] = true }
 
   if runtime_commands[arguments[1]] then
     local backend = config.backend or "wasmtime"
@@ -64,7 +64,9 @@ function M.request(config, arguments, callback)
         or (type(value.replay) == "table" and type(value.replay.record) == "table"
           and value.replay.record.schema_version))
 
-      if version ~= 1 then
+      local component_run = arguments[1] == "component-checksum-run" and version == 2
+
+      if version ~= 1 and not component_run then
         callback(nil, "Plexus returned invalid or unsupported JSON")
         return
       end

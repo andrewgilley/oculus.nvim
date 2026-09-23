@@ -111,7 +111,9 @@ function M.open(config, plexus_config, submission)
         local start = #lines + 1
         lines[#lines + 1] = "  " .. text(job.id) .. " · " .. text(job.state) .. " · " .. text(job.resource_id)
 
-        if job.kind == "composition" then
+        if job.kind == "component_reference" then
+          lines[#lines + 1] = "    Component experiment · open archived inputs or case evidence"
+        elseif job.kind == "composition" then
           lines[#lines + 1] = "    Linked composition · open to inspect parts, connections and cases"
         elseif job.kind == "discovery_validation" then
           lines[#lines + 1] = "    Opportunity: " .. text(job.binding_id) .. " · investigation: " .. text(job.hypothesis_id)
@@ -192,6 +194,11 @@ function M.open(config, plexus_config, submission)
   end
 
   function state.submit(value)
+    if value.kind == "component_reference" then
+      action({ "submit-component", value.plan_id, value.artifact_store, config.state_dir })
+      return
+    end
+
     if value.kind == "composition" then
       action({ "submit-composition", value.plan_id, value.artifact_store, config.state_dir })
       return
@@ -243,6 +250,15 @@ function M.open(config, plexus_config, submission)
   function state.open_result(job)
     job = selected(job)
     if not job then return end
+
+    if job.kind == "component_reference" then
+      local result_config = vim.deepcopy(plexus_config or {})
+      result_config.store = job.artifact_store
+      local options = type(job.run_id) == "string" and { run_id = job.run_id } or { plan_id = job.plan_id }
+      state.close()
+      require("oculus.components").open(result_config, config, options)
+      return
+    end
 
     if job.kind == "composition" then
       local result_config = vim.deepcopy(plexus_config or {})

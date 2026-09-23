@@ -127,7 +127,7 @@ lazy.nvim ~
 >lua
     {
       "andrewgilley/oculus.nvim",
-      cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusComposition", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
+      cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusComposition", "OculusComponent", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
       keys = {
         { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
       },
@@ -952,6 +952,33 @@ Run `nvim --headless -u NONE --cmd 'set showtabline=0' -l
 tests/c_zig_integration_spec.lua` to exercise real C++ and Zig Git histories,
 the actual Plexus CLI, relationship rendering and archived source navigation
 after deleting the source repositories.
+
+
+COMPONENT EXPERIMENTS ~
+
+:OculusComponent [component.wat cases.json]
+    With two files, archive and review a typed Component Model experiment without
+    execution. With no arguments, browse archived plans, runs and comparisons.
+    Review source/WIT (Enter), selected export, runtime, typed cases, limits and
+    scope. plexus.component_export defaults to checksum; use scan or summarize
+    for those exports. plexus.backend and plexus.zug_command select the runtime.
+
+Press n to queue a reviewed plan, w in Nexus to execute, and o to reopen expected
+values, observations and conclusions. A successful job can contain contradicted
+case evidence. Archived source files may be removed after preparing a plan.
+Press h for history, Enter to reopen, r to reload, and d on a run to explicitly
+select another run ID for comparison. Runtime agreement is separate from both
+case conclusions and does not establish general Component Model conformance.
+
+Reopen a persisted plan, run, or comparison through the Lua API:
+    require("oculus").open_component({ plan_id = id })
+    require("oculus").open_component({ run_id = id })
+    require("oculus").open_component({ comparison_id = id })
+
+The component fixtures in plexus/fixtures/fixed-length-lists/component/ cover
+fixed lists, variable lists, returned lists, and UTF-8 strings/record results.
+tests/component_integration_spec.lua queues all four profiles on both runtimes
+and verifies archived evidence and agreement on contradicted behavior.
 
 
 EXECUTABLE COMPOSITIONS ~

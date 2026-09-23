@@ -111,7 +111,7 @@ Oculus supports all the usual plugin managers.
 ```lua
 {
   "andrewgilley/oculus.nvim",
-  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusComposition", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
+  cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusComposition", "OculusComponent", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
   keys = {
     { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
   },
@@ -479,6 +479,7 @@ Set `inspect_colorscheme = false` to turn this off.
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
 | `:OculusPlexus [hypothesis.json]` | Explore hypotheses and run scoped experiments |
 | `:OculusComposition [manifest.json\|plan-id]` | Inspect parts, connections, cases and archived composition attempts |
+| `:OculusComponent [component.wat cases.json]` | Review typed component experiments, queue them, or browse archived evidence |
 | `:OculusInvestigate [rust\|c-zig]` | Investigate a committed local change against a consumer project |
 | `:OculusInvestigations` | Browse and reopen durable project investigations |
 | `:OculusInvestigation`  | Browse and reopen durable project investigations (alias) |
@@ -747,6 +748,34 @@ checks signature evidence alongside the still-unresolved behavior obligation.
 Run `nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/c_zig_integration_spec.lua`
 to exercise real C++ and Zig Git histories, the actual Plexus CLI, relationship
 rendering and archived source navigation after deleting the source repositories.
+
+### Component experiments
+
+`:OculusComponent /path/to/component.wat /path/to/cases.json` archives a typed
+Component Model experiment without executing it. Review the source and WIT
+(`Enter` opens archived bytes), export, runtime identity, typed inputs and expected
+values, limits, execution properties and evidence scope. Set `plexus.backend`
+to `wasmtime` or `zug` (with `plexus.zug_command`); set `plexus.component_export`
+to `scan` or `summarize` for those exports, or leave it unset for `checksum`.
+The sibling `plexus/fixtures/fixed-length-lists/component/` contains all four
+supported profiles: fixed lists, variable lists, returned lists, and UTF-8
+strings with record results.
+
+Press `n` to queue the reviewed plan, `w` in Nexus to execute the queue, and `o`
+to reopen per-case expected values, observations, failures and scoped conclusions.
+Nexus can reopen queued plans before any evidence exists. Source files can
+disappear after preparation; execution and reopening use archived inputs.
+
+With no arguments, `:OculusComponent` lists archived plans, runs and comparisons.
+`Enter` reopens the selected record; `h` returns to history; `r` reloads. On a run,
+`d` asks for another explicitly selected run ID. Plexus checks compatibility and
+compares the runtimes. The view shows runtime agreement separately from both
+case conclusions: two runtimes agreeing on wrong answers remain contradicted.
+No comparison is inferred or launched automatically. Reopen a persisted record
+with `require("oculus").open_component({ plan_id = id })`, `{ run_id = id }`, or
+`{ comparison_id = id }`. `tests/component_integration_spec.lua` exercises all
+four profiles through Nexus on both runtimes and checks archived reopening and
+agreement on contradicted behavior.
 
 ### Executable compositions
 
