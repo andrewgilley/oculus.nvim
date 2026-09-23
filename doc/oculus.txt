@@ -10,7 +10,6 @@ Table of Contents                                   *oculus-table-of-contents*
   - Installation                                         |oculus-installation|
   - Quick start                                           |oculus-quick-start|
   - Usage                                                       |oculus-usage|
-  - Plexus investigations                       |oculus-plexus-investigations|
   - Options                                                   |oculus-options|
   - Authentication                                     |oculus-authentication|
   - Tracking file                                       |oculus-tracking-file|
@@ -49,7 +48,6 @@ change markers, chunk navigation, and an AI-assisted overview.
     - Inspecting changes
     - Inspect overview
     - Commands
-- |oculus-plexus-investigations|
 - |oculus-options|
 - |oculus-authentication|
 - |oculus-tracking-file|
@@ -86,10 +84,6 @@ FEATURES                                                     *oculus-features*
 - **Pull request review context.** Review threads appear on the lines they
     discuss, can be loaded into the code as full comment threads, and the overview
     shows each reviewer’s verdict, check results and merge state.
-- **What a change makes possible.** Investigate a committed change against a
-    project that uses it. Plexus |oculus-plexus-investigations| reports what became
-    possible, what broke, which substitutions and adapters could connect them, and
-    how far each has been tested, with every claim traceable to its source.
 - **AI-assisted overview.** Generate a description of a change, or ask for likely
     patch locations for an issue, then spin up a `git worktree` to start the fix.
 - **Plain JSON source of truth.** You can keep your tracked lists in a
@@ -127,7 +121,7 @@ lazy.nvim ~
 >lua
     {
       "andrewgilley/oculus.nvim",
-      cmd = { "OculusOpen", "OculusToggle", "OculusInspect", "OculusPlexus", "OculusComposition", "OculusComponent", "OculusCapabilities", "OculusNexus", "OculusInvestigate", "OculusInvestigations" },
+      cmd = { "OculusOpen", "OculusToggle", "OculusInspect" },
       keys = {
         { "<leader>oo", "<cmd>OculusToggle<cr>", desc = "Oculus" },
       },
@@ -560,629 +554,45 @@ Set `inspect_colorscheme = false` to turn this off.
 
 COMMANDS ~
 
-  --------------------------------------------------------------------------------------
-  Command                                       Description
-  --------------------------------------------- ----------------------------------------
-  :OculusOpen [project\|@user]                  Open the Oculus window, optionally on a
-                                                project’s activity feed (owner/repo or
-                                                github:owner/repo) or a user’s (@login
-                                                or @codeberg:login; @me is the signed-in
-                                                account)
+  ----------------------------------------------------------------------------------
+  Command                                   Description
+  ----------------------------------------- ----------------------------------------
+  :OculusOpen [project\|@user]              Open the Oculus window, optionally on a
+                                            project’s activity feed (owner/repo or
+                                            github:owner/repo) or a user’s (@login
+                                            or @codeberg:login; @me is the signed-in
+                                            account)
 
-  :OculusWork                                   Open the Oculus window on my work
+  :OculusWork                               Open the Oculus window on my work
 
-  :OculusPlexus [hypothesis.json]               Explore hypotheses and run scoped
-                                                experiments
+  :OculusClose                              Close it
 
-  :OculusComposition [manifest.json\|plan-id]   Inspect parts, connections, cases and
-                                                archived composition attempts
+  :OculusToggle                             Toggle it
 
-  :OculusComponent [component.wat cases.json]   Review typed component experiments,
-                                                queue them, or browse archived evidence
+  :OculusInspect [target]                   Inspect an issue, PR, or commit (prompts
+                                            if no target)
 
-  :OculusInvestigate [rust\|c-zig]              Investigate a committed local change
-                                                against a consumer project
+  :OculusRename [name]                      Rename the selected group or item
 
-  :OculusInvestigations                         Browse and reopen durable project
-                                                investigations
+  :OculusAddDirectory [name]                Create a group at the current location
 
-  :OculusInvestigation                          Browse and reopen durable project
-                                                investigations (alias)
+  :OculusMoveToDirectory [project] [dest]   Move a project to a group (opens a
+                                            picker with no arguments)
 
-  :OculusNexus                                  Manage local deployment resources and
-                                                queued experiments
-
-  :OculusCapabilities discovery.json            Discover API opportunities beside source
-
-  :OculusClose                                  Close it
-
-  :OculusToggle                                 Toggle it
-
-  :OculusInspect [target]                       Inspect an issue, PR, or commit (prompts
-                                                if no target)
-
-  :OculusRename [name]                          Rename the selected group or item
-
-  :OculusAddDirectory [name]                    Create a group at the current location
-
-  :OculusMoveToDirectory [project] [dest]       Move a project to a group (opens a
-                                                picker with no arguments)
-
-  :OculusReloadTracking                         Re-read the tracking file
-  --------------------------------------------------------------------------------------
+  :OculusReloadTracking                     Re-read the tracking file
+  ----------------------------------------------------------------------------------
 To bind your own keys without going through `setup()`, map these:
 
-  ------------------------------------------------------------------------
-  Mapping                         Action
-  ------------------------------- ----------------------------------------
-  <Plug>(oculus-toggle)           Toggle the window
-
-  <Plug>(oculus-open)             Open the window
-
-  <Plug>(oculus-close)            Close the window
-
-  <Plug>(oculus-work)             Open the window on my work
-
-  <Plug>(oculus-inspect)          Inspect an issue, PR, or commit
-
-  <Plug>(oculus-investigations)   Browse durable project change
-                                  investigations
-
-  <Plug>(oculus-investigation)    Browse durable project change
-                                  investigations (alias)
-  ------------------------------------------------------------------------
+  Mapping                  Action
+  ------------------------ ---------------------------------
+  <Plug>(oculus-toggle)    Toggle the window
+  <Plug>(oculus-open)      Open the window
+  <Plug>(oculus-close)     Close the window
+  <Plug>(oculus-work)      Open the window on my work
+  <Plug>(oculus-inspect)   Inspect an issue, PR, or commit
 >lua
     vim.keymap.set("n", "<leader>oo", "<Plug>(oculus-toggle)")
 <
-
-
-PLEXUS INVESTIGATIONS                           *oculus-plexus-investigations*
-
-`:OculusPlexus [hypothesis.json]` opens the Plexus investigation view; `P` in
-Oculus opens the last investigation. Plexus is a separate local executable.
-Build it in the sibling `plexus` project and configure its location:
-
->lua
-    require("oculus").setup({
-      plexus = {
-        command = { "/absolute/path/to/plexus/target/debug/plexus" },
-        store = "/absolute/path/to/investigation-store",
-        backend = "wasmtime", -- or "zug"
-        -- Required for backend = "zug":
-        -- zug_command = "/absolute/path/to/zug/zig-out/bin/zug-plexus",
-        timeout_ms = 120000,
-        catalog_preview = true, -- derive catalog entries' findings in the background
-      },
-    })
-<
-
-The default command is `{ "plexus" }`, and the default store is
-`stdpath("data") .. "/oculus/plexus"`. Commands run asynchronously as argument
-lists. Oculus renders the engine’s results; Plexus owns inference,
-provenance, runtime selection, and evidence interpretation.
-
-Preparation reads saved files from disk; unsaved editor buffers are not
-captured. Save relevant buffers before preparing or revising.
-
-For an initial example, open the sibling
-`plexus/fixtures/hypotheses/hypothesis.json`. The view shows the question,
-declaration status, worktree status, selected providers and their relevance,
-artifact mappings, pinned runtime, unresolved obligations, and current/stale
-experiment evidence. Move to any line of a binding before running it.
-
-  -----------------------------------------------------------------------
-  Key                                 Action
-  ----------------------------------- -----------------------------------
-  D                                   Choose a Rust discovery manifest
-                                      and open capabilities beside source
-
-  m                                   Open a hypothesis manifest (prepare
-                                      without executing)
-
-  l                                   Load an existing hypothesis
-                                      artifact ID from this store
-
-  r                                   Reload the current immutable
-                                      hypothesis
-
-  R                                   Create a revision from the current
-                                      manifest and carry evidence forward
-
-  x                                   Run the selected binding’s exact
-                                      plan, then attach the run to its
-                                      cases obligation
-
-  n                                   Queue the selected binding in Nexus
-                                      and open deployment jobs
-
-  d                                   Compare two archived run IDs and
-                                      inspect runtime agreement, case
-                                      outputs, and limitations
-
-  J                                   Inspect the full hypothesis JSON in
-                                      a separate view
-
-  H                                   Inspect the store’s run history
-                                      JSON
-
-  c / Ctrl-C                          Cancel the current local operation
-
-  q / Esc                             Close and cancel the pending
-                                      operation
-  -----------------------------------------------------------------------
-Passing cases do not resolve implementation conformance or complete composition
-execution. Changing the configured backend does not rewrite existing pinned
-plans: use `R` to prepare a revision for the new backend. A backend mismatch is
-recorded by Plexus as unsupported evidence, never silently rerouted. To retain
-a separate comparison branch, use `m` to prepare the same manifest again.
-
-Press `d` and enter the two run IDs shown in evidence or `H` history. The first
-prompt offers an attached run when available. Plexus compares the archived
-workloads without executing either again; different inputs are rejected. The
-separate comparison view shows each runtime’s own conclusion alongside
-case-by-case agreement, divergence, or inconclusive results. Agreement can
-include matching wrong outputs, so it does not establish correctness. Press `J`
-there for full evidence and runtime identities, or `q` to return to the
-unchanged investigation. The comparison artifact ID identifies its durable
-evidence.
-
-The last successfully displayed ID and manifest are remembered per store under
-`stdpath("state")/oculus-plexus/`. Reopening without a path restores that ID.
-Errors preserve the previous view. Cancellation stops local waiting; a run
-already written by Plexus remains in history, even if attachment was cancelled.
-The initial bridge accepts explicit manifests; selecting projects in the
-activity feed does not yet generate hypotheses automatically.
-
-Lua entry point: `require("oculus").open_plexus(manifest_or_nil)`.
-
-The bridge’s process/lifecycle test runs with `nvim --headless -u NONE --cmd
-'set showtabline=0' -l tests/plexus_spec.lua`. With the sibling Plexus binary
-built, `tests/plexus_integration_spec.lua` runs the real prepare → run →
-attach → revise workflow. It accepts `PLEXUS_BIN`, `PLEXUS_BACKEND`, and
-`PLEXUS_ZUG_COMMAND` environment overrides.
-
-With both binaries built, run `nvim --headless -u NONE --cmd 'set
-showtabline=0' -l tests/plexus_comparison_integration_spec.lua` for the
-fixed-length-list adapter → Wasmtime/Zug runs → comparison workflow;
-`PLEXUS_BIN` and `PLEXUS_ZUG_WORKER` override the sibling binary paths.
-
-
-INVESTIGATE A SELECTED CHANGE ~
-
-Press `g` on a local commit in an Oculus activity feed, or run
-`:OculusInvestigate` to choose a local repository and revision pair. The
-prompts collect the producer’s relative Cargo manifest, a tracked local
-consumer (or a repository path), its committed revision and manifest, and your
-investigation intent. Plexus resolves actual Git identities and captures
-committed sources; uncommitted worktree edits are excluded. No discovery
-manifest or artifact ID is needed. Cargo capture can take longer than ordinary
-requests; configure `plexus.capture_timeout_ms` (default `300000`) if
-necessary.
-
-The default Rust analysis supports enum additions reaching rejecting consumer
-matches and candidate function substitutions. Findings remain inferred and
-explicitly list limitations. Unsupported captures and changes with no matching
-opportunities remain visible records. Workspace packages can be selected using
-paths such as `crates/parser/Cargo.toml`.
-
-Run `:OculusInvestigate c-zig` to investigate a C or C++ producer against a Zig
-consumer. The prompts collect the producer’s entry header, its language (`c`
-or `c++`, default `c`), the include directories to search, and the consumer’s
-explicit Zig source file instead of Cargo manifests. For example, select
-`include/api.hpp`, `include` and `src/adapter.zig`. The investigation shows the
-header language, the include directories and both selected paths; source
-references and archived navigation work as they do for Rust findings.
-
-Include directories are repository-relative and comma separated, searched in
-the order given. The repository root and the header’s own directory are
-always searched, so a self-contained header needs no answer. A finding opens
-whichever captured file actually holds its declaration, including a header the
-entry header includes, or a macro table that generates the symbol.
-
-This analysis requires Clang 22 on the machine running Plexus. It observes the
-entry header together with the committed files it includes, plus the pinned
-compiler’s own freestanding headers; a header needing hosted C library or
-build-generated headers is reported as unsupported and names what it could not
-resolve. Plexus can expose compatible declarations and missing C ABI wrappers,
-including C++ declarations that require C linkage, and records whether each
-declaration was written out or produced by expanding a macro. These findings
-describe declarations, not completed implementations, successful linking, or
-verified runtime behavior. Unresolved obligations remain visible. Press `p` on
-a supported finding to prepare an executable composition with explicit sources
-and cases. `:OculusInvestigate rust` explicitly selects the existing Rust
-analysis; `g` on local activity continues to use that default.
-
-
-READING AN INVESTIGATION ~
-
-An investigation answers its intent with the relationships Plexus found between
-the producer’s change and the consumer, grouped by what each one means for
-the consumer:
-
-  -----------------------------------------------------------------------
-  Group                               Meaning
-  ----------------------------------- -----------------------------------
-  + Newly possible                    Nothing met the requirement before
-                                      the change; a declaration meets it
-                                      now
-
-  ⇄ Substitution paths                Something the consumer relies on
-                                      was removed or changed; a new
-                                      capability has the shape to replace
-                                      it
-
-  ◇ One adapter away                  A matching capability exists, but
-                                      only an explicit adapter can
-                                      connect it
-
-  ! Not yet handled                   The producer now exposes a
-                                      capability that reaches a consumer
-                                      path which rejects it
-
-  ✗ Broken by this change             The requirement was met before the
-                                      change and is not met after it
-
-  ≠ Incompatible                      The provider declares it, in a
-                                      shape the requirement does not
-                                      accept
-
-  ? Unmet                             Neither revision declares anything
-                                      that meets the requirement
-
-  = Unchanged                         Met before and after the change;
-                                      shown for context
-  -----------------------------------------------------------------------
-Plexus assigns each finding its group (its `effect`); Oculus only arranges
-them.
-
-The view has two panes, side by side or stacked on a narrow screen. The list
-names the producer and consumer, the revisions, your intent and how many
-findings each group holds, then gives one line per finding. The glyphs at the
-end of a line are the finding’s obligations in order: `✓` supported, `✗`
-contradicted, `≠` conflicting evidence, `?` inconclusive, `○` open. Your
-decision on a finding (promoted, selected, deferred or dismissed) shows beside
-them.
-
-The detail pane follows the list’s cursor. For a finding it shows:
-
-- **Relationship**: the provider’s capability and the consumer’s requirement,
-    each with its revision, signature and source location.
-- **Why**: Plexus’s explanation of the inference.
-- **Proof path**: the chain of observations Plexus followed, with their sources.
-- **Evidence state**: what was observed, what the rule inferred, and each
-    obligation with its outcome; an open one names the evidence that would
-    resolve it.
-- **Next step**: the experiment (`n`) or reviewable preparation (`p`) Plexus
-    accepts for the finding, what blocks it, or that none applies yet.
-- **Evidence**: every run, with its outcome, scope, cases and archived output.
-- **Related**: other findings about the same requirement, such as a removed
-    binding and the substitutions that could replace it.
-- **Decision** and **Limits**.
-
-On the header rows the detail answers the intent, lists the next steps across
-every finding, and records what was observed and its provenance. `API CHANGES`
-lists every declaration that differs between the revisions, and `SCOPE` the
-limitations that apply to the whole analysis.
-
-`:OculusInvestigations`, `g` or `gP` opens the persistent catalog in a float
-covering the same region as the main Oculus window. Each entry shows the
-producer and consumer, the analysis, when it was captured and your intent.
-Plexus derives findings per investigation, so the catalog loads them one at a
-time behind the list and each entry then counts them by group; the detail pane
-previews the selected investigation, or says why an unsupported capture
-stopped. Set `plexus.catalog_preview = false` to list entries without loading
-their findings. Restarting Neovim does not erase findings or evidence.
-
-`Enter` on a finding opens the consumer’s source location, digest-verified
-locally, or a read-only archived snapshot when the local bytes changed or
-disappeared. In the detail pane, `Enter` opens the location, run output or
-related finding under the cursor, or takes the step on that line. Opening a
-source location hands the screen over: the float closes and the cursor lands on
-the location in an ordinary window, because the float would otherwise cover it.
-Reopen the catalog with `:OculusInvestigations` or `g` to follow another
-finding.
-
-  -----------------------------------------------------------------------
-  Key                                 Action
-  ----------------------------------- -----------------------------------
-  Enter                               Open a catalog entry or a finding’s
-                                      source; in the detail, what is
-                                      under the cursor
-
-  Tab                                 Move between the list and detail
-                                      panes
-
-  ]] / [[                             Next or previous finding, or
-                                      catalog entry
-
-  Ctrl-d / Ctrl-u                     Scroll the detail pane from the
-                                      list
-
-  n                                   Queue the finding’s experiment
-                                      through Nexus
-
-  p                                   Prepare the finding’s composition
-                                      or consumer adaptation, and review
-                                      it
-
-  h / s / d / x                       Promote, select, defer or dismiss
-                                      the finding
-
-  u                                   Clear your decision on the finding
-
-  J                                   Show the raw Plexus records behind
-                                      the finding, and return
-
-  r                                   Reload the investigation or catalog
-
-  g                                   Return to the catalog
-
-  c / Ctrl-c                          Stop waiting for the pending
-                                      request
-
-  q / Esc                             Close the view
-  -----------------------------------------------------------------------
-The footer lists only the keys that apply to the selected row: `n` and `p`
-appear when Plexus offers that step for the finding. A decision is your own
-attributed record, kept beside the finding; it never changes Plexus’s claims.
-
-A supported native Plexus fixture or compiler signature check requires a Nexus
-resource with backend `plexus-native`; it does not run as a Wasm experiment.
-The Nexus view’s `w` runs the queue and `o` reopens the investigation with
-its durable, check-scoped evidence. Evidence resolves only the obligation it
-names, so a finding stays inferred, and conflicting results all remain visible.
-Compiler support for a candidate replacement’s signature leaves behavioral
-compatibility open. Signature checks require a native resource wall budget of
-120 seconds.
-
-Run `nvim --headless -u NONE -l tests/investigations_spec.lua` for prompt,
-catalog, source provenance, cancellation and Nexus round-trip coverage. With
-the sibling Plexus binary built, `tests/investigations_integration_spec.lua`
-creates a temporary Git workspace, submits through the actual command prompts,
-reopens the durable catalog and navigates archived source after deleting the
-repository. It accepts a `PLEXUS_BIN` override. The optional
-`tests/investigations_nexus_integration_spec.lua` uses
-`PLEXUS_INVESTIGATION_FIXTURE` pointing to a JSON descriptor containing `store`
-and `investigation_id` for an existing supported capture. It exercises the real
-native fixture queue and evidence return using temporary Nexus state, and
-appends validation evidence to that capture’s artifact store. For a
-compiler-check capture, add `expected_conclusion: "supported_for_signature"`
-and optionally `opportunity_id` to the descriptor. The same integration test
-then checks signature evidence alongside the still-unresolved behavior
-obligation.
-
-Run `nvim --headless -u NONE --cmd 'set showtabline=0' -l
-tests/c_zig_integration_spec.lua` to exercise real C++ and Zig Git histories,
-the actual Plexus CLI, relationship rendering and archived source navigation
-after deleting the source repositories.
-
-
-COMPONENT EXPERIMENTS ~
-
-`:OculusComponent /path/to/component.wat /path/to/cases.json` archives a typed
-Component Model experiment without executing it. Review the source and WIT
-(`Enter` opens archived bytes), export, runtime identity, typed inputs and
-expected values, limits, execution properties and evidence scope. Set
-`plexus.backend` to `wasmtime` or `zug` (with `plexus.zug_command`); set
-`plexus.component_export` to `scan` or `summarize` for those exports, or leave
-it unset for `checksum`. The sibling
-`plexus/fixtures/fixed-length-lists/component/` contains all four supported
-profiles: fixed lists, variable lists, returned lists, and UTF-8 strings with
-record results.
-
-Press `n` to queue the reviewed plan, `w` in Nexus to execute the queue, and
-`o` to reopen per-case expected values, observations, failures and scoped
-conclusions. Nexus can reopen queued plans before any evidence exists. Source
-files can disappear after preparation; execution and reopening use archived
-inputs.
-
-With no arguments, `:OculusComponent` lists archived plans, runs and
-comparisons. `Enter` reopens the selected record; `h` returns to history; `r`
-reloads. On a run, `d` asks for another explicitly selected run ID. Plexus
-checks compatibility and compares the runtimes. The view shows runtime
-agreement separately from both case conclusions: two runtimes agreeing on wrong
-answers remain contradicted. No comparison is inferred or launched
-automatically. Reopen a persisted record with
-`require("oculus").open_component({ plan_id = id })`, `{ run_id = id }`, or `{
-comparison_id = id }`. `tests/component_integration_spec.lua` exercises all
-four profiles through Nexus on both runtimes and checks archived reopening and
-agreement on contradicted behavior.
-
-
-EXECUTABLE COMPOSITIONS ~
-
-`:OculusComposition /path/to/composition.json` prepares a linked core Wasm plan
-without executing it. Start with the sibling
-`plexus/fixtures/compositions/checksum-link/composition.json`. The view shows
-the provider and consumer, typed connections, pinned runtime, memory inputs,
-expected case results, link evidence and behavior evidence separately.
-Preparation uses the configured `plexus.backend`; Nexus places the resulting
-pinned runtime plan.
-
-Press `n` to queue the displayed plan, then `w` in Nexus to work the queue and
-`o` to reopen its evidence. A successful Nexus job can contain a contradicted
-behavioral result. `h` lists archived composition runs; `Enter` reopens a
-run’s plan; `d` on a run compares it with another runtime’s run ID. `r`
-reloads and `m` prepares another manifest. Without an argument the command
-reopens the last plan for this store. Sources can be removed after preparation:
-execution and reopening use archived bytes. Evidence remains limited to those
-parts and cases.
-
-For a C/C++–Zig finding, press `p` in `:OculusInvestigations` and select a
-native composition request file. The request identifies the selected
-investigation and opportunity, committed producer compilation units, optional
-additional files, an absolute Zig 0.16 executable, and behavioral cases. For
-example:
-
->json
-    {
-      "schema_version": 1,
-      "investigation_id": "sha256:<investigation digest>",
-      "opportunity_id": "<selected finding id>",
-      "producer_sources": ["src/api.cpp"],
-      "producer_files": [],
-      "consumer_files": [],
-      "zig": "/absolute/path/to/zig",
-      "cases": [{"name": "known behavior", "arguments": [], "expected_stdout": "", "expected_exit": 0}]
-    }
-<
-
-The captured Zig source must be an executable entry point that exercises the
-selected interface. Plexus may propose a bounded scalar C ABI wrapper; `Enter`
-on an adapter or source row opens its digest-verified archived text for review.
-The plan shows toolchain identity, cases, obligations and execution
-limitations. `n` queues this exact reviewed plan on a `plexus-native` resource.
-`o` in Nexus returns to the originating finding with build, link and case
-evidence. `Enter` on an output artifact opens its retained stdout or
-diagnostic. Native execution uses trusted local source; passing cases do not
-establish general equivalence, pointer safety or compatibility on other
-targets.
-
-For a Rust candidate substitution, press `p` and name the consumer tests whose
-behavior must be kept (exact test names, separated by spaces). Oculus writes
-the request; Plexus proposes a patch that rewrites the consumer’s calls to
-the replacement, and shows it with each edit. `Enter` on the patch row opens
-the archived diff for review; your worktree is never changed. `n` queues the
-plan. The run builds the consumer against the producer before the change (the
-baseline), then the unadapted and the adapted consumer after it, and runs the
-selected tests before and after. `o` in Nexus returns to the finding with
-separate build and test obligations: `supported_for_cases`, `build_failed`,
-`behavior_failed`, or `inconclusive` when the baseline itself fails. Selected
-tests do not establish that the functions behave the same in general. See the
-sibling Plexus `docs/selected-changes.md` for the profile and its limits.
-
-The real scenarios are covered by `tests/compositions_integration_spec.lua`,
-`tests/c_zig_composition_integration_spec.lua` and
-`tests/rust_adaptation_integration_spec.lua`; all run through the UI and Nexus
-and reopen results after the source repositories or manifests are removed.
-
-
-NEXUS DEPLOYMENT RESOURCES ~
-
-`:OculusNexus` opens the local resource and job view. From a Plexus
-investigation, press `n` on a binding to queue its pinned experiment. Nexus
-selects an available resource matching the runtime and resource policy; `w`
-explicitly starts the queue. Completed jobs link back to the evidence attached
-by Plexus in the original artifact store. Oculus renders placement and
-lifecycle records; Nexus owns those decisions.
-
->lua
-    require("oculus").setup({
-      nexus = {
-        command = { "python3", "/absolute/path/to/nexus/nexus.py" },
-        state_dir = vim.fn.stdpath("data") .. "/oculus/nexus",
-      },
-    })
-<
-
-The default command is `{ "nexus" }`. Configure resources using the sibling
-Nexus project’s CLI before submitting experiments. Its initial deployment
-scope is local native processes with Wasmtime or Zug execution through Plexus,
-plus supported native discovery fixtures. It does not provision cloud machines.
-Existing plan runtime identities remain pinned.
-
-  -----------------------------------------------------------------------
-  Key                                 Action
-  ----------------------------------- -----------------------------------
-  r                                   Refresh job progress or resource
-                                      availability
-
-  w                                   Drain the queued jobs with a local
-                                      worker
-
-  c                                   Request cancellation of the
-                                      selected job, including while work
-                                      is active
-
-  R                                   Retry the selected job as a new
-                                      durable job
-
-  o / Enter                           Open the selected job’s attached
-                                      evidence in Plexus
-
-  s                                   Inspect available resources and
-                                      their memory, fuel and time limits
-
-  g                                   Return to the jobs list
-
-  q / Esc                             Close the view; queued or running
-                                      work remains managed by Nexus
-  -----------------------------------------------------------------------
-Work runs asynchronously. Use `r` to inspect progress; closing the view does
-not cancel jobs or terminate the worker. A successful execution can still
-produce evidence contradicting the hypothesis; inspect the attached Plexus
-conclusion. Failures retain their job record and any archived run even if
-evidence attachment did not finish. Retry preserves the original attempt.
-
-Run `nvim --headless -u NONE --cmd 'set showtabline=0' -l tests/nexus_spec.lua`
-to check submission, resource rendering, concurrent cancellation and view
-lifecycle. With the sibling Plexus and Zug binaries built,
-`tests/nexus_integration_spec.lua` exercises selected bindings through a
-temporary Nexus deployment and both runtimes, then reopens attached evidence in
-Oculus. It accepts `PLEXUS_BIN`, `PLEXUS_ZUG_WORKER`, and `NEXUS_SCRIPT`
-overrides.
-
-
-RUST CAPABILITY OPPORTUNITIES BESIDE SOURCE ~
-
-`:OculusCapabilities /absolute/path/discovery.json` opens a normal vertical
-split beside your current source window. You can also press `C` on the Oculus
-start screen or `D` in the Plexus investigation view and choose a discovery
-manifest. It uses the same `plexus.command`, `store`, and `timeout_ms`
-settings. Plexus compares archived Rust API snapshots, identifies supported
-consumer match gaps, and returns the evidence path and limitations; Oculus only
-presents the typed report.
-
-The report shows API deltas, producer revisions and snapshot IDs, source
-digests, inferred opportunities, and each inference’s limits. On an
-opportunity:
-
-  -----------------------------------------------------------------------
-  Key                                 Action
-  ----------------------------------- -----------------------------------
-  Enter                               Navigate to the consumer match in
-                                      the adjacent source window
-
-  p                                   Explicitly run the generated Plexus
-                                      WIT validation fixture
-
-  r                                   Rediscover from the manifest’s
-                                      current inputs
-
-  c / Ctrl-C                          Cancel the pending local operation
-
-  q / Esc                             Close this split and cancel pending
-                                      work
-  -----------------------------------------------------------------------
-Source navigation checks the saved file against the archived SHA-256 digest and
-refuses stale files or unsaved source buffers. Opening the report does not
-replace your source buffer or run validation. Fixture results remain scoped
-observations; `accepted` or `reproduced_gap` does not promote an inferred
-opportunity into complete implementation support. Validation operates on
-archived report inputs, so rediscover first when investigating newly edited
-source.
-
-For the prepared wit-parser → Plexus investigation, start Neovim from the
-shared workspace root and configure `plexus.command` to
-`plexus/target/debug/plexus` and `plexus.store` to
-`plexus/.plexus/rust-api/store` using absolute paths. Then run:
-
->vim
-    :OculusCapabilities plexus/.plexus/rust-api/discovery.json
-<
-
-This generated manifest compares the archived upstream APIs against Plexus’s
-extractor. If it has not been prepared yet, follow the sibling Plexus
-`docs/rust-api.md` workflow first. Select an opportunity, press `Enter` to
-inspect its consumer code, return to the report split, and press `p` to run the
-fixture. The command does not require a runtime backend selection.
-
-Lua entry point: `require("oculus").open_capabilities(manifest)`. The
-source-navigation, explicit-validation, and cancellation checks run with `nvim
---headless -u NONE --cmd 'set showtabline=0' -l tests/capabilities_spec.lua`.
-`tests/capabilities_integration_spec.lua` exercises the real CLI; set
-`PLEXUS_DISCOVERY_MANIFEST` and `PLEXUS_DISCOVERY_STORE` to prepared discovery
-inputs, and optionally `PLEXUS_BIN` to the engine executable.
 
 
 OPTIONS                                                       *oculus-options*
@@ -1486,84 +896,52 @@ Every group is defined with `default = true`, so your colorscheme and your own
 `:highlight` commands take precedence. Groups "from" another group copy its
 colours when the colorscheme loads, and are left alone if you have set them.
 
-  -----------------------------------------------------------------------------
-  Group                          Default               Used for
-  ------------------------------ --------------------- ------------------------
-  OculusNormal                   derived from your     Window background
-                                 window
+  ----------------------------------------------------------------------------
+  Group                         Default               Used for
+  ----------------------------- --------------------- ------------------------
+  OculusNormal                  derived from your     Window background
+                                window
 
-  OculusBorder                   derived from your     Window border
-                                 window
+  OculusBorder                  derived from your     Window border
+                                window
 
-  OculusDirectory                links to Directory    Groups in the lists
+  OculusDirectory               links to Directory    Groups in the lists
 
-  OculusAccounts                 links to DiagnosticOk Signed-in accounts
+  OculusAccounts                links to DiagnosticOk Signed-in accounts
 
-  OculusActivityIcon             links to WarningMsg   Event icons
+  OculusActivityIcon            links to WarningMsg   Event icons
 
-  OculusActivityPreview          links to DiagnosticOk Activity previews
+  OculusActivityPreview         links to DiagnosticOk Activity previews
 
-  OculusContributorSelected      links to Title        The selected list entry
+  OculusContributorSelected     links to Title        The selected list entry
 
-  OculusMoveTarget               links to              The item being moved
-                                 DiagnosticWarn
+  OculusMoveTarget              links to              The item being moved
+                                DiagnosticWarn
 
-  OculusInspectAdded             #dcfce7 on #166534    Added lines in inspected
-                                                       files
+  OculusInspectAdded            #dcfce7 on #166534    Added lines in inspected
+                                                      files
 
-  OculusInspectRemoved           #fee2e2 on #991b1b    Removed lines in
-                                                       inspected files
+  OculusInspectRemoved          #fee2e2 on #991b1b    Removed lines in
+                                                      inspected files
 
-  OculusOilChange                from WarningMsg       Changed entries in oil
-                                                       listings
+  OculusOilChange               from WarningMsg       Changed entries in oil
+                                                      listings
 
-  OculusInspectThread            links to              Open review thread
-                                 DiagnosticInfo        labels
+  OculusInspectThread           links to              Open review thread
+                                DiagnosticInfo        labels
 
-  OculusInspectThreadResolved    links to Comment      Resolved review thread
-                                                       labels
+  OculusInspectThreadResolved   links to Comment      Resolved review thread
+                                                      labels
 
-  OculusInspectThreadHeader      links to Title        Comment authors in
-                                                       threads
+  OculusInspectThreadHeader     links to Title        Comment authors in
+                                                      threads
 
-  OculusInspectThreadBody        links to Comment      Comment text of threads
-                                                       loaded into the files
+  OculusInspectThreadBody       links to Comment      Comment text of threads
+                                                      loaded into the files
 
-  OculusInspectThreadGutter      links to LineNr       The line drawn beside
-                                                       that comment text
-
-  OculusInvestigationTitle       links to Title        Investigation, finding
-                                                       and project names
-
-  OculusInvestigationHeading     links to Keyword      Group and section
-                                                       headings
-
-  OculusInvestigationMuted       links to Comment      Context, provenance and
-                                                       open obligations
-
-  OculusInvestigationLocation    links to Directory    Navigable source
-                                                       locations
-
-  OculusInvestigationKey         links to Special      Keys in the footer and
-                                                       next steps
-
-  OculusInvestigationPositive    links to DiagnosticOk Newly possible;
-                                                       supported evidence
-
-  OculusInvestigationInfo        links to              Substitution paths;
-                                 DiagnosticInfo        inferred claims
-
-  OculusInvestigationHint        links to              Findings one adapter
-                                 DiagnosticHint        away
-
-  OculusInvestigationWarning     links to              Unhandled or unmet;
-                                 DiagnosticWarn        inconclusive evidence
-
-  OculusInvestigationNegative    links to              Broken or incompatible;
-                                 DiagnosticError       contradicted evidence
-
-  OculusInvestigationSeparator   links to FloatBorder  Rules between the panes
-  -----------------------------------------------------------------------------
+  OculusInspectThreadGutter     links to LineNr       The line drawn beside
+                                                      that comment text
+  ----------------------------------------------------------------------------
 
 CONTRIBUTING                                             *oculus-contributing*
 
@@ -1604,10 +982,8 @@ framework. `scripts/test` runs every unit spec; name specs to run only those:
     scripts/test window inspect
 <
 
-Specs ending in `_integration_spec.lua` need the sibling Plexus, Zug or Nexus
-builds and run only when named; the sections above describe each one. The
-inspect suite’s pinned-commit integration needs a checkout of oil.nvim and
-some environment variables. See `.github/workflows/tests.yml`
+The inspect suite’s pinned-commit integration needs a checkout of oil.nvim
+and some environment variables. See `.github/workflows/tests.yml`
 <.github/workflows/tests.yml> for the exact setup.
 
 
