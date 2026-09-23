@@ -966,9 +966,30 @@ local function tracked_project(repository, projects)
   return nil
 end
 
+-- A mainline kernel commit on git.kernel.org, as the same commit in the
+-- torvalds/linux mirror on GitHub.
+local function kernel_commit_url(url)
+  local sha = url:match("^https?://git%.kernel%.org/linus/(%x+)/?$")
+    or url:match("^https?://git%.kernel%.org/pub/scm/linux/kernel/git/torvalds/linux%.git/commit/?%?id=(%x+)")
+
+  if sha and #sha >= 7 and #sha <= 40 then
+    return "https://github.com/torvalds/linux/commit/" .. sha:lower()
+  end
+
+  return nil
+end
+
 -- An inspectable reference for a forge URL, or nil when the URL is not a pull
 -- request, issue or commit.
 function M.url_reference(url)
+  local mirrored = kernel_commit_url(url)
+
+  if mirrored then
+    local reference = M.url_reference(mirrored)
+    reference.web_url = url
+    return reference
+  end
+
   local info = patch.parse_target_url(url)
 
   if not info then
@@ -1106,6 +1127,27 @@ local skipped_elements = {
   meta = true,
   link = true,
 }
+
+-- Class names of advertising and promotion boxes set into a post.
+local advert_classes = {
+  ad = true,
+  ads = true,
+  advert = true,
+  advertisement = true,
+  promo = true,
+  sponsor = true,
+  sponsored = true,
+}
+
+local function is_advert(node)
+  for class in (node.attrs and node.attrs.class or ""):gmatch("%S+") do
+    if advert_classes[class:lower()] then
+      return true
+    end
+  end
+
+  return false
+end
 
 local inline_groups = {
   strong = "OculusDevlogStrong",
@@ -1513,7 +1555,7 @@ function Renderer:walk(node, ctx)
 
   local tag = node.tag
 
-  if skipped_elements[tag] then
+  if skipped_elements[tag] or is_advert(node) then
     return
   end
 
@@ -1718,9 +1760,24 @@ function M.render(html, opts)
   renderer:walk(content, ctx)
   renderer:flush(ctx)
 
-  while renderer.lines[#renderer.lines] == "" do
+  -- Nothing after the last words: no blank lines, and no closing rule.
+  local function rule(line)
+    return line ~= nil and line:find("─", 1, true) ~= nil and line:gsub("─", ""):match("^%s*$") ~= nil
+  end
+
+  while renderer.lines[#renderer.lines] == "" or rule(renderer.lines[#renderer.lines]) do
     renderer.lines[#renderer.lines] = nil
   end
+
+  local highlights = {}
+
+  for _, item in ipairs(renderer.highlights) do
+    if item[1] <= #renderer.lines then
+      highlights[#highlights + 1] = item
+    end
+  end
+
+  renderer.highlights = highlights
 
   return {
     lines = renderer.lines,
@@ -1754,13 +1811,135 @@ local function release_heading(text)
   return false
 end
 
--- Read an HTML page that has no feed, such as a changelog, as a devlog: each
+-- A row of an index page is short; a longer stretch of text with a date and
+-- a link in it is prose, not a row.
+local max_row_length = 300
+
+-- The posts an index page lists as rows that each pair a date with a link to
+-- the post, like LWN's table of recent articles. The largest list of sibling
+-- rows wins, and needs at least two. Each post's text is on its own page.
+local function index_posts(content, page_url)
+  local lists = {}
+  local order = {}
+
+  local function best_link(node)
+    local best
+
+    local function visit(child)
+      if child.tag == "a" then
+        local href = child.attrs.href
+        local text = collapse(table.concat(node_text(child)))
+
+        if href
+          and text ~= ""
+          and not href:match("^%s*#")
+          and not href:match("^%s*javascript:")
+          and (not best or #text > #best.text)
+        then
+          best = { href = href, text = text }
+        end
+
+        return
+      end
+
+      for _, grandchild in ipairs(child.children or {}) do
+        if grandchild.tag then
+          visit(grandchild)
+        end
+      end
+    end
+
+    visit(node)
+    return best
+  end
+
+  -- True when the node, or something in it, is a row.
+  local function visit(node, parent)
+    local inside = false
+
+    for _, child in ipairs(node.children or {}) do
+      if child.tag and not skipped_elements[child.tag] and visit(child, node) then
+        inside = true
+      end
+    end
+
+    if inside or not parent then
+      return inside
+    end
+
+    local text = collapse(table.concat(node_text(node)))
+    local timestamp = #text <= max_row_length and M.parse_date(text) or nil
+    local link = timestamp and best_link(node)
+
+    if not link then
+      return false
+    end
+
+    if not lists[parent] then
+      lists[parent] = {}
+      order[#order + 1] = parent
+    end
+
+    table.insert(lists[parent], { timestamp = timestamp, link = link })
+    return true
+  end
+
+  visit(content, nil)
+  local rows
+
+  for _, parent in ipairs(order) do
+    if not rows or #lists[parent] > #rows then
+      rows = lists[parent]
+    end
+  end
+
+  if not rows or #rows < 2 then
+    return nil
+  end
+
+  local posts = {}
+  local seen = {}
+
+  for _, row in ipairs(rows) do
+    local url = M.resolve_url(row.link.href, page_url)
+
+    if url and not seen[url] then
+      seen[url] = true
+
+      posts[#posts + 1] = {
+        id = url,
+        title = row.link.text,
+        url = url,
+        timestamp = row.timestamp,
+        date = row.timestamp:sub(1, 10),
+        order = #posts + 1,
+      }
+    end
+  end
+
+  return posts
+end
+
+-- Read an HTML page that has no feed as a devlog. On a changelog, each
 -- heading that names a release or a date starts a post, which runs to the
--- next such heading. Returns a feed like M.parse_feed, or nil.
+-- next such heading. On an index of articles, each dated link is a post.
+-- Returns a feed like M.parse_feed, or nil.
 function M.parse_page(html, page_url)
   local tree = M.parse_html(html)
   local content = M.main_content(tree)
   local by_level = {}
+  local page = page_url:gsub("#.*$", "")
+
+  local title_node = find_node(tree, function(node)
+    return node.tag == "title"
+  end)
+
+  local feed = {
+    title = title_node and collapse(table.concat(node_text({ children = title_node.children }))) or nil,
+    link = page,
+    page = true,
+    posts = {},
+  }
 
   local function collect(node)
     if node.tag and node.tag:match("^h[1-4]$") then
@@ -1791,7 +1970,8 @@ function M.parse_page(html, page_url)
   end
 
   if not headings then
-    return nil
+    feed.posts = index_posts(content, page_url)
+    return feed.posts and feed or nil
   end
 
   local starts = {}
@@ -1857,18 +2037,6 @@ function M.parse_page(html, page_url)
   end
 
   place(content)
-
-  local page = page_url:gsub("#.*$", "")
-  local title_node = find_node(tree, function(node)
-    return node.tag == "title"
-  end)
-
-  local feed = {
-    title = title_node and collapse(table.concat(node_text({ children = title_node.children }))) or nil,
-    link = page,
-    page = true,
-    posts = {},
-  }
 
   for index, post in ipairs(posts) do
     local title = collapse(table.concat(node_text(post.heading)))
@@ -1988,9 +2156,9 @@ function M.fetch_feed(url, opts, callback)
     local feed, parse_err = M.parse_feed(body, url)
 
     -- Not a feed: read the page as a changelog, a post per release heading.
-    if not feed and body:find("<[hH][1-6][%s>]") then
+    if not feed and body:find("<%a") then
       feed = M.parse_page(body, url)
-      parse_err = "found no releases or dated headings on the page"
+      parse_err = "found no feed, release headings or dated links on the page"
     end
 
     if not feed then

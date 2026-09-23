@@ -371,6 +371,12 @@ in the tracking file. Each heading that names a version (`v0.3.1`,
 page up to the next such heading. A version with no date on the page takes the
 date of the project's GitHub or Codeberg release of that version.
 
+A page that lists articles instead, like [LWN's kernel page](https://lwn.net/Kernel/)
+(a good `devlog` for `torvalds/linux`), works too: each row that pairs a date
+with a link is a post, read from the page it links to. Mainline commits linked
+on `git.kernel.org` count as `torvalds/linux` commits, so they can be inspected
+from the post; `b` still opens them on kernel.org.
+
 A feed found on the homepage is remembered in `state_file`. When a project has
 none, or the wrong one is picked, press `e` in the devlog list to set the feed
 URL (an empty answer looks for it again). When a feed carries only an excerpt

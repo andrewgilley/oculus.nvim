@@ -296,6 +296,36 @@ do
   assert(vim.deep_equal(flat_doc.lines, { "Added", "", "A." }), vim.inspect(flat_doc.lines))
 
   assert(not devlog.parse_page("<body><h2>About</h2><p>Nothing dated.</p></body>", "https://x.org/"))
+
+  -- An index of articles, as on LWN's kernel page: each row pairs a date with
+  -- a link, the largest list of rows wins, and each post is read from its link.
+  local index = assert(devlog.parse_page([[<html><head><title>Kernel coverage</title></head><body><main>
+<h3>The article index</h3><p>See <a href="/Kernel/Index/">the index</a>, updated September 1, 2026.</p>
+<table><tr><td>September 22, 2026</td><td><a href="/Articles/1095553/">Compiling the kernel with gccrs</a></td></tr>
+<tr><td>August 31, 2026</td><td><a href="/Articles/1089791/">The rest of the 7.3 merge window</a></td></tr></table>
+<div class="AnnLine"><a href="/Articles/1096102/">A patch</a> <span>Sep 22</span></div></main></body></html>]],
+    "https://lwn.net/Kernel/"))
+
+  assert(index.title == "Kernel coverage")
+  assert(#index.posts == 2, #index.posts)
+  assert(index.posts[1].title == "Compiling the kernel with gccrs" and index.posts[1].date == "2026-09-22")
+  assert(index.posts[2].url == "https://lwn.net/Articles/1089791/")
+  assert(index.posts[2].content == nil, "the post is read from its own page")
+
+  -- Mainline commits on git.kernel.org are torvalds/linux commits; ad boxes
+  -- and a closing rule are left out.
+  local article = devlog.render([[<div class="ArticleText"><main><blockquote class="ad"><b>Subscribe</b></blockquote>
+<p>Merged: <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=252d36716326">this commit</a>,
+<a href="https://git.kernel.org/linus/30abb3a67f4b2aa160feeb3c0b771f730cbcca67">that one</a> and
+<a href="https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git/commit/?id=abcdef1234">a net-next one</a>.</p>
+<hr></main></div>]], { width = 80, base_url = "https://lwn.net/Articles/1089791/" })
+
+  assert(vim.deep_equal(article.lines, { "Merged: this commit, that one and a net-next one." }), vim.inspect(article.lines))
+  assert(#article.references == 2, #article.references)
+  assert(article.references[1].label == "torvalds/linux@252d367163")
+  assert(article.references[1].url == "https://github.com/torvalds/linux/commit/252d36716326")
+  assert(article.references[1].web_url:find("^https://git%.kernel%.org/pub/scm/"))
+  assert(article.references[2].url == "https://github.com/torvalds/linux/commit/30abb3a67f4b2aa160feeb3c0b771f730cbcca67")
 end
 
 -- Discovery prefers a blog or devlog feed a homepage advertises.

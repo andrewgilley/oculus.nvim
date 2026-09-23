@@ -1118,7 +1118,7 @@ function M.setup(window, devlog_view, internal)
     end
 
     local reference = reference_at_cursor(current)
-    local url = reference and (reference.url or reference.web_url)
+    local url = reference and (reference.web_url or reference.url)
       or link_at_cursor(current)
       or current.post.url
 
