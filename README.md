@@ -593,7 +593,7 @@ for the fixed-length-list adapter → Wasmtime/Zug runs → comparison workflow;
 
 ### Investigate a selected change
 
-Press `gI` on a local commit in an Oculus activity feed, or run
+Press `g` on a local commit in an Oculus activity feed, or run
 `:OculusInvestigate` to choose a local repository and revision pair. The prompts
 collect the producer's relative Cargo manifest, a tracked local consumer (or a
 repository path), its committed revision and manifest, and your investigation
@@ -632,7 +632,7 @@ declaration was written out or produced by expanding a macro. These findings des
 implementations, successful linking, or verified runtime behavior. Unresolved
 obligations remain visible. Press `p` on a supported finding to prepare an
 [executable composition](#executable-compositions) with explicit sources and cases.
-`:OculusInvestigate rust` explicitly selects the existing Rust analysis; `gI`
+`:OculusInvestigate rust` explicitly selects the existing Rust analysis; `g`
 on local activity continues to use that default.
 
 ### Reading an investigation

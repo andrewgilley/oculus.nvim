@@ -3435,8 +3435,8 @@ local function render_shortcuts()
       actions[#actions + 1] = { "u", "Open project issues" }
     end
 
-    actions[#actions + 1] = { "gI", "Investigate the selected local commit" }
-    actions[#actions + 1] = { "g", "Browse durable change investigations" }
+    actions[#actions + 1] = { "g", "Investigate the selected local commit" }
+    actions[#actions + 1] = { "gP", "Browse durable change investigations" }
     section("ACTIONS", actions)
 
     section("GENERAL", {
@@ -6921,7 +6921,15 @@ local function map_keys(buf)
     require("oculus.investigations").from_activity(M.state.opts, M.state.activity_events[line], M.state.line_targets[line])
   end, "Investigate selected local commit")
 
-  map("g", function() require("oculus").open_investigations() end, "Browse durable change investigations")
+  map("g", function()
+    local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
+    local event = M.state.view == "activity" and M.state.activity_events and M.state.activity_events[line]
+    if event then
+      require("oculus.investigations").from_activity(M.state.opts, event, M.state.line_targets[line])
+    else
+      require("oculus").open_investigations()
+    end
+  end, "Browse durable change investigations")
   map("gP", function() require("oculus").open_investigations() end, "Browse durable change investigations")
 
   local investigations_nav_key = type(M.state.opts) == "table"

@@ -2907,6 +2907,46 @@ do
   opened_investigations = false
   gp_map.callback()
   assert(opened_investigations == true, "expected gP callback to open investigations")
+
+  -- Test g key on activity item in activity view initiates from_activity
+  local inv_mod = require("oculus.investigations")
+  local orig_from_activity = inv_mod.from_activity
+  local from_activity_called = nil
+  inv_mod.from_activity = function(cfg, event, url)
+    from_activity_called = { cfg = cfg, event = event, url = url }
+  end
+
+  window.state.view = "activity"
+  local mock_event = { id = "event-1", oculus_local = { forge = "github" } }
+  window.state.activity_events = { [1] = mock_event }
+  window.state.line_targets = { [1] = "https://github.com/owner/repo/commit/1234" }
+  vim.api.nvim_win_set_cursor(window.state.win, { 1, 0 })
+
+  opened_investigations = false
+  g_map.callback()
+  assert(opened_investigations == false, "expected g on activity item not to open investigations catalog")
+  assert(from_activity_called ~= nil, "expected g on activity item to call from_activity")
+  assert(from_activity_called.event == mock_event)
+  assert(from_activity_called.url == "https://github.com/owner/repo/commit/1234")
+
+  -- Test gI key also calls from_activity
+  from_activity_called = nil
+  local gi_map = vim.fn.maparg("gI", "n", false, true)
+  assert(gi_map ~= nil and type(gi_map.callback) == "function", "expected gI keymap on Oculus window")
+  gi_map.callback()
+  assert(from_activity_called ~= nil and from_activity_called.event == mock_event)
+
+  -- Test g key on non-activity line in activity view falls back to open_investigations
+  from_activity_called = nil
+  vim.bo[window.state.buf].modifiable = true
+  vim.api.nvim_buf_set_lines(window.state.buf, 0, -1, false, { "line 1", "line 2" })
+  vim.bo[window.state.buf].modifiable = false
+  vim.api.nvim_win_set_cursor(window.state.win, { 2, 0 })
+  g_map.callback()
+  assert(from_activity_called == nil, "expected g on non-activity line not to call from_activity")
+  assert(opened_investigations == true, "expected g on non-activity line to call open_investigations")
+
+  inv_mod.from_activity = orig_from_activity
   window.close()
 
   -- Test custom navigation.investigations key
