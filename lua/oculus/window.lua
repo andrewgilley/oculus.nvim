@@ -185,6 +185,7 @@ M.state = {
   activity_loading_frame = 1,
   restore_cursor = nil,
   restore_view = nil,
+  restore_view_name = nil,
   shortcut_return = nil,
   opening_account_prompt = false,
   origin_tab = nil,
@@ -1830,8 +1831,6 @@ local function render_contributors()
       highlight(2, 2, -1, "Title")
     end
 
-    highlight(4, 2, -1, "Title")
-
     -- Groups carry no trailing slash; mark them like legacy folders instead.
     for line, target in pairs(M.state.line_targets) do
       if target.kind == "tracking_group" then highlight(line, 2, -1, "OculusDirectory") end
@@ -1868,18 +1867,19 @@ local function render_contributors()
   local community_view = M.state.community_view or "projects"
   local showing_users = community_view == "users"
   local active_ws = require("oculus.workspace").get_active(M.state.opts)
-  local project_title_text
+  local title_text
 
-  if active_ws and M.state.workspace_filter_enabled ~= false then
-    project_title_text = "  PROJECTS · " .. active_ws.name:upper()
+  if showing_users then
+    title_text = "  USERS"
+  elseif active_ws and M.state.workspace_filter_enabled ~= false then
+    title_text = "  PROJECTS · " .. active_ws.name:upper()
   else
-    project_title_text = "  PROJECTS"
+    title_text = "  PROJECTS"
   end
 
   local lines = {
     "",
-    showing_users and "  ACTIVITY" or project_title_text,
-    "",
+    title_text,
     "",
   }
 
@@ -1896,7 +1896,6 @@ local function render_contributors()
   local project_heading_line
 
   if not showing_users then
-    lines[5] = ""
     project_heading_line = 2
     local items = startup_project_items()
 
@@ -1937,8 +1936,7 @@ local function render_contributors()
   local user_heading_line
 
   if showing_users then
-    user_heading_line = #lines + 1
-    lines[#lines + 1] = "  " .. pad_cell("USERS", username_width)
+    user_heading_line = 2
   end
 
   local selected_index = 1
@@ -2003,11 +2001,6 @@ local function render_contributors()
   M.state.list_footer_text = nil
   work_view.accounts.render()
   vim.wo[M.state.win].cursorline = false
-
-  if showing_users then
-    highlight(2, 2, -1, "Title")
-    highlight(3, 2, -1, "Comment")
-  end
 
   if project_heading_line then
     highlight(project_heading_line, 2, -1, "OculusSectionTitle")
@@ -2191,6 +2184,7 @@ local function reset_to_initial_page()
   M.state.activity_inspect_queue_running = false
   M.state.restore_cursor = nil
   M.state.restore_view = nil
+  M.state.restore_view_name = nil
   M.state.shortcut_return = nil
   M.state.tracking_move = nil
   M.state.tracking_selected = nil
@@ -3770,6 +3764,7 @@ local function restore_cursor()
 
   M.state.restore_cursor = nil
   M.state.restore_view = nil
+  M.state.restore_view_name = nil
 end
 
 local function contributor_by_username(username)
@@ -7221,6 +7216,8 @@ function M.close()
       return vim.fn.winsaveview()
     end)
 
+    M.state.restore_view_name = M.state.view
+
     if vim.api.nvim_get_current_win() ~= M.state.win then
       vim.api.nvim_set_current_win(M.state.win)
     end
@@ -7382,7 +7379,13 @@ function M.open(opts)
 
   if M.state.view == "issue_filters" and M.state.activity_project then
     render_issue_filters(M.state.activity_project)
-    restore_cursor()
+    if M.state.restore_view_name == "issue_filters" then
+      restore_cursor()
+    else
+      M.state.restore_cursor = nil
+      M.state.restore_view = nil
+      M.state.restore_view_name = nil
+    end
   elseif M.state.view == "milestones" and M.state.project_milestones then
     milestone_view.render()
   elseif M.state.view == "work" and M.state.work_lists then
@@ -7394,13 +7397,25 @@ function M.open(opts)
     -- The new buffer is empty, so draw the feed from scratch.
     M.state.activity_loaded = false
     work_view.load_items(M.state.activity_work, false, M.state.activity_page)
-    restore_cursor()
+    if M.state.restore_view_name == "activity" then
+      restore_cursor()
+    else
+      M.state.restore_cursor = nil
+      M.state.restore_view = nil
+      M.state.restore_view_name = nil
+    end
   elseif M.state.view == "activity"
     and M.state.activity_saved
     and not M.state.activity_commit_page
   then
     saved_view.open(M.state.activity_page)
-    restore_cursor()
+    if M.state.restore_view_name == "activity" then
+      restore_cursor()
+    else
+      M.state.restore_cursor = nil
+      M.state.restore_view = nil
+      M.state.restore_view_name = nil
+    end
   elseif
     M.state.view == "activity"
     and (M.state.contributor or M.state.activity_project)
@@ -7433,11 +7448,25 @@ function M.open(opts)
       }
     )
 
-    restore_cursor()
+    if M.state.restore_view_name == "activity" then
+      restore_cursor()
+    else
+      M.state.restore_cursor = nil
+      M.state.restore_view = nil
+      M.state.restore_view_name = nil
+    end
   else
     M.state.community_view = "projects"
     render_contributors()
-    restore_cursor()
+    if M.state.restore_view_name == "contributors" then
+      restore_cursor()
+      clamp_list_cursor()
+      vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+    else
+      M.state.restore_cursor = nil
+      M.state.restore_view = nil
+      M.state.restore_view_name = nil
+    end
   end
 
   if not M.state.opts.tracking_file then M.load_project_descriptions(M.state.opts) end
