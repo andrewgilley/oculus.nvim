@@ -47,39 +47,6 @@ vim.api.nvim_create_user_command("OculusWork", function()
   require("oculus").open_work()
 end, { desc = "Open Oculus on your review requests, pull requests, assignments and mentions" })
 
-vim.api.nvim_create_user_command("OculusPlexus", function(opts)
-  require("oculus").open_plexus(opts.args ~= "" and opts.args or nil)
-end, { nargs = "?", complete = "file", desc = "Explore a Plexus hypothesis and run its experiments" })
-
-vim.api.nvim_create_user_command("OculusCapabilities", function(opts)
-  require("oculus").open_capabilities(opts.args)
-end, { nargs = 1, complete = "file", desc = "Discover Rust capability opportunities beside source" })
-
-vim.api.nvim_create_user_command("OculusInvestigate", function(opts)
-  if opts.args ~= "" and opts.args ~= "rust" and opts.args ~= "c-zig" then
-    vim.notify("Oculus: choose rust or c-zig investigation analysis.", vim.log.levels.WARN)
-    return
-  end
-
-  require("oculus").investigate(opts.args == "c-zig" and { analysis = "c_zig" } or nil)
-end, {
-  nargs = "?",
-  complete = function(arglead)
-    return vim.tbl_filter(function(value) return value:sub(1, #arglead) == arglead end, { "rust", "c-zig" })
-  end,
-  desc = "Investigate a local committed Rust or C/C++ to Zig relationship",
-})
-
-vim.api.nvim_create_user_command("OculusInvestigations", function(opts)
-  local arg = opts.args and vim.trim(opts.args) or ""
-  require("oculus").open_investigations(arg ~= "" and arg or nil)
-end, { nargs = "?", desc = "Browse durable project change investigations" })
-
-vim.api.nvim_create_user_command("OculusInvestigation", function(opts)
-  local arg = opts.args and vim.trim(opts.args) or ""
-  require("oculus").open_investigations(arg ~= "" and arg or nil)
-end, { nargs = "?", desc = "Browse durable project change investigations (alias)" })
-
 vim.api.nvim_create_user_command("OculusWorkspace", function(opts)
   local workspace = require("oculus.workspace")
   local oculus = require("oculus")
@@ -149,23 +116,6 @@ end, {
     return matches
   end,
 })
-
-vim.api.nvim_create_user_command("OculusNexus", function()
-  require("oculus").open_nexus()
-end, { desc = "Manage local Nexus resources and experiment jobs" })
-
-vim.api.nvim_create_user_command("OculusComposition", function(opts)
-  require("oculus").open_composition(opts.args ~= "" and opts.args or nil)
-end, { nargs = "?", complete = "file", desc = "Inspect, queue and reopen a linked Plexus composition" })
-
-vim.api.nvim_create_user_command("OculusComponent", function(opts)
-  if #opts.fargs ~= 0 and #opts.fargs ~= 2 then
-    vim.notify("OculusComponent expects a component file and a cases file, or no arguments for history.", vim.log.levels.WARN)
-    return
-  end
-
-  require("oculus").open_component({ source = opts.fargs[1], cases = opts.fargs[2] })
-end, { nargs = "*", complete = "file", desc = "Review, queue and reopen typed component experiments" })
 
 vim.api.nvim_create_user_command("OculusClose", function()
   require("oculus").close()
@@ -366,18 +316,6 @@ for lhs, mapping in pairs({
     desc = "Refresh project description text of saved projects",
     run = function()
       require("oculus").refresh_project_descriptions()
-    end,
-  },
-  ["<Plug>(oculus-investigations)"] = {
-    desc = "Browse durable project change investigations",
-    run = function()
-      require("oculus").open_investigations()
-    end,
-  },
-  ["<Plug>(oculus-investigation)"] = {
-    desc = "Browse durable project change investigations",
-    run = function()
-      require("oculus").open_investigations()
     end,
   },
 }) do

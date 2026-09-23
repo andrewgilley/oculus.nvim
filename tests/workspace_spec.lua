@@ -211,44 +211,6 @@ notifications = {}
 vim.cmd("OculusWorkspace bogus")
 assert(#notifications > 0)
 assert(notifications[#notifications].msg:find("not found"), "warns on non-existent workspace")
--- 8. Consumer scoping in investigations prompt
-local investigations = require("oculus.investigations")
-local orig_find_repo = require("oculus.local_activity").find_repository
-local orig_ui_select = vim.ui.select
-local passed_choices = nil
-local passed_prompt = nil
-
-require("oculus.local_activity").find_repository = function(project, cfg, cb)
-  -- Return dummy path for all projects
-  cb("/mock/" .. project.repository)
-end
-
-vim.ui.select = function(items, opts, cb)
-  passed_choices = items
-  passed_prompt = opts.prompt
-  -- Cancel select
-  cb(nil)
-end
-
--- Active workspace is "persisted-ws" which only has "bytecodealliance/wasmtime"
-oculus.config.projects = sample_projects
-oculus.set_workspace("persisted-ws")
--- Call investigations.prompt
--- We can simulate prompt by asking for consumer directly or stepping through
-local orig_ui_input = vim.ui.input
-
--- When prompt is invoked, it asks repository -> head -> base -> producer_manifest -> consumer
--- Let's stub ui.input to immediately call cb with default
-vim.ui.input = function(opts, cb)
-  cb(opts.default or "mock_value")
-end
-
-investigations.prompt(oculus.config, { repository = "/tmp/repo" })
-assert(passed_choices ~= nil, "ui.select was called for consumer selection")
-assert(passed_prompt:find("persisted%-ws"), "prompt title includes active workspace name")
--- Choice 1 should be wasmtime, Choice 2 should be "Choose another local repository…"
-assert(#passed_choices == 2, "choices limited to active workspace projects + 'Choose another...'")
-assert(passed_choices[1].label:find("wasmtime"), "first choice is wasmtime")
 -- 9. UI rendering with active workspace in legacy mode
 local window = require("oculus.window")
 
@@ -414,7 +376,4 @@ assert(oculus.get_workspace().name == "brand-new-ws", "new workspace created and
 oculus.close()
 -- Clean up stubs
 vim.notify = orig_notify
-require("oculus.local_activity").find_repository = orig_find_repo
-vim.ui.select = orig_ui_select
-vim.ui.input = orig_ui_input
 vim.fn.delete(dir, "rf")

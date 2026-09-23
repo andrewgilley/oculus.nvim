@@ -230,6 +230,7 @@ assert(
 -- when the window opens. The full config covers the sidebar's share too, so a
 -- standalone float lands on exactly the region the main window occupies.
 local fractional = window.full_window_config({ width = 0.5, height = 0.5 })
+
 local callable = window.full_window_config({
   width = function() return 0.5 end,
   height = function() return 0.5 end,
@@ -238,23 +239,19 @@ local callable = window.full_window_config({
 assert(vim.deep_equal(fractional, callable), "a callable size resolves to its returned value")
 assert(fractional.relative == "editor")
 assert(fractional.col == math.floor((vim.o.columns - fractional.width) / 2), "the float is centered")
-
 -- Sizes stay within the editor and grow with the requested fraction, whichever
 -- terminal the suite runs in.
 local wide = window.full_window_config({ width = 0.95, height = 0.95 })
 assert(wide.width >= fractional.width and wide.width <= math.max(1, vim.o.columns - 4))
 assert(wide.height >= fractional.height and wide.row + wide.height <= vim.o.lines)
-
 -- A callable that fails or returns a nonnumber falls back exactly as an absent
 -- option does, so a broken size never prevents a window from opening.
 local default_width = window.full_window_config({}).width
 assert(window.full_window_config({ width = function() error("no") end }).width == default_width)
 assert(window.full_window_config({ width = function() return "wide" end }).width == default_width)
-
 -- The full config never claims less room than the main window inside it.
 local sidebar_share = window.window_config({ width = 0.95, height = 0.95 })
 assert(wide.width >= sidebar_share.width and wide.height == sidebar_share.height)
-
 local inspection_window_options = window.inspection_window_options()
 assert(inspection_window_options.number == true)
 assert(inspection_window_options.relativenumber == true)
@@ -2891,96 +2888,6 @@ do
   -- Test Plug mapping
   local plug_map = vim.fn.maparg("<Plug>(oculus-refresh-project-description)", "n", false, true)
   assert(plug_map ~= nil and type(plug_map.callback) == "function", "expected <Plug>(oculus-refresh-project-description)")
-
-  -- Test investigations keymaps: g and gP in window buffer
-  window.open(test_config)
-  local g_map = vim.fn.maparg("g", "n", false, true)
-  assert(g_map ~= nil and type(g_map.callback) == "function", "expected g keymap on Oculus window")
-  local gp_map = vim.fn.maparg("gP", "n", false, true)
-  assert(gp_map ~= nil and type(gp_map.callback) == "function", "expected gP keymap on Oculus window")
-
-  local opened_investigations = false
-  local orig_open_inv = oculus.open_investigations
-  oculus.open_investigations = function() opened_investigations = true end
-  g_map.callback()
-  assert(opened_investigations == true, "expected g callback to open investigations")
-
-  opened_investigations = false
-  gp_map.callback()
-  assert(opened_investigations == true, "expected gP callback to open investigations")
-
-  -- Test g key on activity item in activity view initiates from_activity
-  local inv_mod = require("oculus.investigations")
-  local orig_from_activity = inv_mod.from_activity
-  local from_activity_called = nil
-  inv_mod.from_activity = function(cfg, event, url)
-    from_activity_called = { cfg = cfg, event = event, url = url }
-  end
-
-  window.state.view = "activity"
-  local mock_event = { id = "event-1", oculus_local = { forge = "github" } }
-  window.state.activity_events = { [1] = mock_event }
-  window.state.line_targets = { [1] = "https://github.com/owner/repo/commit/1234" }
-  vim.api.nvim_win_set_cursor(window.state.win, { 1, 0 })
-
-  opened_investigations = false
-  g_map.callback()
-  assert(opened_investigations == false, "expected g on activity item not to open investigations catalog")
-  assert(from_activity_called ~= nil, "expected g on activity item to call from_activity")
-  assert(from_activity_called.event == mock_event)
-  assert(from_activity_called.url == "https://github.com/owner/repo/commit/1234")
-
-  -- Test gI key also calls from_activity
-  from_activity_called = nil
-  local gi_map = vim.fn.maparg("gI", "n", false, true)
-  assert(gi_map ~= nil and type(gi_map.callback) == "function", "expected gI keymap on Oculus window")
-  gi_map.callback()
-  assert(from_activity_called ~= nil and from_activity_called.event == mock_event)
-
-  -- Test g key on non-activity line in activity view falls back to open_investigations
-  from_activity_called = nil
-  vim.bo[window.state.buf].modifiable = true
-  vim.api.nvim_buf_set_lines(window.state.buf, 0, -1, false, { "line 1", "line 2" })
-  vim.bo[window.state.buf].modifiable = false
-  vim.api.nvim_win_set_cursor(window.state.win, { 2, 0 })
-  g_map.callback()
-  assert(from_activity_called == nil, "expected g on non-activity line not to call from_activity")
-  assert(opened_investigations == true, "expected g on non-activity line to call open_investigations")
-
-  inv_mod.from_activity = orig_from_activity
-  window.close()
-
-  -- Test custom navigation.investigations key
-  window.open(vim.tbl_extend("force", test_config, { navigation = { investigations = "gi" } }))
-  local custom_inv_map = vim.fn.maparg("gi", "n", false, true)
-  assert(custom_inv_map ~= nil and type(custom_inv_map.callback) == "function", "expected custom navigation keymap on Oculus window")
-  window.close()
-
-  -- Test Plug mappings for investigations
-  local plug_inv_map = vim.fn.maparg("<Plug>(oculus-investigations)", "n", false, true)
-  assert(plug_inv_map ~= nil and type(plug_inv_map.callback) == "function", "expected <Plug>(oculus-investigations)")
-  opened_investigations = false
-  plug_inv_map.callback()
-  assert(opened_investigations == true, "expected <Plug>(oculus-investigations) to open investigations")
-
-  local plug_inv_alias = vim.fn.maparg("<Plug>(oculus-investigation)", "n", false, true)
-  assert(plug_inv_alias ~= nil and type(plug_inv_alias.callback) == "function", "expected <Plug>(oculus-investigation)")
-  opened_investigations = false
-  plug_inv_alias.callback()
-  assert(opened_investigations == true, "expected <Plug>(oculus-investigation) to open investigations")
-
-  -- Test user commands: OculusInvestigations and OculusInvestigation
-  vim.g.loaded_oculus = nil
-  vim.cmd("runtime plugin/oculus.lua")
-  local inv_cmd_called = nil
-  oculus.open_investigations = function(id) inv_cmd_called = id or true end
-  vim.cmd("OculusInvestigations")
-  assert(inv_cmd_called == true, "expected :OculusInvestigations to call open_investigations")
-  inv_cmd_called = nil
-  vim.cmd("OculusInvestigation test-id-456")
-  assert(inv_cmd_called == "test-id-456", "expected :OculusInvestigation with id")
-  oculus.open_investigations = orig_open_inv
-
   vim.notify = orig_notify
   oculus.config = saved_config
   gh.repository_info = original_repo_info

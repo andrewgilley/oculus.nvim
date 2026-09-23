@@ -47,18 +47,6 @@ local defaults = {
   inspect_overviews = {},
   state_file = vim.fn.stdpath("state") .. "/oculus.json",
   browser_command = nil,
-  plexus = {
-    command = { "plexus" },
-    store = vim.fn.stdpath("data") .. "/oculus/plexus",
-    capture_timeout_ms = 300000,
-    backend = "wasmtime",
-    timeout_ms = 120000,
-  },
-  nexus = {
-    command = { "nexus" },
-    state_dir = vim.fn.stdpath("data") .. "/oculus/nexus",
-    timeout_ms = 120000,
-  },
   inspect_cache_ttl = 60,
   inspect_repositories = {},
   inspect_search_paths = default_inspect_search_paths,
@@ -423,10 +411,6 @@ function M.setup(opts)
       if opts.active_workspace == nil and saved.active_workspace ~= nil then
         M.config.active_workspace = saved.active_workspace
       end
-
-      if type(saved.investigation_decisions) == "table" then
-        M.config.investigation_decisions = vim.deepcopy(saved.investigation_decisions)
-      end
     end
   end
 
@@ -544,46 +528,6 @@ end
 
 function M.open_work()
   return require("oculus.window").open_work(M.config)
-end
-
-function M.open_plexus(manifest)
-  return require("oculus.plexus").open(M.config.plexus, manifest)
-end
-
-function M.open_nexus(submission)
-  return require("oculus.nexus").open(M.config.nexus, M.config.plexus, submission)
-end
-
-function M.open_composition(input)
-  return require("oculus.compositions").open(M.config.plexus, M.config.nexus, input)
-end
-
-function M.open_component(options)
-  return require("oculus.components").open(M.config.plexus, M.config.nexus, options)
-end
-
-function M.investigate(context)
-  return require("oculus.investigations").prompt(M.config, context)
-end
-
-function M.open_investigations(id)
-  local window = require("oculus.window")
-  if window.state.win and vim.api.nvim_win_is_valid(window.state.win) then window.close() end
-
-  local plexus_config = vim.tbl_extend("keep", M.config.plexus or {}, {
-    state_file = M.config.state_file,
-    investigation_decisions = M.config.investigation_decisions,
-  })
-
-  return require("oculus.investigations").open(plexus_config, M.config.nexus, id)
-end
-
-function M.open_capabilities(manifest)
-  local investigation = require("oculus.plexus").state
-  if investigation and not investigation.closed then investigation.close() end
-  local window = require("oculus.window")
-  if window.state.win and vim.api.nvim_win_is_valid(window.state.win) then window.close() end
-  return require("oculus.capabilities").open(M.config.plexus, manifest)
 end
 
 -- Look up the account signed in on "github" (the default) or "codeberg".

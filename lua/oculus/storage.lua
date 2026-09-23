@@ -56,7 +56,6 @@ function M.save(path, config)
     search_history = config.search_history or {},
     active_workspace = config.active_workspace,
     workspaces = config.workspaces or {},
-    investigation_decisions = config.investigation_decisions or {},
   }
 
   local saved = require("oculus.saved")

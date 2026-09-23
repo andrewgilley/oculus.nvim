@@ -534,9 +534,6 @@ local function sidebar_sections_for_view(view)
           { "w", "My work" },
           { "W", "Workspace" },
           { "s", "Saved" },
-          { "P", "Plexus" },
-          { "C", "Capabilities" },
-          { "g", "Investigations" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
           { "r", "Rename" },
@@ -550,9 +547,6 @@ local function sidebar_sections_for_view(view)
           { "w", "My work" },
           { "W", "Workspace" },
           { "s", "Saved" },
-          { "P", "Plexus" },
-          { "C", "Capabilities" },
-          { "g", "Investigations" },
           { "a", "Add" },
           { "f", "Folder" },
           { "M", "Move Dir" },
@@ -936,8 +930,8 @@ local function footer_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  p projects   w work   s saved   P plexus   C capabilities   m move   ?: help"
-      or "  u users   w work   s saved   P plexus   C capabilities   f folder   m move   ?: help"
+        and "  p projects   w work   s saved   m move   ?: help"
+      or "  u users   w work   s saved   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   r rename   R remove   m move   ?: help"):format(
       nav.left
@@ -3325,9 +3319,6 @@ local function render_shortcuts()
         { "p", "Switch to project list" },
         { "w", "Open your work: review requests, PRs, mentions" },
         { "s", "Open saved activity items" },
-        { "P", "Open Plexus investigations" },
-        { "C", "Discover Rust capability opportunities" },
-        { "g", "Browse durable change investigations" },
         { "m", "Move the selected user" },
         { "a", "Add a GitHub or Codeberg account" },
         { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
@@ -3355,9 +3346,6 @@ local function render_shortcuts()
         { "w", "Open your work: review requests, PRs, mentions" },
         { "W", "Select or switch project workspace" },
         { "s", "Open saved activity items" },
-        { "P", "Open Plexus investigations" },
-        { "C", "Discover Rust capability opportunities" },
-        { "g", "Browse durable change investigations" },
         { "f", "Create a project folder" },
         { "m", "Move the selected project or folder" },
         { "M", "Move project to folder" },
@@ -3387,7 +3375,6 @@ local function render_shortcuts()
     section("ACTIONS", {
       { "w", "Open your work: review requests, PRs, mentions" },
       { "s", "Open saved activity items" },
-      { "g", "Browse durable change investigations" },
       { "a", "Add a GitHub or Codeberg project" },
       { "r", "Rename the selected project" },
       { "R", "Remove the selected project" },
@@ -3429,8 +3416,6 @@ local function render_shortcuts()
       actions[#actions + 1] = { "u", "Open project issues" }
     end
 
-    actions[#actions + 1] = { "g", "Investigate the selected local commit" }
-    actions[#actions + 1] = { "gP", "Browse durable change investigations" }
     section("ACTIONS", actions)
 
     section("GENERAL", {
@@ -6909,42 +6894,6 @@ local function map_keys(buf)
     M.close()
   end, "Close Oculus")
 
-  map("P", function() require("oculus").open_plexus() end, "Open Plexus investigations")
-
-  map("gI", function()
-    local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
-    require("oculus.investigations").from_activity(M.state.opts, M.state.activity_events[line], M.state.line_targets[line])
-  end, "Investigate selected local commit")
-
-  map("g", function()
-    local line = vim.api.nvim_win_get_cursor(M.state.win)[1]
-    local event = M.state.view == "activity" and M.state.activity_events and M.state.activity_events[line]
-    if event then
-      require("oculus.investigations").from_activity(M.state.opts, event, M.state.line_targets[line])
-    else
-      require("oculus").open_investigations()
-    end
-  end, "Browse durable change investigations")
-  map("gP", function() require("oculus").open_investigations() end, "Browse durable change investigations")
-
-  local investigations_nav_key = type(M.state.opts) == "table"
-      and type(M.state.opts.navigation) == "table"
-      and M.state.opts.navigation.investigations
-
-  if investigations_nav_key and investigations_nav_key ~= "g" and investigations_nav_key ~= "gP" then
-    map(investigations_nav_key, function() require("oculus").open_investigations() end, "Browse durable change investigations")
-  end
-
-  map("C", function()
-    local win = M.state.win
-    local request_id = M.state.request_id
-
-    vim.ui.input({ prompt = "Rust discovery manifest: ", completion = "file" }, function(path)
-      if M.state.win ~= win or M.state.request_id ~= request_id then return end
-      if path and vim.trim(path) ~= "" then require("oculus").open_capabilities(path) end
-    end)
-  end, "Discover Rust capability opportunities")
-
   map("<Esc>", function()
     if (M.state.view == "contributors" or M.state.view == "directory") and M.state.moving_item then
       M.state.moving_item = nil
@@ -7379,6 +7328,7 @@ function M.open(opts)
 
   if M.state.view == "issue_filters" and M.state.activity_project then
     render_issue_filters(M.state.activity_project)
+
     if M.state.restore_view_name == "issue_filters" then
       restore_cursor()
     else
@@ -7397,6 +7347,7 @@ function M.open(opts)
     -- The new buffer is empty, so draw the feed from scratch.
     M.state.activity_loaded = false
     work_view.load_items(M.state.activity_work, false, M.state.activity_page)
+
     if M.state.restore_view_name == "activity" then
       restore_cursor()
     else
@@ -7409,6 +7360,7 @@ function M.open(opts)
     and not M.state.activity_commit_page
   then
     saved_view.open(M.state.activity_page)
+
     if M.state.restore_view_name == "activity" then
       restore_cursor()
     else
@@ -7458,6 +7410,7 @@ function M.open(opts)
   else
     M.state.community_view = "projects"
     render_contributors()
+
     if M.state.restore_view_name == "contributors" then
       restore_cursor()
       clamp_list_cursor()

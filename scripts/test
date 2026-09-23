@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run every Oculus unit spec headlessly. Integration specs, which need sibling
-# Plexus, Zug or Nexus builds, are excluded unless named explicitly.
+# Run every Oculus unit spec headlessly. Integration specs are excluded unless
+# named explicitly.
 #
 #   scripts/test                    # all unit specs
 #   scripts/test window inspect     # only the named specs
@@ -9,7 +9,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Specs that run without `set showtabline=0`, matching how they were written.
-plain_specs=" opinion telemetry tracking health inspect investigations workspace "
+plain_specs=" opinion telemetry tracking health inspect workspace "
 
 if [ "$#" -gt 0 ]; then
   specs=()
