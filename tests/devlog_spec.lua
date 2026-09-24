@@ -335,6 +335,43 @@ do
   assert(article.references[1].url == "https://github.com/torvalds/linux/commit/252d36716326")
   assert(article.references[1].web_url:find("^https://git%.kernel%.org/pub/scm/"))
   assert(article.references[2].url == "https://github.com/torvalds/linux/commit/30abb3a67f4b2aa160feeb3c0b771f730cbcca67")
+  -- A mailing list message is preformatted text. The commit hashes written in
+  -- it are the project's commits; a diff's blob hashes, a "#123" and a hash in
+  -- a post with no project are not.
+  local linux = { repository = "torvalds/linux", provider = "github" }
+
+  local message = [[<div xmlns="http://www.w3.org/1999/xhtml"><pre>Since commit feaf75658783 (&#34;nolibc: fix fd_set type&#34;), a
+mask is wrong. See #1234 and https://lore.kernel.org/all/x@y/.
+Fixes: e4c1ff772e1a (&#34;i2c: xiic: Add smbus_block_read&#34;)
+index 53d8dc642fbd6..203a2099aa7b8 100644
+base-commit: 70eda68668d1476b459b64e69b8f36659fa9dfa8
+</pre></div>]]
+
+  local mail = devlog.render(message, { width = 80, project = linux, projects = { linux } })
+  local labels = {}
+
+  for _, reference in ipairs(mail.references) do
+    labels[#labels + 1] = reference.label
+  end
+
+  assert(vim.deep_equal(labels, {
+    "torvalds/linux@feaf756587",
+    "torvalds/linux@e4c1ff772e",
+    "torvalds/linux@70eda68668",
+  }), vim.inspect(labels))
+
+  local fixes = mail.references[2]
+  assert(fixes.url == "https://github.com/torvalds/linux/commit/e4c1ff772e1a")
+  local segment = fixes.segments[1]
+  assert(mail.lines[segment.line]:sub(segment.start + 1, segment.finish) == "e4c1ff772e1a")
+  local lore = false
+
+  for _, link in ipairs(mail.links) do
+    lore = lore or link.url == "https://lore.kernel.org/all/x@y/"
+  end
+
+  assert(lore, "links in preformatted text are kept for the browser")
+  assert(#devlog.render(message, { width = 80 }).references == 0)
 end
 
 -- Subscriber cookies are sent only to HTTPS LWN pages, and switching to a

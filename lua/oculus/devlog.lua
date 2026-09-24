@@ -1085,10 +1085,19 @@ function M.number_reference(repository, number, projects)
   }
 end
 
+-- A commit in the post's project, written out as its hash.
+local function commit_reference(project, sha)
+  local host = forge_host(project.provider)
+  return M.url_reference(("https://%s/%s/commit/%s"):format(host, project.repository, sha))
+end
+
 -- The references, and plain links, written out in `text`: forge URLs,
--- "owner/repo#123" and, when the post belongs to a project, "#123". Each is
+-- "owner/repo#123" and, when the post belongs to a project, "#123" and bare
+-- commit hashes. In preformatted text (opts.code) "#123" is more often a
+-- comment or a directive than an issue, so it is left alone. Each match is
 -- { start, finish, reference?, url? } with byte offsets into `text`.
-function M.text_references(text, project, projects)
+function M.text_references(text, project, projects, opts)
+  opts = opts or {}
   local matches = {}
 
   for start, url in text:gmatch("()(https?://[%w%-._~:/?#%[%]@!$&'*+,;=%%()]+)") do
@@ -1121,7 +1130,7 @@ function M.text_references(text, project, projects)
     end
   end
 
-  if project and type(project.repository) == "string" then
+  if project and type(project.repository) == "string" and not opts.code then
     for start, number, after in text:gmatch("()#(%d%d+)()") do
       local before = start > 1 and text:sub(start - 1, start - 1) or ""
       local next_char = text:sub(after, after)
@@ -1132,6 +1141,32 @@ function M.text_references(text, project, projects)
           finish = after - 1,
           reference = M.number_reference(project.repository, number, projects),
         }
+      end
+    end
+  end
+
+  -- Hashes as mailing lists write them ("Fixes: 1234567890ab (...)",
+  -- "base-commit: ..."): twelve to forty lowercase hex digits, with letters
+  -- and digits both. The blob hashes of a diff's "index a..b" line are not
+  -- commits.
+  if project and type(project.repository) == "string" then
+    for start, sha, after in text:gmatch("()(%x+)()") do
+      local before = start > 1 and text:sub(start - 1, start - 1) or ""
+
+      if #sha >= 12
+        and #sha <= 40
+        and sha:match("^[%da-f]+$")
+        and sha:find("%d")
+        and sha:find("%a")
+        and not before:match("[%w_@/.#=%-]")
+        and not text:sub(after, after):match("[%w_@]")
+        and text:sub(after, after + 1) ~= ".."
+      then
+        local reference = commit_reference(project, sha)
+
+        if reference then
+          matches[#matches + 1] = { start = start, finish = after - 1, reference = reference }
+        end
       end
     end
   end
@@ -1586,6 +1621,23 @@ function Renderer:render_pre(node, ctx)
   for _, text_line in ipairs(lines) do
     local line = self:emit(indent .. text_line)
     self:highlight(line, #indent, #indent + #text_line, "OculusDevlogCode")
+    -- Mailing list messages arrive as preformatted text; the links and commit
+    -- hashes in them are references as much as in prose.
+    local matches = M.text_references(text_line, self.project, self.projects, { code = true })
+
+    for _, match in ipairs(matches) do
+      local start = #indent + match.start - 1
+      local finish = #indent + match.finish
+
+      if match.reference then
+        self:highlight(line, start, finish, "OculusDevlogReference")
+        self:add_segment(match.reference, line, start, finish)
+      else
+        self:highlight(line, start, finish, "OculusDevlogLink")
+      end
+
+      self:add_link(match.reference and match.reference.url or match.url, line, start, finish)
+    end
   end
 
   self.pending_blank = true
