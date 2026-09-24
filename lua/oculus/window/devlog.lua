@@ -756,12 +756,7 @@ function M.setup(window, devlog_view, internal)
 
     local nav = navigation.resolve(state.opts)
     local config = footer_config(current)
-
-    local commands = ("  %s inspect   ⇥ next reference   b browser   r refresh   %s/q back"):format(
-      nav.inspect,
-      nav.left
-    )
-
+    local commands = ("  %s inspect   ⇥ next reference   b browser   r refresh   q back"):format(nav.inspect)
     local status
     local status_group = "Comment"
 
@@ -1296,10 +1291,8 @@ function M.setup(window, devlog_view, internal)
       devlog_view.close_post(false)
     end
 
+    -- Only q leaves the post; the left and right keys move the cursor in it.
     map("q", back, "Back to the posts")
-    map("<Esc>", back, "Back to the posts")
-    map(nav.left, back, "Back to the posts")
-    map("<Left>", back, "Back to the posts")
     map("<C-c>", window.close, "Close Oculus")
 
     map(nav.down, function()
@@ -1309,6 +1302,14 @@ function M.setup(window, devlog_view, internal)
     map(nav.up, function()
       vim.cmd.normal({ vim.v.count1 .. "k", bang = true })
     end, "Scroll the devlog post up")
+
+    map(nav.left, function()
+      vim.cmd.normal({ vim.v.count1 .. "h", bang = true })
+    end, "Move the cursor left")
+
+    map(nav.right, function()
+      vim.cmd.normal({ vim.v.count1 .. "l", bang = true })
+    end, "Move the cursor right")
 
     map("<Tab>", function()
       devlog_view.jump_reference(1)

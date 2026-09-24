@@ -626,6 +626,14 @@ end)
 
 assert(buffer_text(reader.buf):find("The older post, from its page.", 1, true))
 assert(window.state.win and vim.api.nvim_win_is_valid(window.state.win), "the reader keeps Oculus open")
+-- The left and right keys (here j and l) move the cursor; only q goes back.
+vim.api.nvim_win_set_cursor(reader.win, { vim.fn.search("The older post", "nw"), 2 })
+press("l")
+assert(vim.api.nvim_win_get_cursor(reader.win)[2] == 3)
+press("j")
+assert(vim.api.nvim_win_get_cursor(reader.win)[2] == 2)
+assert(state.devlog_reader == reader and vim.api.nvim_win_is_valid(reader.win))
+assert(vim.fn.maparg("<Esc>", "n") == "" and vim.fn.maparg("<Left>", "n") == "")
 press("q")
 assert(state.devlog_reader == nil and not vim.api.nvim_win_is_valid(reader.win))
 assert(vim.api.nvim_get_current_win() == state.win)
@@ -714,7 +722,7 @@ press("l")
 reader = state.devlog_reader
 assert(reader and reader.post.title == "Pointer Stability")
 -- Back out of the reader, then out of the devlog to the project list.
-press("j")
+press("q")
 assert(state.view == "devlog" and state.devlog_reader == nil)
 press("j")
 assert(state.view == "contributors", state.view)

@@ -339,8 +339,8 @@ from its posts returns to the source list.
 A post opens in a reader over the Oculus window, rendered as text: headings,
 lists, quotes and code blocks keep their shape, and links are underlined. Every
 pull request, issue and commit the post mentions is highlighted, whether it is
-a GitHub or Codeberg link, `owner/repo#123`, or `#123` in the post's own
-project, and the footer counts them. After the post, a **Referenced activity**
+a GitHub or Codeberg link, `owner/repo#123`, or `#123` or a commit hash in the
+post's own project, and the footer counts them. After the post, a **Referenced activity**
 section lists each of them once, with its kind and the words the post linked;
 the entries are references too, so `<Tab>` reaches them and `i` inspects them.
 
@@ -350,7 +350,8 @@ the entries are references too, so `<Tab>` reaches them and `i` inspects them.
 | `i` / `<CR>`         | [Inspect](#inspecting-changes) the one under the cursor, or the nearest on its line |
 | `b`                  | Open the link under the cursor, or the post, in your browser |
 | `r`                  | Reload the post                                          |
-| `q` / `h` / `<Esc>`  | Back to the list of posts                                |
+| `h` / `l`            | Move the cursor left / right                             |
+| `q`                  | Back to the list of posts                                |
 
 The footer names the reference under the cursor. Inspecting one closes Oculus
 as usual, and reopening Oculus returns to the post where you left it.
