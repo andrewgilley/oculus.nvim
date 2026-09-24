@@ -679,7 +679,11 @@ do
   -- r on the overview page is what loads and unloads them.
   inspect._show_inspection_overview(group)
   local overview_buf = vim.api.nvim_win_get_buf(group.overview_win)
-  assert(group.overview_footer_win == nil or not vim.api.nvim_win_is_valid(group.overview_footer_win))
+  assert(group.overview_footer_win and vim.api.nvim_win_is_valid(group.overview_footer_win))
+
+  local function footer_text()
+    return vim.api.nvim_buf_get_lines(group.overview_footer_buf, 1, 2, false)[1] or ""
+  end
 
   local function shortcuts_text()
     inspect._overview_ui.open_shortcuts(group)
@@ -699,11 +703,13 @@ do
   end
 
   assert(shortcuts_text():find("Show review threads", 1, true), shortcuts_text())
+  assert(footer_text():find("r threads", 1, true), footer_text())
   assert(vim.api.nvim_get_current_buf() == overview_buf)
   local toggle_map = assert(vim.fn.maparg("r", "n", false, true).callback)
   toggle_map()
   assert(group.review_inline)
   assert(shortcuts_text():find("Hide review threads", 1, true), shortcuts_text())
+  assert(footer_text():find("r hide threads", 1, true), footer_text())
   toggle_map()
   assert(not group.review_inline)
   assert(shortcuts_text():find("Show review threads", 1, true), shortcuts_text())

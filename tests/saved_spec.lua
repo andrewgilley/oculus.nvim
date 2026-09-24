@@ -289,7 +289,7 @@ window.open({
 })
 
 state = window.state
-assert(not buffer_text():find("s saved", 1, true))
+assert(buffer_text():find("s saved", 1, true))
 assert(shortcuts_text():find("Open saved activity items", 1, true))
 open_project("neovim/neovim")
 assert(shortcuts_text():find("Save activity item", 1, true))

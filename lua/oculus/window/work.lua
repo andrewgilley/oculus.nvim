@@ -312,13 +312,9 @@ function M.setup(window, work_view, internal)
       end
     end
 
-    while #lines < window_height do
-      lines[#lines + 1] = ""
-    end
-
+    local commands_line = internal.footer(lines, left_width)
     internal.set_lines(lines)
-    window.state.list_footer_line = nil
-    window.state.list_footer_text = nil
+    internal.paint_footer(commands_line)
     vim.wo[window.state.win].cursorline = false
     internal.highlight(2, 2, -1, "Title")
     internal.highlight(3, 2, -1, "Comment")
@@ -343,10 +339,6 @@ function M.setup(window, work_view, internal)
       if target.entry == selected then
         selected_line = line
       end
-    end
-
-    if commands_line then
-      internal.highlight(commands_line, 2, -1, "OculusNormal")
     end
 
     if selected_line then

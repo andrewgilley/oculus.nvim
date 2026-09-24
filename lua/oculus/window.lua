@@ -960,12 +960,9 @@ end
 -- Removing is the default answer, so Enter confirms like y.
 local footer_prompt = { keys = "y remove  n cancel" }
 
-local function footer_commands_text()
+-- The commands listed in the current page's footer.
+local function page_commands_text()
   local nav = navigation.resolve(M.state.opts)
-
-  if M.state.footer_prompt then
-    return ("  %s  %s"):format(M.state.footer_prompt.question, footer_prompt.keys)
-  end
 
   if M.state.view == "contributors" then
     local showing_users = M.state.community_view == "users"
@@ -994,6 +991,12 @@ local function footer_commands_text()
       nav.left,
       edit
     )
+  elseif M.state.view == "filters" then
+    return ("  %s/← back   ⏎ toggle   a all   n none   ?: help"):format(nav.left)
+  elseif M.state.view == "issue_filters" then
+    return ("  %s/← back   ⏎ select   ?: help"):format(nav.left)
+  elseif M.state.view == "activity" and M.state.activity_error then
+    return ("  %s/← back   ?: help"):format(nav.left)
   end
 
   local inspect_key = nav.inspect
@@ -1021,6 +1024,15 @@ local function footer_commands_text()
   return activity_commands
 end
 
+-- The footer commands, or the pending prompt that temporarily replaces them.
+local function footer_commands_text()
+  if M.state.footer_prompt then
+    return ("  %s  %s"):format(M.state.footer_prompt.question, footer_prompt.keys)
+  end
+
+  return page_commands_text()
+end
+
 local inspect_input_default_title = "item ID#: "
 
 local function get_inspect_input_title()
@@ -1036,7 +1048,15 @@ local function get_inspect_input_title()
 end
 
 local function render_activity_footer(force)
-  if not M.state.footer_prompt and not is_inspect_input_open() then
+  -- Activity pages list their commands in this floating footer; other pages
+  -- draw their own footer rows and only float it for prompts and input.
+  local lists_commands = M.state.view == "activity" and not is_sidebar_visible()
+
+  if not force
+    and not lists_commands
+    and not M.state.footer_prompt
+    and not is_inspect_input_open()
+  then
     close_activity_footer()
     return
   end
@@ -1558,7 +1578,62 @@ local function activity_time(timestamp)
 end
 
 -- AGENT_CHANGE_END codeberg-andrew-kelley-20260727 8
-local function footer(lines, text)
+-- Fit a commands row within `width` by dropping whole commands from the end,
+-- keeping the trailing help hint, rather than cutting a command in half.
+local function fit_commands(text, width)
+  local commands = vim.split(vim.trim(text), "   ", { plain = true })
+  local help = commands[#commands] == "?: help" and table.remove(commands) or nil
+
+  while #commands > 0 do
+    local shown = vim.list_extend(vim.list_slice(commands), { help })
+    local line = "  " .. table.concat(shown, "   ")
+
+    if vim.fn.strdisplaywidth(line) <= width then
+      return line
+    end
+
+    table.remove(commands)
+  end
+
+  return trim_to_width("  " .. (help or ""), width)
+end
+
+-- Pad a page to the window height and end it with the command footer: a
+-- separator and the page's commands on the bottom rows, kept within `width`
+-- so they stay clear of the preview. The sidebar lists the commands itself,
+-- so pages have no footer while it is visible. Returns the commands row.
+local function footer(lines, width)
+  local window_height = vim.api.nvim_win_get_height(M.state.win)
+
+  if is_sidebar_visible() then
+    while #lines < window_height do
+      lines[#lines + 1] = ""
+    end
+
+    return nil
+  end
+
+  while #lines < window_height - 2 do
+    lines[#lines + 1] = ""
+  end
+
+  lines[#lines + 1] = "  " .. string.rep("─", math.max(1, width - 2))
+  lines[#lines + 1] = pad_cell(fit_commands(page_commands_text(), width - 1), width)
+  return #lines
+end
+
+-- Record and highlight the footer drawn by footer() once its page is set, so
+-- confirmation prompts can take over the commands row.
+local function paint_footer(commands_line)
+  M.state.list_footer_line = commands_line
+
+  M.state.list_footer_text = commands_line
+    and vim.api.nvim_buf_get_lines(M.state.buf, commands_line - 1, commands_line, false)[1]
+
+  if commands_line then
+    highlight(commands_line - 1, 2, -1, "WinSeparator")
+    highlight(commands_line, 2, -1, "OculusNormal")
+  end
 end
 
 local function preview_left_width(window_width)
@@ -1574,12 +1649,7 @@ function footer_prompt.paint()
   local line = M.state.list_footer_line
 
   if not line then
-    if prompt then
-      render_activity_footer(true)
-    else
-      close_activity_footer()
-    end
-
+    render_activity_footer()
     return
   end
 
@@ -1884,10 +1954,9 @@ local function render_contributors()
     local left_width = preview_left_width(vim.api.nvim_win_get_width(M.state.win))
     for index, line in ipairs(lines) do lines[index] = pad_cell(trim_to_width(line, left_width - 1), left_width) end
     local window_height = vim.api.nvim_win_get_height(M.state.win)
-    while #lines < window_height do lines[#lines + 1] = "" end
+    local commands_line = footer(lines, left_width)
     set_lines(lines)
-    M.state.list_footer_line = nil
-    M.state.list_footer_text = nil
+    paint_footer(commands_line)
     work_view.accounts.render()
     vim.wo[M.state.win].cursorline = false
 
@@ -2018,7 +2087,7 @@ local function render_contributors()
   )
 
   local window_height = vim.api.nvim_win_get_height(M.state.win)
-  local footer_space = 0
+  local footer_space = is_sidebar_visible() and 0 or 4
 
   list_limit = math.min(
     list_limit,
@@ -2056,13 +2125,9 @@ local function render_contributors()
     lines[#lines + 1] = "  a add account"
   end
 
-  while #lines < window_height do
-    lines[#lines + 1] = ""
-  end
-
+  local commands_line = footer(lines, left_width)
   set_lines(lines)
-  M.state.list_footer_line = nil
-  M.state.list_footer_text = nil
+  paint_footer(commands_line)
   work_view.accounts.render()
   vim.wo[M.state.win].cursorline = false
 
@@ -2086,10 +2151,6 @@ local function render_contributors()
     else
       highlight(line, 2, 2 + username_width, "Identifier")
     end
-  end
-
-  if commands_line then
-    highlight(commands_line, 2, -1, "OculusNormal")
   end
 
   local selected_line
@@ -2369,6 +2430,7 @@ local directories = require("oculus.window.directories").setup(M, {
   highlight = highlight,
   pad_cell = pad_cell,
   footer = footer,
+  paint_footer = paint_footer,
 })
 
 render_directory = directories.render_directory
@@ -2466,7 +2528,9 @@ local function render_filters(scope, selected_type)
     end
   end
 
+  local commands_line = footer(lines, vim.api.nvim_win_get_width(M.state.win) - 2)
   set_lines(lines)
+  paint_footer(commands_line)
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Identifier")
@@ -2650,7 +2714,9 @@ local function render_issue_filters(project, selected_dimension)
     lines[#lines + 1] = ""
   end
 
+  local commands_line = footer(lines, vim.api.nvim_win_get_width(M.state.win) - 2)
   set_lines(lines)
+  paint_footer(commands_line)
   vim.wo[M.state.win].cursorline = true
 
   for _, line in ipairs(headings) do
@@ -2785,6 +2851,7 @@ local function render_error(message)
     }
 
   set_lines(lines)
+  render_activity_footer()
   vim.wo[M.state.win].cursorline = true
   highlight(2, 2, -1, "Title")
   highlight(3, 2, -1, "Comment")
@@ -3909,6 +3976,7 @@ local view_internal = {
   trim_to_width = trim_to_width,
   pad_cell = pad_cell,
   footer = footer,
+  paint_footer = paint_footer,
   preview_items = preview_items,
   queue_preview = queue_preview,
   preview_left_width = preview_left_width,

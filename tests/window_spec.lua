@@ -289,7 +289,7 @@ assert(not initial_project_text:find("COMMUNITY ACTIVITY", 1, true))
 assert(initial_project_text:find("example/project", 1, true))
 assert(not initial_project_text:find("  USERS", 1, true))
 assert(not initial_project_text:find("@mitchellh", 1, true))
-assert(not initial_project_text:find("u users", 1, true))
+assert(initial_project_text:find("u users", 1, true))
 assert(not initial_project_text:find("a add", 1, true))
 assert(not initial_project_text:find("r remove", 1, true))
 assert(not initial_project_text:find("m move", 1, true))
@@ -344,7 +344,7 @@ assert(not initial_user_text:find("  ACTIVITY", 1, true))
 assert(initial_user_text:find("@andrewrk", 1, true))
 assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
-assert(not initial_user_lines[initial_window_height]:find("p projects", 1, true))
+assert(initial_user_lines[initial_window_height]:find("p projects", 1, true))
 window._toggle_shortcuts()
 
 local user_shortcuts_text = table.concat(
@@ -1164,8 +1164,14 @@ for index, event in ipairs(state.events) do
   assert(found_url)
 end
 
-assert(state.footer_win == nil)
-assert(state.footer_buf == nil)
+local commit_footer_lines = table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
+
+assert(vim.api.nvim_get_hl_ns({ winid = state.footer_win })
+  == window_highlight_ns)
+
+assert(commit_footer_lines:find("b browser", 1, true), commit_footer_lines)
+assert(not commit_footer_lines:find("p past", 1, true))
+assert(not commit_footer_lines:find("u issues", 1, true))
 vim.fn.maparg("j", "n", false, true).callback()
 assert(state.activity_commit_page == false)
 assert(#state.events == 8)
@@ -1587,8 +1593,10 @@ assert(not activity_text:find("page 2", 1, true))
 assert(vim.api.nvim_win_get_cursor(state.win)[1]
   == state.activity_cursor_min_line)
 
-assert(state.footer_win == nil)
-assert(state.footer_buf == nil)
+local footer_text = table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
+assert(footer_text:find("b browser", 1, true), footer_text)
+assert(footer_text:find("s save", 1, true), footer_text)
+assert(not footer_text:find("r refresh", 1, true))
 window._toggle_shortcuts()
 
 local activity_shortcuts = table.concat(
@@ -1623,8 +1631,7 @@ assert(#state.events == 8)
 assert(state.events[1].id == "9")
 assert(state.events[8].id == "16")
 assert(requested_per_page[4] == 38)
-assert(state.footer_win == nil)
-assert(state.footer_buf == nil)
+assert(state.footer_win and vim.api.nvim_win_is_valid(state.footer_win))
 
 local recent_activity_text = table.concat(
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
@@ -1648,8 +1655,7 @@ local page_one_activity_text = table.concat(
 )
 
 assert(page_one_activity_text:find("GitHub (1/3)", 1, true))
-assert(state.footer_win == nil)
-assert(state.footer_buf == nil)
+assert(state.footer_win and vim.api.nvim_win_is_valid(state.footer_win))
 local user_refresh_mapping = vim.fn.maparg("r", "n", false, true)
 
 assert(user_refresh_mapping.desc
@@ -1669,7 +1675,7 @@ local returned_window_height = vim.api.nvim_win_get_height(state.win)
 local returned_user_lines =
   vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
 
-assert(not returned_user_lines[returned_window_height]:find("p projects", 1, true))
+assert(returned_user_lines[returned_window_height]:find("p projects", 1, true))
 
 do
   vim.cmd("tabnew")
@@ -1968,7 +1974,7 @@ do
   assert(not startpage_text:find("  ACTIVITY", 1, true))
   assert(not startpage_text:find("PROJECT ACTIVITY", 1, true))
   assert(startpage_text:find("neovim/neovim", 1, true))
-  assert(not startpage_text:find("u users", 1, true))
+  assert(startpage_text:find("u users", 1, true))
   window._toggle_shortcuts()
 
   local sp_shortcuts = table.concat(
@@ -2043,8 +2049,8 @@ do
   assert(not project_activity_text:find("• Merged by", 1, true))
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
-  assert(state.footer_win == nil)
-  assert(state.footer_buf == nil)
+  local project_footer_text = table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
+  assert(project_footer_text:find("u issues", 1, true), project_footer_text)
   window._toggle_shortcuts()
 
   local proj_shortcuts = table.concat(
@@ -2077,8 +2083,9 @@ do
     issue_activity_text
   )
 
-  assert(state.footer_win == nil)
-  assert(state.footer_buf == nil)
+  local issue_footer_text = table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
+  assert(issue_footer_text:find("f filters", 1, true), issue_footer_text)
+  assert(not issue_footer_text:find("u issues", 1, true), issue_footer_text)
   window._toggle_shortcuts()
 
   local issue_shortcuts = table.concat(
@@ -3092,14 +3099,14 @@ do
   assert(window_mod.state.sidebar_win == nil, "expected sidebar_win to be nil after toggle")
   local widened_cfg = vim.api.nvim_win_get_config(window_mod.state.win)
   assert(widened_cfg.width > prev_main_width, "expected main window to widen when sidebar is hidden")
-  -- Verify main window does NOT show footer commands or separator line when sidebar is hidden
+  -- Verify main window shows footer commands and separator line when sidebar is hidden
   local footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local footer_text = table.concat(footer_lines, "\n")
-  assert(not footer_text:find("u users", 1, true))
+  assert(footer_text:find("u users", 1, true))
+  assert(footer_text:find("?: help", 1, true))
   assert(not footer_text:find("a add", 1, true))
   assert(not footer_text:find("r remove", 1, true))
-  assert(not footer_text:find("f folder", 1, true))
-  assert(not footer_text:find("─", 1, true), "expected no separator line when sidebar is hidden")
+  assert(footer_text:find("─", 1, true), "expected separator line when sidebar is hidden")
   window_mod._toggle_shortcuts()
   local sc_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local sc_text = table.concat(sc_lines, "\n")
@@ -3119,18 +3126,20 @@ do
   assert(window_mod.state.view == "shortcuts", "expected shortcuts view via ? mapping")
   q_map.callback()
   assert(window_mod.state.view == "contributors", "expected return to contributors via ? mapping")
-  -- Test 7: Verify render_error omits footer when sidebar is visible and when hidden
+  -- Test 7: Verify render_error omits footer when sidebar is visible and includes it when hidden
   window_mod._render_error("test error")
   local err_lines_visible = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local err_text_visible = table.concat(err_lines_visible, "\n")
   assert(err_text_visible:find("Could not load activity", 1, true))
-  assert(not err_text_visible:find("shortcuts", 1, true), "expected no shortcuts footer in error view when sidebar is visible")
+  assert(window_mod.state.footer_win == nil, "expected no footer in error view when sidebar is visible")
   window_mod._toggle_sidebar()
   window_mod._render_error("test error")
   local err_lines_hidden = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local err_text_hidden = table.concat(err_lines_hidden, "\n")
   assert(err_text_hidden:find("Could not load activity", 1, true))
-  assert(not err_text_hidden:find("shortcuts", 1, true), "expected no shortcuts footer in error view when sidebar is hidden")
+  local err_footer = table.concat(vim.api.nvim_buf_get_lines(window_mod.state.footer_buf, 0, -1, false), "\n")
+  assert(err_footer:find("?: help", 1, true), "expected footer in error view when sidebar is hidden")
+  assert(not err_footer:find("b browser", 1, true), "expected no activity commands in error footer")
   window_mod._toggle_sidebar()
   -- Test 8: VimResized handles sidebar visibility dynamically
   vim.o.columns = 80
@@ -3837,7 +3846,13 @@ do
   assert(r_map ~= nil and type(r_map.callback) == "function")
   r_map.callback()
   assert(window_mod.state.footer_prompt, "remove asks for confirmation first")
-  assert(window_mod.state.footer_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.footer_win), "footer prompt window is visible")
+
+  local function prompt_row()
+    local line = window_mod.state.list_footer_line
+    return vim.api.nvim_buf_get_lines(window_mod.state.buf, line - 1, line, false)[1]
+  end
+
+  assert(prompt_row():find("y remove", 1, true), "prompt replaces the footer commands")
   vim.fn.maparg("y", "n", false, true).callback()
   assert(window_mod.state.footer_win == nil, "footer prompt window closed after confirm")
   local has_core = false
@@ -3864,7 +3879,7 @@ do
   vim.api.nvim_win_set_cursor(window_mod.state.win, { empty_dir_line, 0 })
   r_map.callback()
   assert(window_mod.state.footer_prompt ~= nil and window_mod.state.footer_prompt.question == 'Remove folder "Empty Tools"?')
-  assert(window_mod.state.footer_win ~= nil and vim.api.nvim_win_is_valid(window_mod.state.footer_win))
+  assert(prompt_row():find('Remove folder "Empty Tools"?', 1, true), prompt_row())
   vim.fn.maparg("y", "n", false, true).callback()
   assert(window_mod.state.footer_win == nil)
   local has_empty_tools = false
@@ -4251,10 +4266,12 @@ do
   assert(many_items[last_item_idx][1]:find("more", 1, true), "expected overflow note on last visible preview line")
   assert(many_items[last_item_idx][2] == "Comment")
   window_mod.state.opts.projects = saved_projects
-  -- Test 18: Verify footer commands are in shortcuts and u/p switch views
+  -- Test 18: Verify footer commands show "u users" / "p projects" unless the
+  -- sidebar lists them, are in shortcuts, and u/p switch views
+  local shows_footer = not window_mod._is_sidebar_visible()
   local startup_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local startup_footer_text = table.concat(startup_footer_lines, "\n")
-  assert(not startup_footer_text:find("u users", 1, true), "expected no 'u users' in startup buffer text")
+  assert((startup_footer_text:find("u users", 1, true) ~= nil) == shows_footer, "expected 'u users' in startup footer text")
   window_mod._toggle_shortcuts()
   local sc_text = table.concat(vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false), "\n")
   assert(sc_text:find("Switch to user list", 1, true), "expected 'Switch to user list' in shortcuts")
@@ -4280,7 +4297,7 @@ do
   assert(window_mod.state.community_view == "users", "expected community_view == 'users' after pressing u")
   local user_footer_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   local user_footer_text = table.concat(user_footer_lines, "\n")
-  assert(not user_footer_text:find("p projects", 1, true), "expected no 'p projects' in users buffer text")
+  assert((user_footer_text:find("p projects", 1, true) ~= nil) == shows_footer, "expected 'p projects' in users footer text")
   window_mod._toggle_shortcuts()
   local user_sc_text = table.concat(vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false), "\n")
   assert(user_sc_text:find("Switch to project list", 1, true), "expected 'Switch to project list' in users shortcuts")

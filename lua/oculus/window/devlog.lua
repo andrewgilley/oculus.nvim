@@ -190,13 +190,9 @@ function M.setup(window, devlog_view, internal)
         state.line_targets[#lines] = { kind = "devlog_source", source = entry, index = index }
       end
 
-      while #lines < window_height do
-        lines[#lines + 1] = ""
-      end
-
+      local commands_line = internal.footer(lines, left_width)
       internal.set_lines(lines)
-      state.list_footer_line = nil
-      state.list_footer_text = nil
+      internal.paint_footer(commands_line)
       vim.wo[state.win].cursorline = false
       internal.highlight(2, 2, -1, "Title")
       internal.highlight(3, 2, -1, "Comment")
@@ -296,13 +292,9 @@ function M.setup(window, devlog_view, internal)
       end
     end
 
-    while #lines < window_height do
-      lines[#lines + 1] = ""
-    end
-
+    local commands_line = internal.footer(lines, left_width)
     internal.set_lines(lines)
-    state.list_footer_line = nil
-    state.list_footer_text = nil
+    internal.paint_footer(commands_line)
     vim.wo[state.win].cursorline = false
     internal.highlight(2, 2, -1, "Title")
     internal.highlight(3, 2, -1, "Comment")

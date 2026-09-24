@@ -2037,7 +2037,7 @@ local issue_tabs_after = vim.api.nvim_list_tabpages()
 assert(#issue_tabs_after == #issue_tabs_before + 1)
 local issue_tab = issue_tabs_after[#issue_tabs_after]
 assert(vim.api.nvim_get_current_tabpage() == issue_tab)
-assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 2)
+assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 3)
 local issue_state = vim.api.nvim_tabpage_get_var(issue_tab, "oculus_inspect")
 assert(issue_state.kind == "issue")
 assert(issue_state.role == "issue")
@@ -2092,10 +2092,26 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
 
   if vim.b[candidate].oculus_inspect_overview_footer then
     overview_footer_buf = candidate
+    assert(not vim.api.nvim_win_get_config(win).focusable)
+
+    assert(is_overview_highlight_ns(
+      vim.api.nvim_get_hl_ns({ winid = win })
+    ))
   end
 end
 
-assert(overview_footer_buf == nil)
+assert(overview_footer_buf)
+
+local overview_footer_lines =
+  vim.api.nvim_buf_get_lines(overview_footer_buf, 0, -1, false)
+
+assert(overview_footer_lines[1] == "  " .. string.rep(
+  "─",
+  math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
+))
+
+assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   v virtual   e exit", 1, true))
+assert(overview_footer_lines[2]:sub(-#("c close   ?: help")) == "c close   ?: help")
 local overview_win_width = vim.api.nvim_win_get_width(overview_win)
 local overview_win_height = vim.api.nvim_win_get_height(overview_win)
 vim.api.nvim_set_current_win(overview_win)
@@ -2460,7 +2476,13 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(issue_tab)) do
   end
 end
 
-assert(explanation_footer_buf == nil)
+assert(explanation_footer_buf)
+
+local function explanation_footer()
+  return vim.api.nvim_buf_get_lines(explanation_footer_buf, 1, 2, false)[1]
+end
+
+assert(explanation_footer():find("p path", 1, true))
 
 local function get_explanation_shortcuts()
   vim.api.nvim_set_current_win(explanation_win)
@@ -2537,6 +2559,9 @@ explanation_text = table.concat(
 local focused_path_shortcuts = get_explanation_shortcuts()
 assert(focused_path_shortcuts:find("Toggle patch location", 1, true))
 assert(focused_path_shortcuts:find("Open selected paths", 1, true))
+assert(explanation_footer():find("<Space> toggle", 1, true))
+assert(explanation_footer():find("<CR> open paths", 1, true))
+assert(explanation_footer():sub(-#("c close   ?: help")) == "c close   ?: help")
 
 assert(explanation_text:find(
   "Agent suggestion (gpt-5.6-test-agent)",
@@ -2649,6 +2674,9 @@ local unfocused_shortcuts = get_explanation_shortcuts()
 assert(unfocused_shortcuts:find("Select patch locations", 1, true))
 assert(not unfocused_shortcuts:find("Toggle patch location", 1, true))
 assert(not unfocused_shortcuts:find("Open selected paths", 1, true))
+assert(explanation_footer():find("p path", 1, true))
+assert(not explanation_footer():find("<Space> toggle", 1, true))
+assert(not explanation_footer():find("<CR> open paths", 1, true))
 patch_mapping.callback()
 assert(vim.api.nvim_get_current_win() == explanation_win)
 local refocused_location_line
@@ -2679,6 +2707,7 @@ for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
 end
 
 assert(not get_explanation_shortcuts():find("Toggle patch location", 1, true))
+assert(not explanation_footer():find("<Space> toggle", 1, true))
 patch_mapping.callback()
 local toggled_location_line
 
@@ -3114,7 +3143,7 @@ local close_issue_overview = vim.fn.maparg("q", "n", false, true)
 assert(close_issue_overview.desc == "Close Oculus Inspect overview")
 close_issue_overview.callback()
 assert(not vim.api.nvim_win_is_valid(overview_win))
-assert(overview_footer_buf == nil)
+assert(not vim.api.nvim_buf_is_valid(overview_footer_buf))
 assert(vim.api.nvim_get_current_win() == issue_main_win)
 assert(#vim.api.nvim_tabpage_list_wins(issue_tab) == 1)
 
@@ -3723,10 +3752,36 @@ close_workflow_mapping.callback()
 assert(vim.g.oculus_test_replacement_close_requested == 1)
 assert(vim.api.nvim_tabpage_is_valid(replacement_tab))
 
-for _, win in ipairs(vim.api.nvim_tabpage_list_wins(replacement_tab)) do
-  local buf = vim.api.nvim_win_get_buf(win)
-  assert(not vim.b[buf].oculus_inspect_overview_footer)
-end
+assert((function()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(replacement_tab)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+
+    if vim.b[buf].oculus_inspect_overview_footer then
+      local footer = vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1]
+
+      if not footer:find("e exit ", 1, true) then
+        return false
+      end
+
+      local footer_ns = vim.api.nvim_get_namespaces()
+        .oculus_inspect_overview_footer
+
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+        buf,
+        footer_ns,
+        0,
+        -1,
+        { details = true }
+      )) do
+        if mark[4].hl_group == "DiagnosticInfo" then
+          return true
+        end
+      end
+    end
+  end
+
+  return false
+end)())
 
 local window_mod = require("oculus.window")
 window_mod.state.view = "activity"
@@ -6385,6 +6440,13 @@ do
   }
 
   inspect._overview_ui.render_footer(group)
+  assert(group.overview_footer_buf ~= nil)
+  assert(group.overview_footer_win ~= nil)
+
+  assert(vim.api.nvim_buf_get_lines(group.overview_footer_buf, 0, -1, false)[2]
+    :find("b browser", 1, true))
+
+  inspect._overview_ui.close_footer(group)
   assert(group.overview_footer_win == nil)
   assert(group.overview_footer_buf == nil)
   inspect._overview_ui.open_shortcuts(group)

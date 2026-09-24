@@ -52,8 +52,8 @@ local rows = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
 local height = vim.api.nvim_win_get_height(window.state.win)
 assert(#rows == height, 'tracking list pads to full window height')
 
-assert(not rows[height]:match('^  p projects') and not rows[height - 1]:match('^  ─'),
-  'tracking footer is removed from the bottom row')
+assert(rows[height]:match('^  u users') and rows[height - 1]:match('^  ─'),
+  'tracking footer sits on the bottom rows')
 
 window._toggle_shortcuts()
 local shortcuts_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')
@@ -272,7 +272,7 @@ local empty_target = window.state.line_targets[vim.api.nvim_win_get_cursor(windo
 assert(empty_target and empty_target.kind == 'directory_empty', 'empty folder line target is directory_empty')
 key('R')
 assert(window.state.footer_prompt and window.state.footer_prompt.question == 'Remove group "EmptyFolder"?', 'question matches')
-assert(window.state.footer_win and vim.api.nvim_win_is_valid(window.state.footer_win), 'footer prompt window is visible')
+assert(vim.api.nvim_buf_get_lines(window.state.buf, window.state.list_footer_line - 1, window.state.list_footer_line, false)[1]:find('y remove', 1, true), 'prompt replaces the footer commands')
 key('y')
 assert(window.state.footer_win == nil, 'footer prompt window closed after confirm')
 assert(#window.state.tracking_paths.projects == 0, 'returned to parent path')
@@ -284,7 +284,7 @@ key('p')
 select_label('EmptyParent')
 key('R')
 assert(window.state.footer_prompt and window.state.footer_prompt.question == 'Remove group "EmptyParent"?', 'parent question matches')
-assert(window.state.footer_win and vim.api.nvim_win_is_valid(window.state.footer_win), 'footer prompt window is visible on parent removal')
+assert(vim.api.nvim_buf_get_lines(window.state.buf, window.state.list_footer_line - 1, window.state.list_footer_line, false)[1]:find('y remove', 1, true), 'prompt replaces the footer commands on parent removal')
 key('y')
 assert(window.state.footer_win == nil, 'footer prompt window closed after confirm')
 assert(#disk().projects == 1 and disk().projects[1].repository == 'stay/repo', 'empty folder removed from tracking file')

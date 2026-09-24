@@ -341,7 +341,7 @@ window.open({
 })
 
 state = window.state
-assert(not buffer_text():find("w work", 1, true))
+assert(buffer_text():find("w work", 1, true))
 press("?")
 assert(buffer_text():find("Open your work", 1, true))
 press("?")

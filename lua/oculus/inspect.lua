@@ -3569,6 +3569,8 @@ show_inspection_overview = function(group)
     }
   )
 
+  M._overview_ui.render_footer(group)
+
   if group.overview_agent_mode == "loading_models"
     or group.overview_agent_mode == "generating"
   then

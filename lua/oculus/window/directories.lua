@@ -393,13 +393,9 @@ function M.setup(window, internal)
       project_lines[#project_lines + 1] = empty_line
     end
 
-    while #lines < window_height do
-      lines[#lines + 1] = ""
-    end
-
+    local commands_line = internal.footer(lines, left_width)
     internal.set_lines(lines)
-    window.state.list_footer_line = nil
-    window.state.list_footer_text = nil
+    internal.paint_footer(commands_line)
     vim.wo[window.state.win].cursorline = false
     internal.highlight(2, 2, -1, "Title")
     internal.highlight(3, 2, -1, "OculusDirectory")
@@ -411,10 +407,6 @@ function M.setup(window, internal)
       elseif target.kind == "directory_empty" then
         internal.highlight(line, 2, -1, "Comment")
       end
-    end
-
-    if commands_line then
-      internal.highlight(commands_line, 2, -1, "OculusNormal")
     end
 
     local selected_line = nil
