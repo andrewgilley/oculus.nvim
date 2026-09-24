@@ -351,7 +351,7 @@ the entries are references too, so `<Tab>` reaches them and `i` inspects them.
 | `b`                  | Open the link under the cursor, or the post, in your browser |
 | `r`                  | Reload the post                                          |
 | `h` / `l`            | Move the cursor left / right                             |
-| `q`                  | Back to the list of posts                                |
+| `q` / `<Esc>`        | Back to the list of posts                                |
 
 The footer names the reference under the cursor. Inspecting one closes Oculus
 as usual, and reopening Oculus returns to the post where you left it.

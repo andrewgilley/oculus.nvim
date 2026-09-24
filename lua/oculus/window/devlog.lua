@@ -1291,8 +1291,9 @@ function M.setup(window, devlog_view, internal)
       devlog_view.close_post(false)
     end
 
-    -- Only q leaves the post; the left and right keys move the cursor in it.
+    -- q and <Esc> leave the post; the left and right keys move the cursor in it.
     map("q", back, "Back to the posts")
+    map("<Esc>", back, "Back to the posts")
     map("<C-c>", window.close, "Close Oculus")
 
     map(nav.down, function()
