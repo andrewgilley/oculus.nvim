@@ -275,12 +275,15 @@ function M.setup(inspect)
       return
     end
 
+    -- git show diffs a merge against its parents even with --no-patch, and
+    -- rename detection there reads blobs a remote cache does not hold; git
+    -- log reads only the commit.
     git.run_raw({
       "git",
       "-C",
       repository,
-      "show",
-      "--no-patch",
+      "log",
+      "-1",
       "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%s%x00%b",
       commit,
     }, function(output)

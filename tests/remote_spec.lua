@@ -517,6 +517,46 @@ wait_for("missing remote commit did not fail", function()
 end)
 
 assert(missing_err and missing_err:match("could not fetch commit"), missing_err)
+
+-- A merge's overview comes from its commit alone. Against its side parent the
+-- merge adds and deletes files, so a diff with rename detection would need
+-- blobs the remote cache never fetches.
+do
+  write("merged.txt", numbered(40, "merged"))
+  write("old.txt", numbered(20, "old"))
+  git_command("-C", source, "add", "--all")
+  git_command("-C", source, "commit", "--quiet", "-m", "merge base")
+  git_command("-C", source, "checkout", "--quiet", "-b", "side")
+  local side = numbered(40, "merged")
+  side[1] = "merged side"
+  write("merged.txt", side)
+  git_command("-C", source, "commit", "--quiet", "--all", "-m", "side")
+  git_command("-C", source, "checkout", "--quiet", "main")
+  assert(vim.fn.delete(vim.fs.joinpath(source, "old.txt")) == 0)
+  local fresh = numbered(20, "old")
+  fresh[10] = "fresh"
+  write("fresh.txt", fresh)
+  git_command("-C", source, "add", "--all")
+  git_command("-C", source, "commit", "--quiet", "-m", "main")
+  git_command("-C", source, "merge", "--quiet", "--no-ff", "-m", "Merge side", "-m", "Merge body", "side")
+  local merge = commit_info(git_command("-C", source, "rev-parse", "HEAD"))
+  local merge_err
+
+  inspect._prepare(merge, opts, function(_, err)
+    merge_err = err or false
+  end)
+
+  wait_for("remote merge preparation did not finish", function()
+    return merge_err ~= nil
+  end)
+
+  assert(not merge_err, merge_err)
+  local details = merge.commit_details or {}
+  assert(details.subject == "Merge side", vim.inspect(details))
+  assert(details.body == "Merge body")
+  assert(#details.parents == 2)
+end
+
 local lifecycle_error
 local lifecycle_done = false
 local tabs_before = #vim.api.nvim_list_tabpages()
