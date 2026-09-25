@@ -141,6 +141,35 @@ do
 
   local excerpt = inspect._excerpt(parent, change, hunks, 2)
 
+  -- Any mix of chunk versions maps the same way.
+  for mask = 0, 7 do
+    local applied = {}
+    local count = excerpt.parent_count
+
+    for index, hunk in ipairs(hunks) do
+      applied[index] = math.floor(mask / 2 ^ (index - 1)) % 2 == 1
+
+      if applied[index] then
+        count = count + hunk.new_count - hunk.old_count
+      end
+    end
+
+    local shown = patch.compose(excerpt.parent_lines, excerpt.change_lines, excerpt.hunks, applied)
+    local whole = patch.compose(parent, change, hunks, applied)
+    local ranges = patch.composed_ranges(excerpt.parent_ranges, excerpt.hunks, applied)
+    assert(count == #whole)
+
+    for line, text in ipairs(shown) do
+      local first, last = patch.source_line(ranges, line, count)
+
+      if first == last then
+        assert(whole[first] == text, ("mask %d line %d"):format(mask, line))
+      else
+        assert(text:find("unchanged lines", 1, true), text)
+      end
+    end
+  end
+
   for index, hunk in ipairs(excerpt.hunks) do
     local shown = patch.focused_change_lines(excerpt.parent_lines, excerpt.change_lines, hunk)
     local whole = patch.focused_change_lines(parent, change, hunks[index])

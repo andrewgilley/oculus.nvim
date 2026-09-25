@@ -342,10 +342,10 @@ function M.place(sessions, threads, commits, head_sha)
   return unplaced
 end
 
--- The buffer line showing a revision line of an inspected file. The change
--- buffer shows one chunk at a time with every other chunk reverted, so a line
--- inside another chunk is shown at the start of that chunk; its index is
--- returned as the second value.
+-- The buffer line showing a revision line of an inspected file. A focused
+-- view shows each chunk in one version, so a line inside a chunk the buffer
+-- shows in the other version is shown at the start of that chunk; its index
+-- is returned as the second value.
 function M.display_line(session, role, line)
   line = math.max(1, tonumber(line) or 1)
   local ranges = session.excerpt and session.excerpt[role]
@@ -354,40 +354,42 @@ function M.display_line(session, role, line)
     line = patch.excerpt_line(ranges, line)
   end
 
-  if role == "parent" or not session.focused_chunks or not session.active_chunk then
+  if not session.focused_chunks or not session.active_chunk then
     return line
   end
 
+  local hunks = patch.session_hunks(session)
+  local applied = patch.applied_chunks(session, role)
+  local starts = patch.chunk_layout(hunks, applied)
+  -- A chunk shows its own side's lines when the buffer applies it exactly
+  -- when this is the change side.
+  local own = role == "change"
   local shift = 0
 
-  for index, hunk in ipairs(patch.session_hunks(session)) do
-    local new_count = hunk.new_count or 0
+  for index, hunk in ipairs(hunks) do
+    local first = own and hunk.new_start or hunk.old_start
+    local count = (own and hunk.new_count or hunk.old_count) or 0
+    local other = (own and hunk.old_count or hunk.new_count) or 0
+    local shown = (applied[index] or false) == own
 
-    if new_count > 0
-      and line >= hunk.new_start
-      and line < hunk.new_start + new_count
-    then
-      if index == session.active_chunk then
-        return line - shift
+    if count > 0 and line >= first and line < first + count then
+      if shown then
+        return math.max(1, line + shift)
       end
 
-      return math.max(1, hunk.new_start - shift), index
+      return starts[index], index
     end
 
-    local before = new_count > 0
-        and hunk.new_start + new_count - 1 < line
-      or new_count == 0 and hunk.new_start < line
-
-    if not before then
+    if not (count > 0 and first + count - 1 < line or count == 0 and first < line) then
       break
     end
 
-    if index ~= session.active_chunk then
-      shift = shift + new_count - (hunk.old_count or 0)
+    if not shown then
+      shift = shift + other - count
     end
   end
 
-  return math.max(1, line - shift)
+  return math.max(1, line + shift)
 end
 
 local function first_line(text)

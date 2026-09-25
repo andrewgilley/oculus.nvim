@@ -373,8 +373,8 @@ change markers, and you can switch it between the parent and the change:
 
 | Key (option)                               | Default      | Action                              |
 | ------------------------------------------ | ------------ | ----------------------------------- |
-| `inspect_old_version`                      | `<C-s>`      | Show the file before the change     |
-| `inspect_new_version`                      | `<C-d>`      | Show the file after the change      |
+| `inspect_old_version`                      | `<C-s>`      | Show the chunk before the change    |
+| `inspect_new_version`                      | `<C-d>`      | Show the chunk after the change     |
 | `inspect_next_chunk`                       | `<C-Tab>`    | Jump to the next changed chunk      |
 | `inspect_previous_chunk`                   | `<S-Tab>`    | Jump to the previous changed chunk  |
 | `inspect_next_thread`                      | `]r`         | Jump to the next [review thread](#review-threads) |
@@ -383,6 +383,13 @@ change markers, and you can switch it between the parent and the change:
 | `inspect_chunk_threads`                    | `<C-r>`      | Show or hide the review threads on the chunk this file is showing (shadows redo in inspected buffers; set to `false` to keep it) |
 | `inspect_sidebar_toggle`                   | `<leader>oi` | Toggle the changed-files sidebar    |
 | `inspect_overview_toggle`                  | `<leader>op` | Toggle the [overview](#inspect-overview) (`<C-t>` also works) |
+
+Each chunk keeps the version you leave it on: chunks start old, and a chunk
+you switch to new stays new while you move through the others, so the file
+fills in as you review it. Moving to a chunk shows it in its saved version.
+Moving the cursor into another chunk shows that chunk in the version of the
+tab you are in, but doesn't change its saved version. In the sidebar, each
+chunk row ends in a dot for its version: red for old, green for new.
 
 Changed chunks can be listed in a sidebar (the default) or counted inline with
 virtual text. Toggle between these modes in the overview with `v` and `s`, or

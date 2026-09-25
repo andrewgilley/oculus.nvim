@@ -1018,58 +1018,93 @@ local function replace_inspection_lines(endpoint, lines)
   return true
 end
 
--- Keeps the change buffer's excerpt map, which the statusline and number
--- column read, in step with the lines it shows: the change side's excerpt
--- for the whole file, or a focused chunk view built over the parent's.
-local function update_change_excerpt(session, hunk, lines)
+-- Keeps a buffer's excerpt map, which the statusline and number column read,
+-- in step with the lines it shows: its own side's excerpt for a whole file,
+-- or a composed view built over the parent's.
+local function update_excerpt_map(session, role, applied, lines)
   local excerpt = session.excerpt
+  local endpoint = session[role]
 
-  if type(excerpt) ~= "table" or not valid_endpoint(session.change) then
+  if type(excerpt) ~= "table" or not valid_endpoint(endpoint) then
     return
   end
 
-  if hunk then
-    vim.b[session.change.buf].oculus_inspect_excerpt = {
-      ranges = patch.focused_ranges(excerpt.parent, hunk),
-      count = (excerpt.parent_count or 0)
-        + (hunk.new_count or 0)
-        - (hunk.old_count or 0),
-      lines = #lines,
-    }
+  local map = { lines = #lines }
+
+  if applied then
+    local count = excerpt.parent_count or 0
+
+    for index, hunk in ipairs(session.hunks or {}) do
+      if applied[index] then
+        count = count + (hunk.new_count or 0) - (hunk.old_count or 0)
+      end
+    end
+
+    map.ranges = patch.composed_ranges(excerpt.parent, session.hunks, applied)
+    map.count = count
   else
-    vim.b[session.change.buf].oculus_inspect_excerpt = {
-      ranges = excerpt.change,
-      count = excerpt.change_count,
-      lines = #lines,
-    }
+    map.ranges = excerpt[role]
+    map.count = excerpt[role .. "_count"]
   end
+
+  vim.b[endpoint.buf].oculus_inspect_excerpt = map
 end
 
+-- The version a chunk shows when you land on it: the one it was last viewed
+-- in, or old.
+local function chunk_version(session, chunk_index)
+  return session.chunk_versions and session.chunk_versions[chunk_index]
+    or "parent"
+end
+
+-- Shows the chunk in both tabs with every other chunk in its saved version:
+-- old in the parent tab and new in the change tab.
 local function render_focused_chunk(session, chunk_index)
   local hunk = session.hunks and session.hunks[chunk_index] or nil
 
-  if not hunk then
+  if not hunk or not valid_endpoint(session.change) then
     return
   end
 
-  local lines, start = patch.focused_change_lines(
-    session.parent_content,
-    session.change_content,
-    hunk
-  )
+  local previous = {
+    active_chunk = session.active_chunk,
+    focused_chunks = session.focused_chunks,
+  }
 
-  if not replace_inspection_lines(session.change, lines) then
-    return
-  end
-
-  update_change_excerpt(session, hunk, lines)
   session.active_chunk = chunk_index
-  session.focused_start = start
   session.focused_chunks = true
+  local layout = {}
+
+  for _, role in ipairs({ "parent", "change" }) do
+    local applied = patch.applied_chunks(session, role)
+
+    local lines = patch.compose(
+      session.parent_content,
+      session.change_content,
+      session.hunks,
+      applied
+    )
+
+    if valid_endpoint(session[role]) then
+      if not replace_inspection_lines(session[role], lines) then
+        session.active_chunk = previous.active_chunk
+        session.focused_chunks = previous.focused_chunks
+        return
+      end
+
+      update_excerpt_map(session, role, applied, lines)
+    end
+
+    layout[role] = patch.chunk_layout(session.hunks, applied)
+  end
+
+  local start = layout.change[chunk_index]
+  session.focused_start = start
+  session.parent_focused_start = layout.parent[chunk_index]
 
   apply_change_signs(session.parent.buf, session.change.buf, {
     {
-      old_start = hunk.old_start,
+      old_start = session.parent_focused_start,
       old_count = hunk.old_count,
       new_start = start,
       new_count = hunk.new_count,
@@ -1090,9 +1125,15 @@ local function render_full_file(session)
     return false
   end
 
-  update_change_excerpt(session, nil, session.change_content or {})
+  if valid_endpoint(session.parent) then
+    replace_inspection_lines(session.parent, session.parent_content or { "" })
+    update_excerpt_map(session, "parent", nil, session.parent_content or { "" })
+  end
+
+  update_excerpt_map(session, "change", nil, session.change_content or {})
   session.active_chunk = nil
   session.focused_start = nil
+  session.parent_focused_start = nil
   session.focused_chunks = false
 
   apply_change_signs(
@@ -1553,10 +1594,11 @@ end
 local function chunk_start_for_role(
   hunk,
   role,
-  change_start
+  change_start,
+  parent_start
 )
   if role == "parent" then
-    return patch.hunk_start(hunk, "parent")
+    return parent_start or patch.hunk_start(hunk, "parent")
   end
 
   return change_start
@@ -1593,7 +1635,9 @@ local function map_inspection_line(session, source_role, target_role, source_lin
       return source_line
     end
 
-    local parent_start = hunk.old_start == 0 and 1 or hunk.old_start
+    local parent_start = session.parent_focused_start
+      or (hunk.old_start == 0 and 1 or hunk.old_start)
+
     local change_start = session.focused_start
 
     if source_role == "parent" and target_role == "change" then
@@ -1687,13 +1731,18 @@ local function render_chunk_for_role(session, role, chunk_index)
     return
   end
 
+  -- A chunk keeps the version it was last shown in when you move on.
+  session.chunk_versions = session.chunk_versions or {}
+  session.chunk_versions[chunk_index] = role == "change" and "change" or "parent"
+
   local change_start = render_focused_chunk(session, chunk_index)
     or patch.focused_hunk_start(hunk)
 
   return chunk_start_for_role(
     hunk,
     role,
-    change_start
+    change_start,
+    session.parent_focused_start
   )
 end
 
@@ -1961,6 +2010,15 @@ local function sidebar_target_role(
 )
   if group and group.kind == "issue" then
     return "issue"
+  end
+
+  -- A chunk opens in the version it was last shown in.
+  if entry and entry.chunk_index then
+    local session = group and group[entry.pair_index]
+
+    if session and session.hunks and session.hunks[entry.chunk_index] then
+      return chunk_version(session, entry.chunk_index)
+    end
   end
 
   if direction == 1 then
@@ -2741,6 +2799,25 @@ refresh_sidebar = function(group, tab)
             priority = 90,
           }
         )
+      end
+
+      -- Each chunk row ends in a dot for the version the chunk shows: red
+      -- for old, green for new.
+      for chunk_index, chunk_line in pairs(group.sidebar_chunk_lines[index] or {}) do
+        local version = chunk_version(group[index], chunk_index)
+
+        vim.api.nvim_buf_set_extmark(buf, sidebar_ns, chunk_line - 1, 0, {
+          virt_text = {
+            {
+              " ●",
+              version == "change"
+                  and "OculusInspectSidebarChange"
+                or "OculusInspectSidebarParent",
+            },
+          },
+          virt_text_pos = "eol",
+          priority = 100,
+        })
       end
 
       if row.thread_column then
@@ -5474,11 +5551,10 @@ local function setup_inspection_comment(group, comment)
     local revision_start = patch.hunk_start(hunk, role)
     local offset = math.max(0, comment.line - revision_start)
 
-    local focused_start =
-      render_focused_chunk(session, chunk_index)
-        or patch.focused_hunk_start(hunk)
+    local start = render_chunk_for_role(session, role, chunk_index)
+      or patch.focused_hunk_start(hunk)
 
-    comment.line = focused_start + offset
+    comment.line = start + offset
   end
 
   local line_count = vim.api.nvim_buf_line_count(endpoint.buf)
@@ -5953,7 +6029,8 @@ local function open_tabs(
         local parent_start = chunk_start_for_role(
           first_hunk,
           "parent",
-          focused_start
+          focused_start,
+          session.parent_focused_start
         )
 
         local parent_max = chunk_max_line_for_role(
@@ -6034,7 +6111,8 @@ local function open_tabs(
         local parent_start = chunk_start_for_role(
           first_hunk,
           "parent",
-          session.focused_start
+          session.focused_start,
+          session.parent_focused_start
         )
 
         local parent_max = chunk_max_line_for_role(
@@ -6114,7 +6192,8 @@ local function open_tabs(
         and chunk_start_for_role(
           first_hunk,
           "parent",
-          first_session.focused_start
+          first_session.focused_start,
+          first_session.parent_focused_start
         )
       or (first_session and first_session.parent_lines and first_session.parent_lines[1])
 
@@ -6143,7 +6222,7 @@ local function open_tabs(
     if first_session and first_session.active_chunk and first_hunk then
       apply_change_signs(first_session.parent.buf, first_session.change.buf, {
         {
-          old_start = first_hunk.old_start,
+          old_start = first_session.parent_focused_start or first_hunk.old_start,
           old_count = first_hunk.old_count,
           new_start = first_session.focused_start or first_start,
           new_count = first_hunk.new_count,

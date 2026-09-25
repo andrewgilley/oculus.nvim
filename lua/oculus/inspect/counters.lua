@@ -124,7 +124,10 @@ function M.setup(inspect, internal)
         local hunk = hunks[active] or hunks[1]
 
         if hunk then
-          local start = patch.hunk_start(hunk, "parent")
+          local start = session.focused_chunks
+              and session.parent_focused_start
+            or patch.hunk_start(hunk, "parent")
+
           local max_line = internal.chunk_max_line_for_role(hunk, "parent", start)
           local line = internal.first_nonblank_line(buf, start, max_line)
 

@@ -410,41 +410,11 @@ function M.hunk_index_at_line(session, role, line)
     return M.revision_hunk_index_at_line(session, role, line)
   end
 
-  for index, hunk in ipairs(hunks) do
-    local focused_change = session.focused_chunks
-      and role == "change"
-      and index == session.active_chunk
+  local starts, counts = M.chunk_layout(hunks, M.applied_chunks(session, role))
 
-    local start
-
-    if focused_change then
-      start = M.focused_hunk_start(hunk)
-    elseif session.focused_chunks then
-      start = M.hunk_start(hunk, "parent")
-      local active = hunks[session.active_chunk]
-
-      if role == "change"
-        and active
-        and hunk.old_start > active.old_start
-      then
-        start = start + active.new_count - active.old_count
-      end
-    else
-      start = M.hunk_start(hunk, role)
-    end
-
-    local count
-
-    if focused_change then
-      count = hunk.new_count
-    elseif role == "parent" or index ~= session.active_chunk then
-      count = hunk.old_count
-    else
-      count = hunk.new_count
-    end
-
-    if line >= start
-      and line <= start + math.max(1, count) - 1
+  for index in ipairs(hunks) do
+    if line >= starts[index]
+      and line <= starts[index] + math.max(1, counts[index]) - 1
     then
       return index
     end
@@ -465,6 +435,109 @@ function M.change_lines(hunks, role)
   end
 
   return lines
+end
+
+-- Which chunks a buffer shows in their new version. Whole files show every
+-- chunk old in the parent buffer and new in the change buffer. A focused view
+-- shows each chunk in its saved version (old until set), except the active
+-- chunk, which is old in the parent buffer and new in the change buffer.
+function M.applied_chunks(session, role)
+  local applied = {}
+
+  if not session.focused_chunks then
+    for index in ipairs(M.session_hunks(session)) do
+      applied[index] = role == "change"
+    end
+
+    return applied
+  end
+
+  for index, version in pairs(session.chunk_versions or {}) do
+    applied[index] = version == "change"
+  end
+
+  if session.active_chunk then
+    applied[session.active_chunk] = role == "change"
+  end
+
+  return applied
+end
+
+-- Where each chunk sits in a composed view: its first line and how many lines
+-- it shows. A chunk that shows no lines starts at the line before it in the
+-- parent, and at the line after it once its removal is applied.
+function M.chunk_layout(hunks, applied)
+  local starts = {}
+  local counts = {}
+  local shift = 0
+
+  for index, hunk in ipairs(hunks or {}) do
+    local old_count = hunk.old_count or 0
+    local new_count = hunk.new_count or 0
+
+    local before = (old_count == 0 and hunk.old_start or hunk.old_start - 1)
+      + shift
+
+    if applied[index] then
+      starts[index] = math.max(1, before + 1)
+      counts[index] = new_count
+      shift = shift + new_count - old_count
+    else
+      starts[index] = math.max(1, old_count == 0 and before or before + 1)
+      counts[index] = old_count
+    end
+  end
+
+  return starts, counts
+end
+
+-- The parent file with the applied chunks' new lines in place of their old
+-- ones.
+function M.compose(parent_lines, change_lines_value, hunks, applied)
+  parent_lines = parent_lines or { "" }
+  change_lines_value = change_lines_value or { "" }
+  local parent_count = #parent_lines
+  local first = hunks and hunks[1]
+
+  if parent_count == 1
+    and parent_lines[1] == ""
+    and first
+    and first.old_start == 0
+    and first.old_count == 0
+  then
+    parent_count = 0
+  end
+
+  local result = {}
+  local next_line = 1
+
+  local function append(source, from, to)
+    for index = math.max(1, from), math.min(#source, to) do
+      result[#result + 1] = source[index]
+    end
+  end
+
+  for index, hunk in ipairs(hunks or {}) do
+    local old_count = hunk.old_count or 0
+    local before = old_count == 0 and hunk.old_start or hunk.old_start - 1
+    before = math.min(math.max(0, before), parent_count)
+    append(parent_lines, next_line, before)
+
+    if applied[index] then
+      append(
+        change_lines_value,
+        hunk.new_start,
+        hunk.new_start + (hunk.new_count or 0) - 1
+      )
+    else
+      append(parent_lines, before + 1, math.min(before + old_count, parent_count))
+    end
+
+    next_line = before + old_count + 1
+  end
+
+  append(parent_lines, next_line, parent_count)
+  return #result > 0 and result or { "" }
 end
 
 function M.focused_change_lines(parent_lines, change_lines_value, hunk)
@@ -764,54 +837,71 @@ function M.excerpt_line(ranges, line)
   return last.excerpt + last.count
 end
 
--- The excerpt ranges of a focused chunk view (M.focused_change_lines over an
--- excerpt): the parent's ranges around the chunk, with those after it moved
--- by the chunk's size, and the chunk's own lines at their place in the
--- parent. The numbers match a focused view of the whole file.
-function M.focused_ranges(parent_ranges, hunk)
-  local old_count = hunk.old_count or 0
-  local new_count = hunk.new_count or 0
-  local delta = new_count - old_count
+-- The excerpt ranges of a composed view (M.compose over an excerpt): the
+-- parent's ranges outside the applied chunks, moved by the size of every
+-- applied chunk before them, and each applied chunk's own lines at their
+-- place in the parent. The numbers match the same view of the whole file.
+function M.composed_ranges(parent_ranges, hunks, applied)
+  local cuts = {}
+  local shift = 0
 
-  local before = old_count == 0
-      and hunk.old_start
-    or hunk.old_start - 1
+  for index, hunk in ipairs(hunks or {}) do
+    if applied[index] then
+      local old_count = hunk.old_count or 0
+      local new_count = hunk.new_count or 0
+      local source_start = hunk.source_old_start or hunk.old_start
 
-  local source_before = old_count == 0
-      and (hunk.source_old_start or hunk.old_start)
-    or (hunk.source_old_start or hunk.old_start) - 1
-
-  local after = before + old_count + 1
-  local ranges = {}
-
-  for _, range in ipairs(parent_ranges or {}) do
-    local last = range.excerpt + range.count - 1
-
-    if range.excerpt <= before then
-      ranges[#ranges + 1] = {
-        source = range.source,
-        excerpt = range.excerpt,
-        count = math.min(last, before) - range.excerpt + 1,
+      cuts[#cuts + 1] = {
+        before = old_count == 0 and hunk.old_start or hunk.old_start - 1,
+        source_before = old_count == 0 and source_start or source_start - 1,
+        old_count = old_count,
+        new_count = new_count,
+        shift = shift,
       }
-    end
 
-    if last >= after then
-      local first = math.max(range.excerpt, after)
-
-      ranges[#ranges + 1] = {
-        source = range.source + first - range.excerpt + delta,
-        excerpt = first + delta,
-        count = last - first + 1,
-      }
+      shift = shift + new_count - old_count
     end
   end
 
-  if new_count > 0 then
-    ranges[#ranges + 1] = {
-      source = source_before + 1,
-      excerpt = before + 1,
-      count = new_count,
-    }
+  local ranges = {}
+
+  local function add(source, excerpt, count)
+    if count > 0 then
+      ranges[#ranges + 1] = { source = source, excerpt = excerpt, count = count }
+    end
+  end
+
+  for _, range in ipairs(parent_ranges or {}) do
+    local first = range.excerpt
+    local last = range.excerpt + range.count - 1
+    local moved = 0
+
+    for _, cut in ipairs(cuts) do
+      local cut_last = cut.before + cut.old_count
+
+      if cut_last < first then
+        moved = cut.shift + cut.new_count - cut.old_count
+      elseif cut.before < last then
+        local piece_last = math.min(last, cut.before)
+
+        add(
+          range.source + first - range.excerpt + moved,
+          first + moved,
+          piece_last - first + 1
+        )
+
+        first = math.max(first, cut_last + 1)
+        moved = cut.shift + cut.new_count - cut.old_count
+      else
+        break
+      end
+    end
+
+    add(range.source + first - range.excerpt + moved, first + moved, last - first + 1)
+  end
+
+  for _, cut in ipairs(cuts) do
+    add(cut.source_before + cut.shift + 1, cut.before + cut.shift + 1, cut.new_count)
   end
 
   table.sort(ranges, function(left, right)
@@ -819,6 +909,12 @@ function M.focused_ranges(parent_ranges, hunk)
   end)
 
   return ranges
+end
+
+-- The excerpt ranges of a focused chunk view (M.focused_change_lines over an
+-- excerpt).
+function M.focused_ranges(parent_ranges, hunk)
+  return M.composed_ranges(parent_ranges, { hunk }, { true })
 end
 
 -- The inverse of M.excerpt_line: maps an excerpt line back onto the source
