@@ -269,6 +269,27 @@ do
   assert(vim.deep_equal(shown(), parent))
 end
 
+-- Switching versions in the code window while it shows the whole file also
+-- updates every chunk, so advancing lands on each chunk in that version.
+do
+  local group = sidebar_group()
+  vim.api.nvim_set_current_win(group.sidebar_windows[vim.api.nvim_get_current_tabpage()])
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  press("<CR>")
+  assert(role() == "parent" and group[1].active_chunk == nil)
+  assert(vim.deep_equal(shown(), parent))
+  press("<C-d>")
+  assert(role() == "change" and group[1].active_chunk == nil)
+  assert(versions() == "new new new", versions())
+  assert(vim.deep_equal(shown(), change))
+
+  for chunk = 1, 3 do
+    press("<C-Tab>")
+    assert(role() == "change" and active_chunk() == chunk)
+    assert(vim.deep_equal(shown(), change))
+  end
+end
+
 -- Plugins such as go-up.nvim pad the top of a buffer with virtual lines
 -- anchored above its first line. Rewriting the sidebar and the tabs keeps
 -- them there, so they never push rows apart.

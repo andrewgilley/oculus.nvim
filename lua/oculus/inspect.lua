@@ -1837,7 +1837,12 @@ local function map_file_navigation(endpoint, session, role, group)
     local chunk_index = session.active_chunk or 1
     local start, max_line
 
-    if group.kind == "issue" then
+    -- With the whole file shown, the switch applies to every chunk, as it
+    -- does from the sidebar's file row.
+    if group.kind ~= "issue" and not session.active_chunk then
+      render_full_file(session, target_role)
+      start = 1
+    elseif group.kind == "issue" then
       local section = session.sections and session.sections[chunk_index]
       start = section and section.line
       max_line = start
