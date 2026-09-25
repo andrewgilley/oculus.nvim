@@ -388,6 +388,16 @@ assert(state.selected_work == "github:review_requested")
 local preview = preview_text()
 assert(preview:find("@octo on GitHub", 1, true), preview)
 assert(preview:find("a/one#7 Review a/one", 1, true), preview)
+local activity_preview_group
+
+for _, item in pairs(state.preview_items or {}) do
+  if item[1]:find("a/one#7 Review a/one", 1, true) then
+    activity_preview_group = item[2]
+    break
+  end
+end
+
+assert(activity_preview_group == "OculusActivityPreview")
 press("b")
 assert(opened_urls[1] == "https://github.com/pulls/review-requested")
 press("?")

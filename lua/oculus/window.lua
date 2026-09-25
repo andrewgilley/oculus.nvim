@@ -3113,6 +3113,16 @@ local function render_activity(events, cached, notice, opts)
         highlight(line, 0, -1, "OculusActivityPreview")
       elseif kind == "main" then
         highlight(line, 0, 5, "OculusActivityIcon")
+        local prefix = text:match("^  %S+  ")
+
+        if prefix then
+          highlight(
+            line,
+            #prefix,
+            activity_title_highlight_end(text),
+            "OculusActivityPreview"
+          )
+        end
       end
     end
   end

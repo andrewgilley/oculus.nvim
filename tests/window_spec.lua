@@ -1045,6 +1045,36 @@ do
   end
 
   assert(first_event_lines == 3, first_event_lines)
+  local title = rendered_activity_lines[first_event_title]
+  local prefix = assert(title:match("^  %S+  "))
+  local title_end = #title - 21
+  local title_highlight, detail_highlight = false, false
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    state.buf,
+    vim.api.nvim_get_namespaces().oculus,
+    0,
+    -1,
+    { details = true }
+  )) do
+    local details = mark[4]
+
+    if details.hl_group == "OculusActivityPreview" then
+      if mark[2] == first_event_title - 1
+        and mark[3] == #prefix
+        and details.end_col == title_end
+      then
+        title_highlight = true
+      elseif state.activity_title_lines[mark[2] + 1] == first_event_title
+        and mark[3] == 0
+      then
+        detail_highlight = true
+      end
+    end
+  end
+
+  assert(title_highlight and detail_highlight,
+    "activity title and detail use the preview item highlight")
 end
 
 local expansion_line
