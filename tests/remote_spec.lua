@@ -121,6 +121,45 @@ do
   assert(excerpt.parent_lines[excerpt.hunks[2].old_start] == "line 15")
 end
 
+-- Focused chunk views of an excerpt number their lines as the same views of
+-- the whole file do, also when chunks add or remove lines.
+do
+  local patch = require("oculus.inspect.patch")
+  local parent = numbered(60)
+  local change = numbered(60)
+  table.remove(change, 45)
+  table.insert(change, 20, "inserted a")
+  table.insert(change, 21, "inserted b")
+  table.insert(change, 22, "inserted c")
+  change[8] = "changed 8"
+
+  local hunks = {
+    { old_start = 8, old_count = 1, new_start = 8, new_count = 1 },
+    { old_start = 19, old_count = 0, new_start = 20, new_count = 3 },
+    { old_start = 45, old_count = 1, new_start = 47, new_count = 0 },
+  }
+
+  local excerpt = inspect._excerpt(parent, change, hunks, 2)
+
+  for index, hunk in ipairs(excerpt.hunks) do
+    local shown = patch.focused_change_lines(excerpt.parent_lines, excerpt.change_lines, hunk)
+    local whole = patch.focused_change_lines(parent, change, hunks[index])
+    local ranges = patch.focused_ranges(excerpt.parent_ranges, hunk)
+    local count = excerpt.parent_count + hunk.new_count - hunk.old_count
+    assert(count == #whole)
+
+    for line, text in ipairs(shown) do
+      local first, last = patch.source_line(ranges, line, count)
+
+      if first == last then
+        assert(whole[first] == text, ("chunk %d line %d"):format(index, line))
+      else
+        assert(text:find("unchanged lines", 1, true), text)
+      end
+    end
+  end
+end
+
 do
   local added = inspect._excerpt({ "" }, { "one", "two" }, {
     { old_start = 0, old_count = 0, new_start = 1, new_count = 2 },
@@ -383,6 +422,48 @@ assert(big_inspection.parent_lines[big_inspection.hunks[2].old_start]
 assert(big_inspection.change_lines[1] == "-- ⋯ 6 unchanged lines ⋯")
 assert(#big_inspection.change_lines == 17)
 assert(big_inspection.patch:find("@@ -10 +10 @@", 1, true))
+
+-- A focused chunk view of the excerpt numbers its lines as the same view of
+-- the whole file would: every shown line matches the line it is numbered as.
+do
+  local patch = require("oculus.inspect.patch")
+  local full_parent = vim.split(git_command("-C", source, "show", base_sha .. ":lua/big.lua"), "\n")
+  local full_change = vim.split(git_command("-C", source, "show", feature_sha .. ":lua/big.lua"), "\n")
+  local full_hunks = patch.parse_hunks(big_inspection.patch)
+  local parent_ranges = big_inspection.excerpt.parent
+
+  for index, hunk in ipairs(big_inspection.hunks) do
+    local lines = patch.focused_change_lines(
+      big_inspection.parent_lines,
+      big_inspection.change_lines,
+      hunk
+    )
+
+    local whole = patch.focused_change_lines(full_parent, full_change, full_hunks[index])
+    local ranges = patch.focused_ranges(parent_ranges, hunk)
+    local mapped = 0
+
+    for line, text in ipairs(lines) do
+      local first, last = patch.source_line(ranges, line, #whole)
+
+      if first == last then
+        assert(whole[first] == text, ("chunk %d line %d: %s ~= %s"):format(
+          index,
+          line,
+          tostring(whole[first]),
+          text
+        ))
+
+        mapped = mapped + 1
+      else
+        assert(text:find("unchanged lines", 1, true), text)
+      end
+    end
+
+    assert(mapped > 0)
+  end
+end
+
 local lazy_output, lazy_err
 
 git.run({

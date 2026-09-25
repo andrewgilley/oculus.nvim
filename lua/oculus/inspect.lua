@@ -1018,6 +1018,33 @@ local function replace_inspection_lines(endpoint, lines)
   return true
 end
 
+-- Keeps the change buffer's excerpt map, which the statusline and number
+-- column read, in step with the lines it shows: the change side's excerpt
+-- for the whole file, or a focused chunk view built over the parent's.
+local function update_change_excerpt(session, hunk, lines)
+  local excerpt = session.excerpt
+
+  if type(excerpt) ~= "table" or not valid_endpoint(session.change) then
+    return
+  end
+
+  if hunk then
+    vim.b[session.change.buf].oculus_inspect_excerpt = {
+      ranges = patch.focused_ranges(excerpt.parent, hunk),
+      count = (excerpt.parent_count or 0)
+        + (hunk.new_count or 0)
+        - (hunk.old_count or 0),
+      lines = #lines,
+    }
+  else
+    vim.b[session.change.buf].oculus_inspect_excerpt = {
+      ranges = excerpt.change,
+      count = excerpt.change_count,
+      lines = #lines,
+    }
+  end
+end
+
 local function render_focused_chunk(session, chunk_index)
   local hunk = session.hunks and session.hunks[chunk_index] or nil
 
@@ -1035,6 +1062,7 @@ local function render_focused_chunk(session, chunk_index)
     return
   end
 
+  update_change_excerpt(session, hunk, lines)
   session.active_chunk = chunk_index
   session.focused_start = start
   session.focused_chunks = true
@@ -1062,6 +1090,7 @@ local function render_full_file(session)
     return false
   end
 
+  update_change_excerpt(session, nil, session.change_content or {})
   session.active_chunk = nil
   session.focused_start = nil
   session.focused_chunks = false

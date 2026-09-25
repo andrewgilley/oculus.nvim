@@ -764,6 +764,63 @@ function M.excerpt_line(ranges, line)
   return last.excerpt + last.count
 end
 
+-- The excerpt ranges of a focused chunk view (M.focused_change_lines over an
+-- excerpt): the parent's ranges around the chunk, with those after it moved
+-- by the chunk's size, and the chunk's own lines at their place in the
+-- parent. The numbers match a focused view of the whole file.
+function M.focused_ranges(parent_ranges, hunk)
+  local old_count = hunk.old_count or 0
+  local new_count = hunk.new_count or 0
+  local delta = new_count - old_count
+
+  local before = old_count == 0
+      and hunk.old_start
+    or hunk.old_start - 1
+
+  local source_before = old_count == 0
+      and (hunk.source_old_start or hunk.old_start)
+    or (hunk.source_old_start or hunk.old_start) - 1
+
+  local after = before + old_count + 1
+  local ranges = {}
+
+  for _, range in ipairs(parent_ranges or {}) do
+    local last = range.excerpt + range.count - 1
+
+    if range.excerpt <= before then
+      ranges[#ranges + 1] = {
+        source = range.source,
+        excerpt = range.excerpt,
+        count = math.min(last, before) - range.excerpt + 1,
+      }
+    end
+
+    if last >= after then
+      local first = math.max(range.excerpt, after)
+
+      ranges[#ranges + 1] = {
+        source = range.source + first - range.excerpt + delta,
+        excerpt = first + delta,
+        count = last - first + 1,
+      }
+    end
+  end
+
+  if new_count > 0 then
+    ranges[#ranges + 1] = {
+      source = source_before + 1,
+      excerpt = before + 1,
+      count = new_count,
+    }
+  end
+
+  table.sort(ranges, function(left, right)
+    return left.excerpt < right.excerpt
+  end)
+
+  return ranges
+end
+
 -- The inverse of M.excerpt_line: maps an excerpt line back onto the source
 -- file. A marker line stands for the hidden run it replaces, so it returns
 -- that run's first and last source lines.
