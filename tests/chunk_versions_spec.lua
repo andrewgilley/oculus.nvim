@@ -151,10 +151,24 @@ local function version_marks()
   return marks
 end
 
+-- Which of the file row's P and C is underlined.
+local function underlined()
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(sidebar_buf(), -1, { 0, 0 }, { 0, -1 }, { details = true })) do
+    local group = mark[4].hl_group
+
+    if group == "OculusInspectSidebarParentActive" then
+      return "P"
+    elseif group == "OculusInspectSidebarChangeActive" then
+      return "C"
+    end
+  end
+end
+
 -- Every chunk starts old, on the old tab.
 assert(role() == "parent" and active_chunk() == 1)
 assert(vim.deep_equal(shown(), parent))
 assert(versions() == "old old old", versions())
+assert(underlined() == "P")
 assert(version_marks() == 0)
 -- Setting the first chunk to new keeps it new on the next chunk, which opens
 -- old.
@@ -162,9 +176,11 @@ press("<C-d>")
 assert(role() == "change" and active_chunk() == 1)
 assert(vim.deep_equal(shown(), composed({ true })))
 assert(versions() == "new old old", versions())
+assert(underlined() == "C")
 press("<C-Tab>")
 assert(role() == "parent" and active_chunk() == 2)
 assert(vim.deep_equal(shown(), composed({ true })))
+assert(underlined() == "P")
 -- Both tabs show the other chunks in their saved versions and differ only in
 -- the chunk you are on.
 press("<C-d>")
@@ -195,6 +211,27 @@ assert(role() == "parent" and active_chunk() == 1)
 assert(vim.deep_equal(shown(), composed({ false, true })))
 assert(versions() == "old new old", versions())
 assert(version_marks() == 0)
+
+-- Selecting a chunk in the sidebar opens it in its saved version, and the
+-- underline follows it.
+do
+  local code_win = vim.api.nvim_get_current_win()
+
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_buf(win) == sidebar_buf() then
+      vim.api.nvim_win_set_cursor(win, { 3, 0 })
+      vim.api.nvim_set_current_win(win)
+    end
+  end
+
+  assert(active_chunk() == 2, tostring(active_chunk()))
+  assert(underlined() == "C", tostring(underlined()))
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+  vim.api.nvim_exec_autocmds("WinEnter", { buffer = sidebar_buf() })
+  assert(active_chunk() == 1, tostring(active_chunk()))
+  assert(underlined() == "P", tostring(underlined()))
+  vim.api.nvim_set_current_win(code_win)
+end
 
 -- Plugins such as go-up.nvim pad the top of a buffer with virtual lines
 -- anchored above its first line. Rewriting the sidebar and the tabs keeps

@@ -2765,6 +2765,18 @@ refresh_sidebar = function(group, tab)
   end
 
   if group.kind ~= "issue" then
+    -- The active file's P or C is underlined for the version of the chunk it
+    -- is on, or for the tab showing it when no chunk is selected.
+    local active_session = group[active_index]
+    local underlined_role = active_role
+
+    if active_chunk
+      and active_session.hunks
+      and active_session.hunks[active_chunk]
+    then
+      underlined_role = chunk_version(active_session, active_chunk)
+    end
+
     for index, _ in ipairs(group) do
       local row = group.sidebar_rows[index]
 
@@ -2776,7 +2788,7 @@ refresh_sidebar = function(group, tab)
         {
           end_col = row.parent_column + 1,
           hl_group = index == active_index
-              and active_role == "parent"
+              and underlined_role == "parent"
               and "OculusInspectSidebarParentActive"
             or "OculusInspectSidebarParent",
           priority = 100,
@@ -2791,7 +2803,7 @@ refresh_sidebar = function(group, tab)
         {
           end_col = row.change_column + 1,
           hl_group = index == active_index
-              and active_role == "change"
+              and underlined_role == "change"
               and "OculusInspectSidebarChangeActive"
             or "OculusInspectSidebarChange",
           priority = 100,
