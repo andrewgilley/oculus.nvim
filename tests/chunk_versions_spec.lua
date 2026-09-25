@@ -173,5 +173,46 @@ press("<C-s>")
 assert(role() == "parent" and active_chunk() == 1)
 assert(vim.deep_equal(shown(), composed({ false, true })))
 assert(dots() == "old new old", dots())
+
+-- Plugins such as go-up.nvim pad the top of a buffer with virtual lines
+-- anchored above its first line. Rewriting the sidebar and the tabs keeps
+-- them there, so they never push rows apart.
+do
+  local ns = vim.api.nvim_create_namespace("oculus_test_top_padding")
+  local code = vim.api.nvim_get_current_buf()
+  local sidebar = sidebar_buf()
+
+  for _, buf in ipairs({ code, sidebar }) do
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
+      virt_lines = { { { "" } } },
+      virt_lines_above = true,
+    })
+  end
+
+  local function padding_row(buf)
+    return vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})[1][2]
+  end
+
+  press("<C-Tab>")
+  press("<C-d>")
+  assert(padding_row(code) == 0, padding_row(code))
+  -- Review threads relabel the file rows in place.
+  local sidebar_win
+
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_buf(win) == sidebar then
+      sidebar_win = win
+    end
+  end
+
+  local group = inspect._sidebar_window_group(sidebar_win)
+  group[1].review_threads = { { resolved = false } }
+  inspect._review.update_sidebar(group)
+  local rows = vim.api.nvim_buf_get_lines(sidebar, 0, -1, false)
+  assert(rows[1]:find("◆1", 1, true), rows[1])
+  assert(rows[2]:find("├─", 1, true), rows[2])
+  assert(padding_row(sidebar) == 0, padding_row(sidebar))
+end
+
 vim.fn.delete(directory, "rf")
 print("chunk version tests passed")

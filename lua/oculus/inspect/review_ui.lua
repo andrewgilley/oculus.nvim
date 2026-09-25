@@ -806,11 +806,21 @@ function M.setup(inspect, internal)
         if rendered then
           vim.bo[buf].modifiable = true
 
-          vim.api.nvim_buf_set_lines(
+          -- Changing the row's text in place keeps marks other plugins anchor
+          -- above it, where replacing the line would push them below it.
+          local current = vim.api.nvim_buf_get_lines(
             buf,
             row.line_number - 1,
             row.line_number,
-            false,
+            false
+          )[1] or ""
+
+          vim.api.nvim_buf_set_text(
+            buf,
+            row.line_number - 1,
+            0,
+            row.line_number - 1,
+            #current,
             { row.line }
           )
 

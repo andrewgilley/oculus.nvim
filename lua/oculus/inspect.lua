@@ -62,6 +62,17 @@ local patch = require("oculus.inspect.patch")
 local target = require("oculus.inspect.target")
 local review = require("oculus.inspect.review")
 
+-- Replaces a buffer's lines without moving marks other plugins anchor above
+-- its first line, such as go-up.nvim's scroll padding: replacing every line
+-- would move them into the text, where they show as blank lines. The lines
+-- after the first are replaced, then the first line's text.
+local function set_buffer_lines(buf, lines)
+  lines = #lines > 0 and lines or { "" }
+  vim.api.nvim_buf_set_lines(buf, 1, -1, false, vim.list_slice(lines, 2))
+  local first = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
+  vim.api.nvim_buf_set_text(buf, 0, 0, 0, #first, { lines[1] })
+end
+
 local function valid_endpoint(endpoint)
   return endpoint
     and vim.api.nvim_tabpage_is_valid(endpoint.tab)
@@ -1014,7 +1025,7 @@ local function replace_inspection_lines(endpoint, lines)
     return true
   end
 
-  vim.api.nvim_buf_set_lines(endpoint.buf, 0, -1, false, lines)
+  set_buffer_lines(endpoint.buf, lines)
   return true
 end
 
@@ -2561,7 +2572,7 @@ local function set_sidebar_buffer_lines(group, lines, mode)
 
   if group.sidebar_rendered_mode ~= mode then
     vim.bo[buf].modifiable = true
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    set_buffer_lines(buf, lines)
     vim.bo[buf].modifiable = false
     group.sidebar_rendered_mode = mode
 
@@ -4333,7 +4344,7 @@ local function prepare_inspection_sidebar(group)
   vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  set_buffer_lines(buf, lines)
   vim.bo[buf].modifiable = false
   group.sidebar_rendered_mode = "files"
   vim.bo[buf].filetype = "oculus-inspect-files"
@@ -6886,6 +6897,7 @@ M._find_local_repository = git.find_local_repository
 M._ensure_repository = git.ensure_repository
 M._remote_repository_path = git.remote_repository_path
 M._excerpt = patch.excerpt
+M._set_buffer_lines = set_buffer_lines
 M._excerpt_line = patch.excerpt_line
 M._prepare = prepare
 M._parse_hunks = patch.parse_hunks
