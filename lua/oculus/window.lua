@@ -7368,11 +7368,6 @@ function M.open(opts)
     default = true,
   })
 
-  vim.api.nvim_set_hl(0, "OculusActivityPreview", {
-    link = "DiagnosticOk",
-    default = true,
-  })
-
   vim.api.nvim_set_hl(0, "OculusContributorSelected", {
     link = "Title",
     default = true,

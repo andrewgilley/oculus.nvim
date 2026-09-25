@@ -334,7 +334,7 @@ function M.setup(window, work_view, internal)
     local selected_line
 
     for line, target in pairs(window.state.line_targets) do
-      internal.highlight(line, 2, -1, "Identifier")
+      internal.highlight(line, 2, -1, "OculusActivityPreview")
 
       if target.entry == selected then
         selected_line = line
