@@ -239,6 +239,8 @@ function M.setup(inspect)
                 inspection.excerpt = {
                   parent = excerpt.parent_ranges,
                   change = excerpt.change_ranges,
+                  parent_count = excerpt.parent_count,
+                  change_count = excerpt.change_count,
                   hidden = excerpt.hidden,
                 }
               end

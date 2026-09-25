@@ -81,6 +81,19 @@ do
   assert(inspect._excerpt_line(excerpt.change_ranges, 10) == 1)
   assert(inspect._excerpt_line(excerpt.change_ranges, 90) == 9)
   assert(inspect._sidebar_chunk_row(excerpt.hunks[1], true) == "  └─ 50-50")
+  local source_line = require("oculus.inspect.patch").source_line
+  assert(excerpt.change_count == 100 and excerpt.parent_count == 100)
+
+  -- Excerpt lines map back to the file; a marker spans the lines it hides.
+  local function source(line)
+    return table.concat({ source_line(excerpt.change_ranges, line, 100) }, "-")
+  end
+
+  assert(source(1) == "1-46")
+  assert(source(2) == "47-47")
+  assert(source(5) == "50-50")
+  assert(source(8) == "53-53")
+  assert(source(9) == "54-100")
 end
 
 do
@@ -577,6 +590,7 @@ end)
 assert(not lifecycle_error, lifecycle_error)
 assert(#vim.api.nvim_list_tabpages() == tabs_before + 8)
 local marker_buffers = 0
+local checked_statusline = false
 
 for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
   local state_ok, state = pcall(vim.api.nvim_tabpage_get_var, tab, "oculus_inspect")
@@ -589,11 +603,29 @@ for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
       marker_buffers = marker_buffers + 1
     end
 
+    -- The statusline reports positions in the whole file, not the excerpt.
+    if state.role == "change" then
+      local win = vim.api.nvim_tabpage_get_win(tab)
+
+      local function statusline(line, col)
+        vim.api.nvim_win_set_cursor(win, { line, col })
+        return inspect._inspection_statusline(win)
+      end
+
+      assert(statusline(5, 7):find("%= 10(120),8 ", 1, true), statusline(5, 7))
+      assert(statusline(1, 0):find("%= 1-6(120) ", 1, true), statusline(1, 0))
+      assert(statusline(9, 0):find("%= 14-96(120) ", 1, true), statusline(9, 0))
+      assert(statusline(13, 0):find("%= 100(120),1 ", 1, true), statusline(13, 0))
+      assert(statusline(17, 0):find("%= 104-120(120) ", 1, true), statusline(17, 0))
+      checked_statusline = true
+    end
+
     assert(#lines < 30)
   end
 end
 
 assert(marker_buffers == 2, marker_buffers)
+assert(checked_statusline)
 
 -- Oil browses the placeholder tree. Selecting an inspected file shows its
 -- inspection; any other file only closes Oil.

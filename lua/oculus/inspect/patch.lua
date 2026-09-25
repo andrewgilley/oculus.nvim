@@ -593,6 +593,8 @@ function M.excerpt(parent_lines, change_lines, hunks, context, options)
     parent_ranges = {},
     change_ranges = {},
     hidden = 0,
+    parent_count = parent_count,
+    change_count = change_count,
   }
 
   local function track(ranges, source, excerpt, count)
@@ -760,6 +762,32 @@ function M.excerpt_line(ranges, line)
 
   local last = ranges[#ranges]
   return last.excerpt + last.count
+end
+
+-- The inverse of M.excerpt_line: maps an excerpt line back onto the source
+-- file. A marker line stands for the hidden run it replaces, so it returns
+-- that run's first and last source lines.
+function M.source_line(ranges, line, count)
+  if type(ranges) ~= "table" or #ranges == 0 or not line then
+    return line, line
+  end
+
+  local next_source = 1
+
+  for _, range in ipairs(ranges) do
+    if line < range.excerpt then
+      return next_source, range.source - 1
+    end
+
+    if line < range.excerpt + range.count then
+      local source = range.source + line - range.excerpt
+      return source, source
+    end
+
+    next_source = range.source + range.count
+  end
+
+  return next_source, math.max(next_source, count or next_source)
 end
 
 function M.parse_revision_pairs(output)

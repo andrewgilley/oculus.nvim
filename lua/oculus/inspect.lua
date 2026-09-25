@@ -4519,11 +4519,38 @@ local function inspection_statusline(win)
     or inspection_statusline_path(state)
     or ""
 
+  path = path:gsub("%%", "%%%%")
   local cursor = vim.api.nvim_win_get_cursor(win)
   local line_count = vim.api.nvim_buf_line_count(buf)
+  local excerpt = vim.b[buf].oculus_inspect_excerpt
+
+  -- Edits shift the excerpt's lines, so its mapping holds only while the
+  -- buffer keeps the lines it was loaded with.
+  if type(excerpt) == "table"
+    and type(excerpt.ranges) == "table"
+    and #excerpt.ranges > 0
+    and excerpt.lines == line_count
+  then
+    local first, last = patch.source_line(
+      excerpt.ranges,
+      cursor[1],
+      excerpt.count
+    )
+
+    if first ~= last then
+      return (" %s%%= %d-%d(%d) "):format(path, first, last, excerpt.count)
+    end
+
+    return (" %s%%= %d(%d),%d "):format(
+      path,
+      first,
+      excerpt.count,
+      cursor[2] + 1
+    )
+  end
 
   return (" %s%%= %d(%d),%d "):format(
-    path:gsub("%%", "%%%%"),
+    path,
     cursor[1],
     line_count,
     cursor[2] + 1
@@ -5560,6 +5587,14 @@ local function load_tab(
 
   vim.b[buf].oculus_inspect_repository = path
   vim.b[buf].oculus_inspect_directory = working_directory
+
+  -- A remote file is loaded as an excerpt; the statusline reports positions
+  -- in the whole file.
+  vim.b[buf].oculus_inspect_excerpt = inspection.excerpt and {
+    ranges = inspection.excerpt[role],
+    count = inspection.excerpt[role .. "_count"],
+    lines = #(lines or { "" }),
+  } or nil
 
   vim.b[buf].oculus_inspect_source_path =
     (file and path and path ~= "") and vim.fs.joinpath(path, file) or nil
