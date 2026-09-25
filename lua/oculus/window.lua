@@ -6927,7 +6927,7 @@ local function map_keys(buf)
 
     rhs = function()
       local actions = { ["<CR>"]="enter", ["<Right>"]="right", [nav.right]="right",
-        ["<Left>"]="left", [nav.left]="left", f="group", K="group", D="group", m="move", M="destination", ["<Esc>"]="cancel" }
+        ["<Left>"]="left", [nav.left]="left", ["<BS>"]="left", f="group", K="group", D="group", m="move", M="destination", ["<Esc>"]="cancel" }
 
       if M.state.footer_prompt then
         if lhs == "y" or lhs == "<CR>" then
@@ -7187,6 +7187,7 @@ local function map_keys(buf)
 
   map(nav.left, move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
+  map("<BS>", move_left, "Go back in Oculus")
 
   map("<Down>", function()
     move_cursor(1)

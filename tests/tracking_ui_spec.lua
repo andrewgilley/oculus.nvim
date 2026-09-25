@@ -68,7 +68,11 @@ assert(preview[4][1] == 'a/b', 'nested group preview lists its leaves')
 local nested_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')
 assert(not nested_rows:find('%.%./') and not nested_rows:find('Nested/'), 'nested groups have no ../ row or trailing slash')
 select_label('Nested'); key('<Right>')
-select_label('a/b'); key('<Left>')
+select_label('a/b'); key('<BS>')
+
+assert(window.state.tracking_paths.projects[1] == 1 and #window.state.tracking_paths.projects == 1,
+  'Backspace returns from a nested group to its parent')
+
 select_label('Nested'); key('<Left>')
 select_label('Tools'); key('u')
 select_label('Friends'); key('<CR>'); select_label('alice')

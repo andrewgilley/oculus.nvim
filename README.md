@@ -224,7 +224,7 @@ The keys below are the defaults.
 | Key                   | Action                                                     |
 | --------------------- | ---------------------------------------------------------- |
 | `<CR>` / `l` / `<Right>` | Open the selected group or activity feed               |
-| `h` / `<Left>`        | Go to the parent group                                     |
+| `h` / `<Left>` / `<BS>` | Go to the parent group                                  |
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
 | `w`                   | Open [my work](#my-work)                                   |
 | `s`                   | Open [saved items](#saved-items)                           |
