@@ -38,12 +38,6 @@ local defaults = {
   workspaces = {},
   active_workspace = nil,
   project_descriptions = {},
-  -- Devlog feed URLs by repository ("owner/repo" or "codeberg:owner/repo"),
-  -- and blog feed URLs by user ("@login" or "codeberg:@login"), or false to
-  -- turn one off. See "Devlogs".
-  devlogs = {},
-  devlog_feeds = {},
-  lwn_cookie_file = nil,
   persist_filters = true,
   persist_contributors = true,
   persist_projects = true,
@@ -410,10 +404,6 @@ function M.setup(opts)
         M.config.search_history = vim.deepcopy(saved.search_history)
       end
 
-      if type(saved.devlog_feeds) == "table" then
-        M.config.devlog_feeds = vim.deepcopy(saved.devlog_feeds)
-      end
-
       if opts.workspaces == nil and type(saved.workspaces) == "table" then
         M.config.workspaces = vim.deepcopy(saved.workspaces)
       end
@@ -534,10 +524,6 @@ end
 
 function M.open_user(target)
   return require("oculus.window").open_user(target, M.config)
-end
-
-function M.open_devlog(target)
-  return require("oculus.window").open_devlog(target, M.config)
 end
 
 function M.open_work()

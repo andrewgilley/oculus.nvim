@@ -43,44 +43,6 @@ end, {
   end,
 })
 
-vim.api.nvim_create_user_command("OculusDevlog", function(opts)
-  local ok, err = require("oculus").open_devlog(opts.args)
-
-  if not ok then
-    vim.notify("Oculus: " .. err, vim.log.levels.ERROR)
-  end
-end, {
-  nargs = 1,
-  desc = "Open Oculus on a project's devlog, or a user's blog (@login)",
-  complete = function(arglead)
-    local matches = {}
-    local seen = {}
-
-    for _, user in ipairs((require("oculus").config or {}).contributors or {}) do
-      local handle = type(user.username) == "string" and ("@" .. user.username) or nil
-
-      if handle and handle:lower():sub(1, #arglead) == arglead:lower() then
-        matches[#matches + 1] = handle
-      end
-    end
-
-    for _, p in ipairs((require("oculus").config or {}).projects or {}) do
-      for _, candidate in ipairs({ p.name, p.repository }) do
-        if type(candidate) == "string"
-          and not seen[candidate]
-          and not candidate:find("%s")
-          and candidate:lower():sub(1, #arglead) == arglead:lower()
-        then
-          seen[candidate] = true
-          matches[#matches + 1] = candidate
-        end
-      end
-    end
-
-    return matches
-  end,
-})
-
 vim.api.nvim_create_user_command("OculusWork", function()
   require("oculus").open_work()
 end, { desc = "Open Oculus on your review requests, pull requests, assignments and mentions" })

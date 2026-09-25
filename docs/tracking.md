@@ -60,12 +60,7 @@ regular file and writable parent directory are required for edits.
   such as `packages/editor`. Their activity feed shows commits touching that path.
   The same repository can appear with distinct paths, or alongside a whole-repo
   entry. A GitHub `/tree/branch/path` URL can be pasted into the add dialog.
-- Projects may set `devlog` to the URL of the project's devlog, blog or news
-  feed (RSS or Atom), or of a changelog page, or `false` to turn its devlog off. Without it, Oculus
-  looks for a feed on the project's homepage.
-- Users require `username` and `provider`. They may set `blog` to the URL of
-  their blog's feed or page, or `false` to turn it off; without it, Oculus
-  looks for one from the website on their profile.
+- Users require `username` and `provider`.
 - Providers are `github` or `codeberg`; optional `name` is a nonempty display name.
 - Groups have `name` and `children`, not a provider or leaf identity. Empty groups
   are supported. Nesting is limited to 64 levels.

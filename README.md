@@ -52,10 +52,6 @@ Offline help is in `:h oculus`, generated from this README.
   requests, and assigned issues, and per-user feeds of any public event type.
   Filters persist between sessions.
 
-- **Read project devlogs and people's blogs.** List a project's official
-  devlog, blog or news posts, or the blog of someone you follow, read one in the window, and inspect any pull request, issue or commit
-  it mentions straight from the post.
-
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
   or a commit SHA. Oculus finds the matching local clone, or fetches only the
   changed files into a small cache when there isn't one, and opens the change
@@ -233,7 +229,6 @@ The keys below are the defaults.
 | `w`                   | Open [my work](#my-work)                                   |
 | `s`                   | Open [saved items](#saved-items)                           |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
-| `d`                   | Read the selected project's [devlog](#devlogs), or user's blog |
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Rename (display name, or the username for users)           |
 | `R`                   | Remove the selected item or group                          |
@@ -255,7 +250,6 @@ The keys below are the defaults.
 | `<Tab>`         | Queue the item for inspection. Queued items open together      |
 | `b`             | Open the item in your browser                                  |
 | `u`             | Show the project's issues                                      |
-| `d`             | Read the project's [devlog](#devlogs), or the user's blog      |
 | `f`             | Issue filters (in the issues view) or newer activity           |
 | `m`             | Milestones (in the issues view)                                |
 | `s`             | Save the item under the cursor, or remove it from saved items  |
@@ -322,103 +316,6 @@ description. Select a milestone to see its issues and pull requests as an
 activity feed, where `i` inspects and `b` opens items as usual. Press `b` on
 the list to open a milestone in your browser, `r` to refresh it, and `h`/`←` to
 go back.
-
-**Devlogs**
-
-Press `d` on a project, or in its activity feed, to list the posts of its
-official devlog, blog or news feed, newest first, or run
-`:OculusDevlog {project}` with a tracked project's name or repository. Press
-`d` on a user, or in their activity feed, or run `:OculusDevlog @login`, for
-the blog of someone you follow; it works the same way. The
-preview beside the list shows the selected post's title, date and author.
-Press `<CR>` or `l` to read the post, `b` to open it in your browser, `r` to
-refresh and `h`/`←` to go back.
-When a project has multiple devlog sources, select a source first; going back
-from its posts returns to the source list.
-
-A post opens in a reader over the Oculus window, rendered as text: headings,
-lists, quotes and code blocks keep their shape, and links are underlined. Every
-pull request, issue and commit the post mentions is highlighted, whether it is
-a GitHub or Codeberg link, `owner/repo#123`, or `#123` or a commit hash in the
-post's own project, and the footer counts them. After the post, a **Referenced activity**
-section lists each of them once, with its kind and the words the post linked;
-the entries are references too, so `<Tab>` reaches them and `i` inspects them.
-
-| Key                  | Action                                                   |
-| -------------------- | -------------------------------------------------------- |
-| `<Tab>` / `<S-Tab>`  | Jump to the next / previous pull request, issue or commit |
-| `i` / `<CR>`         | [Inspect](#inspecting-changes) the one under the cursor, or the nearest on its line |
-| `b`                  | Open the link under the cursor, or the post, in your browser |
-| `r`                  | Reload the post                                          |
-| `h` / `l`            | Move the cursor left / right                             |
-| `q` / `<Esc>`        | Back to the list of posts                                |
-
-The footer names the reference under the cursor. Inspecting one closes Oculus
-as usual, and reopening Oculus returns to the post where you left it.
-
-Oculus finds a project's feed, or a user's, in this order:
-
-1. A `devlog` field on the project, or a `blog` (or `devlog`) field on the
-   user, in `setup()` or the [tracking file](#tracking-file): a URL or an ordered
-   list of `{ name, url }` sources (`false` turns it off)
-2. The [`devlogs`](#options) option, keyed by `owner/repo`,
-   `codeberg:owner/repo`, `@login` or `codeberg:@login`: a URL or the same list
-3. A URL set with `e` in the list of posts, or found earlier
-4. The project's homepage, or the website on the user's GitHub or Codeberg
-   profile: the RSS or Atom feed it advertises, preferring a devlog, blog or
-   news feed, else the first of the usual paths (`/devlog/index.xml`,
-   `/blog/atom.xml`, `/feed.xml`, …) that serves one, else the feed it links
-   to ("Subscribe"), else the feed of the blog it links to ("Blog",
-   `blog.example.org`, or a service such as HEY World or Substack). Only links
-   to the same site, or to a blogging service, are followed.
-
-A devlog can also be a web page with no feed, such as a changelog: set its
-URL like a feed's, for example
-`{ "repository": "quickshell-mirror/quickshell", "provider": "github", "devlog": "https://quickshell.org/changelog/" }`
-in the tracking file. Each heading that names a version (`v0.3.1`,
-`[1.2.0] - 2026-01-05`, `Release 2.0`) or a date becomes a post, holding the
-page up to the next such heading. A version with no date on the page takes the
-date of the project's GitHub or Codeberg release of that version.
-
-A page that lists articles instead, like [LWN's kernel page](https://lwn.net/Kernel/)
-(a good `devlog` for `torvalds/linux`), works too: each row that pairs a date
-with a link is a post, read from the page it links to. Mainline commits linked
-on `git.kernel.org` count as `torvalds/linux` commits, so they can be inspected
-from the post; `b` still opens them on kernel.org.
-
-For Linux, an ordered source list can include both LWN coverage and the Linux
-kernel mailing list. In a tracking file, replace the project's single
-`devlog` URL with:
-
-```json
-"devlog": [
-  { "name": "LWN kernel coverage", "url": "https://lwn.net/Kernel/" },
-  { "name": "Linux kernel mailing list", "url": "https://lore.kernel.org/lkml/new.atom" }
-]
-```
-
-The same list can be set at `devlogs["torvalds/linux"]` in `setup()` when the
-project has no `devlog` field. To read new LWN articles with a subscription,
-export your logged-in LWN browser cookies to a private Netscape-format cookie
-file and set:
-
-```lua
-require("oculus").setup({
-  lwn_cookie_file = "~/.config/oculus/lwn-cookies.txt",
-})
-```
-
-Then open `:OculusDevlog torvalds/linux`, select a source, and read its posts.
-Oculus passes the cookie file to `curl` only for HTTPS requests to `lwn.net`
-and `www.lwn.net`. It does not save the cookies in `state_file`. You can set
-`$LWN_COOKIE_FILE` instead of the
-option. Re-export the file when the browser session expires. Keep the file
-readable only by your user.
-
-A feed found on the homepage is remembered in `state_file`. When a project has
-none, or the wrong one is picked, press `e` in the devlog list to set the feed
-URL (an empty answer looks for it again). When a feed carries only an excerpt
-of a post, the reader fetches the post's page and shows its article.
 
 ### Inspecting changes
 
@@ -574,7 +471,6 @@ Set `inspect_colorscheme = false` to turn this off.
 | ---------------------------------------- | ------------------------------------------------------ |
 | `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
-| `:OculusDevlog {project\|@user}`         | Open the Oculus window on a project's [devlog](#devlogs) (a tracked project's name, `owner/repo` or `codeberg:owner/repo`) or a user's blog (`@login` or `@codeberg:login`) |
 | `:OculusClose`                           | Close it                                               |
 | `:OculusToggle`                          | Toggle it                                              |
 | `:OculusInspect [target]`                | Inspect an issue, PR, or commit (prompts if no target) |
@@ -638,15 +534,7 @@ require("oculus").setup({
   user_activity_types = {},
   project_activity_types = { "push", "merged_pull_request", "assigned_issue" },
   project_issue_filters = {},
-  -- Devlog feed URLs, keyed by "owner/repo" or "codeberg:owner/repo", and blog
-  -- feed URLs or lists of { name, url }, keyed by "@login" or
-  -- "codeberg:@login"; false turns one off
-  -- (see "Devlogs")
-  devlogs = {},
-  -- Netscape-format browser cookies for subscriber articles on HTTPS lwn.net;
-  -- falls back to $LWN_COOKIE_FILE (see "Devlogs")
-  lwn_cookie_file = nil,
-  -- Seconds to cache API responses (and devlog feeds and posts)
+  -- Seconds to cache API responses
   cache_ttl = 300,
   request_timeout = 15,
 
@@ -872,11 +760,6 @@ local ok, err = oculus.open_user("github:folke")
 -- Open on your review requests, pull requests, assignments and mentions
 oculus.open_work()
 
--- Open on a project's devlog: a tracked project's name, or a repository
-local ok, err = oculus.open_devlog("zig")
--- Or on a user's blog
-local ok, err = oculus.open_devlog("@codeberg:andrewrk")
-
 -- The signed-in account: { provider, login, name?, html_url?, avatar_url? }
 oculus.viewer("github", function(viewer, err)
   print(viewer and viewer.login or err)
@@ -923,16 +806,6 @@ colours when the colorscheme loads, and are left alone if you have set them.
 | `OculusInspectThreadHeader`   | links to `Title`          | Comment authors in threads    |
 | `OculusInspectThreadBody`     | links to `Comment`        | Comment text of threads loaded into the files |
 | `OculusInspectThreadGutter`   | links to `LineNr`         | The line drawn beside that comment text |
-| `OculusDevlogReference`       | links to `Special`        | Pull requests, issues and commits in a devlog post |
-| `OculusDevlogReferenceCurrent`| links to `Visual`         | The reference under the cursor |
-| `OculusDevlogLink`            | links to `Underlined`     | Other links in a devlog post  |
-| `OculusDevlogHeading`         | links to `Title`          | Headings in a devlog post     |
-| `OculusDevlogStrong`          | links to `@markup.strong` | Bold text in a devlog post    |
-| `OculusDevlogEmphasis`        | links to `@markup.italic` | Italic text in a devlog post  |
-| `OculusDevlogCode`            | links to `@markup.raw`    | Code in a devlog post         |
-| `OculusDevlogQuote`           | links to `Comment`        | Quotes in a devlog post       |
-| `OculusDevlogMuted`           | links to `Comment`        | Rules, captions and images in a devlog post |
-| `OculusDevlogBullet`          | links to `Comment`        | List markers in a devlog post |
 
 ## Contributing
 
@@ -944,9 +817,8 @@ on their own beside them:
 | Module                  | What it holds                                                      |
 | ----------------------- | ------------------------------------------------------------------ |
 | `oculus/window.lua`     | The Oculus window: the list, the sidebar, the footer, the keys      |
-| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `milestones`, `work`, `saved` and `devlog` views |
+| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `milestones`, `work` and `saved` views |
 | `oculus/inspect.lua`    | An inspection: its tabs, buffers, sidebar and chunk navigation      |
-| `oculus/devlog.lua`     | Devlogs: finding a project's feed, parsing RSS and Atom, and rendering a post's HTML with the references in it |
 | `oculus/inspect/`       | `prepare` and `git` (getting the change), `patch` (reading a diff), `target` (resolving what to inspect), `overview` (the summary and its agent flows), `review` and `review_ui` (pull request review threads), `oil`, `context` (treesitter-context) and `counters` |
 
 A module beside one of the two takes what it needs from it through `setup()`,

@@ -1701,10 +1701,6 @@ function M.repository_info(repository, opts, callback)
         or nil,
       name = payload.name,
       full_name = payload.full_name,
-      homepage = type(payload.website) == "string"
-          and payload.website ~= ""
-          and payload.website
-        or nil,
     }
 
     repository_info_cache[key] = {
@@ -1713,56 +1709,6 @@ function M.repository_info(repository, opts, callback)
     }
 
     callback(vim.deepcopy(info))
-  end)
-end
-
--- A user's public profile: { login, name, homepage }.
-function M.user_info(username, opts, callback)
-  local url = ("%s/api/v1/users/%s"):format(base_url, vim.uri_encode(username))
-
-  request_json(url, opts or {}, function(payload, err)
-    if err or type(payload) ~= "table" then
-      callback(nil, err)
-      return
-    end
-
-    callback({
-      login = type(payload.login) == "string" and payload.login or username,
-      name = type(payload.full_name) == "string" and payload.full_name ~= "" and payload.full_name or nil,
-      homepage = type(payload.website) == "string"
-          and payload.website ~= ""
-          and payload.website
-        or nil,
-    })
-  end)
-end
-
--- The repository's releases, newest first: { tag, name, published_at, html_url }.
-function M.repository_releases(repository, opts, callback)
-  local url = ("%s/api/v1/repos/%s/releases?limit=50"):format(base_url, repository)
-
-  request_json(url, opts or {}, function(payload, err)
-    if err or type(payload) ~= "table" then
-      callback(nil, err)
-      return
-    end
-
-    local releases = {}
-
-    for _, release in ipairs(payload) do
-      if type(release) == "table" and type(release.tag_name) == "string" then
-        releases[#releases + 1] = {
-          tag = release.tag_name,
-          name = type(release.name) == "string" and release.name or nil,
-          published_at = type(release.published_at) == "string"
-              and release.published_at
-            or (type(release.created_at) == "string" and release.created_at or nil),
-          html_url = type(release.html_url) == "string" and release.html_url or nil,
-        }
-      end
-    end
-
-    callback(releases)
   end)
 end
 

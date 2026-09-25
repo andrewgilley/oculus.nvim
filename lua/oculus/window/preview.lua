@@ -329,7 +329,6 @@ function M.setup(window, internal)
         window.state.view ~= "contributors"
         and window.state.view ~= "directory"
         and window.state.view ~= "milestones"
-        and window.state.view ~= "devlog"
         and window.state.view ~= "work"
       )
       or not internal.is_valid_buf(window.state.buf)
