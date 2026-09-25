@@ -1128,7 +1128,7 @@ local function render_focused_chunk(session, chunk_index)
   return start
 end
 
-local function render_full_file(session)
+local function render_full_file(session, role)
   if not replace_inspection_lines(
     session.change,
     session.change_content or {}
@@ -1142,6 +1142,15 @@ local function render_full_file(session)
   end
 
   update_excerpt_map(session, "change", nil, session.change_content or {})
+
+  if role == "parent" or role == "change" then
+    session.chunk_versions = {}
+
+    for index in ipairs(session.hunks or {}) do
+      session.chunk_versions[index] = role
+    end
+  end
+
   session.active_chunk = nil
   session.focused_start = nil
   session.parent_focused_start = nil
@@ -5112,13 +5121,18 @@ switch_sidebar_version = function(group, target_role)
     skipcol = 0,
   })
 
-  local chunk_index = entry and entry.chunk_index or session.active_chunk or 1
+  local chunk_index = entry and entry.chunk_index
   local start, max_line
 
-  if group.kind == "issue" then
-    local section = session.sections and session.sections[chunk_index]
-    start = section and section.line
-    max_line = start
+  if not chunk_index then
+    render_full_file(session, target_role)
+
+    start = map_inspection_line(
+      session,
+      role,
+      target_role,
+      source_code_view and source_code_view.lnum or 1
+    )
   else
     local hunk = session.hunks and session.hunks[chunk_index] or nil
 

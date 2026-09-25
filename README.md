@@ -388,6 +388,8 @@ change markers, and you can switch it between the parent and the change:
 Each chunk keeps the version you leave it on: chunks start old, and a chunk
 you switch to new stays new while you move through the others, so the file
 fills in as you review it. Moving to a chunk shows it in its saved version.
+With the sidebar focused on a file row, switching versions sets every chunk
+in that file to the selected version.
 In the sidebar, the file's `P` or `C` is underlined for the version of the
 chunk you are on.
 
