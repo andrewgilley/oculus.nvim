@@ -2454,7 +2454,7 @@ local function sidebar_overview_lines(overview, width)
 
     field("Source", is_issue and "Remote, no local clone"
       or context == math.huge and "Remote, whole changed files"
-      or ("Remote, ±%d lines around changes"):format(context or 0))
+      or "Remote")
   end
 
   if lines[#lines] == "" then

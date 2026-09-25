@@ -151,7 +151,8 @@ do
     remote_context = 12,
   }, 60), "\n")
 
-  assert(overview_text:find("Remote, ±12 lines around changes", 1, true))
+  assert(overview_text:find("Remote", 1, true))
+  assert(not overview_text:find("lines around changes", 1, true))
   local buf = vim.api.nvim_create_buf(false, true)
 
   local group = {

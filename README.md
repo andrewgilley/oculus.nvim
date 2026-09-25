@@ -357,7 +357,7 @@ inspect the change remotely instead:
 - The project's directory structure at the inspected commits is laid out in
   the cache as empty files, so oil.nvim can browse it. Selecting an inspected
   file in oil.nvim shows its inspection; selecting any other file closes oil.nvim.
-- The overview shows `Source: Remote, ±20 lines around changes`. For issues,
+- The overview shows `Source: Remote`. For issues,
   `p` (patch locations) and `w` (worktree) are unavailable because there is no
   checkout to search or branch from.
 - Fetching uses your Git credentials, so private repositories work when `git
