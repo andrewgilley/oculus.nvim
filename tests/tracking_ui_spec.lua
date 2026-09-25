@@ -73,8 +73,8 @@ local function assert_item_matches_preview(label)
     {name='OculusContributorSelected',link=false}
   )
 
-  assert(selected.fg == nil and selected.bold and selected.underline,
-    'selection preserves the item foreground color')
+  assert(selected.fg == 0xffffff and not selected.bold and not selected.underline,
+    'selected item is white without an underline')
 end
 
 assert(window.state.preview_items[4][1] == 'Nested', 'initial group preview lists children')

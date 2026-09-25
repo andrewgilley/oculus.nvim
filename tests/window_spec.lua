@@ -147,7 +147,7 @@ local function assert_list_item_matches_preview()
     link = false,
   })
 
-  assert(selected.fg == nil and selected.bold and selected.underline)
+  assert(selected.fg == 0xffffff and not selected.bold and not selected.underline)
 end
 
 local retained_title = vim.api.nvim_get_hl(window_highlight_ns, {

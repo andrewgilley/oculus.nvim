@@ -164,12 +164,11 @@ function M.setup(window, internal)
     vim.api.nvim_set_hl(
       window_highlight_ns,
       "OculusContributorSelected",
-      { bold = true, underline = true }
+      { fg = "#ffffff" }
     )
 
     vim.api.nvim_set_hl(0, "OculusContributorSelected", {
-      bold = true,
-      underline = true,
+      fg = "#ffffff",
     })
 
     vim.api.nvim_set_hl(
