@@ -32,6 +32,7 @@ local hidden_overview_guicursor = "a:OculusInspectHiddenCursor"
 -- convert the whole module table to a Vim dict on every redraw, and fail once
 -- any table in it mixes integer and string keys.
 local inspection_statusline_option = "%!v:lua.require'oculus.inspect'._inspection_statusline()"
+local inspection_statuscolumn_option = "%!v:lua.require'oculus.inspect'._inspection_statuscolumn()"
 local inspection_sidebar_statusline_option = "[oculus] "
 local normalize_inspection_view
 local refresh_sidebar
@@ -4500,6 +4501,25 @@ vim.api.nvim_create_autocmd({
   end,
 })
 
+-- The source file lines behind a line of a remote excerpt buffer, or nil when
+-- the buffer holds a whole file. A marker line stands for the hidden run it
+-- replaces, so first and last differ. Edits shift the excerpt's lines, so the
+-- mapping holds only while the buffer keeps the lines it was loaded with.
+local function excerpt_source_line(buf, line)
+  local excerpt = vim.b[buf].oculus_inspect_excerpt
+
+  if type(excerpt) ~= "table"
+    or type(excerpt.ranges) ~= "table"
+    or #excerpt.ranges == 0
+    or excerpt.lines ~= vim.api.nvim_buf_line_count(buf)
+  then
+    return nil
+  end
+
+  local first, last = patch.source_line(excerpt.ranges, line, excerpt.count)
+  return first, last, excerpt.count
+end
+
 local function inspection_statusline(win)
   win = tonumber(win or vim.g.statusline_winid)
     or vim.api.nvim_get_current_win()
@@ -4522,31 +4542,12 @@ local function inspection_statusline(win)
   path = path:gsub("%%", "%%%%")
   local cursor = vim.api.nvim_win_get_cursor(win)
   local line_count = vim.api.nvim_buf_line_count(buf)
-  local excerpt = vim.b[buf].oculus_inspect_excerpt
+  local first, last, count = excerpt_source_line(buf, cursor[1])
 
-  -- Edits shift the excerpt's lines, so its mapping holds only while the
-  -- buffer keeps the lines it was loaded with.
-  if type(excerpt) == "table"
-    and type(excerpt.ranges) == "table"
-    and #excerpt.ranges > 0
-    and excerpt.lines == line_count
-  then
-    local first, last = patch.source_line(
-      excerpt.ranges,
-      cursor[1],
-      excerpt.count
-    )
-
-    if first ~= last then
-      return (" %s%%= %d-%d(%d) "):format(path, first, last, excerpt.count)
-    end
-
-    return (" %s%%= %d(%d),%d "):format(
-      path,
-      first,
-      excerpt.count,
-      cursor[2] + 1
-    )
+  if first and first ~= last then
+    return (" %s%%= %d-%d(%d) "):format(path, first, last, count)
+  elseif first then
+    return (" %s%%= %d(%d),%d "):format(path, first, count, cursor[2] + 1)
   end
 
   return (" %s%%= %d(%d),%d "):format(
@@ -4555,6 +4556,46 @@ local function inspection_statusline(win)
     line_count,
     cursor[2] + 1
   )
+end
+
+-- Line numbers for a remote excerpt window, drawn like the built-in number
+-- column but with the source file's line numbers; marker lines have none.
+-- Relative numbers stay buffer distances, so counts still reach them.
+local function inspection_statuscolumn()
+  local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
+
+  if not vim.api.nvim_win_is_valid(win) then
+    return ""
+  end
+
+  local number = vim.wo[win].number
+  local relativenumber = vim.wo[win].relativenumber
+  local relnum = vim.v.relnum
+  local text = ""
+
+  if vim.v.virtnum ~= 0 or not (number or relativenumber) then
+    return "%C%s"
+  end
+
+  if relativenumber and (relnum ~= 0 or not number) then
+    text = tostring(relnum)
+  else
+    local buf = vim.api.nvim_win_get_buf(win)
+    local first, last = excerpt_source_line(buf, vim.v.lnum)
+    first = first or vim.v.lnum
+
+    if first == (last or first) then
+      text = tostring(first)
+    end
+
+    -- Like the built-in column, the cursor line's number sits on the left
+    -- when relative numbers surround it.
+    if relativenumber then
+      return "%C%s" .. text .. "%= "
+    end
+  end
+
+  return "%C%s%=" .. text .. " "
 end
 
 local function open_sidebar_selection(group, preferred_role)
@@ -5587,12 +5628,13 @@ local function load_tab(
 
   vim.b[buf].oculus_inspect_repository = path
   vim.b[buf].oculus_inspect_directory = working_directory
-
   -- A remote file is loaded as an excerpt; the statusline reports positions
   -- in the whole file.
+  local side = role == "change" and "change" or "parent"
+
   vim.b[buf].oculus_inspect_excerpt = inspection.excerpt and {
-    ranges = inspection.excerpt[role],
-    count = inspection.excerpt[role .. "_count"],
+    ranges = inspection.excerpt[side],
+    count = inspection.excerpt[side .. "_count"],
     lines = #(lines or { "" }),
   } or nil
 
@@ -5686,6 +5728,19 @@ local function apply_inspection_window_options(win, options)
 
   if type(options.winhighlight) == "string" then
     vim.wo[win].winhighlight = options.winhighlight
+  end
+
+  -- A remote excerpt numbers its lines as in the whole file, which can need
+  -- more digits than the excerpt's own line count.
+  local _, _, count = excerpt_source_line(vim.api.nvim_win_get_buf(win), 1)
+
+  if count then
+    vim.wo[win].numberwidth = math.min(
+      20,
+      math.max(vim.wo[win].numberwidth, #tostring(count) + 1)
+    )
+
+    vim.wo[win].statuscolumn = inspection_statuscolumn_option
   end
 
   vim.wo[win].cursorline = true
@@ -6745,6 +6800,8 @@ M._normalize_inspection_view = normalize_inspection_view
 M._inspection_statusline_path = inspection_statusline_path
 M._inspection_buffer_name = inspection_buffer_name
 M._inspection_statusline = inspection_statusline
+M._inspection_statuscolumn = inspection_statuscolumn
+M._inspection_statuscolumn_option = inspection_statuscolumn_option
 M._inspection_statusline_option = inspection_statusline_option
 
 M._inspection_sidebar_statusline_option =

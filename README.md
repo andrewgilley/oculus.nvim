@@ -352,10 +352,11 @@ inspect the change remotely instead:
 - Each changed file is trimmed to its changed lines plus
   `inspect_remote_context` lines of surrounding code (20 by default). Hidden
   stretches are replaced by a single `⋯ 94 unchanged lines ⋯` marker, written
-  as a comment in the file's language. The sidebar's chunk list and the
-  statusline's row and column keep the real file positions (on a marker, the
-  statusline shows the range of lines it hides), while buffer line numbers
-  count excerpt lines.
+  as a comment in the file's language. The sidebar's chunk list, the line
+  numbers and the statusline's row and column keep the real file positions.
+  A marker has no line number, and the statusline shows the range of lines it
+  hides. Relative line numbers still count buffer lines, so `5j` reaches the
+  line marked 5.
 - The project's directory structure at the inspected commits is laid out in
   the cache as empty files, so oil.nvim can browse it. Selecting an inspected
   file in oil.nvim shows its inspection; selecting any other file closes oil.nvim.

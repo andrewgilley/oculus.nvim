@@ -603,6 +603,9 @@ for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
       marker_buffers = marker_buffers + 1
     end
 
+    local tab_win = vim.api.nvim_tabpage_get_win(tab)
+    assert(vim.wo[tab_win].statuscolumn == inspect._inspection_statuscolumn_option)
+
     -- The statusline reports positions in the whole file, not the excerpt.
     if state.role == "change" then
       local win = vim.api.nvim_tabpage_get_win(tab)
@@ -618,6 +621,30 @@ for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
       assert(statusline(13, 0):find("%= 100(120),1 ", 1, true), statusline(13, 0))
       assert(statusline(17, 0):find("%= 104-120(120) ", 1, true), statusline(17, 0))
       checked_statusline = true
+      -- The number column shows the file's line numbers too; markers have
+      -- none, and relative numbers stay buffer distances.
+      assert(vim.wo[win].statuscolumn == inspect._inspection_statuscolumn_option)
+
+      local function number(line)
+        local result = vim.api.nvim_eval_statusline(vim.wo[win].statuscolumn, {
+          winid = win,
+          use_statuscol_lnum = line,
+        })
+
+        return vim.trim(result.str)
+      end
+
+      vim.wo[win].number = true
+      vim.wo[win].relativenumber = false
+      assert(number(2) == "7", number(2))
+      assert(number(13) == "100", number(13))
+      assert(number(1) == "" and number(9) == "", number(9))
+      vim.wo[win].relativenumber = true
+      vim.api.nvim_win_set_cursor(win, { 13, 0 })
+      assert(number(13) == "100", number(13))
+      assert(number(10) == "3", number(10))
+      vim.wo[win].number = false
+      assert(number(13) == "0", number(13))
     end
 
     assert(#lines < 30)
