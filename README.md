@@ -388,8 +388,7 @@ Each chunk keeps the version you leave it on: chunks start old, and a chunk
 you switch to new stays new while you move through the others, so the file
 fills in as you review it. Moving to a chunk shows it in its saved version.
 Moving the cursor into another chunk shows that chunk in the version of the
-tab you are in, but doesn't change its saved version. In the sidebar, each
-chunk row ends in a dot for its version: red for old, green for new.
+tab you are in, but doesn't change its saved version.
 
 Changed chunks can be listed in a sidebar (the default) or counted inline with
 virtual text. Toggle between these modes in the overview with `v` and `s`, or

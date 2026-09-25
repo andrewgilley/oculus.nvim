@@ -115,32 +115,53 @@ local function active_chunk()
   return vim.b[sidebar_buf()].oculus_inspect_sidebar_active.chunk_index
 end
 
--- The colour of the dot at the end of each chunk row, in order.
-local function dots()
+local function sidebar_group()
   local buf = sidebar_buf()
+
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_buf(win) == buf then
+      return inspect._sidebar_window_group(win)
+    end
+  end
+end
+
+-- The saved version of each chunk, in order.
+local function versions()
+  local session = sidebar_group()[1]
   local result = {}
 
-  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
-    local text = mark[4].virt_text
-
-    if text and text[1] and text[1][1] == " ●" then
-      result[#result + 1] = text[1][2] == "OculusInspectSidebarChange" and "new" or "old"
-    end
+  for index in ipairs(session.hunks) do
+    local version = session.chunk_versions and session.chunk_versions[index]
+    result[#result + 1] = version == "change" and "new" or "old"
   end
 
   return table.concat(result, " ")
 end
 
+-- The sidebar marks no versions on the chunk rows.
+local function version_marks()
+  local marks = 0
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(sidebar_buf(), -1, 0, -1, { details = true })) do
+    if mark[4].virt_text then
+      marks = marks + 1
+    end
+  end
+
+  return marks
+end
+
 -- Every chunk starts old, on the old tab.
 assert(role() == "parent" and active_chunk() == 1)
 assert(vim.deep_equal(shown(), parent))
-assert(dots() == "old old old", dots())
+assert(versions() == "old old old", versions())
+assert(version_marks() == 0)
 -- Setting the first chunk to new keeps it new on the next chunk, which opens
 -- old.
 press("<C-d>")
 assert(role() == "change" and active_chunk() == 1)
 assert(vim.deep_equal(shown(), composed({ true })))
-assert(dots() == "new old old", dots())
+assert(versions() == "new old old", versions())
 press("<C-Tab>")
 assert(role() == "parent" and active_chunk() == 2)
 assert(vim.deep_equal(shown(), composed({ true })))
@@ -149,7 +170,7 @@ assert(vim.deep_equal(shown(), composed({ true })))
 press("<C-d>")
 assert(role() == "change" and active_chunk() == 2)
 assert(vim.deep_equal(shown(), composed({ true, true })))
-assert(dots() == "new new old", dots())
+assert(versions() == "new new old", versions())
 press("<C-Tab>")
 assert(role() == "parent" and active_chunk() == 3)
 assert(vim.deep_equal(shown(), composed({ true, true })))
@@ -159,7 +180,7 @@ press("<C-d>")
 assert(vim.deep_equal(shown(), composed({ true, true, true })))
 assert(vim.deep_equal(shown(), change))
 press("<C-s>")
-assert(role() == "parent" and dots() == "new new old", dots())
+assert(role() == "parent" and versions() == "new new old", versions())
 -- Going back lands on each chunk in the version it was left in.
 press("<S-Tab>")
 assert(role() == "change" and active_chunk() == 2)
@@ -172,7 +193,8 @@ assert(shown()[cursor] == "added a", shown()[cursor])
 press("<C-s>")
 assert(role() == "parent" and active_chunk() == 1)
 assert(vim.deep_equal(shown(), composed({ false, true })))
-assert(dots() == "old new old", dots())
+assert(versions() == "old new old", versions())
+assert(version_marks() == 0)
 
 -- Plugins such as go-up.nvim pad the top of a buffer with virtual lines
 -- anchored above its first line. Rewriting the sidebar and the tabs keeps

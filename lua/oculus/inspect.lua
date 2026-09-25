@@ -2812,25 +2812,6 @@ refresh_sidebar = function(group, tab)
         )
       end
 
-      -- Each chunk row ends in a dot for the version the chunk shows: red
-      -- for old, green for new.
-      for chunk_index, chunk_line in pairs(group.sidebar_chunk_lines[index] or {}) do
-        local version = chunk_version(group[index], chunk_index)
-
-        vim.api.nvim_buf_set_extmark(buf, sidebar_ns, chunk_line - 1, 0, {
-          virt_text = {
-            {
-              " ●",
-              version == "change"
-                  and "OculusInspectSidebarChange"
-                or "OculusInspectSidebarParent",
-            },
-          },
-          virt_text_pos = "eol",
-          priority = 100,
-        })
-      end
-
       if row.thread_column then
         vim.api.nvim_buf_set_extmark(
           buf,
