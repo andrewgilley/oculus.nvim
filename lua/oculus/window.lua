@@ -1894,9 +1894,13 @@ local function render_contributors()
       highlight(2, 2, -1, "Title")
     end
 
-    -- Groups carry no trailing slash; mark them like legacy folders instead.
+    -- Give tracked items the same highlights as their preview entries.
     for line, target in pairs(M.state.line_targets) do
-      if target.kind == "tracking_group" then highlight(line, 2, -1, "OculusDirectory") end
+      if target.kind == "tracking_group" then
+        highlight(line, 2, -1, "OculusDirectory")
+      elseif target.kind == "project" or target.username then
+        highlight(line, 2, -1, "Identifier")
+      end
     end
 
     -- Leaving a group lands on that group's row; otherwise start at the top.
@@ -3113,16 +3117,6 @@ local function render_activity(events, cached, notice, opts)
         highlight(line, 0, -1, "OculusActivityPreview")
       elseif kind == "main" then
         highlight(line, 0, 5, "OculusActivityIcon")
-        local prefix = text:match("^  %S+  ")
-
-        if prefix then
-          highlight(
-            line,
-            #prefix,
-            activity_title_highlight_end(text),
-            "OculusActivityPreview"
-          )
-        end
       end
     end
   end
@@ -7368,8 +7362,8 @@ function M.open(opts)
     default = true,
   })
 
-  vim.api.nvim_set_hl(0, "OculusContributorSelected", {
-    link = "Title",
+  vim.api.nvim_set_hl(0, "OculusActivityPreview", {
+    link = "DiagnosticOk",
     default = true,
   })
 

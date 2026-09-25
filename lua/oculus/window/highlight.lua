@@ -161,16 +161,16 @@ function M.setup(window, internal)
       bg = "NONE",
     })
 
-    vim.api.nvim_set_hl(0, "OculusActivityPreview", {
-      fg = "#9ae6b4",
-      bg = "NONE",
-    })
-
     vim.api.nvim_set_hl(
       window_highlight_ns,
       "OculusContributorSelected",
-      { fg = "#ffffff" }
+      { bold = true, underline = true }
     )
+
+    vim.api.nvim_set_hl(0, "OculusContributorSelected", {
+      bold = true,
+      underline = true,
+    })
 
     vim.api.nvim_set_hl(
       window_highlight_ns,

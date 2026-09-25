@@ -388,57 +388,6 @@ assert(state.selected_work == "github:review_requested")
 local preview = preview_text()
 assert(preview:find("@octo on GitHub", 1, true), preview)
 assert(preview:find("a/one#7 Review a/one", 1, true), preview)
-local activity_preview_group
-
-for _, item in pairs(state.preview_items or {}) do
-  if item[1]:find("a/one#7 Review a/one", 1, true) then
-    activity_preview_group = item[2]
-    break
-  end
-end
-
-assert(activity_preview_group == "OculusActivityPreview")
-
-local activity_color = vim.api.nvim_get_hl(
-  vim.api.nvim_get_hl_ns({ winid = state.win }),
-  { name = activity_preview_group, link = false }
-)
-
-assert(activity_color.fg == 0x9ae6b4, vim.inspect(activity_color))
-
-assert(vim.api.nvim_get_hl(0, {
-  name = activity_preview_group,
-  link = false,
-}).fg == activity_color.fg)
-
-local selected_work_line
-
-for line, target in pairs(state.line_targets) do
-  if target.entry.key == state.selected_work then
-    selected_work_line = line
-    break
-  end
-end
-
-assert(selected_work_line)
-local list_matches_preview = false
-
-for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
-  state.buf,
-  vim.api.nvim_get_namespaces().oculus,
-  selected_work_line - 1,
-  selected_work_line,
-  { details = true }
-)) do
-  if mark[2] == selected_work_line - 1
-    and mark[4].hl_group == activity_preview_group
-  then
-    list_matches_preview = true
-    break
-  end
-end
-
-assert(list_matches_preview, "work list item should match preview item highlight")
 press("b")
 assert(opened_urls[1] == "https://github.com/pulls/review-requested")
 press("?")

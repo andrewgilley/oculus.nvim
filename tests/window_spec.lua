@@ -121,6 +121,35 @@ local window_highlight_ns = assert(
 
 assert(vim.api.nvim_get_hl_ns({ winid = state.win }) == window_highlight_ns)
 
+local function assert_list_item_matches_preview()
+  local line = vim.api.nvim_win_get_cursor(state.win)[1]
+  local preview_group = state.preview_items[4][2]
+  assert(preview_group == "Identifier")
+  local matched = false
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    state.buf,
+    vim.api.nvim_get_namespaces().oculus,
+    line - 1,
+    line,
+    { details = true }
+  )) do
+    if mark[2] == line - 1 and mark[4].hl_group == preview_group then
+      matched = true
+      break
+    end
+  end
+
+  assert(matched, "list item uses its preview's highlight group")
+
+  local selected = vim.api.nvim_get_hl(window_highlight_ns, {
+    name = "OculusContributorSelected",
+    link = false,
+  })
+
+  assert(selected.fg == nil and selected.bold and selected.underline)
+end
+
 local retained_title = vim.api.nvim_get_hl(window_highlight_ns, {
   name = "Title",
   link = false,
@@ -303,6 +332,7 @@ local startup_shortcuts_text = table.concat(
 assert(startup_shortcuts_text:find("Switch to user list", 1, true))
 assert(startup_shortcuts_text:find("Move the selected project or folder", 1, true))
 window._toggle_shortcuts()
+assert_list_item_matches_preview()
 
 do
   local first_project_line
@@ -345,6 +375,7 @@ assert(initial_user_text:find("@andrewrk", 1, true))
 assert(not initial_user_text:find("HANDLE", 1, true))
 assert(not initial_user_text:find("Mitchell Hashimoto", 1, true))
 assert(initial_user_lines[initial_window_height]:find("p projects", 1, true))
+assert_list_item_matches_preview()
 window._toggle_shortcuts()
 
 local user_shortcuts_text = table.concat(
@@ -1045,36 +1076,6 @@ do
   end
 
   assert(first_event_lines == 3, first_event_lines)
-  local title = rendered_activity_lines[first_event_title]
-  local prefix = assert(title:match("^  %S+  "))
-  local title_end = #title - 21
-  local title_highlight, detail_highlight = false, false
-
-  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
-    state.buf,
-    vim.api.nvim_get_namespaces().oculus,
-    0,
-    -1,
-    { details = true }
-  )) do
-    local details = mark[4]
-
-    if details.hl_group == "OculusActivityPreview" then
-      if mark[2] == first_event_title - 1
-        and mark[3] == #prefix
-        and details.end_col == title_end
-      then
-        title_highlight = true
-      elseif state.activity_title_lines[mark[2] + 1] == first_event_title
-        and mark[3] == 0
-      then
-        detail_highlight = true
-      end
-    end
-  end
-
-  assert(title_highlight and detail_highlight,
-    "activity title and detail use the preview item highlight")
 end
 
 local expansion_line
