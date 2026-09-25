@@ -161,7 +161,7 @@ do
     commit_details = { subject = "Forge work" },
   }, 60)
 
-  assert(not table.concat(lines, "\n"):find("Local clone", 1, true))
+  assert(table.concat(lines, "\n"):find("  Source\n  Local", 1, true))
   local buf = vim.api.nvim_create_buf(false, true)
 
   local group = {

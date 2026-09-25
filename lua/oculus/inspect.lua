@@ -2546,14 +2546,14 @@ local function sidebar_overview_lines(overview, width)
     field("Source", overview.local_commit.pushed == false
       and "Local clone, not pushed"
       or ("Local clone, not yet listed by %s"):format(forge))
-  end
-
-  if overview.remote then
+  elseif overview.remote then
     local context = tonumber(overview.remote_context)
 
     field("Source", is_issue and "Remote, no local clone"
       or context == math.huge and "Remote, whole changed files"
       or "Remote")
+  else
+    field("Source", "Local")
   end
 
   if lines[#lines] == "" then

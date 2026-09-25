@@ -1424,11 +1424,13 @@ do
   local pull_request_overview_lines =
     inspect._sidebar_overview_lines(pull_request_overview, 28)
 
+  assert(pull_request_overview_text:find("\n  Date\n", 1, true))
+
   assert(pull_request_overview_lines[#pull_request_overview_lines - 1]
-    == "  Date")
+    == "  Source")
 
   assert(pull_request_overview_lines[#pull_request_overview_lines]
-    :match("^  %a+ %d%d?, %d%d%d%d$"))
+    == "  Local")
 
   assert(not pull_request_overview_text:find("Repository", 1, true))
   assert(not pull_request_overview_text:find("Branches", 1, true))
@@ -1503,10 +1505,10 @@ do
     inspect._sidebar_overview_lines(commit_overview, 28)
 
   assert(commit_overview_lines[#commit_overview_lines - 1]
-    == "  Date")
+    == "  Source")
 
   assert(commit_overview_lines[#commit_overview_lines]
-    :match("^  %a+ %d%d?, %d%d%d%d$"))
+    == "  Local")
 
   assert(not commit_overview_text:find("Repository", 1, true))
   assert(not commit_overview_text:find("\nCommit\n", 1, true))
@@ -2079,11 +2081,13 @@ local issue_overview_lines = vim.api.nvim_buf_get_lines(
   false
 )
 
+assert(issue_overview:find("\n  Date\n", 1, true))
+
 assert(issue_overview_lines[#issue_overview_lines - 1]
-  == "  Date")
+  == "  Source")
 
 assert(issue_overview_lines[#issue_overview_lines]
-  :match("^  %a+ %d%d?, %d%d%d%d$"))
+  == "  Local")
 
 local overview_footer_buf
 

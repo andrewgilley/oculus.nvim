@@ -343,8 +343,9 @@ order:
 4. Any clone below `inspect_discovery_roots` (your home directory by default),
    up to four levels deep, skipping hidden directories
 
-A local clone always loads whole files. Only when no clone is found does Oculus
-inspect the change remotely instead:
+A local clone always loads whole files, and the overview shows `Source: Local`
+when inspection uses one. Only when no clone is found does Oculus inspect the
+change remotely instead:
 
 - It keeps a shallow, blob-free Git repository per project under
   `inspect_remote_cache` and fetches only the inspected commits plus the
