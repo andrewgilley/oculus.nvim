@@ -41,8 +41,8 @@ local function node_matches_workspace(node, active_ws)
   return require("oculus.workspace").matches_workspace(node, active_ws)
 end
 
--- Mirror the legacy directory preview: header, then direct children without
--- repeating the group's own name.
+-- Show a group's descendants as a tree without repeating the selected group's
+-- own name.
 function M.preview_items(state, target, max_visible)
   if target and target.kind == 'directory_empty' then
     return {{'',''}, {'GROUP','Title'}, {'',''}, {'(empty group)', 'Comment'}}
@@ -55,13 +55,30 @@ function M.preview_items(state, target, max_visible)
   local nodes = tree and children(tree, kind, group) or {}
   local items = {[2]={'GROUP', 'Title'}}
   if #nodes == 0 then items[4] = {'(empty group)', 'Comment'}; return items end
-  local shown = #nodes <= max_visible and #nodes or math.max(1, max_visible - 1)
+  local descendants = {}
 
-  for index = 1, shown do
-    items[3 + index] = {label(nodes[index]), nodes[index].children and 'Directory' or 'Identifier'}
+  local function collect(children, depth)
+    for _, node in ipairs(children) do
+      descendants[#descendants + 1] = {
+        string.rep('  ', depth) .. label(node),
+        node.children and 'Directory' or 'Identifier',
+      }
+
+      if node.children then collect(node.children, depth + 1) end
+    end
   end
 
-  if shown < #nodes then items[4 + shown] = {('... and %d more'):format(#nodes - shown), 'Comment'} end
+  collect(nodes, 0)
+  local shown = #descendants <= max_visible and #descendants or math.max(1, max_visible - 1)
+
+  for index = 1, shown do
+    items[3 + index] = descendants[index]
+  end
+
+  if shown < #descendants then
+    items[4 + shown] = {('... and %d more'):format(#descendants - shown), 'Comment'}
+  end
+
   return items
 end
 
@@ -83,7 +100,6 @@ function M.render(state)
   end
 
   local lines = { "", "  " .. header_title, "" }
-
   if state.opts._tracking and state.opts._tracking.error then lines[#lines + 1] = '  Tracking error: :OculusReloadTracking' end
   local visible_count = 0
 

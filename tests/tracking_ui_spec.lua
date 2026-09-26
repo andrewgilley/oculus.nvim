@@ -77,7 +77,9 @@ local function assert_item_matches_preview(label)
     'selected item is white without an underline')
 end
 
-assert(window.state.preview_items[4][1] == 'Nested', 'initial group preview lists children')
+assert(window.state.preview_items[4][1] == 'Nested'
+  and window.state.preview_items[5][1] == '  a/b', 'initial group preview lists indented descendants')
+
 local rows = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
 local height = vim.api.nvim_win_get_height(window.state.win)
 assert(#rows == height, 'tracking list pads to full window height')
@@ -91,10 +93,27 @@ assert(shortcuts_rows:find('KEYBOARD SHORTCUTS', 1, true), 'shortcuts page opens
 window._toggle_shortcuts()
 assert(not table.concat(rows, '\n'):find('Tools/'), 'group rows have no trailing slash')
 local preview = preview_at('Tools')
-assert(preview[2][1] == 'GROUP' and preview[4][1] == 'Nested' and not preview[5], 'group preview lists direct children')
+
+assert(preview[2][1] == 'GROUP' and preview[4][1] == 'Nested'
+  and preview[5][1] == '  a/b', 'project group preview lists indented descendants')
+
 select_label('Tools'); key('<CR>')
 preview = preview_at('Nested')
 assert(preview[4][1] == 'a/b', 'nested group preview lists its leaves')
+
+local user_preview = require('oculus.tracking_ui').preview_items({
+  community_view = 'users',
+  tracking_paths = {projects={}, users={}},
+  opts = {_tracking={tree={projects={}, users={{name='People', children={
+    {name='Team', children={{username='bob', provider='github'}}},
+    {username='alice', provider='github'},
+  }}}}}},
+}, {tracking_index=1}, 10)
+
+assert(user_preview[4][1] == 'Team' and user_preview[4][2] == 'Directory'
+  and user_preview[5][1] == '  @bob' and user_preview[5][2] == 'Identifier'
+  and user_preview[6][1] == '@alice', 'user group preview lists indented descendants')
+
 local nested_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')
 assert(not nested_rows:find('%.%./') and not nested_rows:find('Nested/'), 'nested groups have no ../ row or trailing slash')
 select_label('Nested'); key('<Right>')
