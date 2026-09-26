@@ -143,14 +143,16 @@ function M.render(state)
   return lines
 end
 
-local function change(state, edit, completing_move, preserve_failed_view)
+local function change(state, edit, completing_move, preserve_failed_view, selected_after)
   local target = state.win and vim.api.nvim_win_is_valid(state.win)
     and state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
 
   local index = target and target.tracking_index
   local ok, err = require('oculus.tracking').mutate(state.opts, edit)
 
-  if ok then state.tracking_move = nil
+  if ok then
+    state.tracking_move = nil
+    state.tracking_selected = selected_after
   else vim.notify('Oculus: ' .. tostring(err), vim.log.levels.ERROR) end
 
   if not ok and preserve_failed_view then return ok, err end
@@ -229,7 +231,7 @@ end
 function M.move(state, destination, position)
   local moving = state.tracking_move
   if not moving then return nil, 'Select an item with m first' end
-  local kind = scope(state)
+  local kind, path = scope(state)
   if moving.kind ~= kind then state.tracking_move = nil; return nil, 'Cannot move across lists' end
   local source_path = vim.deepcopy(moving.path)
   source_path[#source_path + 1] = moving.index
@@ -244,6 +246,24 @@ function M.move(state, destination, position)
     end
   end
 
+  local selected_after
+
+  if #destination == #path + 1 then
+    local visible = true
+
+    for index, value in ipairs(path) do
+      if destination[index] ~= value then visible = false; break end
+    end
+
+    if visible then
+      selected_after = destination[#destination]
+
+      if vim.deep_equal(moving.path, path) and moving.index < selected_after then
+        selected_after = selected_after - 1
+      end
+    end
+  end
+
   state.tracking_move = nil
 
   return change(state, function(tree)
@@ -251,7 +271,7 @@ function M.move(state, destination, position)
     local dest = assert(children(tree, kind, destination))
     local node = assert(table.remove(source, moving.index))
     table.insert(dest, math.min(position or (#dest + 1), #dest + 1), node)
-  end, true)
+  end, true, false, selected_after)
 end
 
 function M.move_named(state, project, name)

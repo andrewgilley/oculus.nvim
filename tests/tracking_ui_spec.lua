@@ -213,6 +213,22 @@ write({version=1,projects={{repository='cmd/repo',provider='github'},{name='Oute
 assert(oculus.reload_tracking())
 vim.cmd('OculusMoveToDirectory cmd/repo /Outer/Inner/')
 assert(disk().projects[1].name == 'Outer' and disk().projects[1].children[1].children[1].repository == 'cmd/repo', 'public move command persists nested destination')
+
+-- Moving into a visible folder leaves that folder selected after its index shifts.
+write({version=1,projects={
+  {repository='move/me',provider='github'},
+  {name='Target',children={}},
+  {name='Later',children={}},
+},users={}})
+
+assert(oculus.reload_tracking())
+key('p'); select_label('move/me'); key('m'); select_label('Target'); key('<Right>')
+local moved_into = window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]]
+assert(moved_into and moved_into.name == 'Target', 'move into folder keeps destination selected')
+
+assert(disk().projects[1].name == 'Target'
+  and disk().projects[1].children[1].repository == 'move/me', 'move into folder persists item')
+
 -- The actual provider/input dialog feeds the same transactional add path.
 -- Users show their handle even with a display name; an empty users list stays blank.
 write({version=1,projects={},users={{username='carol',provider='github',name='Carol Display'}}})
