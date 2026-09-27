@@ -234,7 +234,12 @@ function M.move(state, destination, position)
 
   local selected_after
 
-  if #destination == #path + 1 then
+  if vim.deep_equal(destination, path) then
+    local tree = state.opts._tracking and state.opts._tracking.tree
+    local nodes = tree and children(tree, kind, destination) or {}
+    local count = #nodes + (vim.deep_equal(moving.path, destination) and 0 or 1)
+    selected_after = math.min(position or count, count)
+  elseif #destination == #path + 1 then
     local visible = true
 
     for index, value in ipairs(path) do
@@ -416,7 +421,14 @@ function M.handle(state, action, target)
     if state.tracking_move and #path > 0 then
       local parent = vim.deepcopy(path)
       table.remove(parent)
-      if not M.move(state, parent) then return true end
+      state.tracking_paths[kind] = parent
+
+      if not M.move(state, parent) then
+        state.tracking_paths[kind] = path
+        require('oculus.window').refresh_tracking()
+      end
+
+      return true
     else
       -- Place the cursor back on the group being left.
       state.tracking_selected = path[#path]

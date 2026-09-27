@@ -153,10 +153,12 @@ select_label('c/d'); key('m'); select_label('a/b'); key('m')
 assert(disk().projects[1].children[1].children[1].repository == 'c/d', 'sibling reorder persisted')
 select_label('c/d'); key('m'); key('<Left>')
 assert(disk().projects[1].children[2].repository == 'c/d', 'move leaf to parent persisted')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].project.repository == 'c/d', 'move to parent keeps the moved project selected')
 select_label('c/d'); key('m'); select_label('Nested'); key('<Right>')
 assert(disk().projects[1].children[1].children[2].repository == 'c/d', 'move leaf into group persisted')
 select_label('Nested'); key('m'); key('<Left>')
 assert(disk().projects[2].name == 'Nested', 'move group to parent persisted')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].name == 'Nested', 'move to parent keeps the moved group selected')
 select_label('Nested'); key('m'); select_label('Tools'); key('m')
 assert(disk().projects[1].name == 'Nested', 'group reorder persisted')
 select_label('Tools'); key('<Right>'); key('<Left>')
@@ -166,6 +168,7 @@ assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1
 
 key('u'); select_label('alice'); key('m'); key('<Left>')
 assert(disk().users[2].username == 'alice', 'users move to parent persisted')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].username == 'alice', 'move to parent keeps the moved user selected')
 select_label('alice'); key('m'); select_label('Friends'); key('<Right>')
 assert(disk().users[1].children[1].username == 'alice', 'users move into group persisted')
 local select = vim.ui.select
@@ -377,6 +380,42 @@ assert(vim.api.nvim_buf_get_lines(window.state.buf, window.state.list_footer_lin
 key('y')
 assert(window.state.footer_win == nil, 'footer prompt window closed after confirm')
 assert(#disk().projects == 1 and disk().projects[1].repository == 'stay/repo', 'empty folder removed from tracking file')
+
+-- Reordering follows the moved item in either direction, including inside groups.
+for _, kind in ipairs({'projects', 'users', 'groups'}) do
+  local list = kind == 'users' and 'users' or 'projects'
+
+  local function node(index)
+    if kind == 'users' then return {username='user' .. index, provider='github'} end
+    if kind == 'groups' then return {name='Group' .. index, children={}} end
+    return {repository='repo/' .. index, provider='github'}
+  end
+
+  for _, nested in ipairs({false, true}) do
+    for _, indices in ipairs({{1, 3}, {3, 2}}) do
+      local entries = {node(1), node(2), node(3)}
+      local tree = {version=1, projects={}, users={}}
+      tree[list] = nested and {{name='Container', children=entries}} or entries
+      write(tree)
+      assert(oculus.reload_tracking())
+      key(list == 'users' and 'u' or 'p')
+      if nested then select_label('Container'); key('<Right>') end
+      local source = entries[indices[1]]
+      local target = entries[indices[2]]
+      select_label(source.username or source.name or source.repository); key('m')
+      select_label(target.username or target.name or target.repository); key('m')
+      local selected = current_target()
+
+      assert((source.repository and selected.project and selected.project.repository == source.repository)
+        or (source.username and selected.username == source.username)
+        or (source.name and selected.name == source.name), kind .. ': reorder keeps the moved item selected')
+
+      assert(selected.tracking_index == indices[2], kind .. ': cursor follows the final row')
+      assert(vim.deep_equal(window.state.tracking_paths[list], nested and {1} or {}), 'reorder keeps the current group')
+    end
+  end
+end
+
 window.close()
 -- Failed initial load retains saved lists in the UI, not an empty screen.
 oculus.setup({tracking_file=dir..'/missing.json',state_file=dir..'/state.json',projects={{repository='saved/repo',provider='github'}},contributors={}})
