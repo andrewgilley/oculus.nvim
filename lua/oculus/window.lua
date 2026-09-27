@@ -510,10 +510,10 @@ local function sidebar_sections_for_view(view)
   end
 
   local nav = navigation.resolve(M.state.opts)
-  local nav_down = nav.down .. " / ↓"
-  local nav_up = nav.up .. " / ↑"
+  local nav_down = nav.down .. " / ↓ / ↵"
+  local nav_up = nav.up .. " / ↑ / BS"
   local nav_left = nav.left .. " / ←"
-  local nav_right = nav.right .. " / ↵"
+  local nav_right = nav.right .. " / →"
 
   if view == "contributors" then
     local showing_users = M.state.community_view == "users"
@@ -698,7 +698,7 @@ local function sidebar_sections_for_view(view)
           { nav_down, "Down" },
           { nav_up, "Up" },
           { nav_left, "Back" },
-          { "CR", "Select" },
+          { nav_right, "Select" },
         },
       },
       {
@@ -3384,13 +3384,16 @@ local function render_shortcuts()
   end
 
   local nav = navigation.resolve(M.state.opts)
+  local nav_up = nav.up .. " / <Up> / <BS>"
+  local nav_down = nav.down .. " / <Down> / <CR>"
+  local nav_right = nav.right .. " / <Right>"
 
   if from_view == "contributors" then
     if comm_view == "users" then
       section("NAVIGATION", {
-        { nav.up .. " / <Up>", "Select the previous user" },
-        { nav.down .. " / <Down>", "Select the next user" },
-        { nav.right .. " / <Right> / <CR>", "Select the current user" },
+        { nav_up, "Select the previous user" },
+        { nav_down, "Select the next user" },
+        { nav_right, "Select the current user" },
       })
 
       section("ACTIONS", {
@@ -3414,9 +3417,9 @@ local function render_shortcuts()
       })
     else
       section("NAVIGATION", {
-        { nav.up .. " / <Up>", "Select the previous item" },
-        { nav.down .. " / <Down>", "Select the next item" },
-        { nav.right .. " / <Right> / <CR>", "Select the current item" },
+        { nav_up, "Select the previous item" },
+        { nav_down, "Select the next item" },
+        { nav_right, "Select the current item" },
       })
 
       section("ACTIONS", {
@@ -3444,9 +3447,9 @@ local function render_shortcuts()
     end
   elseif from_view == "directory" then
     section("NAVIGATION", {
-      { nav.up .. " / <Up>", "Select the previous project" },
-      { nav.down .. " / <Down>", "Select the next project" },
-      { nav.right .. " / <Right> / <CR>", "Select the current project" },
+      { nav_up, "Select the previous project" },
+      { nav_down, "Select the next project" },
+      { nav_right, "Select the current project" },
       { nav.left .. " / <Left>", "Return to project list" },
     })
 
@@ -3471,8 +3474,8 @@ local function render_shortcuts()
     })
   elseif from_view == "activity" then
     section("NAVIGATION", {
-      { nav.up .. " / <Up>", "Select the previous item" },
-      { nav.down .. " / <Down>", "Select the next item" },
+      { nav_up, "Select the previous item" },
+      { nav_down, "Select the next item" },
       { nav.left .. " / <Left>", "Return to the previous page" },
       { nav.right .. " / <Right>", "Open the next older activity page" },
     })
@@ -3502,9 +3505,9 @@ local function render_shortcuts()
     })
   elseif from_view == "milestones" then
     section("NAVIGATION", {
-      { nav.up .. " / <Up>", "Select the previous milestone" },
-      { nav.down .. " / <Down>", "Select the next milestone" },
-      { nav.right .. " / <Right> / <CR>", "Open the selected milestone" },
+      { nav_up, "Select the previous milestone" },
+      { nav_down, "Select the next milestone" },
+      { nav_right, "Open the selected milestone" },
       { nav.left .. " / <Left>", "Return to the previous page" },
     })
 
@@ -3519,9 +3522,9 @@ local function render_shortcuts()
     })
   elseif from_view == "work" then
     section("NAVIGATION", {
-      { nav.up .. " / <Up>", "Select the previous item" },
-      { nav.down .. " / <Down>", "Select the next item" },
-      { nav.right .. " / <Right> / <CR>", "Open the selected item" },
+      { nav_up, "Select the previous item" },
+      { nav_down, "Select the next item" },
+      { nav_right, "Open the selected item" },
       { nav.left .. " / <Left>", "Return to the previous page" },
     })
 
@@ -3536,13 +3539,13 @@ local function render_shortcuts()
     })
   elseif from_view == "filters" then
     section("NAVIGATION", {
-      { nav.up .. " / <Up>", "Select the previous filter" },
-      { nav.down .. " / <Down>", "Select the next filter" },
+      { nav_up, "Select the previous filter" },
+      { nav_down, "Select the next filter" },
       { nav.left .. " / <Left>", "Return to the previous page" },
     })
 
     section("ACTIONS", {
-      { "<Space> / l / <CR>", "Toggle the selected activity type" },
+      { "<Space> / " .. nav_right, "Toggle the selected activity type" },
       { "a", "Enable every activity type" },
       { "n", "Disable every activity type" },
       { "d", "Reset activity filters to defaults" },
@@ -3554,13 +3557,13 @@ local function render_shortcuts()
     })
   elseif from_view == "issue_filters" then
     section("NAVIGATION", {
-      { nav.up .. " / <Up>", "Select the previous filter option" },
-      { nav.down .. " / <Down>", "Select the next filter option" },
+      { nav_up, "Select the previous filter option" },
+      { nav_down, "Select the next filter option" },
       { nav.left .. " / <Left>", "Return to the previous page" },
     })
 
     section("ACTIONS", {
-      { "<Space> / <CR>", "Select filter option" },
+      { "<Space> / " .. nav_right, "Select filter option" },
     })
 
     section("GENERAL", {
@@ -3569,9 +3572,9 @@ local function render_shortcuts()
     })
   else
     section("NAVIGATION", {
-      { nav.up .. " / <Up>", "Select the previous item" },
-      { nav.down .. " / <Down>", "Select the next item" },
-      { nav.right .. " / <Right> / <CR>", "Select the current item" },
+      { nav_up, "Select the previous item" },
+      { nav_down, "Select the next item" },
+      { nav_right, "Select the current item" },
       { nav.left .. " / <Left>", "Return to the previous page" },
     })
 
@@ -6930,8 +6933,8 @@ local function map_keys(buf)
     local original = rhs
 
     rhs = function()
-      local actions = { ["<CR>"]="enter", ["<Right>"]="right", [nav.right]="right",
-        ["<Left>"]="left", [nav.left]="left", ["<BS>"]="left", f="group", K="group", D="group", m="move", M="destination", ["<Esc>"]="cancel" }
+      local actions = { ["<Right>"]="right", [nav.right]="right",
+        ["<Left>"]="left", [nav.left]="left", f="group", K="group", D="group", m="move", M="destination", ["<Esc>"]="cancel" }
 
       if M.state.footer_prompt then
         if lhs == "y" or lhs == "<CR>" then
@@ -7033,7 +7036,10 @@ local function map_keys(buf)
     end
   end, "Create project directory")
 
-  map("<CR>", select_current, "Select Oculus item")
+  map("<CR>", function()
+    move_cursor(1)
+  end, "Select next Oculus row")
+
   map(nav.right, move_right, "Move right in Oculus")
   map("<Right>", move_right, "Move right in Oculus")
 
@@ -7191,7 +7197,10 @@ local function map_keys(buf)
 
   map(nav.left, move_left, "Move left in Oculus")
   map("<Left>", move_left, "Move left in Oculus")
-  map("<BS>", move_left, "Go back in Oculus")
+
+  map("<BS>", function()
+    move_cursor(-1)
+  end, "Select previous Oculus row")
 
   map("<Down>", function()
     move_cursor(1)

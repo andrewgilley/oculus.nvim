@@ -219,12 +219,18 @@ require("oculus").setup({
 
 The keys below are the defaults.
 
+In navigation lists, `<CR>` advances to the next row and `<BS>` retreats to
+the previous row. Use `l` / `<Right>` to open the selected item and
+`h` / `<Left>` to go back.
+
 **Projects and Users lists**
 
 | Key                   | Action                                                     |
 | --------------------- | ---------------------------------------------------------- |
-| `<CR>` / `l` / `<Right>` | Open the selected group or activity feed               |
-| `h` / `<Left>` / `<BS>` | Go to the parent group                                  |
+| `j` / `<Down>` / `<CR>` | Select the next row                                    |
+| `k` / `<Up>` / `<BS>` | Select the previous row                                  |
+| `l` / `<Right>`        | Open the selected group or activity feed                  |
+| `h` / `<Left>`        | Go to the parent group                                    |
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
 | `w`                   | Open [my work](#my-work)                                   |
 | `s`                   | Open [saved items](#saved-items)                           |
@@ -232,7 +238,7 @@ The keys below are the defaults.
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Rename (display name, or the username for users)           |
 | `R`                   | Remove the selected item or group                          |
-| `m`                   | Start a move. Then `m` on a sibling reorders, `<CR>` on a group moves into it, and `h` moves to the parent |
+| `m`                   | Start a move. Then `m` on a sibling reorders, `<Right>` on a group moves into it, and `h` moves to the parent |
 | `M`                   | Move to any group through a picker                         |
 | `o`                   | Open the selected profile or repository in your browser    |
 | `F`                   | Edit activity filters                                      |

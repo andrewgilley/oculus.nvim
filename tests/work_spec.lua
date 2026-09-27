@@ -407,7 +407,7 @@ assert(preview_text():find("Validation Failed", 1, true))
 press("k")
 assert(state.selected_work == "github:review_requested")
 -- Opening a category shows its items as a feed across repositories.
-press("<CR>")
+press("<Right>")
 assert(state.view == "activity" and state.activity_work.key == "github:review_requested")
 text = buffer_text()
 assert(text:find("Review requests · @octo · GitHub", 1, true), text)

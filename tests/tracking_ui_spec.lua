@@ -97,7 +97,7 @@ local preview = preview_at('Tools')
 assert(preview[2][1] == 'GROUP' and preview[4][1] == 'Nested'
   and not preview[5], 'project group preview lists only direct children')
 
-select_label('Tools'); key('<CR>')
+select_label('Tools'); key('<Right>')
 preview = preview_at('Nested')
 assert(preview[4][1] == 'a/b', 'nested group preview lists its leaves')
 
@@ -117,35 +117,38 @@ assert(user_preview[4][1] == 'Team' and user_preview[4][2] == 'Directory'
 local nested_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false), '\n')
 assert(not nested_rows:find('%.%./') and not nested_rows:find('Nested/'), 'nested groups have no ../ row or trailing slash')
 select_label('Nested'); key('<Right>')
-assert_item_matches_preview('a/b'); key('<BS>')
+assert_item_matches_preview('a/b'); key('<Left>')
 
 assert(window.state.tracking_paths.projects[1] == 1 and #window.state.tracking_paths.projects == 1,
-  'Backspace returns from a nested group to its parent')
+  'Left returns from a nested group to its parent')
 
 select_label('Nested'); key('<Left>')
 select_label('Tools'); key('u')
-select_label('Friends'); key('<CR>'); assert_item_matches_preview('alice')
+select_label('Friends'); key('<Right>'); assert_item_matches_preview('alice')
 local function disk() return vim.json.decode(table.concat(vim.fn.readfile(path),'\n')) end
 local input = vim.ui.input
 vim.ui.input = function(_, callback) callback('Colleagues') end
 key('f')
 vim.ui.input = input
 assert(disk().users[1].children[2].name == 'Colleagues', 'group added in current user group')
-select_label('Colleagues'); key('<CR>')
+select_label('Colleagues'); key('<Right>')
 assert(window._add_contributor({username='bob',provider='github'}))
 assert(disk().users[1].children[2].children[1].username == 'bob', 'UI user add persisted inside nested group')
 select_label('bob'); key('R'); key('y')
 assert(#disk().users[1].children[2].children == 0, 'UI removal persisted')
 key('<Left>'); select_label('Colleagues'); key('R'); key('y')
 assert(#disk().users[1].children == 1, 'UI group removal persisted')
-key('p'); select_label('Tools'); key('<CR>'); select_label('Nested'); key('<CR>')
+key('p'); select_label('Tools'); key('<Right>'); select_label('Nested'); key('<Right>')
 assert(window._add_project({repository='c/d',provider='github'}))
 assert(disk().projects[1].children[1].children[2].repository == 'c/d')
 select_label('a/b')
 local before_down = vim.api.nvim_win_get_cursor(window.state.win)[1]
-key('<Down>')
-assert(vim.api.nvim_win_get_cursor(window.state.win)[1] ~= before_down, 'real down binding navigates tracking siblings')
-assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].project.repository == 'c/d', 'down selects next leaf')
+key('<CR>')
+assert(vim.api.nvim_win_get_cursor(window.state.win)[1] ~= before_down, 'Enter navigates tracking siblings')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].project.repository == 'c/d', 'Enter selects next leaf')
+key('<BS>')
+assert(vim.api.nvim_win_get_cursor(window.state.win)[1] == before_down, 'Backspace selects previous leaf')
+assert(vim.deep_equal(window.state.tracking_paths.projects, {1, 1}), 'row navigation stays inside the current group')
 select_label('c/d'); key('m'); select_label('a/b'); key('m')
 assert(disk().projects[1].children[1].children[1].repository == 'c/d', 'sibling reorder persisted')
 select_label('c/d'); key('m'); key('<Left>')
@@ -156,7 +159,7 @@ select_label('Nested'); key('m'); key('<Left>')
 assert(disk().projects[2].name == 'Nested', 'move group to parent persisted')
 select_label('Nested'); key('m'); select_label('Tools'); key('m')
 assert(disk().projects[1].name == 'Nested', 'group reorder persisted')
-select_label('Tools'); key('<CR>'); key('<Left>')
+select_label('Tools'); key('<Right>'); key('<Left>')
 
 assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].name == 'Tools',
   'leaving a group places the cursor on that group rather than the first row')
@@ -172,7 +175,7 @@ vim.ui.select = function(items, _, callback)
   error('root destination missing')
 end
 
-select_label('Friends'); key('<CR>'); select_label('alice'); key('M')
+select_label('Friends'); key('<Right>'); select_label('alice'); key('M')
 vim.ui.select = select
 assert(disk().users[2].username == 'alice', 'M destination picker moves users')
 -- Nonempty removal requires consent; cancellation preserves exact bytes/tree/UI.
@@ -219,16 +222,33 @@ write({version=1,projects={
   {repository='move/me',provider='github'},
   {name='Target',children={}},
   {name='Later',children={}},
-},users={}})
+},users={{username='alice',provider='github'},{username='bob',provider='github'}}})
 
 assert(oculus.reload_tracking())
-key('p'); select_label('move/me'); key('m'); select_label('Target'); key('<Right>')
+key('p'); select_label('move/me'); key('<CR>')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].name == 'Target', 'Enter selects a folder without opening it')
+key('<BS>')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].project.repository == 'move/me', 'Backspace returns to the previous project')
+key('<BS>')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].name == 'Later', 'Backspace wraps to the last row')
+key('<CR>')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].project.repository == 'move/me', 'Enter wraps to the first row')
+key('m'); key('<CR>')
+assert(window.state.tracking_move and #disk().projects == 3, 'Enter navigates during a pending move')
+key('<Right>')
 local moved_into = window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]]
 assert(moved_into and moved_into.name == 'Target', 'move into folder keeps destination selected')
 
 assert(disk().projects[1].name == 'Target'
   and disk().projects[1].children[1].repository == 'move/me', 'move into folder persists item')
 
+key('u'); select_label('alice'); key('<CR>')
+
+assert(window.state.view == 'contributors'
+  and window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].username == 'bob', 'Enter selects the next user')
+
+key('<BS>')
+assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].username == 'alice', 'Backspace selects the previous user')
 -- The actual provider/input dialog feeds the same transactional add path.
 -- Users show their handle even with a display name; an empty users list stays blank.
 write({version=1,projects={},users={{username='carol',provider='github',name='Carol Display'}}})
@@ -294,7 +314,7 @@ local scenarios = {
 for _, scenario in ipairs(scenarios) do
   write({version=1,projects={{name='Outer',children={scenario.earlier,project('b/b'),project('c/c')}}},users={}})
   assert(oculus.reload_tracking())
-  key('p'); select_label('Outer'); key('<CR>')
+  key('p'); select_label('Outer'); key('<Right>')
   select_label(scenario.source); key('m'); select_label(scenario.remove)
   key('R'); key('y')
   assert(not window.state.tracking_move, scenario.name .. ': cancels pending move')
@@ -335,7 +355,7 @@ assert(current_target().project.repository == 'b/b', 'failed addition preserves 
 write({version=1,projects={{name='EmptyFolder',children={}},{repository='stay/repo',provider='github'}},users={}})
 assert(oculus.reload_tracking())
 key('p')
-select_label('EmptyFolder'); key('<CR>')
+select_label('EmptyFolder'); key('<Right>')
 assert(#window.state.tracking_paths.projects == 1, 'entered empty folder')
 local empty_target = window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]]
 assert(empty_target and empty_target.kind == 'directory_empty', 'empty folder line target is directory_empty')

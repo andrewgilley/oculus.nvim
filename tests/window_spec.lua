@@ -970,7 +970,7 @@ github.pull_request_commits = function(repo, number, _, callback)
 end
 
 local cr_mapping = vim.fn.maparg("<CR>", "n", false, true)
-assert(cr_mapping.desc == "Select Oculus item")
+assert(cr_mapping.desc == "Select next Oculus row")
 local select_mapping = vim.fn.maparg("l", "n", false, true)
 deferred_activity_request = true
 select_mapping.callback()
@@ -2247,7 +2247,7 @@ do
 
   assert(closed_filter_line and assigned_filter_line)
   vim.api.nvim_win_set_cursor(state.win, { closed_filter_line, 0 })
-  vim.fn.maparg("<CR>", "n", false, true).callback()
+  vim.fn.maparg("<Space>", "n", false, true).callback()
   vim.api.nvim_win_set_cursor(state.win, { assigned_filter_line, 0 })
   vim.fn.maparg("<Space>", "n", false, true).callback()
   local issue_filter_key = "github:neovim/neovim"
@@ -3301,9 +3301,9 @@ do
   assert(window_mod.state.sidebar_buf ~= nil and vim.api.nvim_buf_is_valid(window_mod.state.sidebar_buf))
   local side_lines = vim.api.nvim_buf_get_lines(window_mod.state.sidebar_buf, 0, -1, false)
   local side_text = table.concat(side_lines, "\n")
-  assert(side_text:find("j / ↓", 1, true), "expected sidebar to display j / ↓ for down")
-  assert(side_text:find("k / ↑", 1, true), "expected sidebar to display k / ↑ for up")
-  assert(side_text:find("l / ↵", 1, true), "expected sidebar to display l / ↵ for select")
+  assert(side_text:find("j / ↓ / ↵", 1, true), "expected sidebar to display Enter for down")
+  assert(side_text:find("k / ↑ / BS", 1, true), "expected sidebar to display Backspace for up")
+  assert(side_text:find("l / →", 1, true), "expected sidebar to display Right for select")
   -- Verify moving cursor down with j_map and up with k_map
   local initial_line = vim.api.nvim_win_get_cursor(window_mod.state.win)[1]
   j_map.callback()
@@ -3311,6 +3311,10 @@ do
   assert(after_down_line > initial_line, "expected j to move cursor down")
   k_map.callback()
   local after_up_line = vim.api.nvim_win_get_cursor(window_mod.state.win)[1]
+  vim.fn.maparg("<CR>", "n", false, true).callback()
+  assert(vim.api.nvim_win_get_cursor(window_mod.state.win)[1] == after_down_line, "Enter advances the legacy list selection")
+  vim.fn.maparg("<BS>", "n", false, true).callback()
+  assert(vim.api.nvim_win_get_cursor(window_mod.state.win)[1] == after_up_line, "Backspace retreats the legacy list selection")
   assert(after_up_line == initial_line, "expected k to move cursor up")
   -- Clean up
   window_mod.close()
@@ -3828,7 +3832,7 @@ do
   right_map.callback()
   assert(window_mod.state.moving_item == nil, "expected moving_item cleared after l")
   assert(beta_proj.directory == "Libraries", "expected beta nested inside Libraries via l key")
-  -- Test 5: Open child items as a new UI screen via select_current (<CR>)
+  -- Test 5: Open child items as a new UI screen via <Right>.
   libs_dir_line = nil
 
   for l, target in pairs(window_mod.state.line_targets) do
@@ -3839,26 +3843,22 @@ do
 
   assert(libs_dir_line ~= nil)
   vim.api.nvim_win_set_cursor(window_mod.state.win, { libs_dir_line, 0 })
-  local cr_map = vim.fn.maparg("<CR>", "n", false, true)
-  assert(cr_map ~= nil and type(cr_map.callback) == "function")
-  cr_map.callback()
-  assert(window_mod.state.view == "directory", "expected directory view after <CR>")
+  right_map.callback()
+  assert(window_mod.state.view == "directory", "expected directory view after <Right>")
   assert(window_mod.state.current_directory == "Libraries")
   buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
   buf_text = table.concat(buf_lines, "\n")
   assert(buf_text:find("DIRECTORY", 1, true), "expected DIRECTORY header on child screen")
   assert(buf_text:find("Libraries", 1, true), "expected Libraries title on child screen")
   assert(buf_text:find("org/beta", 1, true), "expected Beta visible on child screen")
-  local backspace_map = vim.fn.maparg("<BS>", "n", false, true)
-  assert(backspace_map ~= nil and type(backspace_map.callback) == "function")
-  backspace_map.callback()
-  assert(window_mod.state.view == "contributors", "expected Backspace to return from directory view")
-  assert(window_mod.state.selected_directory == "Libraries", "expected Backspace to select the parent folder")
-  vim.api.nvim_win_set_cursor(window_mod.state.win, { libs_dir_line, 0 })
-  cr_map.callback()
-  -- Return via left arrow (<Left>)
   local left_map = vim.fn.maparg("<Left>", "n", false, true)
   assert(left_map ~= nil and type(left_map.callback) == "function")
+  left_map.callback()
+  assert(window_mod.state.view == "contributors", "expected Left to return from directory view")
+  assert(window_mod.state.selected_directory == "Libraries", "expected Left to select the parent folder")
+  vim.api.nvim_win_set_cursor(window_mod.state.win, { libs_dir_line, 0 })
+  right_map.callback()
+  -- Return via left arrow (<Left>)
   left_map.callback()
   assert(window_mod.state.view == "contributors", "expected return to contributors view")
   buf_lines = vim.api.nvim_buf_get_lines(window_mod.state.buf, 0, -1, false)
@@ -4038,7 +4038,7 @@ do
   end
 
   vim.api.nvim_win_set_cursor(window_mod.state.win, { plugins_dir_line, 0 })
-  cr_map.callback()
+  right_map.callback()
   assert(window_mod.state.view == "directory")
   local child_proj_line = nil
 
@@ -4050,7 +4050,7 @@ do
 
   assert(child_proj_line ~= nil, "expected org/gamma child project line in directory view")
   vim.api.nvim_win_set_cursor(window_mod.state.win, { child_proj_line, 0 })
-  cr_map.callback()
+  right_map.callback()
   assert(window_mod.state.view == "activity", "expected activity view after selecting child project")
   assert(window_mod.state.directory_return == "Plugins", "expected directory_return set to Plugins")
   -- Go back from activity -> returns to Plugins directory screen

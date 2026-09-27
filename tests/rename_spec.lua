@@ -35,7 +35,7 @@ vim.cmd('OculusRename Dev Tools')
 assert(disk().projects[1].name == 'Dev Tools', 'command renames selected group with spaces')
 select_label('Dev Tools')
 assert(not vim.wo[window.state.win].cursorline)
-key('<CR>'); select_label('Nested'); key('<CR>'); select_label('a/b')
+key('<Right>'); select_label('Nested'); key('<Right>'); select_label('a/b')
 vim.cmd('OculusRename Repository Display')
 assert(vim.deep_equal(disk().projects[1].children[1].children[1], {repository='a/b',provider='codeberg',extra='keep',name='Repository Display'}), 'leaf identity and metadata preserved')
 select_label('Repository Display')
@@ -74,7 +74,7 @@ end
 key('r')
 assert(disk().projects[1].children[1].children[1].name == 'Via Key', 'r renames the selected item')
 -- R on a user edits the username; a leading @ is accepted.
-key('u'); select_label('Friends'); key('<CR>'); select_label('alice')
+key('u'); select_label('Friends'); key('<Right>'); select_label('alice')
 
 vim.ui.input = function(opts, callback)
   assert(opts.prompt == 'Username: ' and opts.default == 'alice', 'user rename prompts for the handle')
