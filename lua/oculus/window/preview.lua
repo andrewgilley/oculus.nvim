@@ -337,26 +337,58 @@ function M.setup(window, internal)
       return
     end
 
-    vim.api.nvim_buf_clear_namespace(window.state.buf, internal.preview_ns, 0, -1)
-    window.state.preview_items = items
     local window_width = vim.api.nvim_win_get_width(window.state.win)
+    local window_height = vim.api.nvim_win_get_height(window.state.win)
     local left_width = internal.preview_left_width(window_width)
     local right_width = math.max(16, window_width - left_width - 3)
     local line_count = vim.api.nvim_buf_line_count(window.state.buf)
+    local changedtick = vim.api.nvim_buf_get_changedtick(window.state.buf)
+    local cache = window.state.preview_render
+
+    -- Buffer rewrites and layout changes can move or remove the cached marks.
+    if not cache
+      or cache.buf ~= window.state.buf
+      or cache.win ~= window.state.win
+      or cache.width ~= window_width
+      or cache.height ~= window_height
+      or cache.line_count ~= line_count
+      or cache.changedtick ~= changedtick
+    then
+      vim.api.nvim_buf_clear_namespace(window.state.buf, internal.preview_ns, 0, -1)
+      cache = {
+        buf = window.state.buf,
+        win = window.state.win,
+        width = window_width,
+        height = window_height,
+        line_count = line_count,
+        changedtick = changedtick,
+        rows = {},
+      }
+
+      window.state.preview_render = cache
+    end
+
+    window.state.preview_items = items
 
     for line = 1, line_count do
       local item = items[line]
       local text = item and internal.trim_to_width(item[1], right_width - 1) or ""
       local group = item and item[2] or "NormalFloat"
+      local previous = cache.rows[line]
 
-      vim.api.nvim_buf_set_extmark(window.state.buf, internal.preview_ns, line - 1, 0, {
-        virt_text = {
-          { "│", "WinSeparator" },
-          { " " .. text, group },
-        },
-        virt_text_win_col = left_width,
-        hl_mode = "combine",
-      })
+      if not previous or previous.text ~= text or previous.group ~= group then
+        local id = vim.api.nvim_buf_set_extmark(window.state.buf, internal.preview_ns, line - 1, 0, {
+          id = previous and previous.id or nil,
+          virt_text = {
+            { "│", "WinSeparator" },
+            { " " .. text, group },
+          },
+          virt_text_win_col = left_width,
+          hl_mode = "combine",
+        })
+
+        cache.rows[line] = {id = id, text = text, group = group}
+      end
     end
   end
 

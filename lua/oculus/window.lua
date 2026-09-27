@@ -122,6 +122,7 @@ M.state = {
   request_id = 0,
   preview_key = nil,
   preview_items = nil,
+  preview_render = nil,
   preview_contributor = nil,
   preview_project = nil,
   contributors = {},
@@ -1300,6 +1301,7 @@ local function set_lines(lines)
 
   vim.api.nvim_buf_clear_namespace(M.state.buf, saved_view.ns, 0, -1)
   M.state.preview_items = nil
+  M.state.preview_render = nil
   -- A redraw replaces the list footer, so any pending prompt is abandoned.
   M.state.footer_prompt = nil
   M.state.list_footer_line = nil
@@ -2192,6 +2194,7 @@ local function reset_to_initial_page()
   M.state.preview_key = nil
   M.state.preview_items = nil
   M.state.preview_contributor = nil
+  M.state.preview_render = nil
   M.state.preview_project = nil
   M.state.selected_username = nil
   M.state.selected_project = nil
@@ -7280,6 +7283,7 @@ function M.close()
   M.state.preview_contributor = nil
   M.state.preview_project = nil
   M.state.selected_project = nil
+  M.state.preview_render = nil
   M.state.contributors = {}
   M.state.filter_scope = nil
   M.state.shortcut_return = nil
