@@ -41,7 +41,7 @@ local function node_matches_workspace(node, active_ws)
   return require("oculus.workspace").matches_workspace(node, active_ws)
 end
 
--- Show all of a group's descendants without repeating the selected group's own
+-- Show a group's direct children without repeating the selected group's own
 -- name.
 function M.preview_items(state, target, max_visible)
   if target and target.kind == 'directory_empty' then
@@ -55,28 +55,14 @@ function M.preview_items(state, target, max_visible)
   local nodes = tree and children(tree, kind, group) or {}
   local items = {[2]={'GROUP', 'Title'}}
   if #nodes == 0 then items[4] = {'(empty group)', 'Comment'}; return items end
-  local descendants = {}
-
-  local function collect(children)
-    for _, node in ipairs(children) do
-      descendants[#descendants + 1] = {
-        label(node),
-        node.children and 'Directory' or 'Identifier',
-      }
-
-      if node.children then collect(node.children) end
-    end
-  end
-
-  collect(nodes)
-  local shown = #descendants <= max_visible and #descendants or math.max(1, max_visible - 1)
+  local shown = #nodes <= max_visible and #nodes or math.max(1, max_visible - 1)
 
   for index = 1, shown do
-    items[3 + index] = descendants[index]
+    items[3 + index] = {label(nodes[index]), nodes[index].children and 'Directory' or 'Identifier'}
   end
 
-  if shown < #descendants then
-    items[4 + shown] = {('... and %d more'):format(#descendants - shown), 'Comment'}
+  if shown < #nodes then
+    items[4 + shown] = {('... and %d more'):format(#nodes - shown), 'Comment'}
   end
 
   return items
