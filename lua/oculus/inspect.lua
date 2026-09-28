@@ -871,6 +871,32 @@ function M._synchronize_inspection_highlighting(parent_buf, change_buf)
   return "syntax"
 end
 
+-- Inspection buffers are scratch buffers, which per-filetype colorscheme
+-- plugins skip, but they show real source code and should get its scheme.
+-- Moving through the sidebar shows other buffers without entering them, so
+-- each move applies the scheme of the code it brings up.
+local function apply_inspection_colorscheme(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  colorscheme.apply(buf, sidebar_groups)
+  local window_ok, window = pcall(require, "oculus.window")
+
+  if window_ok and type(window.refresh_window_highlights) == "function" then
+    local highlight_source_win
+
+    for _, candidate in ipairs(vim.fn.win_findbuf(buf)) do
+      if vim.api.nvim_win_is_valid(candidate) then
+        highlight_source_win = candidate
+        break
+      end
+    end
+
+    window.refresh_window_highlights(highlight_source_win)
+  end
+end
+
 function apply_inspection_filetype(buf, force_refresh)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -987,24 +1013,7 @@ function apply_inspection_filetype(buf, force_refresh)
     vim.bo[buf].filetype = filetype
   end
 
-  -- Inspection buffers are scratch buffers, which per-filetype colorscheme
-  -- plugins skip, but they show real source code and should get its scheme.
-  colorscheme.apply(buf, sidebar_groups)
-  local window_ok, window = pcall(require, "oculus.window")
-
-  if window_ok and type(window.refresh_window_highlights) == "function" then
-    local highlight_source_win
-
-    for _, candidate in ipairs(vim.fn.win_findbuf(buf)) do
-      if vim.api.nvim_win_is_valid(candidate) then
-        highlight_source_win = candidate
-        break
-      end
-    end
-
-    window.refresh_window_highlights(highlight_source_win)
-  end
-
+  apply_inspection_colorscheme(buf)
   refresh_buffer_highlighting(buf, force_refresh)
   return filetype
 end
@@ -4789,6 +4798,7 @@ local function open_sidebar_selection(group, preferred_role)
   end
 
   show_inspection_path(endpoint.buf)
+  apply_inspection_colorscheme(endpoint.buf)
 
   if sidebar_win ~= source_win then
     vim.api.nvim_win_set_cursor(sidebar_win, { line, 0 })
@@ -4925,6 +4935,7 @@ local function select_sidebar_entry(group, direction, preferred_role)
     end
 
     show_inspection_path(endpoint.buf)
+    apply_inspection_colorscheme(endpoint.buf)
     refresh_sidebar(group, endpoint.tab)
     group.sidebar_navigation_line = target_line
 
@@ -5046,6 +5057,7 @@ focus_sidebar_selection = function(group)
   end
 
   show_inspection_path(endpoint.buf)
+  apply_inspection_colorscheme(endpoint.buf)
   refresh_sidebar(group, endpoint.tab)
   M._refresh_virtual_counters(group, session)
   sidebar_navigating = false
@@ -5115,6 +5127,7 @@ switch_sidebar_version = function(group, target_role)
 
   show_inspection_path(endpoint.buf)
   vim.api.nvim_set_current_win(sidebar_win)
+  apply_inspection_colorscheme(endpoint.buf)
   group.focused_win = sidebar_win
   refresh_sidebar(group, endpoint.tab)
 

@@ -3652,12 +3652,30 @@ assert(vim.deep_equal(vim.api.nvim_win_call(
   vim.fn.winsaveview
 ), selected_patch_view))
 
+-- Moving to another file recolours for that file's filetype, as a
+-- per-filetype colorscheme plugin would on entering it.
+local original_inspect_colorscheme = oculus.config.inspect_colorscheme
+local colorscheme_applies = {}
+
+oculus.config.inspect_colorscheme = {
+  apply = function(buf)
+    colorscheme_applies[#colorscheme_applies + 1] = buf
+  end,
+}
+
 local next_patch = vim.fn.maparg("<C-Tab>", "n", false, true)
 assert(next_patch.desc == "Next Oculus changed chunk")
 next_patch.callback()
 assert(vim.api.nvim_get_current_tabpage() ~= patch_tab)
 local second_patch_tab = vim.api.nvim_get_current_tabpage()
 assert(vim.api.nvim_get_current_win() == patch_code[second_patch_tab])
+
+assert(
+  colorscheme_applies[#colorscheme_applies]
+    == vim.api.nvim_win_get_buf(patch_code[second_patch_tab]),
+  "moving to another file kept the previous file's colorscheme"
+)
+
 assert(vim.api.nvim_win_get_cursor(patch_code[second_patch_tab])[1] == 1)
 vim.fn.maparg("<C-Tab>", "n", false, true).callback()
 assert(vim.api.nvim_get_current_tabpage() == second_patch_tab)
@@ -3671,6 +3689,28 @@ vim.fn.maparg("<S-Tab>", "n", false, true).callback()
 assert(vim.api.nvim_get_current_tabpage() == patch_tab)
 assert(vim.api.nvim_get_current_win() == patch_win)
 assert(vim.api.nvim_win_get_cursor(patch_win)[1] == 25)
+
+assert(
+  colorscheme_applies[#colorscheme_applies]
+    == vim.api.nvim_win_get_buf(patch_win),
+  "moving back kept the other file's colorscheme"
+)
+
+-- Moving from the sidebar leaves the sidebar focused, so the code window it
+-- brings up is never entered.
+vim.api.nvim_set_current_win(patch_sidebars[patch_tab])
+colorscheme_applies = {}
+vim.fn.maparg("<C-Tab>", "n", false, true).callback()
+local sidebar_moved_tab = vim.api.nvim_get_current_tabpage()
+assert(vim.api.nvim_get_current_win() == patch_sidebars[sidebar_moved_tab])
+
+assert(
+  colorscheme_applies[#colorscheme_applies]
+    == vim.api.nvim_win_get_buf(patch_code[sidebar_moved_tab]),
+  "moving from the sidebar kept the previous file's colorscheme"
+)
+
+oculus.config.inspect_colorscheme = original_inspect_colorscheme
 
 for index = #patch_tabs, 1, -1 do
   local tab = patch_tabs[index]
