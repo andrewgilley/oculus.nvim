@@ -48,9 +48,10 @@ Offline help is in `:h oculus`, generated from this README.
   your own open pull requests, and the issues and pull requests assigned to you
   or mentioning you, across every repository, on GitHub and Codeberg.
 
-- **Filterable activity feeds.** Per-project feeds of pushes, merged pull
-  requests, and assigned issues, and per-user feeds of any public event type.
-  Filters persist between sessions.
+- **Filterable activity feeds.** Each project has tabs for its issues, pull
+  requests, activity (pushes, merged pull requests, and assigned issues), and
+  milestones, and each user a feed of any public event type. Filters persist
+  between sessions.
 
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
   or a commit SHA. Oculus finds the matching local clone, or fetches only the
@@ -175,8 +176,9 @@ vim.keymap.set("n", "<leader>oo", "<cmd>OculusToggle<cr>", { desc = "Oculus" })
 ```
 
 Run `:OculusToggle` to open the window. The first screen lists your
-**Projects**. Press `u` to switch to **Users** and `p` to switch back. Select an
-entry to open its activity feed, and press `i` on any item to inspect it.
+**Projects**. Press `u` to switch to **Users** and `p` to switch back. Select a
+project to open its tabs, or a user to open their activity feed, and press `i`
+on any item to inspect it.
 
 Fresh installations start with empty lists. You can add entries from inside the
 window with `a`, list them in `setup()`, or load them from a
@@ -229,7 +231,7 @@ the previous row. Use `l` / `<Right>` to open the selected item and
 | --------------------- | ---------------------------------------------------------- |
 | `j` / `<Down>` / `<CR>` | Select the next row                                    |
 | `k` / `<Up>` / `<BS>` | Select the previous row                                  |
-| `l` / `<Right>`        | Open the selected group or activity feed                  |
+| `l` / `<Right>`        | Open the selected group, project, or user                 |
 | `h` / `<Left>`        | Go to the parent group                                    |
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
 | `w`                   | Open [my work](#my-work)                                   |
@@ -247,17 +249,33 @@ the previous row. Use `l` / `<Right>` to open the selected item and
 | `<Esc>`               | Cancel a pending move, go back, or close                   |
 | `q` / `<C-c>`         | Close                                                      |
 
+**Project tabs**
+
+A project opens on a row of tabs, like its page on GitHub or Codeberg:
+
+```
+  Issues   Pull requests   Activity   Milestones
+```
+
+**Issues** and **Pull requests** list the most recently updated first, open
+ones by default; press `f` on either to filter by status and assignment (each
+tab keeps its own filters). **Activity** is the project's feed of pushes,
+merged pull requests, and assigned issues, chosen with `F`.
+[**Milestones**](#milestones) lists its milestones. Press `<Tab>` and
+`<S-Tab>` to move between the tabs, and `h`/`←` to go back to the project list.
+
 **Activity feeds**
+
+These keys work in every feed, including the project tabs.
 
 | Key             | Action                                                         |
 | --------------- | -------------------------------------------------------------- |
 | `i`             | Inspect the change or issue under the cursor                   |
 | `I`             | Inspect by ID (issue, PR, commit, or `project#id`)             |
-| `<Tab>`         | Queue the item for inspection. Queued items open together      |
+| `x`             | Queue the item for inspection. Queued items open together      |
 | `b`             | Open the item in your browser                                  |
-| `u`             | Show the project's issues                                      |
-| `f`             | Issue filters (in the issues view) or newer activity           |
-| `m`             | Milestones (in the issues view)                                |
+| `<Tab>` / `<S-Tab>` | Next / previous project tab                                |
+| `f`             | Filters (in the Issues and Pull requests tabs) or newer activity |
 | `s`             | Save the item under the cursor, or remove it from saved items  |
 | `p`             | Load older activity                                            |
 | `r`             | Refresh                                                        |
@@ -280,11 +298,11 @@ in the overview.
 
 **Saved items**
 
-Press `s` on any activity item (in a project or user feed, the issues view, a
-milestone, or an expanded push or pull request) to save it. Saved items are
+Press `s` on any activity item (in a project tab, a user feed, a milestone, or
+an expanded push or pull request) to save it. Saved items are
 marked with `★`, and pressing `s` again removes them. Press `s` on the start
 screen to open the saved feed: every saved item, newest save first, rendered
-like any other feed, so `i` inspects, `b` opens the browser, `Tab` queues, and
+like any other feed, so `i` inspects, `b` opens the browser, `x` queues, and
 `p`/`f` page. `s` there removes the item under the cursor.
 
 Items are stored as snapshots in `state_file`, so they survive restarts and
@@ -306,7 +324,7 @@ each with a count of open items:
 
 The preview lists the most recently updated items. Select a category to open
 its items as an activity feed spanning every repository, where `i` inspects,
-`b` opens the browser, `Tab` queues and `s` saves as usual. Press `b` on the
+`b` opens the browser, `x` queues and `s` saves as usual. Press `b` on the
 list to open the forge's own page for that category, `r` to refresh, and
 `h`/`←` to go back. GitHub archived repositories are left out.
 
@@ -315,7 +333,7 @@ listed once you set a Codeberg token or track a Codeberg project or user.
 
 **Milestones**
 
-Press `m` in a project's issues view to list its milestones. The list works
+The **Milestones** tab lists a project's milestones. The list works
 like the Projects and Users lists: open milestones come first (nearest due date
 first), then closed ones, and the preview shows the due date, progress, and
 description. Select a milestone to see its issues and pull requests as an

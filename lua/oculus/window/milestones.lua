@@ -137,10 +137,11 @@ function M.setup(window, milestone_view, internal)
     local left_width = internal.preview_left_width(window_width)
     local window_height = vim.api.nvim_win_get_height(window.state.win)
     local sidebar_visible = internal.is_sidebar_visible()
+    local tab_text, tab_ranges = internal.project_tab_line("milestones", left_width - 2)
 
     local lines = {
       "",
-      "  MILESTONES",
+      tab_text,
       ("  %s · %s"):format(internal.project_title(project), internal.provider_name(project)),
       "",
     }
@@ -256,7 +257,7 @@ function M.setup(window, milestone_view, internal)
     internal.set_lines(lines)
     internal.paint_footer(commands_line)
     vim.wo[window.state.win].cursorline = false
-    internal.highlight(2, 2, -1, "Title")
+    internal.paint_project_tabs(2, tab_ranges)
     internal.highlight(3, 2, -1, "Comment")
 
     for _, line in ipairs(headings) do

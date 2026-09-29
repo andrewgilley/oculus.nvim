@@ -1301,7 +1301,7 @@ assert(inspect_source_line)
 local inspect_activity_line = state.activity_title_lines[inspect_source_line]
 assert(inspect_activity_line ~= inspect_source_line)
 vim.api.nvim_win_set_cursor(state.win, { inspect_source_line, 0 })
-local regular_queue_mapping = vim.fn.maparg("<Tab>", "n", false, true)
+local regular_queue_mapping = vim.fn.maparg("x", "n", false, true)
 assert(regular_queue_mapping.desc == "Queue Oculus activity inspection")
 regular_queue_mapping.callback()
 assert(#state.activity_inspect_queue == 1)
@@ -1750,6 +1750,7 @@ do
   local original_repository_events = github.repository_events
   local original_repository_updates = github.repository_updates
   local original_repository_issues = github.repository_issues
+  local original_repository_pulls = github.repository_pulls
   local repository_forces = {}
   local repository_per_page
   local repository_pages = {}
@@ -1896,7 +1897,10 @@ do
   end
 
   github.repository_issues = function(repository, opts, callback)
-    assert(repository == "neovim/neovim")
+    if repository ~= "neovim/neovim" then
+      callback({}, nil, false, true)
+      return
+    end
 
     repository_issue_requests[#repository_issue_requests + 1] = {
       state = opts.issue_state,
@@ -1937,6 +1941,10 @@ do
     end
 
     callback(events, nil, false, true)
+  end
+
+  github.repository_pulls = function(_, _, callback)
+    callback({}, nil, false, true)
   end
 
   github.enrich_pull_requests = function(events, _, callback)
@@ -2042,6 +2050,19 @@ do
   assert(project_line)
   vim.api.nvim_win_set_cursor(state.win, { project_line, 0 })
   vim.fn.maparg("l", "n", false, true).callback()
+  -- A project opens on its issues tab; the activity feed is two tabs along.
+  assert(state.activity_issue_page == true and state.activity_issue_kind == "issues")
+  local tab_line = vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1]
+  assert(tab_line == "  Issues   Pull requests   Activity   Milestones", tab_line)
+  assert(#repository_pages == 0)
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  assert(state.activity_issue_page == true and state.activity_issue_kind == "pulls")
+
+  assert(table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
+    :find("No pull requests match the filters.", 1, true))
+
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  assert(state.activity_issue_page == false)
   assert(state.activity_scope == "project")
   assert(state.activity_project.repository == "neovim/neovim")
   assert(#state.events == 8)
@@ -2064,7 +2085,7 @@ do
     "\n"
   )
 
-  assert(project_activity_text:find("  PROJECT", 1, true))
+  assert(project_activity_text:find("  Issues   Pull requests   Activity", 1, true))
   assert(project_activity_text:find("neovim/neovim", 1, true))
   assert(project_activity_text:find("@project-author pushed", 1, true))
 
@@ -2081,7 +2102,7 @@ do
   assert(project_activity_text:find("First project commit", 1, true))
   assert(project_activity_text:find("Second project commit", 1, true))
   local project_footer_text = table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
-  assert(project_footer_text:find("u issues", 1, true), project_footer_text)
+  assert(project_footer_text:find("⇥ tabs", 1, true), project_footer_text)
   window._toggle_shortcuts()
 
   local proj_shortcuts = table.concat(
@@ -2089,12 +2110,13 @@ do
     "\n"
   )
 
-  assert(proj_shortcuts:find("Open project issues", 1, true))
+  assert(proj_shortcuts:find("Show the next or previous project tab", 1, true))
   window._toggle_shortcuts()
   local project_cursor = vim.api.nvim_win_get_cursor(state.win)
-  local project_issues_mapping = vim.fn.maparg("u", "n", false, true)
-  assert(project_issues_mapping.desc == "Open Oculus project issues")
-  project_issues_mapping.callback()
+  local previous_tab_mapping = vim.fn.maparg("<S-Tab>", "n", false, true)
+  assert(previous_tab_mapping.desc == "Show the previous Oculus project tab")
+  previous_tab_mapping.callback()
+  previous_tab_mapping.callback()
   assert(state.view == "activity")
   assert(state.activity_issue_page == true)
   assert(state.activity_project.repository == "neovim/neovim")
@@ -2107,7 +2129,7 @@ do
     "\n"
   )
 
-  assert(issue_activity_text:find("  ISSUES", 1, true))
+  assert(issue_activity_text:find("  Issues   Pull requests", 1, true))
 
   assert(
     issue_activity_text:find("Project issue 1", 1, true),
@@ -2124,9 +2146,9 @@ do
     "\n"
   )
 
-  assert(issue_shortcuts:find("Filter issue activity", 1, true))
+  assert(issue_shortcuts:find("Filter issues", 1, true))
   window._toggle_shortcuts()
-  local queue_mapping = vim.fn.maparg("<Tab>", "n", false, true)
+  local queue_mapping = vim.fn.maparg("x", "n", false, true)
   assert(queue_mapping.desc == "Queue Oculus activity inspection")
 
   local function issue_title_line(number)
@@ -2269,7 +2291,8 @@ do
   assert(#state.events == 2)
   vim.fn.maparg("j", "n", false, true).callback()
   assert(state.activity_page == 1)
-  vim.fn.maparg("j", "n", false, true).callback()
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(state.view == "activity")
   assert(state.activity_issue_page == false)
   assert(#state.events == 8)
@@ -2533,6 +2556,9 @@ do
   end
 
   vim.fn.maparg("l", "n", false, true).callback()
+  -- Projects open on their issues; the activity feed is two tabs along.
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(state.activity_project.repository == "folke/lazy.nvim")
   assert(#state.events == 8)
   assert(vim.deep_equal(lazy_repository_pages, { 1 }))
@@ -2570,6 +2596,7 @@ do
   github.repository_events = original_repository_events
   github.repository_updates = original_repository_updates
   github.repository_issues = original_repository_issues
+  github.repository_pulls = original_repository_pulls
 end
 
 do
@@ -2578,8 +2605,16 @@ do
   local original_repository_updates = codeberg.repository_updates
   local original_enrich_pull_requests = codeberg.enrich_pull_requests
   local original_enrich_pushes = codeberg.enrich_pushes
+  local original_codeberg_issues = codeberg.repository_issues
+  local original_codeberg_pulls = codeberg.repository_pulls
   local repository_event_requests = 0
   local repository_update_pages = {}
+
+  codeberg.repository_issues = function(_, _, callback)
+    callback({}, nil, false, true)
+  end
+
+  codeberg.repository_pulls = codeberg.repository_issues
 
   codeberg.repository_events = function()
     repository_event_requests = repository_event_requests + 1
@@ -2666,6 +2701,8 @@ do
   end
 
   vim.fn.maparg("l", "n", false, true).callback()
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(#state.events == 8)
   assert(repository_event_requests == 0)
 
@@ -2696,6 +2733,8 @@ do
   codeberg.repository_updates = original_repository_updates
   codeberg.enrich_pull_requests = original_enrich_pull_requests
   codeberg.enrich_pushes = original_enrich_pushes
+  codeberg.repository_issues = original_codeberg_issues
+  codeberg.repository_pulls = original_codeberg_pulls
 end
 
 github.events = original_events

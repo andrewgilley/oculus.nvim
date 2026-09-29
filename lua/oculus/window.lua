@@ -54,6 +54,7 @@ local sidebar_ns = vim.api.nvim_create_namespace(
 local commit_activity_url
 local load_project_activity
 local load_project_issues
+local open_project_tab
 local milestone_view = {}
 local saved_view = { ns = vim.api.nvim_create_namespace("oculus_saved_items") }
 -- `accounts` lists the signed-in accounts in the start screen's sidebar.
@@ -150,13 +151,13 @@ M.state = {
   activity_scroll_limit_line = nil,
   activity_commit_page = false,
   activity_issue_page = false,
+  activity_issue_kind = "issues",
+  issue_filter_kind = "issues",
   activity_return = nil,
-  project_issue_return = nil,
   project_issue_feed = nil,
   project_milestones = nil,
   selected_milestone = nil,
   milestone_offset = 1,
-  milestone_return = nil,
   milestone_items_feed = nil,
   activity_milestone = nil,
   activity_saved = false,
@@ -572,17 +573,12 @@ local function sidebar_sections_for_view(view)
     local actions = {
       { nav.inspect, "Inspect" },
       { nav.inspect_id, "Inspect ID" },
-      { "Tab", "Queue" },
+      { "x", "Queue" },
       { "b", "Browser" },
     }
 
-    if not M.state.activity_commit_page then
-      if M.state.activity_issue_page then
-        actions[#actions + 1] = { "f", "Filters" }
-        actions[#actions + 1] = { "m", "Milestones" }
-      elseif M.state.activity_project and not M.state.activity_milestone then
-        actions[#actions + 1] = { "u", "Issues" }
-      end
+    if not M.state.activity_commit_page and M.state.activity_issue_page then
+      actions[#actions + 1] = { "f", "Filters" }
     end
 
     actions[#actions + 1] = {
@@ -593,14 +589,21 @@ local function sidebar_sections_for_view(view)
     actions[#actions + 1] = { "r", "Refresh" }
     actions[#actions + 1] = { "p", "Older" }
 
+    local navigation_items = {
+      { nav_down, "Down" },
+      { nav_up, "Up" },
+      { nav_left, "Back" },
+    }
+
+    if M.state.activity_project then
+      navigation_items[#navigation_items + 1] = { "Tab", "Next tab" }
+      navigation_items[#navigation_items + 1] = { "S-Tab", "Prev tab" }
+    end
+
     return {
       {
         title = "NAVIGATION",
-        items = {
-          { nav_down, "Down" },
-          { nav_up, "Up" },
-          { nav_left, "Back" },
-        },
+        items = navigation_items,
       },
       {
         title = "INSPECT",
@@ -642,15 +645,22 @@ local function sidebar_sections_for_view(view)
       },
     }
   elseif view == "milestones" or view == "work" then
+    local navigation_items = {
+      { nav_down, "Down" },
+      { nav_up, "Up" },
+      { nav_left, "Back" },
+      { nav_right, "Open" },
+    }
+
+    if view == "milestones" then
+      navigation_items[#navigation_items + 1] = { "Tab", "Next tab" }
+      navigation_items[#navigation_items + 1] = { "S-Tab", "Prev tab" }
+    end
+
     return {
       {
         title = "NAVIGATION",
-        items = {
-          { nav_down, "Down" },
-          { nav_up, "Up" },
-          { nav_left, "Back" },
-          { nav_right, "Open" },
-        },
+        items = navigation_items,
       },
       {
         title = "ACTIONS",
@@ -934,7 +944,11 @@ local function page_commands_text()
     return ("  %s/← back   a add   r rename   R remove   m move   ?: help"):format(
       nav.left
     )
-  elseif M.state.view == "milestones" or M.state.view == "work" then
+  elseif M.state.view == "milestones" then
+    return ("  %s/← back   ⇥ tabs   ⏎ open   b browser   r refresh   ?: help"):format(
+      nav.left
+    )
+  elseif M.state.view == "work" then
     return ("  %s/← back   ⏎ open   b browser   r refresh   ?: help"):format(
       nav.left
     )
@@ -949,14 +963,12 @@ local function page_commands_text()
   local inspect_key = nav.inspect
   local activity_commands = ("  %s inspect   b browser"):format(inspect_key)
 
-  if not M.state.activity_commit_page then
-    if M.state.activity_issue_page then
-      activity_commands = activity_commands .. "   f filters   m milestones"
-    else
-      if M.state.activity_project and not M.state.activity_milestone then
-        activity_commands = activity_commands .. "   u issues"
-      end
-    end
+  if M.state.activity_project then
+    activity_commands = "  ⇥ tabs " .. activity_commands
+  end
+
+  if not M.state.activity_commit_page and M.state.activity_issue_page then
+    activity_commands = activity_commands .. "   f filters"
   end
 
   activity_commands = activity_commands
@@ -2215,13 +2227,12 @@ local function reset_to_initial_page()
   M.state.project_activity_feed = nil
   M.state.activity_commit_page = false
   M.state.activity_issue_page = false
+  M.state.activity_issue_kind = "issues"
   M.state.activity_return = nil
-  M.state.project_issue_return = nil
   M.state.project_issue_feed = nil
   M.state.project_milestones = nil
   M.state.selected_milestone = nil
   M.state.milestone_offset = 1
-  M.state.milestone_return = nil
   M.state.milestone_items_feed = nil
   M.state.saved_entries = nil
   M.state.saved_expanded_source = nil
@@ -2551,39 +2562,46 @@ local function reset_filter_types_to_default()
   end
 end
 
-local issue_filter_options = {
-  {
-    heading = "STATUS",
-    dimension = "state",
-    choices = {
-      { value = "all", label = "All issues" },
-      { value = "open", label = "Open issues" },
-      { value = "closed", label = "Closed issues" },
-    },
-  },
-  {
-    heading = "ASSIGNMENT",
-    dimension = "assignment",
-    choices = {
-      { value = "all", label = "Any assignment" },
-      { value = "assigned", label = "Assigned issues" },
-      { value = "unassigned", label = "Unassigned issues" },
-    },
-  },
-}
+-- The issues and pull requests tabs filter the same way, each with its own
+-- choices; kind is "issues" or "pulls".
+local function issue_filter_options(kind)
+  local noun = kind == "pulls" and "pull requests" or "issues"
 
-local function project_issue_filter_key(project)
+  return {
+    {
+      heading = "STATUS",
+      dimension = "state",
+      choices = {
+        { value = "all", label = "All " .. noun },
+        { value = "open", label = "Open " .. noun },
+        { value = "closed", label = "Closed " .. noun },
+      },
+    },
+    {
+      heading = "ASSIGNMENT",
+      dimension = "assignment",
+      choices = {
+        { value = "all", label = "Any assignment" },
+        { value = "assigned", label = "Assigned " .. noun },
+        { value = "unassigned", label = "Unassigned " .. noun },
+      },
+    },
+  }
+end
+
+local function project_issue_filter_key(project, kind)
   return table.concat({
     project.provider == "codeberg" and "codeberg" or "github",
     project.repository:lower(),
+    kind == "pulls" and "pulls" or nil,
   }, ":")
 end
 
-local function project_issue_filters_for(project)
+local function project_issue_filters_for(project, kind)
   M.state.opts.project_issue_filters =
     M.state.opts.project_issue_filters or {}
 
-  local key = project_issue_filter_key(project)
+  local key = project_issue_filter_key(project, kind)
   local filters = M.state.opts.project_issue_filters[key]
 
   if type(filters) ~= "table" then
@@ -2594,23 +2612,25 @@ local function project_issue_filters_for(project)
   return filters
 end
 
-local function save_project_issue_filter(project, dimension, value)
-  local filters = project_issue_filters_for(project)
+local function save_project_issue_filter(project, dimension, value, kind)
+  local filters = project_issue_filters_for(project, kind)
   filters[dimension] = value
   M.state.project_issue_feed = nil
   persist_filter_config()
 end
 
-local function render_issue_filters(project, selected_dimension)
+local function render_issue_filters(project, selected_dimension, kind)
   stop_activity_page_loading()
   close_activity_footer()
+  kind = kind or M.state.issue_filter_kind or "issues"
   M.state.view = "issue_filters"
+  M.state.issue_filter_kind = kind
   M.state.line_targets = {}
-  local filters = project_issue_filters_for(project)
+  local filters = project_issue_filters_for(project, kind)
 
   local lines = {
     "",
-    "  ISSUE FILTERS",
+    kind == "pulls" and "  PULL REQUEST FILTERS" or "  ISSUE FILTERS",
     "  " .. project_title(project),
     "",
   }
@@ -2618,7 +2638,7 @@ local function render_issue_filters(project, selected_dimension)
   local headings = { 2 }
   local selected_line
 
-  for _, group in ipairs(issue_filter_options) do
+  for _, group in ipairs(issue_filter_options(kind)) do
     lines[#lines + 1] = "  " .. group.heading
     headings[#headings + 1] = #lines
 
@@ -2633,6 +2653,7 @@ local function render_issue_filters(project, selected_dimension)
 
       M.state.line_targets[line] = {
         issue_filter = true,
+        issue_kind = kind,
         project = project,
         dimension = group.dimension,
         value = choice.value,
@@ -2688,10 +2709,79 @@ local function select_project_issue_filter()
   save_project_issue_filter(
     target.project,
     target.dimension,
-    target.value
+    target.value,
+    target.issue_kind
   )
 
-  render_issue_filters(target.project, target.dimension)
+  render_issue_filters(target.project, target.dimension, target.issue_kind)
+end
+
+-- A project's pages, in the order <Tab> cycles through them.
+local project_tabs = {
+  { key = "issues", label = "Issues" },
+  { key = "pulls", label = "Pull requests", short = "PRs" },
+  { key = "activity", label = "Activity" },
+  { key = "milestones", label = "Milestones" },
+}
+
+-- The project tab the current page belongs to, or nil outside a project.
+local function current_project_tab()
+  if M.state.view == "milestones" then
+    return M.state.project_milestones and "milestones" or nil
+  end
+
+  if M.state.view ~= "activity" or not M.state.activity_project then
+    return nil
+  end
+
+  if M.state.activity_milestone then
+    return "milestones"
+  end
+
+  if M.state.activity_issue_page then
+    return M.state.activity_issue_kind == "pulls" and "pulls" or "issues"
+  end
+
+  return "activity"
+end
+
+-- The tab bar heading every project page, like the tabs on a forge's
+-- repository page, with the column range of each tab. Long labels shorten
+-- when the bar would not fit in width.
+local function project_tab_line(tab, width)
+  local function build(short)
+    local labels = {}
+    local ranges = {}
+    local col = 2
+
+    for _, entry in ipairs(project_tabs) do
+      local label = short and entry.short or entry.label
+      labels[#labels + 1] = label
+      ranges[#ranges + 1] = { col, col + #label, entry.key == tab }
+      col = col + #label + 3
+    end
+
+    return "  " .. table.concat(labels, "   "), ranges
+  end
+
+  local text, ranges = build(false)
+
+  if width and vim.fn.strdisplaywidth(text) > width then
+    text, ranges = build(true)
+  end
+
+  return text, ranges
+end
+
+local function paint_project_tabs(line, ranges)
+  for _, range in ipairs(ranges) do
+    highlight(
+      line,
+      range[1],
+      range[2],
+      range[3] and "OculusTabActive" or "Comment"
+    )
+  end
 end
 
 local function render_loading(target)
@@ -2700,6 +2790,7 @@ local function render_loading(target)
   M.state.view = "activity"
   M.state.activity_commit_page = false
   M.state.activity_issue_page = target.issues == true
+  M.state.activity_issue_kind = target.issue_kind or "issues"
   M.state.activity_milestone = target.milestone
   M.state.activity_saved = false
   M.state.activity_work = nil
@@ -2713,14 +2804,20 @@ local function render_loading(target)
   M.state.activity_scope = work and "work" or project and "project" or "user"
   M.state.activity_project = project
   M.state.contributor = (project or work) and nil or target
+  local tab_text, tab_ranges
+
+  if project then
+    tab_text, tab_ranges = project_tab_line(
+      current_project_tab(),
+      vim.api.nvim_win_get_width(M.state.win) - 2
+    )
+  end
 
   local lines = work and work_view.header(work)
     or project
       and {
         "",
-        target.milestone and "  MILESTONE"
-          or target.issues and "  ISSUES"
-          or "  PROJECT",
+        tab_text,
         "  " .. (
           target.milestone
               and (target.milestone.title .. " · " .. project_title(project))
@@ -2735,7 +2832,13 @@ local function render_loading(target)
 
   set_lines(lines)
   vim.wo[M.state.win].cursorline = true
-  highlight(2, 2, -1, "Function")
+
+  if tab_ranges then
+    paint_project_tabs(2, tab_ranges)
+  else
+    highlight(2, 2, -1, "Function")
+  end
+
   highlight(3, 2, -1, "Comment")
   start_activity_page_loading()
 end
@@ -2752,6 +2855,14 @@ local function render_error(message)
   local project = M.state.activity_project
   local milestone = M.state.activity_milestone
   local work = M.state.activity_work
+  local tab_text, tab_ranges
+
+  if project then
+    tab_text, tab_ranges = project_tab_line(
+      current_project_tab(),
+      vim.api.nvim_win_get_width(M.state.win) - 2
+    )
+  end
 
   local lines = work
       and vim.list_extend(work_view.header(work), {
@@ -2762,9 +2873,7 @@ local function render_error(message)
     or project
       and {
         "",
-        milestone and "  MILESTONE"
-          or M.state.activity_issue_page and "  ISSUES"
-          or "  PROJECT",
+        tab_text,
         "  " .. (
           milestone and (milestone.title .. " · " .. project_title(project))
             or project_title(project)
@@ -2785,7 +2894,13 @@ local function render_error(message)
   set_lines(lines)
   render_activity_footer()
   vim.wo[M.state.win].cursorline = true
-  highlight(2, 2, -1, "Title")
+
+  if tab_ranges then
+    paint_project_tabs(2, tab_ranges)
+  else
+    highlight(2, 2, -1, "Title")
+  end
+
   highlight(3, 2, -1, "Comment")
   highlight(5, 2, -1, "DiagnosticError")
   highlight(6, 2, -1, "Comment")
@@ -2803,7 +2918,7 @@ local function set_activity_inspect_queue_scope()
       project.repository:lower(),
       M.state.activity_milestone
           and ("milestone:" .. tostring(M.state.activity_milestone.id))
-        or M.state.activity_issue_page and "issues"
+        or M.state.activity_issue_page and M.state.activity_issue_kind
         or "activity",
     }, ":")
   elseif M.state.activity_saved then
@@ -2914,9 +3029,7 @@ local function render_activity(events, cached, notice, opts)
     or project
       and {
         "",
-        milestone and "  MILESTONE"
-          or M.state.activity_issue_page and "  ISSUES"
-          or "  PROJECT",
+        (project_tab_line(current_project_tab(), width - 2)),
         ("  %s · %s%s"):format(
           milestone and milestone.title or project_title(project),
           milestone and project_title(project) or provider_name(project),
@@ -2969,7 +3082,9 @@ local function render_activity(events, cached, notice, opts)
       local state = issue.state == "closed" and "closed" or "open"
 
       if type(issue.pull_request) == "table" then
-        state = issue.pull_request.merged and "merged" or state
+        state = issue.pull_request.merged and "merged"
+          or state == "open" and issue.pull_request.draft and "draft"
+          or state
       end
 
       item.text = ("%s%s %s #%s"):format(
@@ -3094,6 +3209,10 @@ local function render_activity(events, cached, notice, opts)
         and "  No saved items. Press S on an activity item to save it."
       or milestone
         and "  This milestone has no issues or pull requests."
+      or project and M.state.activity_issue_page
+        and ("  No %s match the filters."):format(
+          M.state.activity_issue_kind == "pulls" and "pull requests" or "issues"
+        )
       or M.state.activity_page > 1
         and "  No past public activity was returned."
       or "  No recent public activity was returned."
@@ -3105,7 +3224,13 @@ local function render_activity(events, cached, notice, opts)
   set_lines(lines)
   render_activity_footer()
   vim.wo[M.state.win].scrolloff = 3
-  highlight(2, 2, -1, "Function")
+
+  if project and not saved_page and not work then
+    paint_project_tabs(2, select(2, project_tab_line(current_project_tab(), width - 2)))
+  else
+    highlight(2, 2, -1, "Function")
+  end
+
   highlight(3, 2, -1, "Comment")
 
   if notice then
@@ -3476,28 +3601,39 @@ local function render_shortcuts()
       { "q / <Esc> / <C-c>", "Close Oculus" },
     })
   elseif from_view == "activity" then
-    section("NAVIGATION", {
+    local navigation_entries = {
       { nav_up, "Select the previous item" },
       { nav_down, "Select the next item" },
       { nav.left .. " / <Left>", "Return to the previous page" },
       { nav.right .. " / <Right>", "Open the next older activity page" },
-    })
+    }
+
+    if ret and ret.activity_project then
+      navigation_entries[#navigation_entries + 1] = {
+        "<Tab> / <S-Tab>",
+        "Show the next or previous project tab",
+      }
+    end
+
+    section("NAVIGATION", navigation_entries)
 
     local actions = {
       { nav.inspect, "Inspect the selected change or issue" },
       { nav.inspect_id, "Inspect an issue, PR, commit, or project by ID" },
-      { "Tab", "Queue activity for sequential inspection" },
+      { "x", "Queue activity for sequential inspection" },
       { "b", "Open the selected activity in a browser" },
       { "s", (ret and ret.activity_saved) and "Unsave activity item" or "Save activity item" },
       { "r", "Refresh the current activity page" },
       { "p", "Load the next eight older activity items" },
     }
 
-    if ret and ret.activity_issue_page then
-      actions[#actions + 1] = { "f", "Filter issue activity" }
-      actions[#actions + 1] = { "m", "Open project milestones" }
-    elseif ret and ret.activity_project and not ret.activity_milestone and not ret.activity_commit_page then
-      actions[#actions + 1] = { "u", "Open project issues" }
+    if ret and ret.activity_issue_page and not ret.activity_commit_page then
+      actions[#actions + 1] = {
+        "f",
+        ret.activity_issue_kind == "pulls"
+            and "Filter pull requests"
+          or "Filter issues",
+      }
     end
 
     section("ACTIONS", actions)
@@ -3511,7 +3647,8 @@ local function render_shortcuts()
       { nav_up, "Select the previous milestone" },
       { nav_down, "Select the next milestone" },
       { nav_right, "Open the selected milestone" },
-      { nav.left .. " / <Left>", "Return to the previous page" },
+      { "<Tab> / <S-Tab>", "Show the next or previous project tab" },
+      { nav.left .. " / <Left>", "Return to the project list" },
     })
 
     section("ACTIONS", {
@@ -3871,6 +4008,8 @@ load_project_issues = activity.load_project_issues
 
 local view_internal = {
   highlight = highlight,
+  project_tab_line = project_tab_line,
+  paint_project_tabs = paint_project_tabs,
   activity_page = activity_page,
   trim_to_width = trim_to_width,
   pad_cell = pad_cell,
@@ -5195,9 +5334,8 @@ local function select_current()
       M.state.selected_project = target.project
       M.state.selected_username = nil
       M.state.selected_directory = nil
-      M.state.project_issue_return = nil
       M.state.directory_return = nil
-      load_project_activity(target.project, false)
+      open_project_tab(target.project, "issues")
     else
       M.state.selected_project = nil
       M.state.selected_username = target.username
@@ -5210,9 +5348,8 @@ local function select_current()
       M.state.selected_project = target.project
       M.state.selected_username = nil
       M.state.selected_directory = nil
-      M.state.project_issue_return = nil
       M.state.directory_return = M.state.current_directory
-      load_project_activity(target.project, false)
+      open_project_tab(target.project, "issues")
     end
   elseif M.state.view == "activity" then
     open_activity_expansion()
@@ -5240,56 +5377,40 @@ local function select_current()
   end
 end
 
-local function open_project_issue_activity()
-  if M.state.view ~= "activity"
-    or M.state.activity_commit_page
-    or M.state.activity_issue_page
-    or M.state.activity_milestone
-    or not M.state.activity_project
-  then
-    return
+-- Show one of a project's tabs: its issues, pull requests, activity feed, or
+-- milestones.
+open_project_tab = function(project, tab)
+  M.state.activity_milestone = nil
+  M.state.activity_return = nil
+
+  if tab == "activity" then
+    load_project_activity(project, false)
+  elseif tab == "milestones" then
+    M.state.activity_project = project
+    milestone_view.load(project, false)
+  else
+    load_project_issues(project, false, nil, tab)
   end
-
-  M.state.project_issue_return = {
-    events = M.state.events,
-    cached = M.state.activity_cached,
-    notice = M.state.activity_notice,
-    page = M.state.activity_page,
-    loaded_pages = M.state.activity_loaded_pages,
-    source_events = M.state.activity_source_events,
-    has_past = M.state.activity_has_past,
-    cursor = is_valid_win(M.state.win)
-        and vim.api.nvim_win_get_cursor(M.state.win)
-      or nil,
-  }
-
-  load_project_issues(M.state.activity_project, false)
 end
 
-function milestone_view.open()
-  if M.state.view ~= "activity"
-    or M.state.activity_commit_page
-    or not M.state.activity_issue_page
-    or not M.state.activity_project
-  then
+local function cycle_project_tab(direction)
+  local tab = current_project_tab()
+
+  if not tab then
     return
   end
 
-  M.state.milestone_return = {
-    project = M.state.activity_project,
-    events = M.state.events,
-    cached = M.state.activity_cached,
-    notice = M.state.activity_notice,
-    page = M.state.activity_page,
-    loaded_pages = M.state.activity_loaded_pages,
-    source_events = M.state.activity_source_events,
-    has_past = M.state.activity_has_past,
-    cursor = is_valid_win(M.state.win)
-        and vim.api.nvim_win_get_cursor(M.state.win)
-      or nil,
-  }
+  local project = M.state.view == "milestones"
+      and M.state.project_milestones.project
+    or M.state.activity_project
 
-  milestone_view.load(M.state.activity_project, false)
+  for index, entry in ipairs(project_tabs) do
+    if entry.key == tab then
+      local next_index = (index - 1 + direction) % #project_tabs + 1
+      open_project_tab(project, project_tabs[next_index].key)
+      return
+    end
+  end
 end
 
 local function open_filters(global)
@@ -5908,7 +6029,7 @@ local function active_list_key()
         return "milestone:" .. repo .. ":"
           .. tostring(M.state.activity_milestone.id)
       elseif M.state.activity_issue_page then
-        return "issues:" .. repo
+        return M.state.activity_issue_kind .. ":" .. repo
       elseif M.state.activity_commit_page then
         return "commits:" .. repo
       else
@@ -6456,82 +6577,9 @@ local function go_back()
     return
   end
 
-  if M.state.view == "milestones" then
-    local return_state = M.state.milestone_return
-    local list = M.state.project_milestones
-    M.state.milestone_return = nil
-    M.state.request_id = M.state.request_id + 1
-
-    local project = return_state and return_state.project
-      or (list and list.project)
-
-    if not project then
-      render_contributors()
-      return
-    end
-
-    if not return_state or not return_state.events then
-      load_project_issues(project, false, return_state and return_state.page)
-      return
-    end
-
-    M.state.activity_scope = "project"
-    M.state.activity_project = project
-    M.state.contributor = nil
-    M.state.activity_page = return_state.page
-    M.state.activity_loaded_pages = return_state.loaded_pages
-    M.state.activity_source_events = return_state.source_events
-    M.state.activity_has_past = return_state.has_past
-
-    render_activity(
-      return_state.events,
-      return_state.cached,
-      return_state.notice,
-      { issue_page = true }
-    )
-
-    if return_state.cursor and is_valid_win(M.state.win) then
-      pcall(vim.api.nvim_win_set_cursor, M.state.win, return_state.cursor)
-      update_activity_cursorline()
-    end
-
-    return
-  end
-
   if M.state.view == "issue_filters" and M.state.activity_project then
     M.state.request_id = M.state.request_id + 1
-    load_project_issues(M.state.activity_project, false, 1)
-    return
-  end
-
-  if M.state.view == "activity" and M.state.activity_issue_page then
-    local return_state = M.state.project_issue_return
-    M.state.project_issue_return = nil
-
-    if not return_state then
-      M.state.request_id = M.state.request_id + 1
-      render_contributors()
-      return
-    end
-
-    M.state.activity_page = return_state.page
-    M.state.activity_loaded_pages = return_state.loaded_pages
-    M.state.activity_source_events = return_state.source_events
-    M.state.activity_has_past = return_state.has_past
-    M.state.activity_issue_page = false
-
-    render_activity(
-      return_state.events,
-      return_state.cached,
-      return_state.notice,
-      { issue_page = false }
-    )
-
-    if return_state.cursor and is_valid_win(M.state.win) then
-      vim.api.nvim_win_set_cursor(M.state.win, return_state.cursor)
-      update_activity_cursorline()
-    end
-
+    load_project_issues(M.state.activity_project, false, 1, M.state.issue_filter_kind)
     return
   end
 
@@ -6589,7 +6637,10 @@ local function go_back()
       elseif M.state.activity_work then
         work_view.load_items(M.state.activity_work, false)
       elseif M.state.activity_project then
-        load_project_activity(M.state.activity_project, false)
+        open_project_tab(
+          M.state.activity_project,
+          M.state.activity_issue_page and M.state.activity_issue_kind or "activity"
+        )
       else
         load_activity(M.state.contributor, false)
       end
@@ -6626,6 +6677,7 @@ local function go_back()
     end
   elseif
     M.state.view == "activity"
+    or M.state.view == "milestones"
     or M.state.view == "filters"
     or M.state.view == "issue_filters"
     or M.state.view == "directory"
@@ -6775,6 +6827,7 @@ local function toggle_shortcuts()
     selected_type = selected_type,
     activity_commit_page = M.state.activity_commit_page,
     activity_issue_page = M.state.activity_issue_page,
+    activity_issue_kind = M.state.activity_issue_kind,
     activity_project = M.state.activity_project,
     activity_milestone = M.state.activity_milestone,
     activity_saved = M.state.activity_saved,
@@ -7010,10 +7063,8 @@ local function map_keys(buf)
   map("m", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
       toggle_move_item()
-    elseif M.state.view == "activity" and M.state.activity_issue_page then
-      milestone_view.open()
     end
-  end, "Move selected Oculus project or user, or open project milestones")
+  end, "Move selected Oculus project or user")
 
   map("M", function()
     if (M.state.view == "contributors" and M.state.community_view == "projects")
@@ -7092,7 +7143,7 @@ local function map_keys(buf)
 
   map("f", function()
     if M.state.view == "activity" and M.state.activity_issue_page then
-      render_issue_filters(M.state.activity_project)
+      render_issue_filters(M.state.activity_project, nil, M.state.activity_issue_kind)
     elseif M.state.view == "activity" then
       previous_activity_page()
     elseif
@@ -7164,7 +7215,15 @@ local function map_keys(buf)
   local inspect_id_key = nav.inspect_id
   map(inspect_key, inspect_current, "Inspect Oculus change or issue")
   map(inspect_id_key, prompt_inspect_by_id, "Inspect issue, PR, commit, or project by ID")
-  map("<Tab>", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
+  map("x", toggle_activity_inspect_queue, "Queue Oculus activity inspection")
+
+  map("<Tab>", function()
+    cycle_project_tab(1)
+  end, "Show the next Oculus project tab")
+
+  map("<S-Tab>", function()
+    cycle_project_tab(-1)
+  end, "Show the previous Oculus project tab")
 
   map("w", function()
     if M.state.view == "contributors" or M.state.view == "directory" then
@@ -7185,10 +7244,8 @@ local function map_keys(buf)
       if M.state.community_view ~= "users" then
         toggle_community_view()
       end
-    else
-      open_project_issue_activity()
     end
-  end, "Open Oculus project issues")
+  end, "Show Oculus users")
 
   map(nav.down, function()
     move_cursor(1)
@@ -7804,11 +7861,11 @@ function M.open_project(target, opts)
     end
   end
 
-  load_project_activity(project or {
+  open_project_tab(project or {
     repository = repository,
     path = path,
     provider = provider or "github",
-  })
+  }, "issues")
 
   return true
 end

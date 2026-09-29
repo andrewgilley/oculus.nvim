@@ -261,13 +261,17 @@ local function project_issue_event(repository, issue, include_pull_requests)
         pull_request = pull_request and {
           merged = json_value(pull_request.merged) == true
             or json_value(pull_request.merged_at) ~= nil,
+          draft = json_value(issue.draft) == true
+            or json_value(pull_request.draft) == true,
         } or nil,
       },
     },
   }
 end
 
-function M.repository_issues(repository, opts, callback)
+-- Lists a project's issues, or its pull requests when `pulls` is set, as
+-- issue events, most recently updated first.
+local function repository_issue_list(repository, opts, callback, pulls)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
   local page = math.max(1, math.floor(opts.page or 1))
@@ -283,6 +287,7 @@ function M.repository_issues(repository, opts, callback)
 
   local cache_key = table.concat({
     repository:lower(),
+    pulls and "pulls" or "issues",
     state,
     tostring(page),
     tostring(per_page),
@@ -307,9 +312,9 @@ function M.repository_issues(repository, opts, callback)
   end
 
   local url = (
-    "https://api.github.com/repos/%s/issues"
+    "https://api.github.com/repos/%s/%s"
       .. "?state=%s&sort=updated&direction=desc&per_page=%d&page=%d"
-  ):format(repository, state, per_page, page)
+  ):format(repository, pulls and "pulls" or "issues", state, per_page, page)
 
   request_json(url, opts, function(issues, err)
     if not issues then
@@ -320,7 +325,15 @@ function M.repository_issues(repository, opts, callback)
     local events = {}
 
     for _, issue in ipairs(issues) do
-      local normalized = project_issue_event(repository, issue)
+      -- The pulls endpoint returns pull requests themselves, so give each the
+      -- pull_request marker that the issues endpoint puts on them.
+      if pulls and type(issue) == "table" then
+        issue = vim.tbl_extend("force", issue, {
+          pull_request = { merged_at = json_value(issue.merged_at) },
+        })
+      end
+
+      local normalized = project_issue_event(repository, issue, pulls)
 
       if normalized then
         events[#events + 1] = normalized
@@ -337,6 +350,14 @@ function M.repository_issues(repository, opts, callback)
 
     callback(events, nil, false, complete)
   end)
+end
+
+function M.repository_issues(repository, opts, callback)
+  repository_issue_list(repository, opts, callback, false)
+end
+
+function M.repository_pulls(repository, opts, callback)
+  repository_issue_list(repository, opts, callback, true)
 end
 
 local function project_milestone(milestone, html_url)

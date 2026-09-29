@@ -208,6 +208,12 @@ function M.setup(window, internal)
     )
 
     vim.api.nvim_set_hl(0, "OculusSaved", { link = "DiagnosticWarn", default = true })
+    -- The selected project tab takes the title colour, underlined like the
+    -- selected tab on a forge's repository page.
+    local tab_active = vim.deepcopy(source_highlight(source_win, "Title"))
+    tab_active.bold = true
+    tab_active.underline = true
+    vim.api.nvim_set_hl(window_highlight_ns, "OculusTabActive", tab_active)
 
     vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityQueued", {
       fg = "#fbd38d",

@@ -111,7 +111,7 @@ local remove_mapping = vim.fn.maparg("R", "n", false, true)
 assert(remove_mapping.desc
   == "Remove the selected Oculus group or item")
 
-assert(vim.fn.maparg("x", "n", false, true).desc == nil)
+assert(vim.fn.maparg("x", "n", false, true).desc == "Queue Oculus activity inspection")
 remove_mapping.callback()
 assert(#state.opts.projects == 1, "remove waits for confirmation")
 assert(state.footer_prompt ~= nil, "prompt is active")

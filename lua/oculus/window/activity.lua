@@ -640,8 +640,8 @@ function M.setup(window, internal)
     ensure_project_page()
   end
 
-  local function project_issue_allowed(event, project)
-    local filters = internal.project_issue_filters_for(project)
+  local function project_issue_allowed(event, project, kind)
+    local filters = internal.project_issue_filters_for(project, kind)
     local issue = event.payload and event.payload.issue or {}
 
     local state = issue.state
@@ -666,12 +666,12 @@ function M.setup(window, internal)
     return true
   end
 
-  local function filter_project_issues(events, project)
+  local function filter_project_issues(events, project, kind)
     local filtered = {}
 
     for _, event in ipairs(events or {}) do
       if event.type == "IssuesEvent"
-        and project_issue_allowed(event, project)
+        and project_issue_allowed(event, project, kind)
       then
         filtered[#filtered + 1] = event
       end
@@ -701,12 +701,21 @@ function M.setup(window, internal)
     return true
   end
 
-  load_project_issues = function(project, force, page)
+  -- Loads the project's issues, or its pull requests when kind is "pulls".
+  -- Without a kind, the list already shown keeps its kind.
+  load_project_issues = function(project, force, page, kind)
     local previous_page = window.state.activity_page or 1
+
+    kind = kind
+      or window.state.view == "activity"
+        and window.state.activity_issue_page
+        and window.state.activity_issue_kind
+      or "issues"
 
     local preserve_activity_page = page ~= nil
       and window.state.view == "activity"
       and window.state.activity_issue_page
+      and window.state.activity_issue_kind == kind
       and window.state.activity_loaded
       and internal.is_valid_buf(window.state.buf)
 
@@ -714,6 +723,7 @@ function M.setup(window, internal)
     window.state.activity_scope = "project"
     window.state.activity_project = project
     window.state.activity_issue_page = true
+    window.state.activity_issue_kind = kind
     window.state.activity_milestone = nil
     window.state.activity_saved = false
     window.state.activity_work = nil
@@ -743,17 +753,22 @@ function M.setup(window, internal)
         kind = "project",
         project = project,
         issues = true,
+        issue_kind = kind,
       })
     end
 
     local provider = project.provider == "codeberg" and codeberg or github
+    local request = kind == "pulls" and provider.repository_pulls or provider.repository_issues
 
-    if type(provider.repository_issues) ~= "function" then
-      internal.render_error("this provider does not support project issues")
+    if type(request) ~= "function" then
+      internal.render_error(kind == "pulls"
+          and "this provider does not support project pull requests"
+        or "this provider does not support project issues")
+
       return
     end
 
-    local filters = internal.project_issue_filters_for(project)
+    local filters = internal.project_issue_filters_for(project, kind)
 
     local request_opts = vim.tbl_extend(
       "force",
@@ -765,7 +780,7 @@ function M.setup(window, internal)
     request_opts.issue_state = filters.state
 
     local feed_key = table.concat({
-      internal.project_issue_filter_key(project),
+      internal.project_issue_filter_key(project, kind),
       filters.state,
       filters.assignment,
     }, ":")
@@ -789,7 +804,7 @@ function M.setup(window, internal)
     local max_source_pages = 10
 
     local function render_issue_results()
-      local filtered = filter_project_issues(feed.events, project)
+      local filtered = filter_project_issues(feed.events, project, kind)
 
       local first_event =
         (requested_page - 1) * window.state.activity_page_size + 1
@@ -823,7 +838,7 @@ function M.setup(window, internal)
     end
 
     local function ensure_issue_page()
-      local filtered = filter_project_issues(feed.events, project)
+      local filtered = filter_project_issues(feed.events, project, kind)
 
       if #filtered >= required_events or feed.complete then
         render_issue_results()
@@ -839,7 +854,7 @@ function M.setup(window, internal)
       local source_page = feed.next_page
       request_opts.page = source_page
 
-      provider.repository_issues(project.repository, request_opts, function(
+      request(project.repository, request_opts, function(
         events,
         err,
         cached,
@@ -848,6 +863,7 @@ function M.setup(window, internal)
         if request_id ~= window.state.request_id
           or window.state.view ~= "activity"
           or not window.state.activity_issue_page
+          or window.state.activity_issue_kind ~= kind
           or window.state.activity_project ~= project
           or not internal.is_valid_win(window.state.win)
         then

@@ -164,6 +164,65 @@ do
 
   assert(#assigned_issue == 1)
   assert(assigned_issue[1].payload.issue.assignee == nil)
+  -- The pulls endpoint lists pull requests themselves, which read as issue
+  -- events marked as pull requests.
+  local pulls
+
+  urls = with_fake_curl(vim.json.encode({
+    {
+      number = 11,
+      title = "Draft change",
+      state = "open",
+      draft = true,
+      merged_at = vim.NIL,
+      assignee = vim.NIL,
+      html_url = "https://github.com/neovim/neovim/pull/11",
+    },
+    {
+      number = 12,
+      title = "Merged change",
+      state = "closed",
+      merged_at = "2026-08-01T00:00:00Z",
+      html_url = "https://github.com/neovim/neovim/pull/12",
+    },
+  }), function()
+    github.repository_pulls("neovim/neovim", { force = true, issue_state = "all" }, function(result)
+      pulls = result
+    end)
+
+    wait_for("github pull requests did not load", function()
+      return pulls ~= nil
+    end)
+  end)
+
+  assert(urls[1]:find("/repos/neovim/neovim/pulls?state=all&sort=updated", 1, true), urls[1])
+  assert(#pulls == 2)
+  assert(pulls[1].payload.issue.pull_request.draft == true)
+  assert(pulls[1].payload.issue.pull_request.merged == false)
+  assert(pulls[2].payload.issue.pull_request.merged == true)
+  assert(pulls[2].url == "https://github.com/neovim/neovim/pull/12")
+  pulls = nil
+
+  urls = with_fake_curl(vim.json.encode({
+    {
+      number = 4,
+      title = "A pull request",
+      state = "open",
+      pull_request = { merged = false, draft = true },
+      html_url = "https://codeberg.org/owner/repo/pulls/4",
+    },
+  }), function()
+    codeberg.repository_pulls("owner/repo", { force = true }, function(result)
+      pulls = result
+    end)
+
+    wait_for("codeberg pull requests did not load", function()
+      return pulls ~= nil
+    end)
+  end)
+
+  assert(urls[1]:find("type=pulls", 1, true), urls[1])
+  assert(#pulls == 1 and pulls[1].payload.issue.pull_request.draft == true)
 end
 
 local project = {
@@ -179,6 +238,7 @@ for _, name in ipairs({
   "repository_events",
   "repository_updates",
   "repository_issues",
+  "repository_pulls",
   "repository_milestones",
   "milestone_issues",
   "enrich_pull_requests",
@@ -239,6 +299,33 @@ github.repository_issues = function(repository, _, callback)
           state = "open",
           assignees = {},
           html_url = "https://github.com/neovim/neovim/issues/1",
+        },
+      },
+    },
+  }, nil, false, true)
+end
+
+local pull_requests = {}
+
+github.repository_pulls = function(repository, opts, callback)
+  pull_requests[#pull_requests + 1] = { repository = repository, state = opts.issue_state }
+
+  callback({
+    {
+      id = "project-issue:neovim/neovim:7",
+      type = "IssuesEvent",
+      actor = { login = "contributor" },
+      repo = { name = repository },
+      created_at = "2026-08-02T12:00:00Z",
+      url = "https://github.com/neovim/neovim/pull/7",
+      payload = {
+        action = "opened",
+        issue = {
+          number = 7,
+          title = "Project pull request 7",
+          state = "open",
+          assignees = {},
+          pull_request = { merged = false, draft = true },
         },
       },
     },
@@ -395,34 +482,82 @@ for line, target in pairs(state.line_targets) do
   end
 end
 
+-- A project opens on its issues tab.
 press("l")
-assert(state.activity_project and not state.activity_issue_page)
-press("u")
-assert(state.activity_issue_page == true)
-local issue_events = state.events
+assert(state.activity_project and state.activity_issue_page == true)
+assert(state.activity_issue_kind == "issues")
 
 local function footer_text()
   return table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
 end
 
-assert(footer_text():find("m milestones", 1, true), footer_text())
+local function tab_bar()
+  return vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1]
+end
+
+local function active_tab()
+  local line = tab_bar()
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.buf, -1, { 1, 0 }, { 1, -1 }, { details = true })) do
+    if mark[4].hl_group == "OculusTabActive" then
+      return line:sub(mark[3] + 1, mark[4].end_col)
+    end
+  end
+end
+
+assert(tab_bar() == "  Issues   Pull requests   Activity   Milestones", tab_bar())
+assert(active_tab() == "Issues", active_tab())
+assert(buffer_text():find("Project issue 1", 1, true))
+assert(footer_text():find("⇥ tabs", 1, true), footer_text())
+assert(footer_text():find("f filters", 1, true), footer_text())
+assert(not footer_text():find("m milestones", 1, true), footer_text())
+assert(vim.fn.maparg("m", "n", false, true).desc == "Move selected Oculus project or user")
 press("?")
 local issue_shortcuts = buffer_text()
-assert(issue_shortcuts:find("Open project milestones", 1, true), issue_shortcuts)
+assert(issue_shortcuts:find("Show the next or previous project tab", 1, true), issue_shortcuts)
+assert(issue_shortcuts:find("Filter issues", 1, true), issue_shortcuts)
 press("?")
--- The issues page opens the milestone list.
-press("m")
+-- <Tab> moves to the pull requests, which filter apart from the issues.
+press("<Tab>")
+assert(state.view == "activity" and state.activity_issue_kind == "pulls")
+assert(active_tab() == "Pull requests", active_tab())
+assert(#pull_requests == 1 and pull_requests[1].state == "open")
+assert(buffer_text():find("@contributor · draft pull request #7", 1, true), buffer_text())
+press("f")
+assert(state.view == "issue_filters")
+assert(buffer_text():find("PULL REQUEST FILTERS", 1, true))
+assert(buffer_text():find("Closed pull requests", 1, true))
+
+for line, target in pairs(state.line_targets) do
+  if target.dimension == "state" and target.value == "closed" then
+    vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+  end
+end
+
+press("<Space>")
+assert(state.opts.project_issue_filters["github:neovim/neovim:pulls"].state == "closed")
+assert(state.opts.project_issue_filters["github:neovim/neovim"].state == "open")
+press("j")
+assert(state.view == "activity" and state.activity_issue_kind == "pulls")
+assert(pull_requests[#pull_requests].state == "closed")
+-- Then the activity feed, then the milestones.
+press("<Tab>")
+assert(state.view == "activity" and not state.activity_issue_page)
+assert(active_tab() == "Activity", active_tab())
+assert(buffer_text():find("pushed", 1, true), buffer_text())
+press("<Tab>")
 assert(state.view == "milestones", state.view)
+assert(active_tab() == "Milestones", active_tab())
 assert(#milestone_requests == 1)
 assert(milestone_requests[1].repository == "neovim/neovim")
 local text = buffer_text()
-assert(text:find("  MILESTONES", 1, true))
 assert(text:find("  neovim/neovim · GitHub", 1, true))
 assert(text:find("  OPEN (3)", 1, true))
-assert(text:find("back   ⏎ open   b browser   r refresh", 1, true), text)
+assert(text:find("back   ⇥ tabs   ⏎ open   b browser", 1, true), text)
 press("?")
 local ms_shortcuts = buffer_text()
 assert(ms_shortcuts:find("Open the selected milestone", 1, true), ms_shortcuts)
+assert(ms_shortcuts:find("Show the next or previous project tab", 1, true), ms_shortcuts)
 press("?")
 assert(not state.footer_win or not vim.api.nvim_win_is_valid(state.footer_win))
 -- Open milestones come first, soonest due date first and undated last.
@@ -489,17 +624,12 @@ assert(state.activity_milestone and state.activity_milestone.id == 48)
 assert(item_requests[1].milestone == 48)
 assert(#state.events == 3)
 text = buffer_text()
-assert(text:find("  MILESTONE\n", 1, true))
+assert(active_tab() == "Milestones", active_tab())
 assert(text:find("  0.13 · neovim/neovim", 1, true), text)
 assert(text:find("@author-1 · open issue #1", 1, true), text)
 assert(text:find("@author-2 · open pull request #2", 1, true), text)
 assert(text:find("Milestone item 3", 1, true))
-assert(not footer_text():find("u issues", 1, true), footer_text())
-assert(not footer_text():find("m milestones", 1, true), footer_text())
-press("?")
-local item_shortcuts = buffer_text()
-assert(not item_shortcuts:find("Open project milestones", 1, true), item_shortcuts)
-press("?")
+assert(not footer_text():find("f filters", 1, true), footer_text())
 press("p")
 assert(state.activity_page == 2)
 assert(#state.events == 2)
@@ -508,25 +638,24 @@ assert(text:find("@author-4 · merged pull request #4", 1, true), text)
 press("j")
 assert(state.activity_page == 1 and state.activity_milestone)
 -- Back returns to the milestone list with the same selection, then to the
--- issues page, then to the project feed.
+-- project list.
 press("j")
 assert(state.view == "milestones")
 assert(selected_title() == "0.13")
 press("j")
-assert(state.view == "activity")
-assert(state.activity_issue_page == true)
-assert(state.activity_milestone == nil)
-assert(state.events == issue_events)
-press("j")
-assert(state.view == "activity")
-assert(state.activity_issue_page == false)
-assert(state.activity_milestone == nil)
--- Esc also leaves the milestone list.
-press("u")
-press("m")
+assert(state.view == "contributors", state.view)
+-- <S-Tab> cycles backwards and wraps from the first tab to the last.
+press("l")
+assert(state.activity_issue_kind == "issues")
+press("<S-Tab>")
 assert(state.view == "milestones")
+press("<S-Tab>")
+assert(state.view == "activity" and not state.activity_issue_page)
+press("<Tab>")
+assert(state.view == "milestones")
+-- Esc also leaves the milestone list.
 press("<Esc>")
-assert(state.view == "activity" and state.activity_issue_page == true)
+assert(state.view == "contributors", state.view)
 window.close()
 browser.open = original_browser_open
 

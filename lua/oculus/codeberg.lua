@@ -749,13 +749,16 @@ local function project_issue_event(repository_name, issue, include_pull_requests
         pull_request = pull_request and {
           merged = json_value(pull_request.merged) == true
             or json_value(pull_request.merged_at) ~= nil,
+          draft = json_value(pull_request.draft) == true,
         } or nil,
       },
     },
   }
 end
 
-function M.repository_issues(repository_name, opts, callback)
+-- Lists a project's issues, or its pull requests when `pulls` is set, as
+-- issue events.
+local function repository_issue_list(repository_name, opts, callback, pulls)
   opts = opts or {}
   local ttl = opts.cache_ttl or 300
   local page = math.max(1, math.floor(opts.page or 1))
@@ -771,6 +774,7 @@ function M.repository_issues(repository_name, opts, callback)
 
   local cache_key = table.concat({
     repository_name:lower(),
+    pulls and "pulls" or "issues",
     state,
     tostring(page),
     tostring(per_page),
@@ -796,8 +800,15 @@ function M.repository_issues(repository_name, opts, callback)
 
   local url = (
     "%s/api/v1/repos/%s/issues"
-      .. "?state=%s&type=issues&limit=%d&page=%d"
-  ):format(base_url, repository_name, state, per_page, page)
+      .. "?state=%s&type=%s&limit=%d&page=%d"
+  ):format(
+    base_url,
+    repository_name,
+    state,
+    pulls and "pulls" or "issues",
+    per_page,
+    page
+  )
 
   request_json(url, opts, function(issues, err)
     if not issues then
@@ -808,7 +819,7 @@ function M.repository_issues(repository_name, opts, callback)
     local events = {}
 
     for _, issue in ipairs(issues) do
-      local normalized = project_issue_event(repository_name, issue)
+      local normalized = project_issue_event(repository_name, issue, pulls)
 
       if normalized then
         events[#events + 1] = normalized
@@ -825,6 +836,14 @@ function M.repository_issues(repository_name, opts, callback)
 
     callback(events, nil, false, complete)
   end)
+end
+
+function M.repository_issues(repository_name, opts, callback)
+  repository_issue_list(repository_name, opts, callback, false)
+end
+
+function M.repository_pulls(repository_name, opts, callback)
+  repository_issue_list(repository_name, opts, callback, true)
 end
 
 local function project_milestone(milestone, html_url)

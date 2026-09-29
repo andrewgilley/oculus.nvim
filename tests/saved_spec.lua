@@ -77,6 +77,7 @@ for _, provider in ipairs({ github, codeberg }) do
     "repository_events",
     "repository_updates",
     "repository_issues",
+    "repository_pulls",
     "enrich_pull_requests",
     "enrich_pushes",
     "pull_request_commits",
@@ -86,6 +87,14 @@ for _, provider in ipairs({ github, codeberg }) do
 
   provider.repository_updates = function(_, _, callback)
     callback({}, nil, false)
+  end
+
+  provider.repository_issues = function(_, _, callback)
+    callback({}, nil, false, true)
+  end
+
+  provider.repository_pulls = function(_, _, callback)
+    callback({}, nil, false, true)
   end
 
   provider.enrich_pull_requests = function(events, _, callback)
@@ -261,8 +270,12 @@ local function open_project(repository)
     end
   end
 
+  -- Projects open on their issues; the activity feed is two tabs along.
   press("l")
+  press("<Tab>")
+  press("<Tab>")
   assert(state.activity_project.repository == repository)
+  assert(state.view == "activity" and not state.activity_issue_page)
 end
 
 vim.o.columns = 160
@@ -309,8 +322,9 @@ press("s")
 vim.api.nvim_win_set_cursor(state.win, { lines[2], 0 })
 press("s")
 assert(#store.items() == 2 and store.items()[1].event.id == "gh-pr")
-press("u")
-assert(state.activity_issue_page)
+press("<S-Tab>")
+press("<S-Tab>")
+assert(state.activity_issue_page and state.activity_issue_kind == "issues")
 vim.api.nvim_win_set_cursor(state.win, { title_lines()[1], 0 })
 press("s")
 assert(store.items()[1].event.id == "project-issue:neovim/neovim:5")
