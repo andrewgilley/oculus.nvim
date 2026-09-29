@@ -7,7 +7,6 @@ local push_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
 local repository_milestone_cache = {}
-local repository_contents_cache = {}
 
 local function account(value)
   return type(value) == "table" and value or nil
@@ -581,113 +580,6 @@ end
 
 function M.repository_pulls(repository_name, opts, callback)
   repository_issue_list(repository_name, opts, callback, true)
-end
-
--- Percent-encodes each segment of a repository path for a contents URL.
-local function encode_path(path)
-  return (tostring(path or ""):gsub("[^%w%-%._~/]", function(char)
-    return ("%%%02X"):format(char:byte())
-  end))
-end
-
--- The entries of one directory on the default branch, directories first.
-function M.repository_contents(repository, path, opts, callback)
-  opts = opts or {}
-  path = tostring(path or ""):gsub("^/+", ""):gsub("/+$", "")
-  local ttl = opts.cache_ttl or 300
-  local cache_key = repository:lower() .. ":" .. path
-  local cached = repository_contents_cache[cache_key]
-
-  if cached and not opts.force and os.time() - cached.fetched_at < ttl then
-    vim.schedule(function()
-      callback(vim.deepcopy(cached.entries), nil, true)
-    end)
-
-    return
-  end
-
-  local url = (
-    "%s/api/v1/repos/%s/contents/%s"
-  ):format(base_url, repository, encode_path(path))
-
-  request_json(url, opts, function(listing, err)
-    if not listing then
-      callback(nil, err)
-      return
-    end
-
-    if not vim.islist(listing) then
-      callback(nil, path .. " is not a directory")
-      return
-    end
-
-    local entries = {}
-
-    for _, entry in ipairs(listing) do
-      if type(entry) == "table" and type(entry.name) == "string" then
-        entries[#entries + 1] = {
-          name = entry.name,
-          path = json_value(entry.path) or entry.name,
-          type = entry.type == "dir" and "dir" or json_value(entry.type) or "file",
-          size = json_value(entry.size),
-          html_url = json_value(entry.html_url),
-        }
-      end
-    end
-
-    table.sort(entries, function(left, right)
-      if (left.type == "dir") ~= (right.type == "dir") then
-        return left.type == "dir"
-      end
-
-      return left.name:lower() < right.name:lower()
-    end)
-
-    repository_contents_cache[cache_key] = {
-      entries = vim.deepcopy(entries),
-      fetched_at = os.time(),
-    }
-
-    callback(entries, nil, false)
-  end)
-end
-
--- The text of one file on the default branch.
-function M.repository_file(repository, path, opts, callback)
-  path = tostring(path or ""):gsub("^/+", "")
-
-  request_json(("%s/api/v1/repos/%s/contents/%s"):format(base_url, repository, encode_path(path)), opts or {}, function(file, err)
-    if type(file) ~= "table" then
-      callback(nil, err)
-      return
-    end
-
-    if file.type ~= "file" then
-      callback(nil, path .. " is not a file")
-      return
-    end
-
-    local content = json_value(file.content)
-
-    if file.encoding ~= "base64" or type(content) ~= "string" then
-      callback(nil, path .. " is too large to load; press b to open it in the browser")
-      return
-    end
-
-    local ok, text = pcall(vim.base64.decode, (content:gsub("%s", "")))
-
-    if not ok then
-      callback(nil, path .. " could not be decoded")
-      return
-    end
-
-    if text:find("\0", 1, true) then
-      callback(nil, path .. " is a binary file; press b to open it in the browser")
-      return
-    end
-
-    callback(text)
-  end)
 end
 
 local function project_milestone(milestone, html_url)

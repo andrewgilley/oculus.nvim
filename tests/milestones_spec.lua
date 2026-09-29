@@ -223,40 +223,6 @@ do
 
   assert(urls[1]:find("type=pulls", 1, true), urls[1])
   assert(#pulls == 1 and pulls[1].payload.issue.pull_request.draft == true)
-  -- Directory listings put directories first, and paths are encoded.
-  local entries
-
-  urls = with_fake_curl(vim.json.encode({
-    { name = "README.md", path = "src/README.md", type = "file", size = 2048, html_url = "https://github.com/neovim/neovim/blob/master/src/README.md" },
-    { name = "nvim", path = "src/nvim", type = "dir", size = 0, html_url = "https://github.com/neovim/neovim/tree/master/src/nvim" },
-    { name = "a b.txt", path = "src/a b.txt", type = "file", size = 1 },
-  }), function()
-    github.repository_contents("neovim/neovim", "/src/", { force = true }, function(result)
-      entries = result
-    end)
-
-    wait_for("github contents did not load", function()
-      return entries ~= nil
-    end)
-  end)
-
-  assert(urls[1]:find("/repos/neovim/neovim/contents/src", 1, true), urls[1])
-  assert(vim.deep_equal(vim.tbl_map(function(entry) return entry.name end, entries), { "nvim", "a b.txt", "README.md" }))
-  assert(entries[1].type == "dir" and entries[3].size == 2048)
-  entries = nil
-
-  urls = with_fake_curl(vim.json.encode({ { name = "x y", path = "docs/x y", type = "dir" } }), function()
-    codeberg.repository_contents("owner/repo", "docs/x y", { force = true }, function(result)
-      entries = result
-    end)
-
-    wait_for("codeberg contents did not load", function()
-      return entries ~= nil
-    end)
-  end)
-
-  assert(urls[1]:find("/api/v1/repos/owner/repo/contents/docs/x%20y", 1, true), urls[1])
-  assert(#entries == 1 and entries[1].type == "dir")
   -- Discussions come from GraphQL and read as discussion events.
   local discussions
 
@@ -411,7 +377,6 @@ for _, name in ipairs({
   "repository_issues",
   "repository_pulls",
   "repository_discussions",
-  "repository_contents",
   "repository_milestones",
   "milestone_issues",
   "repository_projects",
@@ -567,26 +532,6 @@ github.repository_discussions = function(repository, _, callback)
       payload = { action = "open", discussion = { number = 5 } },
     },
   }, nil, false, true)
-end
-
-local content_requests = {}
-
-github.repository_contents = function(repository, path, opts, callback)
-  content_requests[#content_requests + 1] = { repository = repository, path = path, force = opts.force }
-
-  local listings = {
-    [""] = {
-      { name = "src", path = "src", type = "dir", html_url = "https://github.com/neovim/neovim/tree/master/src" },
-      { name = "README.md", path = "README.md", type = "file", size = 4096, html_url = "https://github.com/neovim/neovim/blob/master/README.md" },
-    },
-    src = {
-      { name = "nvim", path = "src/nvim", type = "dir" },
-      { name = "main.c", path = "src/main.c", type = "file", size = 10 },
-      { name = "missing.c", path = "src/missing.c", type = "file", size = 1 },
-    },
-  }
-
-  callback(vim.deepcopy(listings[path] or {}), nil, false)
 end
 
 local fixture_milestones = {
@@ -763,7 +708,7 @@ local function active_tab()
   end
 end
 
-assert(tab_bar() == "  code   issues   pull requests   discussions   projects   milestones   insights", tab_bar())
+assert(tab_bar() == "  issues   pull requests   discussions   projects   milestones   insights", tab_bar())
 assert(vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1] == "  neovim/neovim · GitHub")
 assert(active_tab() == "issues", active_tab())
 -- The selected tab is bold but never underlined, even when Title is.
@@ -942,160 +887,9 @@ assert(state.view == "milestones")
 assert(selected_title() == "0.13")
 press("j")
 assert(state.view == "contributors", state.view)
--- <S-Tab> goes back to the code, which lists the root directory.
+-- <S-Tab> wraps from the first tab, the issues, to the last: the insights.
 press("l")
 assert(state.activity_issue_kind == "issues")
-press("<S-Tab>")
-assert(state.view == "code", state.view)
-assert(active_tab() == "code", active_tab())
-assert(content_requests[#content_requests].path == "")
-text = buffer_text()
-assert(text:find("  src/", 1, true), text)
-assert(text:find("  README.md", 1, true), text)
-assert(text:find("up   ⇥ tabs   ⏎ open", 1, true), text)
-assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "src")
-assert(preview_text():find("DIRECTORY", 1, true), preview_text())
-press("k")
-assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "README.md")
-assert(preview_text():find("4.0 KB", 1, true), preview_text())
-press("b")
-assert(opened_urls[#opened_urls] == "https://github.com/neovim/neovim/blob/master/README.md")
--- A file opens in a tab from the local clone when the clone has it.
-local git = require("oculus.inspect.git")
-local original_find_local_repository = git.find_local_repository
-local original_repository_file = github.repository_file
-local clone = vim.fn.resolve(vim.fn.tempname())
-vim.fn.mkdir(clone, "p")
-vim.fn.writefile({ "# Neovim" }, clone .. "/README.md")
-local clone_lookups = {}
-
-git.find_local_repository = function(info, _, callback)
-  clone_lookups[#clone_lookups + 1] = info
-  callback(clone, "origin")
-end
-
-local file_requests = {}
-
-github.repository_file = function(repository, path, _, callback)
-  file_requests[#file_requests + 1] = { repository = repository, path = path }
-
-  if path == "src/missing.c" then
-    callback(nil, "GitHub: Not Found")
-  else
-    callback("int main(void)\r\n{\r\n  return 0;\r\n}\r\n")
-  end
-end
-
--- Opened files get the colorscheme a per-filetype colorscheme plugin picks,
--- even the read-only remote buffers such plugins skip.
-local oculus = require("oculus")
-local original_colorscheme_adapter = oculus.config.inspect_colorscheme
-local coloured = {}
-
-oculus.config.inspect_colorscheme = {
-  apply = function(buf)
-    coloured[#coloured + 1] = {
-      name = vim.api.nvim_buf_get_name(buf),
-      buftype = vim.bo[buf].buftype,
-    }
-  end,
-  enabled = function()
-    return true
-  end,
-  set_enabled = function() end,
-}
-
-local tab_count = #vim.api.nvim_list_tabpages()
-press("l")
-assert(clone_lookups[1].forge == "github" and clone_lookups[1].owner == "neovim" and clone_lookups[1].repo == "neovim")
-assert(clone_lookups[1].remote_url == "https://github.com/neovim/neovim.git")
-assert(#vim.api.nvim_list_tabpages() == tab_count + 1)
-assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == clone .. "/README.md", vim.api.nvim_buf_get_name(0))
-assert(vim.api.nvim_buf_get_lines(0, 0, -1, false)[1] == "# Neovim")
-assert(vim.fn.resolve(coloured[#coloured].name) == clone .. "/README.md")
-assert(#file_requests == 0)
-assert(not state.win or not vim.api.nvim_win_is_valid(state.win))
-vim.cmd("tabclose")
--- Reopening returns to the code tab.
-window.open(state.opts)
-state = window.state
-assert(state.view == "code" and state.project_code.path == "", state.view)
--- Directories open in the list.
-press("i")
-press("l")
-assert(state.project_code.path == "src")
-text = buffer_text()
-assert(text:find("  ..", 1, true) and text:find("  nvim/", 1, true) and text:find("  main.c", 1, true), text)
-assert(text:find("/src", 1, true), text)
--- Without the file in a local clone, the forge's copy opens read-only.
-press("k")
-press("k")
-assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "main.c")
-press("l")
-assert(file_requests[1].repository == "neovim/neovim" and file_requests[1].path == "src/main.c")
-assert(#vim.api.nvim_list_tabpages() == tab_count + 1)
-assert(vim.api.nvim_buf_get_name(0) == "oculus://github/neovim/neovim/src/main.c", vim.api.nvim_buf_get_name(0))
-assert(vim.deep_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "int main(void)", "{", "  return 0;", "}" }))
-assert(vim.bo.filetype == "c" and vim.bo.readonly and not vim.bo.modifiable and vim.bo.buftype == "nofile")
-local remote_name = "oculus://github/neovim/neovim/src/main.c"
-assert(coloured[#coloured].name == remote_name and coloured[#coloured].buftype == "", vim.inspect(coloured))
--- Returning to the remote buffer from another tab colours it again.
-local colour_count = #coloured
-vim.cmd("tabprevious")
-vim.cmd("tabnext")
-assert(vim.api.nvim_buf_get_name(0) == remote_name)
-assert(#coloured > colour_count and coloured[#coloured].name == remote_name, vim.inspect(coloured))
-vim.cmd("tabclose")
-window.open(state.opts)
-state = window.state
-assert(state.view == "code" and state.project_code.path == "src")
--- A file the forge cannot give keeps Oculus open and says why.
-git.find_local_repository = function(_, _, callback)
-  callback(nil)
-end
-
-assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "main.c")
-press("k")
-assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "missing.c")
-press("l")
-assert(vim.api.nvim_win_is_valid(state.win) and state.view == "code")
-assert(#vim.api.nvim_list_tabpages() == tab_count)
-assert(vim.api.nvim_buf_get_lines(state.buf, 3, 4, false)[1]:find("GitHub: Not Found", 1, true))
--- Opening the same remote file again reuses its buffer.
-git.find_local_repository = function(_, _, callback)
-  callback(nil)
-end
-
-press("i")
-press("l")
-local reopened_buffer = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(reopened_buffer) == "oculus://github/neovim/neovim/src/main.c")
-assert(#vim.tbl_filter(function(info) return info.name == "oculus://github/neovim/neovim/src/main.c" end, vim.fn.getbufinfo()) == 1)
-vim.cmd("tabclose")
-window.open(state.opts)
-state = window.state
-git.find_local_repository = original_find_local_repository
-github.repository_file = original_repository_file
-oculus.config.inspect_colorscheme = original_colorscheme_adapter
-vim.fn.delete(clone, "rf")
-press("r")
-assert(content_requests[#content_requests].force == true and state.project_code.path == "src")
--- Leaving and coming back keeps the directory.
-press("<Tab>")
-press("<S-Tab>")
-assert(state.view == "code" and state.project_code.path == "src")
--- Left climbs to the parent, selecting the directory just left, then leaves.
-press("j")
-assert(state.project_code.path == "")
-assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "src")
-press("l")
-press("l")
-assert(state.project_code.path == "")
-press("j")
-assert(state.view == "contributors", state.view)
--- <S-Tab> wraps from the first tab to the last: the insights.
-press("l")
-press("<S-Tab>")
 press("<S-Tab>")
 assert(state.view == "insights", state.view)
 assert(active_tab() == "insights", active_tab())
@@ -1120,7 +914,7 @@ assert(state.view == "milestones")
 press("<Tab>")
 assert(state.view == "insights")
 press("<Tab>")
-assert(state.view == "code")
+assert(state.view == "activity" and state.activity_issue_kind == "issues")
 press("<S-Tab>")
 assert(state.view == "insights")
 press("<S-Tab>")

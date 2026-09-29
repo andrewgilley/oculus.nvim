@@ -48,9 +48,9 @@ Offline help is in `:h oculus`, generated from this README.
   your own open pull requests, and the issues and pull requests assigned to you
   or mentioning you, across every repository, on GitHub and Codeberg.
 
-- **Projects and people at a glance.** Each project has tabs for its code,
-  issues, pull requests, discussions, project boards, milestones, and
-  insights, and each user a feed of any public event type. Filters persist
+- **Projects and people at a glance.** Each project has tabs for its issues,
+  pull requests, discussions, project boards, milestones, and insights, and
+  each user a feed of any public event type. Filters persist
   between sessions.
 
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
@@ -186,8 +186,8 @@ window with `a`, list them in `setup()`, or load them from a
 
 To track a GitHub subdirectory, set `path` to its path from the repository root,
 or paste a URL such as `https://github.com/owner/monorepo/tree/main/packages/editor`
-into the add dialog. Its Code tab starts at that directory. The repository and
-its subdirectories can each have separate tracked entries.
+into the add dialog. The repository and its subdirectories can each have
+separate tracked entries.
 
 > [!TIP]
 > Set `GITHUB_TOKEN` in your environment. Unauthenticated GitHub requests are
@@ -255,21 +255,9 @@ tabs like its page on GitHub or Codeberg:
 
 ```
   neovim/neovim · GitHub
-  code   issues   pull requests   discussions   projects   milestones   insights
+  issues   pull requests   discussions   projects   milestones   insights
 ```
 
-- **Code** lists the files in the default branch, directories first, with the
-  selected entry's size in the preview. `l`/`→` opens a directory and `h`/`←`
-  goes to its parent (and leaves the project from the top). On a file, `l`/`→`
-  opens it in a new tab: from your local clone when one is found (the same
-  search inspection uses) and it has the file, otherwise the forge's copy on
-  the default branch, read-only, in a buffer named
-  `oculus://github/owner/repo/path`. Either way the file gets the colorscheme
-  a per-filetype colorscheme plugin picks for it (see `inspect_colorscheme`),
-  including when you come back to it from another tab. `b` opens the selected
-  file or directory
-  in your browser. A project tracking a subdirectory starts, and stops, at
-  that directory.
 - **Issues** and **Pull requests** list the most recently updated first, open
   ones by default. Press `f` on either to filter by status and assignment
   (each tab keeps its own filters).
@@ -867,7 +855,7 @@ on their own beside them:
 | Module                  | What it holds                                                      |
 | ----------------------- | ------------------------------------------------------------------ |
 | `oculus/window.lua`     | The Oculus window: the list, the sidebar, the footer, the keys      |
-| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `code`, `boards` (project boards), `insights`, `milestones`, `work` and `saved` views |
+| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `boards` (project boards), `insights`, `milestones`, `work` and `saved` views |
 | `oculus/inspect.lua`    | An inspection: its tabs, buffers, sidebar and chunk navigation      |
 | `oculus/inspect/`       | `prepare` and `git` (getting the change), `patch` (reading a diff), `target` (resolving what to inspect), `overview` (the summary and its agent flows), `review` and `review_ui` (pull request review threads), `oil`, `context` (treesitter-context) and `counters` |
 

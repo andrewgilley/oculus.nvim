@@ -334,7 +334,6 @@ function M.setup(window, internal)
         window.state.view ~= "contributors"
         and window.state.view ~= "directory"
         and window.state.view ~= "milestones"
-        and window.state.view ~= "code"
         and window.state.view ~= "boards"
         and window.state.view ~= "work"
       )
