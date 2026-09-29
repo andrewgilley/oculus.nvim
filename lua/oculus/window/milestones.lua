@@ -106,7 +106,7 @@ function M.setup(window, milestone_view, internal)
     local window_width = vim.api.nvim_win_get_width(window.state.win)
     local left_width = internal.preview_left_width(window_width)
     local preview_width = math.max(15, window_width - left_width - 5)
-    internal.render_preview_panel(milestone_view.preview_items(milestone, preview_width))
+    internal.render_preview_panel(milestone_view.preview_items(milestone, preview_width), { offset = 2 })
   end
 
   function milestone_view.selected_index(milestones)
@@ -137,7 +137,7 @@ function M.setup(window, milestone_view, internal)
     local left_width = internal.preview_left_width(window_width)
     local window_height = vim.api.nvim_win_get_height(window.state.win)
     local sidebar_visible = internal.is_sidebar_visible()
-    local tab_text, tab_ranges = internal.project_tab_line("milestones", left_width - 2)
+    local tab_text, tab_ranges = internal.project_tab_line("milestones", window_width - 2)
 
     local lines = {
       "",
@@ -286,7 +286,7 @@ function M.setup(window, milestone_view, internal)
       vim.api.nvim_win_set_cursor(window.state.win, { selected_line, 0 })
       milestone_view.queue_preview(window.state.line_targets[selected_line].milestone)
     else
-      internal.render_preview_panel({ [2] = { "MILESTONE", "Title" } })
+      internal.render_preview_panel({ [2] = { "MILESTONE", "Title" } }, { offset = 2 })
     end
 
     internal.update_contributor_selection()

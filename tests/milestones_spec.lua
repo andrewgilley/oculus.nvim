@@ -223,6 +223,95 @@ do
 
   assert(urls[1]:find("type=pulls", 1, true), urls[1])
   assert(#pulls == 1 and pulls[1].payload.issue.pull_request.draft == true)
+  -- Directory listings put directories first, and paths are encoded.
+  local entries
+
+  urls = with_fake_curl(vim.json.encode({
+    { name = "README.md", path = "src/README.md", type = "file", size = 2048, html_url = "https://github.com/neovim/neovim/blob/master/src/README.md" },
+    { name = "nvim", path = "src/nvim", type = "dir", size = 0, html_url = "https://github.com/neovim/neovim/tree/master/src/nvim" },
+    { name = "a b.txt", path = "src/a b.txt", type = "file", size = 1 },
+  }), function()
+    github.repository_contents("neovim/neovim", "/src/", { force = true }, function(result)
+      entries = result
+    end)
+
+    wait_for("github contents did not load", function()
+      return entries ~= nil
+    end)
+  end)
+
+  assert(urls[1]:find("/repos/neovim/neovim/contents/src", 1, true), urls[1])
+  assert(vim.deep_equal(vim.tbl_map(function(entry) return entry.name end, entries), { "nvim", "a b.txt", "README.md" }))
+  assert(entries[1].type == "dir" and entries[3].size == 2048)
+  entries = nil
+
+  urls = with_fake_curl(vim.json.encode({ { name = "x y", path = "docs/x y", type = "dir" } }), function()
+    codeberg.repository_contents("owner/repo", "docs/x y", { force = true }, function(result)
+      entries = result
+    end)
+
+    wait_for("codeberg contents did not load", function()
+      return entries ~= nil
+    end)
+  end)
+
+  assert(urls[1]:find("/api/v1/repos/owner/repo/contents/docs/x%20y", 1, true), urls[1])
+  assert(#entries == 1 and entries[1].type == "dir")
+  -- Discussions come from GraphQL and read as discussion events.
+  local discussions
+
+  urls = with_fake_curl(vim.json.encode({
+    data = {
+      repository = {
+        hasDiscussionsEnabled = true,
+        discussions = {
+          pageInfo = { hasNextPage = false, endCursor = vim.NIL },
+          nodes = {
+            {
+              number = 5,
+              title = "How do I configure this?",
+              url = "https://github.com/neovim/neovim/discussions/5",
+              closed = false,
+              answerChosenAt = "2026-08-02T00:00:00Z",
+              createdAt = "2026-08-01T00:00:00Z",
+              updatedAt = "2026-08-03T00:00:00Z",
+              author = { login = "asker" },
+              category = { name = "Q&A" },
+              comments = { totalCount = 2 },
+            },
+          },
+        },
+      },
+    },
+  }), function()
+    github.repository_discussions("neovim/neovim", { force = true, token = "test-token" }, function(result, err)
+      discussions = result or err
+    end)
+
+    wait_for("github discussions did not load", function()
+      return discussions ~= nil
+    end)
+  end)
+
+  assert(urls[1] == "https://api.github.com/graphql", urls[1])
+  assert(type(discussions) == "table" and #discussions == 1, vim.inspect(discussions))
+  assert(discussions[1].type == "DiscussionEvent")
+  assert(discussions[1].oculus_text == "@asker · answered discussion #5 in Q&A · 2 comments", discussions[1].oculus_text)
+  assert(discussions[1].url == "https://github.com/neovim/neovim/discussions/5")
+  local disabled
+
+  with_fake_curl(vim.json.encode({ data = { repository = { hasDiscussionsEnabled = false } } }), function()
+    github.repository_discussions("owner/quiet", { force = true, token = "test-token" }, function(result, _, _, complete, notice)
+      disabled = { result = result, complete = complete, notice = notice }
+    end)
+
+    wait_for("disabled discussions did not load", function()
+      return disabled ~= nil
+    end)
+  end)
+
+  assert(#disabled.result == 0 and disabled.complete == true)
+  assert(disabled.notice == "Discussions are turned off for this repository.")
 end
 
 local project = {
@@ -239,6 +328,8 @@ for _, name in ipairs({
   "repository_updates",
   "repository_issues",
   "repository_pulls",
+  "repository_discussions",
+  "repository_contents",
   "repository_milestones",
   "milestone_issues",
   "enrich_pull_requests",
@@ -330,6 +421,41 @@ github.repository_pulls = function(repository, opts, callback)
       },
     },
   }, nil, false, true)
+end
+
+github.repository_discussions = function(repository, _, callback)
+  callback({
+    {
+      id = "project-discussion:neovim/neovim:5",
+      type = "DiscussionEvent",
+      actor = { login = "asker" },
+      repo = { name = repository },
+      created_at = "2026-08-03T12:00:00Z",
+      url = "https://github.com/neovim/neovim/discussions/5",
+      oculus_text = "@asker · discussion #5 in Q&A",
+      oculus_detail = "How do I configure this?",
+      payload = { action = "open", discussion = { number = 5 } },
+    },
+  }, nil, false, true)
+end
+
+local content_requests = {}
+
+github.repository_contents = function(repository, path, opts, callback)
+  content_requests[#content_requests + 1] = { repository = repository, path = path, force = opts.force }
+
+  local listings = {
+    [""] = {
+      { name = "src", path = "src", type = "dir", html_url = "https://github.com/neovim/neovim/tree/master/src" },
+      { name = "README.md", path = "README.md", type = "file", size = 4096, html_url = "https://github.com/neovim/neovim/blob/master/README.md" },
+    },
+    src = {
+      { name = "nvim", path = "src/nvim", type = "dir" },
+      { name = "main.c", path = "src/main.c", type = "file", size = 10 },
+    },
+  }
+
+  callback(vim.deepcopy(listings[path] or {}), nil, false)
 end
 
 local fixture_milestones = {
@@ -505,7 +631,7 @@ local function active_tab()
   end
 end
 
-assert(tab_bar() == "  Issues   Pull requests   Activity   Milestones", tab_bar())
+assert(tab_bar() == "  Code   Issues   Pull requests   Discussions   Activity   Milestones", tab_bar())
 assert(active_tab() == "Issues", active_tab())
 assert(buffer_text():find("Project issue 1", 1, true))
 assert(footer_text():find("⇥ tabs", 1, true), footer_text())
@@ -540,6 +666,15 @@ assert(state.opts.project_issue_filters["github:neovim/neovim"].state == "open")
 press("j")
 assert(state.view == "activity" and state.activity_issue_kind == "pulls")
 assert(pull_requests[#pull_requests].state == "closed")
+-- Then the discussions, which have no filters.
+press("<Tab>")
+assert(state.view == "activity" and state.activity_issue_kind == "discussions")
+assert(active_tab() == "Discussions", active_tab())
+assert(buffer_text():find("@asker · discussion #5 in Q&A", 1, true), buffer_text())
+assert(buffer_text():find("How do I configure this?", 1, true), buffer_text())
+assert(not footer_text():find("f filters", 1, true), footer_text())
+press("f")
+assert(state.view == "activity" and state.activity_issue_kind == "discussions")
 -- Then the activity feed, then the milestones.
 press("<Tab>")
 assert(state.view == "activity" and not state.activity_issue_page)
@@ -644,14 +779,60 @@ assert(state.view == "milestones")
 assert(selected_title() == "0.13")
 press("j")
 assert(state.view == "contributors", state.view)
--- <S-Tab> cycles backwards and wraps from the first tab to the last.
+-- <S-Tab> goes back to the code, which lists the root directory.
 press("l")
 assert(state.activity_issue_kind == "issues")
+press("<S-Tab>")
+assert(state.view == "code", state.view)
+assert(active_tab() == "Code", active_tab())
+assert(content_requests[#content_requests].path == "")
+text = buffer_text()
+assert(text:find("  src/", 1, true), text)
+assert(text:find("  README.md", 1, true), text)
+assert(text:find("up   ⇥ tabs   ⏎ open", 1, true), text)
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "src")
+assert(preview_text():find("DIRECTORY", 1, true), preview_text())
+press("k")
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "README.md")
+assert(preview_text():find("4.0 KB", 1, true), preview_text())
+press("b")
+assert(opened_urls[#opened_urls] == "https://github.com/neovim/neovim/blob/master/README.md")
+-- Files have nothing to open in place; directories open in the list.
+press("l")
+assert(state.view == "code" and state.project_code.path == "")
+press("i")
+press("l")
+assert(state.project_code.path == "src")
+text = buffer_text()
+assert(text:find("  ..", 1, true) and text:find("  nvim/", 1, true) and text:find("  main.c", 1, true), text)
+assert(text:find("/src", 1, true), text)
+press("r")
+assert(content_requests[#content_requests].force == true and state.project_code.path == "src")
+-- Leaving and coming back keeps the directory.
+press("<Tab>")
+press("<S-Tab>")
+assert(state.view == "code" and state.project_code.path == "src")
+-- Left climbs to the parent, selecting the directory just left, then leaves.
+press("j")
+assert(state.project_code.path == "")
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "src")
+press("l")
+press("l")
+assert(state.project_code.path == "")
+press("j")
+assert(state.view == "contributors", state.view)
+-- <S-Tab> wraps from the first tab to the last.
+press("l")
+press("<S-Tab>")
 press("<S-Tab>")
 assert(state.view == "milestones")
 press("<S-Tab>")
 assert(state.view == "activity" and not state.activity_issue_page)
 press("<Tab>")
+assert(state.view == "milestones")
+press("<Tab>")
+assert(state.view == "code")
+press("<S-Tab>")
 assert(state.view == "milestones")
 -- Esc also leaves the milestone list.
 press("<Esc>")

@@ -1751,6 +1751,7 @@ do
   local original_repository_updates = github.repository_updates
   local original_repository_issues = github.repository_issues
   local original_repository_pulls = github.repository_pulls
+  local original_repository_discussions = github.repository_discussions
   local repository_forces = {}
   local repository_per_page
   local repository_pages = {}
@@ -1947,6 +1948,10 @@ do
     callback({}, nil, false, true)
   end
 
+  github.repository_discussions = function(_, _, callback)
+    callback({}, nil, false, true)
+  end
+
   github.enrich_pull_requests = function(events, _, callback)
     callback(events)
   end
@@ -2050,10 +2055,10 @@ do
   assert(project_line)
   vim.api.nvim_win_set_cursor(state.win, { project_line, 0 })
   vim.fn.maparg("l", "n", false, true).callback()
-  -- A project opens on its issues tab; the activity feed is two tabs along.
+  -- A project opens on its issues tab; the activity feed is three tabs along.
   assert(state.activity_issue_page == true and state.activity_issue_kind == "issues")
   local tab_line = vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1]
-  assert(tab_line == "  Issues   Pull requests   Activity   Milestones", tab_line)
+  assert(tab_line:find("^  Code   Issues   P") and tab_line:find("   Milestones$"), tab_line)
   assert(#repository_pages == 0)
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(state.activity_issue_page == true and state.activity_issue_kind == "pulls")
@@ -2061,6 +2066,8 @@ do
   assert(table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
     :find("No pull requests match the filters.", 1, true))
 
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  assert(state.activity_issue_kind == "discussions")
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(state.activity_issue_page == false)
   assert(state.activity_scope == "project")
@@ -2085,7 +2092,7 @@ do
     "\n"
   )
 
-  assert(project_activity_text:find("  Issues   Pull requests   Activity", 1, true))
+  assert(project_activity_text:find("  Code   Issues   ", 1, true), project_activity_text)
   assert(project_activity_text:find("neovim/neovim", 1, true))
   assert(project_activity_text:find("@project-author pushed", 1, true))
 
@@ -2117,6 +2124,7 @@ do
   assert(previous_tab_mapping.desc == "Show the previous Oculus project tab")
   previous_tab_mapping.callback()
   previous_tab_mapping.callback()
+  previous_tab_mapping.callback()
   assert(state.view == "activity")
   assert(state.activity_issue_page == true)
   assert(state.activity_project.repository == "neovim/neovim")
@@ -2129,7 +2137,7 @@ do
     "\n"
   )
 
-  assert(issue_activity_text:find("  Issues   Pull requests", 1, true))
+  assert(issue_activity_text:find("  Code   Issues   ", 1, true), issue_activity_text)
 
   assert(
     issue_activity_text:find("Project issue 1", 1, true),
@@ -2291,6 +2299,7 @@ do
   assert(#state.events == 2)
   vim.fn.maparg("j", "n", false, true).callback()
   assert(state.activity_page == 1)
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(state.view == "activity")
@@ -2556,7 +2565,8 @@ do
   end
 
   vim.fn.maparg("l", "n", false, true).callback()
-  -- Projects open on their issues; the activity feed is two tabs along.
+  -- Projects open on their issues; the activity feed is three tabs along.
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(state.activity_project.repository == "folke/lazy.nvim")
@@ -2597,6 +2607,7 @@ do
   github.repository_updates = original_repository_updates
   github.repository_issues = original_repository_issues
   github.repository_pulls = original_repository_pulls
+  github.repository_discussions = original_repository_discussions
 end
 
 do
@@ -2701,6 +2712,7 @@ do
   end
 
   vim.fn.maparg("l", "n", false, true).callback()
+  vim.fn.maparg("<Tab>", "n", false, true).callback()
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   vim.fn.maparg("<Tab>", "n", false, true).callback()
   assert(#state.events == 8)

@@ -670,8 +670,9 @@ function M.setup(window, internal)
     local filtered = {}
 
     for _, event in ipairs(events or {}) do
-      if event.type == "IssuesEvent"
-        and project_issue_allowed(event, project, kind)
+      -- Discussions have no filters.
+      if (kind == "discussions" and event.type == "DiscussionEvent")
+        or (event.type == "IssuesEvent" and project_issue_allowed(event, project, kind))
       then
         filtered[#filtered + 1] = event
       end
@@ -701,8 +702,9 @@ function M.setup(window, internal)
     return true
   end
 
-  -- Loads the project's issues, or its pull requests when kind is "pulls".
-  -- Without a kind, the list already shown keeps its kind.
+  -- Loads the project's issues, or its pull requests or discussions when kind
+  -- is "pulls" or "discussions". Without a kind, the list already shown keeps
+  -- its kind.
   load_project_issues = function(project, force, page, kind)
     local previous_page = window.state.activity_page or 1
 
@@ -758,9 +760,28 @@ function M.setup(window, internal)
     end
 
     local provider = project.provider == "codeberg" and codeberg or github
-    local request = kind == "pulls" and provider.repository_pulls or provider.repository_issues
+
+    local request = kind == "pulls" and provider.repository_pulls
+      or kind == "discussions" and provider.repository_discussions
+      or provider.repository_issues
 
     if type(request) ~= "function" then
+      if kind == "discussions" then
+        window.state.activity_page = 1
+        window.state.activity_loaded_pages = 1
+        window.state.activity_source_events = {}
+        window.state.activity_has_past = false
+
+        internal.render_activity(
+          {},
+          false,
+          internal.provider_name(project) .. " projects have no discussions.",
+          { issue_page = true }
+        )
+
+        return
+      end
+
       internal.render_error(kind == "pulls"
           and "this provider does not support project pull requests"
         or "this provider does not support project issues")
@@ -780,6 +801,7 @@ function M.setup(window, internal)
     request_opts.issue_state = filters.state
 
     local feed_key = table.concat({
+      kind,
       internal.project_issue_filter_key(project, kind),
       filters.state,
       filters.assignment,
@@ -795,6 +817,7 @@ function M.setup(window, internal)
         next_page = 1,
         complete = false,
         cached = true,
+        notice = nil,
       }
 
       window.state.project_issue_feed = feed
@@ -832,7 +855,7 @@ function M.setup(window, internal)
           window.state.activity_page_size
         ),
         feed.cached,
-        nil,
+        feed.notice,
         { issue_page = true }
       )
     end
@@ -858,7 +881,8 @@ function M.setup(window, internal)
         events,
         err,
         cached,
-        complete
+        complete,
+        notice
       )
         if request_id ~= window.state.request_id
           or window.state.view ~= "activity"
@@ -888,6 +912,7 @@ function M.setup(window, internal)
 
         feed.next_page = source_page + 1
         feed.cached = feed.cached and cached == true
+        feed.notice = feed.notice or notice
 
         if complete == true or (complete == nil and #source == 0) then
           feed.complete = true

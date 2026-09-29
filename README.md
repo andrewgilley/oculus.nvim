@@ -48,10 +48,10 @@ Offline help is in `:h oculus`, generated from this README.
   your own open pull requests, and the issues and pull requests assigned to you
   or mentioning you, across every repository, on GitHub and Codeberg.
 
-- **Filterable activity feeds.** Each project has tabs for its issues, pull
-  requests, activity (pushes, merged pull requests, and assigned issues), and
-  milestones, and each user a feed of any public event type. Filters persist
-  between sessions.
+- **Filterable activity feeds.** Each project has tabs for its code, issues,
+  pull requests, discussions, activity (pushes, merged pull requests, and
+  assigned issues), and milestones, and each user a feed of any public event
+  type. Filters persist between sessions.
 
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
   or a commit SHA. Oculus finds the matching local clone, or fetches only the
@@ -251,18 +251,30 @@ the previous row. Use `l` / `<Right>` to open the selected item and
 
 **Project tabs**
 
-A project opens on a row of tabs, like its page on GitHub or Codeberg:
+A project opens on its **Issues** tab, in a row of tabs like its page on
+GitHub or Codeberg:
 
 ```
-  Issues   Pull requests   Activity   Milestones
+  Code   Issues   Pull requests   Discussions   Activity   Milestones
 ```
 
-**Issues** and **Pull requests** list the most recently updated first, open
-ones by default; press `f` on either to filter by status and assignment (each
-tab keeps its own filters). **Activity** is the project's feed of pushes,
-merged pull requests, and assigned issues, chosen with `F`.
-[**Milestones**](#milestones) lists its milestones. Press `<Tab>` and
-`<S-Tab>` to move between the tabs, and `h`/`←` to go back to the project list.
+- **Code** lists the files in the default branch, directories first, with the
+  selected entry's size in the preview. `l`/`→` opens a directory and `h`/`←`
+  goes to its parent (and leaves the project from the top). `b` opens the
+  selected file or directory in your browser. A project tracking a
+  subdirectory starts, and stops, at that directory.
+- **Issues** and **Pull requests** list the most recently updated first, open
+  ones by default. Press `f` on either to filter by status and assignment
+  (each tab keeps its own filters).
+- **Discussions** lists GitHub discussions, most recently active first, marked
+  closed or answered. They come from GitHub's GraphQL API, so they need a
+  token (see [Authentication](#authentication)). Codeberg has no discussions.
+- **Activity** is the project's feed of pushes, merged pull requests, and
+  assigned issues, chosen with `F`.
+- [**Milestones**](#milestones) lists its milestones.
+
+Press `<Tab>` and `<S-Tab>` to move between the tabs, and `h`/`←` to go back
+to the project list.
 
 **Activity feeds**
 
@@ -854,7 +866,7 @@ on their own beside them:
 | Module                  | What it holds                                                      |
 | ----------------------- | ------------------------------------------------------------------ |
 | `oculus/window.lua`     | The Oculus window: the list, the sidebar, the footer, the keys      |
-| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `milestones`, `work` and `saved` views |
+| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `code`, `milestones`, `work` and `saved` views |
 | `oculus/inspect.lua`    | An inspection: its tabs, buffers, sidebar and chunk navigation      |
 | `oculus/inspect/`       | `prepare` and `git` (getting the change), `patch` (reading a diff), `target` (resolving what to inspect), `overview` (the summary and its agent flows), `review` and `review_ui` (pull request review threads), `oil`, `context` (treesitter-context) and `counters` |
 

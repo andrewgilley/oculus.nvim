@@ -323,12 +323,17 @@ function M.setup(window, internal)
 
   window._project_pull_request_title = project_pull_request_title
 
-  local function render_preview_panel(items)
+  -- opts.offset moves the items down that many lines and leaves the lines
+  -- above them uncovered, for pages whose tab bar spans the whole width.
+  local function render_preview_panel(items, opts)
+    local offset = opts and opts.offset or 0
+
     if
       (
         window.state.view ~= "contributors"
         and window.state.view ~= "directory"
         and window.state.view ~= "milestones"
+        and window.state.view ~= "code"
         and window.state.view ~= "work"
       )
       or not internal.is_valid_buf(window.state.buf)
@@ -355,6 +360,7 @@ function M.setup(window, internal)
       or cache.changedtick ~= changedtick
     then
       vim.api.nvim_buf_clear_namespace(window.state.buf, internal.preview_ns, 0, -1)
+
       cache = {
         buf = window.state.buf,
         win = window.state.win,
@@ -371,12 +377,17 @@ function M.setup(window, internal)
     window.state.preview_items = items
 
     for line = 1, line_count do
-      local item = items[line]
+      local item = items[line - offset]
       local text = item and internal.trim_to_width(item[1], right_width - 1) or ""
       local group = item and item[2] or "NormalFloat"
       local previous = cache.rows[line]
 
-      if not previous or previous.text ~= text or previous.group ~= group then
+      if line <= offset then
+        if previous then
+          vim.api.nvim_buf_del_extmark(window.state.buf, internal.preview_ns, previous.id)
+          cache.rows[line] = nil
+        end
+      elseif not previous or previous.text ~= text or previous.group ~= group then
         local id = vim.api.nvim_buf_set_extmark(window.state.buf, internal.preview_ns, line - 1, 0, {
           id = previous and previous.id or nil,
           virt_text = {

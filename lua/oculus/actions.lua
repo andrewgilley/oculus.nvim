@@ -21,6 +21,7 @@ local labels = {
 local icons = {
   CreateEvent = "+",
   DeleteEvent = "-",
+  DiscussionEvent = "◇",
   ForkEvent = "⑂",
   IssueCommentEvent = "◆",
   IssuesEvent = "!",

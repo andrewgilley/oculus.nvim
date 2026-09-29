@@ -78,6 +78,7 @@ for _, provider in ipairs({ github, codeberg }) do
     "repository_updates",
     "repository_issues",
     "repository_pulls",
+    "repository_discussions",
     "enrich_pull_requests",
     "enrich_pushes",
     "pull_request_commits",
@@ -94,6 +95,10 @@ for _, provider in ipairs({ github, codeberg }) do
   end
 
   provider.repository_pulls = function(_, _, callback)
+    callback({}, nil, false, true)
+  end
+
+  provider.repository_discussions = function(_, _, callback)
     callback({}, nil, false, true)
   end
 
@@ -270,8 +275,9 @@ local function open_project(repository)
     end
   end
 
-  -- Projects open on their issues; the activity feed is two tabs along.
+  -- Projects open on their issues; the activity feed is three tabs along.
   press("l")
+  press("<Tab>")
   press("<Tab>")
   press("<Tab>")
   assert(state.activity_project.repository == repository)
@@ -322,6 +328,7 @@ press("s")
 vim.api.nvim_win_set_cursor(state.win, { lines[2], 0 })
 press("s")
 assert(#store.items() == 2 and store.items()[1].event.id == "gh-pr")
+press("<S-Tab>")
 press("<S-Tab>")
 press("<S-Tab>")
 assert(state.activity_issue_page and state.activity_issue_kind == "issues")

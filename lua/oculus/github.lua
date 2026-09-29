@@ -9,6 +9,8 @@ local pull_request_commits_cache = {}
 local inspect_pull_request_cache = {}
 local inspect_issue_cache = {}
 local repository_milestone_cache = {}
+local repository_contents_cache = {}
+local repository_discussion_cache = {}
 
 local function decode_response(stdout)
   local body, status = stdout:match("^(.*)\n(%d%d%d)%s*$")
@@ -358,6 +360,265 @@ end
 
 function M.repository_pulls(repository, opts, callback)
   repository_issue_list(repository, opts, callback, true)
+end
+
+-- Percent-encodes each segment of a repository path for a contents URL.
+local function encode_path(path)
+  return (tostring(path or ""):gsub("[^%w%-%._~/]", function(char)
+    return ("%%%02X"):format(char:byte())
+  end))
+end
+
+-- The entries of one directory on the default branch, directories first.
+function M.repository_contents(repository, path, opts, callback)
+  opts = opts or {}
+  path = tostring(path or ""):gsub("^/+", ""):gsub("/+$", "")
+  local ttl = opts.cache_ttl or 300
+  local cache_key = repository:lower() .. ":" .. path
+  local cached = repository_contents_cache[cache_key]
+
+  if cached and not opts.force and os.time() - cached.fetched_at < ttl then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.entries), nil, true)
+    end)
+
+    return
+  end
+
+  local url = (
+    "https://api.github.com/repos/%s/contents/%s"
+  ):format(repository, encode_path(path))
+
+  request_json(url, opts, function(listing, err)
+    if not listing then
+      callback(nil, err)
+      return
+    end
+
+    if not vim.islist(listing) then
+      callback(nil, path .. " is not a directory")
+      return
+    end
+
+    local entries = {}
+
+    for _, entry in ipairs(listing) do
+      if type(entry) == "table" and type(entry.name) == "string" then
+        entries[#entries + 1] = {
+          name = entry.name,
+          path = json_value(entry.path) or entry.name,
+          type = entry.type == "dir" and "dir" or json_value(entry.type) or "file",
+          size = json_value(entry.size),
+          html_url = json_value(entry.html_url),
+        }
+      end
+    end
+
+    table.sort(entries, function(left, right)
+      if (left.type == "dir") ~= (right.type == "dir") then
+        return left.type == "dir"
+      end
+
+      return left.name:lower() < right.name:lower()
+    end)
+
+    repository_contents_cache[cache_key] = {
+      entries = vim.deepcopy(entries),
+      fetched_at = os.time(),
+    }
+
+    callback(entries, nil, false)
+  end)
+end
+
+local discussions_query = [[
+query($owner: String!, $name: String!, $first: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    hasDiscussionsEnabled
+    discussions(
+      first: $first
+      after: $cursor
+      orderBy: { field: UPDATED_AT, direction: DESC }
+    ) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        title
+        url
+        closed
+        answerChosenAt
+        createdAt
+        updatedAt
+        author { login }
+        category { name }
+        comments { totalCount }
+      }
+    }
+  }
+}
+]]
+
+-- The cursor that follows each page already loaded, so numbered pages can be
+-- requested like the REST lists.
+local discussion_cursors = {}
+
+local function project_discussion_event(repository, discussion)
+  if type(discussion) ~= "table" or not json_value(discussion.number) then
+    return nil
+  end
+
+  local author = json_value(discussion.author)
+  local login = type(author) == "table" and json_value(author.login) or nil
+  local category = json_value(discussion.category)
+  local category_name = type(category) == "table" and json_value(category.name) or nil
+  local comments = json_value(discussion.comments)
+  local comment_count = type(comments) == "table" and json_value(comments.totalCount) or 0
+
+  local state = json_value(discussion.closed) == true and "closed"
+    or json_value(discussion.answerChosenAt) and "answered"
+    or "open"
+
+  local text = ("%sdiscussion #%s%s%s"):format(
+    login and ("@" .. login .. " · ") or "",
+    tostring(discussion.number),
+    category_name and (" in " .. category_name) or "",
+    comment_count > 0
+        and (" · %d comment%s"):format(comment_count, comment_count == 1 and "" or "s")
+      or ""
+  )
+
+  if state ~= "open" then
+    text = text:gsub("discussion #", state .. " discussion #", 1)
+  end
+
+  return {
+    id = ("project-discussion:%s:%s"):format(repository, discussion.number),
+    type = "DiscussionEvent",
+    actor = login and { login = login } or nil,
+    repo = { name = repository },
+    created_at = json_value(discussion.updatedAt) or json_value(discussion.createdAt),
+    url = json_value(discussion.url),
+    oculus_text = text,
+    oculus_detail = json_value(discussion.title) or "Untitled discussion",
+    payload = {
+      action = state,
+      discussion = {
+        number = discussion.number,
+        title = json_value(discussion.title),
+        state = state,
+        category = category_name,
+        comments = comment_count,
+        html_url = json_value(discussion.url),
+      },
+    },
+  }
+end
+
+-- A project's discussions, most recently active first. Discussions are only
+-- served by the GraphQL API, which needs a token.
+function M.repository_discussions(repository, opts, callback)
+  opts = opts or {}
+
+  if not require("oculus.auth").github_token(opts) then
+    vim.schedule(function()
+      callback(nil, "discussions need a GitHub token (set GITHUB_TOKEN)")
+    end)
+
+    return
+  end
+
+  local owner, name = repository:match("^([^/]+)/(.+)$")
+  local page = math.max(1, math.floor(opts.page or 1))
+  local per_page = math.min(100, math.max(1, math.floor(opts.per_page or 50)))
+  local ttl = opts.cache_ttl or 300
+  local cursor_key = repository:lower() .. ":" .. per_page
+  local cursors = discussion_cursors[cursor_key] or {}
+  discussion_cursors[cursor_key] = cursors
+  local cursor = page == 1 and vim.NIL or cursors[page]
+
+  if cursor == nil then
+    vim.schedule(function()
+      callback({}, nil, false, true)
+    end)
+
+    return
+  end
+
+  local cache_key = cursor_key .. ":" .. page
+  local cached = repository_discussion_cache[cache_key]
+
+  if cached and not opts.force and os.time() - cached.fetched_at < ttl then
+    vim.schedule(function()
+      callback(vim.deepcopy(cached.events), nil, true, cached.complete, cached.notice)
+    end)
+
+    return
+  end
+
+  request_json("https://api.github.com/graphql", opts, function(payload, err)
+    if not payload then
+      callback(nil, err)
+      return
+    end
+
+    local errors = json_value(payload.errors)
+
+    if type(errors) == "table" and errors[1] then
+      callback(nil, "GitHub: " .. tostring(errors[1].message or "GraphQL error"))
+      return
+    end
+
+    local repository_data = vim.tbl_get(payload, "data", "repository")
+
+    if type(repository_data) ~= "table" then
+      callback(nil, "GitHub: repository not found")
+      return
+    end
+
+    local events = {}
+    local complete = true
+    local notice
+
+    if repository_data.hasDiscussionsEnabled == false then
+      notice = "Discussions are turned off for this repository."
+    else
+      local connection = json_value(repository_data.discussions) or {}
+
+      for _, node in ipairs(json_value(connection.nodes) or {}) do
+        local event = project_discussion_event(repository, node)
+
+        if event then
+          events[#events + 1] = event
+        end
+      end
+
+      local page_info = json_value(connection.pageInfo) or {}
+      complete = page_info.hasNextPage ~= true
+
+      if not complete then
+        cursors[page + 1] = page_info.endCursor
+      end
+    end
+
+    repository_discussion_cache[cache_key] = {
+      events = vim.deepcopy(events),
+      fetched_at = os.time(),
+      complete = complete,
+      notice = notice,
+    }
+
+    callback(events, nil, false, complete, notice)
+  end, {
+    body = {
+      query = discussions_query,
+      variables = {
+        owner = owner,
+        name = name,
+        first = per_page,
+        cursor = cursor,
+      },
+    },
+  })
 end
 
 local function project_milestone(milestone, html_url)
