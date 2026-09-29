@@ -972,6 +972,25 @@ github.repository_file = function(repository, path, _, callback)
   end
 end
 
+-- Opened files get the colorscheme a per-filetype colorscheme plugin picks,
+-- even the read-only remote buffers such plugins skip.
+local oculus = require("oculus")
+local original_colorscheme_adapter = oculus.config.inspect_colorscheme
+local coloured = {}
+
+oculus.config.inspect_colorscheme = {
+  apply = function(buf)
+    coloured[#coloured + 1] = {
+      name = vim.api.nvim_buf_get_name(buf),
+      buftype = vim.bo[buf].buftype,
+    }
+  end,
+  enabled = function()
+    return true
+  end,
+  set_enabled = function() end,
+}
+
 local tab_count = #vim.api.nvim_list_tabpages()
 press("l")
 assert(clone_lookups[1].forge == "github" and clone_lookups[1].owner == "neovim" and clone_lookups[1].repo == "neovim")
@@ -979,6 +998,7 @@ assert(clone_lookups[1].remote_url == "https://github.com/neovim/neovim.git")
 assert(#vim.api.nvim_list_tabpages() == tab_count + 1)
 assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == clone .. "/README.md", vim.api.nvim_buf_get_name(0))
 assert(vim.api.nvim_buf_get_lines(0, 0, -1, false)[1] == "# Neovim")
+assert(vim.fn.resolve(coloured[#coloured].name) == clone .. "/README.md")
 assert(#file_requests == 0)
 assert(not state.win or not vim.api.nvim_win_is_valid(state.win))
 vim.cmd("tabclose")
@@ -1003,6 +1023,14 @@ assert(#vim.api.nvim_list_tabpages() == tab_count + 1)
 assert(vim.api.nvim_buf_get_name(0) == "oculus://github/neovim/neovim/src/main.c", vim.api.nvim_buf_get_name(0))
 assert(vim.deep_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "int main(void)", "{", "  return 0;", "}" }))
 assert(vim.bo.filetype == "c" and vim.bo.readonly and not vim.bo.modifiable and vim.bo.buftype == "nofile")
+local remote_name = "oculus://github/neovim/neovim/src/main.c"
+assert(coloured[#coloured].name == remote_name and coloured[#coloured].buftype == "", vim.inspect(coloured))
+-- Returning to the remote buffer from another tab colours it again.
+local colour_count = #coloured
+vim.cmd("tabprevious")
+vim.cmd("tabnext")
+assert(vim.api.nvim_buf_get_name(0) == remote_name)
+assert(#coloured > colour_count and coloured[#coloured].name == remote_name, vim.inspect(coloured))
 vim.cmd("tabclose")
 window.open(state.opts)
 state = window.state
@@ -1034,6 +1062,7 @@ window.open(state.opts)
 state = window.state
 git.find_local_repository = original_find_local_repository
 github.repository_file = original_repository_file
+oculus.config.inspect_colorscheme = original_colorscheme_adapter
 vim.fn.delete(clone, "rf")
 press("r")
 assert(content_requests[#content_requests].force == true and state.project_code.path == "src")

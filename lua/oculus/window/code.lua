@@ -4,7 +4,9 @@
 local github = require("oculus.github")
 local codeberg = require("oculus.codeberg")
 local git = require("oculus.inspect.git")
+local colorscheme = require("oculus.inspect.colorscheme")
 local M = {}
+local remote_file_group = vim.api.nvim_create_augroup("OculusCodeFiles", { clear = true })
 
 function M.setup(window, code_view, internal)
   -- The directory a tracked subdirectory starts at; the listing never goes
@@ -392,6 +394,18 @@ function M.setup(window, code_view, internal)
       path = path,
     }
 
+    -- Coming back to the buffer, such as from another tab, restores its
+    -- colorscheme too.
+    vim.api.nvim_clear_autocmds({ group = remote_file_group, buffer = buf })
+
+    vim.api.nvim_create_autocmd("BufEnter", {
+      group = remote_file_group,
+      buffer = buf,
+      callback = function(args)
+        colorscheme.apply(args.buf)
+      end,
+    })
+
     local filetype = vim.filetype.match({ buf = buf, filename = path, contents = lines })
 
     if filetype then
@@ -428,10 +442,13 @@ function M.setup(window, code_view, internal)
         and internal.is_valid_win(window.state.win)
     end
 
+    -- The file gets the colorscheme a per-filetype colorscheme plugin picks
+    -- for it, which such plugins skip on the read-only remote buffers.
     local function open_in_tab(command)
       listing.status = nil
       window.close()
       command()
+      colorscheme.apply(vim.api.nvim_get_current_buf())
     end
 
     git.find_local_repository(info, window.state.opts, function(root)

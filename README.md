@@ -263,7 +263,10 @@ GitHub or Codeberg:
   opens it in a new tab: from your local clone when one is found (the same
   search inspection uses) and it has the file, otherwise the forge's copy on
   the default branch, read-only, in a buffer named
-  `oculus://github/owner/repo/path`. `b` opens the selected file or directory
+  `oculus://github/owner/repo/path`. Either way the file gets the colorscheme
+  a per-filetype colorscheme plugin picks for it (see `inspect_colorscheme`),
+  including when you come back to it from another tab. `b` opens the selected
+  file or directory
   in your browser. A project tracking a subdirectory starts, and stops, at
   that directory.
 - **Issues** and **Pull requests** list the most recently updated first, open
