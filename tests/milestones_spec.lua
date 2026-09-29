@@ -582,6 +582,7 @@ github.repository_contents = function(repository, path, opts, callback)
     src = {
       { name = "nvim", path = "src/nvim", type = "dir" },
       { name = "main.c", path = "src/main.c", type = "file", size = 10 },
+      { name = "missing.c", path = "src/missing.c", type = "file", size = 1 },
     },
   }
 
@@ -945,15 +946,95 @@ assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name 
 assert(preview_text():find("4.0 KB", 1, true), preview_text())
 press("b")
 assert(opened_urls[#opened_urls] == "https://github.com/neovim/neovim/blob/master/README.md")
--- Files have nothing to open in place; directories open in the list.
+-- A file opens in a tab from the local clone when the clone has it.
+local git = require("oculus.inspect.git")
+local original_find_local_repository = git.find_local_repository
+local original_repository_file = github.repository_file
+local clone = vim.fn.resolve(vim.fn.tempname())
+vim.fn.mkdir(clone, "p")
+vim.fn.writefile({ "# Neovim" }, clone .. "/README.md")
+local clone_lookups = {}
+
+git.find_local_repository = function(info, _, callback)
+  clone_lookups[#clone_lookups + 1] = info
+  callback(clone, "origin")
+end
+
+local file_requests = {}
+
+github.repository_file = function(repository, path, _, callback)
+  file_requests[#file_requests + 1] = { repository = repository, path = path }
+
+  if path == "src/missing.c" then
+    callback(nil, "GitHub: Not Found")
+  else
+    callback("int main(void)\r\n{\r\n  return 0;\r\n}\r\n")
+  end
+end
+
+local tab_count = #vim.api.nvim_list_tabpages()
 press("l")
-assert(state.view == "code" and state.project_code.path == "")
+assert(clone_lookups[1].forge == "github" and clone_lookups[1].owner == "neovim" and clone_lookups[1].repo == "neovim")
+assert(clone_lookups[1].remote_url == "https://github.com/neovim/neovim.git")
+assert(#vim.api.nvim_list_tabpages() == tab_count + 1)
+assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == clone .. "/README.md", vim.api.nvim_buf_get_name(0))
+assert(vim.api.nvim_buf_get_lines(0, 0, -1, false)[1] == "# Neovim")
+assert(#file_requests == 0)
+assert(not state.win or not vim.api.nvim_win_is_valid(state.win))
+vim.cmd("tabclose")
+-- Reopening returns to the code tab.
+window.open(state.opts)
+state = window.state
+assert(state.view == "code" and state.project_code.path == "", state.view)
+-- Directories open in the list.
 press("i")
 press("l")
 assert(state.project_code.path == "src")
 text = buffer_text()
 assert(text:find("  ..", 1, true) and text:find("  nvim/", 1, true) and text:find("  main.c", 1, true), text)
 assert(text:find("/src", 1, true), text)
+-- Without the file in a local clone, the forge's copy opens read-only.
+press("k")
+press("k")
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "main.c")
+press("l")
+assert(file_requests[1].repository == "neovim/neovim" and file_requests[1].path == "src/main.c")
+assert(#vim.api.nvim_list_tabpages() == tab_count + 1)
+assert(vim.api.nvim_buf_get_name(0) == "oculus://github/neovim/neovim/src/main.c", vim.api.nvim_buf_get_name(0))
+assert(vim.deep_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "int main(void)", "{", "  return 0;", "}" }))
+assert(vim.bo.filetype == "c" and vim.bo.readonly and not vim.bo.modifiable and vim.bo.buftype == "nofile")
+vim.cmd("tabclose")
+window.open(state.opts)
+state = window.state
+assert(state.view == "code" and state.project_code.path == "src")
+-- A file the forge cannot give keeps Oculus open and says why.
+git.find_local_repository = function(_, _, callback)
+  callback(nil)
+end
+
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "main.c")
+press("k")
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].entry.name == "missing.c")
+press("l")
+assert(vim.api.nvim_win_is_valid(state.win) and state.view == "code")
+assert(#vim.api.nvim_list_tabpages() == tab_count)
+assert(vim.api.nvim_buf_get_lines(state.buf, 3, 4, false)[1]:find("GitHub: Not Found", 1, true))
+-- Opening the same remote file again reuses its buffer.
+git.find_local_repository = function(_, _, callback)
+  callback(nil)
+end
+
+press("i")
+press("l")
+local reopened_buffer = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(reopened_buffer) == "oculus://github/neovim/neovim/src/main.c")
+assert(#vim.tbl_filter(function(info) return info.name == "oculus://github/neovim/neovim/src/main.c" end, vim.fn.getbufinfo()) == 1)
+vim.cmd("tabclose")
+window.open(state.opts)
+state = window.state
+git.find_local_repository = original_find_local_repository
+github.repository_file = original_repository_file
+vim.fn.delete(clone, "rf")
 press("r")
 assert(content_requests[#content_requests].force == true and state.project_code.path == "src")
 -- Leaving and coming back keeps the directory.

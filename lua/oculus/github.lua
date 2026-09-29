@@ -558,6 +558,44 @@ function M.repository_discussions(repository, opts, callback)
   })
 end
 
+-- The text of one file on the default branch.
+function M.repository_file(repository, path, opts, callback)
+  path = tostring(path or ""):gsub("^/+", "")
+
+  request_json(("https://api.github.com/repos/%s/contents/%s"):format(repository, encode_path(path)), opts or {}, function(file, err)
+    if type(file) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    if file.type ~= "file" then
+      callback(nil, path .. " is not a file")
+      return
+    end
+
+    local content = json_value(file.content)
+
+    if file.encoding ~= "base64" or type(content) ~= "string" then
+      callback(nil, path .. " is too large to load; press b to open it in the browser")
+      return
+    end
+
+    local ok, text = pcall(vim.base64.decode, (content:gsub("%s", "")))
+
+    if not ok then
+      callback(nil, path .. " could not be decoded")
+      return
+    end
+
+    if text:find("\0", 1, true) then
+      callback(nil, path .. " is a binary file; press b to open it in the browser")
+      return
+    end
+
+    callback(text)
+  end)
+end
+
 local function project_milestone(milestone, html_url)
   if type(milestone) ~= "table" or not json_value(milestone.number) then
     return nil

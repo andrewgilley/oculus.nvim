@@ -3696,7 +3696,7 @@ local function render_shortcuts()
     section("NAVIGATION", {
       { nav_up, "Select the previous file" },
       { nav_down, "Select the next file" },
-      { nav_right, "Open the selected directory" },
+      { nav_right, "Open the selected directory, or the file in a tab" },
       { nav.left .. " / <Left>", "Go to the parent directory, then the project list" },
       { "<Tab> / <S-Tab>", "Show the next or previous project tab" },
     })

@@ -259,9 +259,13 @@ GitHub or Codeberg:
 
 - **Code** lists the files in the default branch, directories first, with the
   selected entry's size in the preview. `l`/`→` opens a directory and `h`/`←`
-  goes to its parent (and leaves the project from the top). `b` opens the
-  selected file or directory in your browser. A project tracking a
-  subdirectory starts, and stops, at that directory.
+  goes to its parent (and leaves the project from the top). On a file, `l`/`→`
+  opens it in a new tab: from your local clone when one is found (the same
+  search inspection uses) and it has the file, otherwise the forge's copy on
+  the default branch, read-only, in a buffer named
+  `oculus://github/owner/repo/path`. `b` opens the selected file or directory
+  in your browser. A project tracking a subdirectory starts, and stops, at
+  that directory.
 - **Issues** and **Pull requests** list the most recently updated first, open
   ones by default. Press `f` on either to filter by status and assignment
   (each tab keeps its own filters).

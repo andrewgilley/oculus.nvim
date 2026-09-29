@@ -1,7 +1,9 @@
 -- A project's code: the contents of one directory on its default branch,
--- listed like the milestones, with directories opened in place.
+-- listed like the milestones, with directories opened in place and files
+-- opened in a tab, from a local clone when there is one.
 local github = require("oculus.github")
 local codeberg = require("oculus.codeberg")
+local git = require("oculus.inspect.git")
 local M = {}
 
 function M.setup(window, code_view, internal)
@@ -138,7 +140,7 @@ function M.setup(window, code_view, internal)
         internal.project_title(project),
         listing.path == "" and internal.provider_name(project) or ("/" .. listing.path)
       ), left_width - 1),
-      "",
+      listing.status and internal.trim_to_width("  " .. listing.status.text, left_width - 1) or "",
     }
 
     local comment_lines = {}
@@ -211,6 +213,10 @@ function M.setup(window, code_view, internal)
     vim.wo[window.state.win].cursorline = false
     internal.paint_project_tabs(2, tab_ranges)
     internal.highlight(3, 2, -1, "Comment")
+
+    if listing.status then
+      internal.highlight(4, 2, -1, listing.status.group)
+    end
 
     for _, line in ipairs(comment_lines) do
       internal.highlight(line, 2, -1, "Comment")
@@ -327,12 +333,145 @@ function M.setup(window, code_view, internal)
       return true
     end
 
+    if entry.type == "file" or entry.type == "symlink" then
+      code_view.open_file(entry)
+      return true
+    end
+
     if entry.type ~= "dir" then
       return false
     end
 
     code_view.load(listing.project, entry.path, false)
     return true
+  end
+
+  local function set_status(listing, text, group)
+    listing.status = text and { text = text, group = group or "Comment" } or nil
+
+    if window.state.project_code == listing and window.state.view == "code" then
+      code_view.render()
+    end
+  end
+
+  -- Shows fetched text in a read-only buffer named after where it came from,
+  -- reusing the buffer when the same file is opened again.
+  local function remote_buffer(project, path, text)
+    local name = ("oculus://%s/%s/%s"):format(
+      project.provider == "codeberg" and "codeberg" or "github",
+      project.repository,
+      path
+    )
+
+    local buf = vim.fn.bufnr(name)
+
+    if buf == -1 then
+      buf = vim.api.nvim_create_buf(true, true)
+      vim.api.nvim_buf_set_name(buf, name)
+    end
+
+    local lines = vim.split(text:gsub("\r\n", "\n"), "\n", { plain = true })
+
+    if lines[#lines] == "" and #lines > 1 then
+      lines[#lines] = nil
+    end
+
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "hide"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].readonly = false
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].readonly = true
+    vim.bo[buf].modified = false
+
+    vim.b[buf].oculus_remote_file = {
+      provider = project.provider == "codeberg" and "codeberg" or "github",
+      repository = project.repository,
+      path = path,
+    }
+
+    local filetype = vim.filetype.match({ buf = buf, filename = path, contents = lines })
+
+    if filetype then
+      vim.bo[buf].filetype = filetype
+    end
+
+    return buf
+  end
+
+  -- Opens a file in a new tab: the local clone's copy when a clone of the
+  -- project is found and has the file, otherwise the forge's copy on the
+  -- default branch, read-only.
+  function code_view.open_file(entry)
+    local listing = window.state.project_code
+    local project = listing.project
+    local owner, repo = project.repository:match("^([^/]+)/([^/]+)$")
+    local forge = project.provider == "codeberg" and "codeberg" or "github"
+    set_status(listing, ("Opening %s…"):format(entry.name))
+
+    local info = {
+      forge = forge,
+      owner = owner,
+      repo = repo,
+      remote_url = ("https://%s/%s/%s.git"):format(
+        forge == "codeberg" and "codeberg.org" or "github.com",
+        owner,
+        repo
+      ),
+    }
+
+    local function current()
+      return window.state.project_code == listing
+        and window.state.view == "code"
+        and internal.is_valid_win(window.state.win)
+    end
+
+    local function open_in_tab(command)
+      listing.status = nil
+      window.close()
+      command()
+    end
+
+    git.find_local_repository(info, window.state.opts, function(root)
+      if not current() then
+        return
+      end
+
+      local file = root and vim.fs.joinpath(root, entry.path)
+      local stat = file and vim.uv.fs_stat(file)
+
+      if stat and stat.type == "file" then
+        open_in_tab(function()
+          vim.cmd("tabedit " .. vim.fn.fnameescape(file))
+        end)
+
+        return
+      end
+
+      local provider = forge == "codeberg" and codeberg or github
+
+      if type(provider.repository_file) ~= "function" then
+        set_status(listing, "This forge's files cannot be loaded", "DiagnosticWarn")
+        return
+      end
+
+      provider.repository_file(project.repository, entry.path, window.state.opts, function(text, err)
+        if not current() then
+          return
+        end
+
+        if not text then
+          set_status(listing, tostring(err or "the file could not be loaded"), "DiagnosticWarn")
+          return
+        end
+
+        open_in_tab(function()
+          vim.cmd("tab sbuffer " .. remote_buffer(project, entry.path, text))
+        end)
+      end)
+    end)
   end
 
   -- Goes to the parent directory, selecting the directory just left.
