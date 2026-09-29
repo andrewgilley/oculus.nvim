@@ -334,6 +334,7 @@ function M.setup(window, internal)
         and window.state.view ~= "directory"
         and window.state.view ~= "milestones"
         and window.state.view ~= "code"
+        and window.state.view ~= "boards"
         and window.state.view ~= "work"
       )
       or not internal.is_valid_buf(window.state.buf)

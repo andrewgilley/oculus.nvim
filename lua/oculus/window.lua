@@ -52,42 +52,18 @@ local sidebar_ns = vim.api.nvim_create_namespace(
 )
 
 local commit_activity_url
-local load_project_activity
 local load_project_issues
 local open_project_tab
 local milestone_view = {}
 local code_view = {}
+local board_view = {}
+local insights_view = {}
 local saved_view = { ns = vim.api.nvim_create_namespace("oculus_saved_items") }
 -- `accounts` lists the signed-in accounts in the start screen's sidebar.
 local work_view = { accounts = { requested = {} } }
 local target_on_cursor
 local render_directory
 local persist_projects
-
-local default_project_activity_types = {
-  "push",
-  "merged_pull_request",
-  "assigned_issue",
-}
-
-local project_activity_categories = {
-  { key = "push", label = "Pushed commits" },
-  { key = "merged_pull_request", label = "Merged pull requests" },
-  { key = "assigned_issue", label = "Assigned issues" },
-}
-
-local function project_activity_types_for(project)
-  if project.path then
-    return { "push" }
-  end
-
-  if project.activity_types ~= nil then
-    return project.activity_types
-  end
-
-  return M.state.opts.project_activity_types
-    or default_project_activity_types
-end
 
 local autocmd_group = vim.api.nvim_create_augroup(
   "OculusWindow",
@@ -147,7 +123,6 @@ M.state = {
   activity_page_size = 8,
   activity_source_events = nil,
   activity_has_past = nil,
-  project_activity_feed = nil,
   activity_cursor_min_line = 1,
   activity_scroll_limit_line = nil,
   activity_commit_page = false,
@@ -653,7 +628,34 @@ local function sidebar_sections_for_view(view)
         },
       },
     }
-  elseif view == "milestones" or view == "code" or view == "work" then
+  elseif view == "insights" then
+    return {
+      {
+        title = "NAVIGATION",
+        items = {
+          { nav_down, "Scroll down" },
+          { nav_up, "Scroll up" },
+          { nav_left, "Back" },
+          { "Tab", "Next tab" },
+          { "S-Tab", "Prev tab" },
+        },
+      },
+      {
+        title = "ACTIONS",
+        items = {
+          { "b", "Browser" },
+          { "r", "Refresh" },
+        },
+      },
+      {
+        title = "GENERAL",
+        items = {
+          { "?", "Sidebar" },
+          { "q", "Close" },
+        },
+      },
+    }
+  elseif view == "milestones" or view == "code" or view == "boards" or view == "work" then
     local navigation_items = {
       { nav_down, "Down" },
       { nav_up, "Up" },
@@ -957,6 +959,10 @@ local function page_commands_text()
     return ("  %s/← back   ⇥ tabs   ⏎ open   b browser   r refresh   ?: help"):format(
       nav.left
     )
+  elseif M.state.view == "boards" or M.state.view == "insights" then
+    return ("  %s/← back   ⇥ tabs   b browser   r refresh   ?: help"):format(
+      nav.left
+    )
   elseif M.state.view == "code" then
     return ("  %s/← up   ⇥ tabs   ⏎ open   b browser   r refresh   ?: help"):format(
       nav.left
@@ -1184,6 +1190,7 @@ local function clamp_list_cursor()
     or M.state.view == "directory"
     or M.state.view == "milestones"
     or M.state.view == "code"
+    or M.state.view == "boards"
     or M.state.view == "work"
   then
     local selectable = {}
@@ -1214,6 +1221,10 @@ local function clamp_list_cursor()
           end
         elseif target.kind == "code_entry" then
           if code_view.entry_key(target.entry) == M.state.selected_code_entry then
+            selected_line = line
+          end
+        elseif target.kind == "board" then
+          if target.board.id == M.state.selected_board then
             selected_line = line
           end
         elseif target.username == M.state.selected_username then
@@ -1722,6 +1733,7 @@ local function update_contributor_selection()
       and M.state.view ~= "directory"
       and M.state.view ~= "milestones"
       and M.state.view ~= "code"
+      and M.state.view ~= "boards"
       and M.state.view ~= "work"
     )
     or not is_valid_win(M.state.win)
@@ -2243,7 +2255,6 @@ local function reset_to_initial_page()
   M.state.activity_loaded_pages = 1
   M.state.activity_source_events = nil
   M.state.activity_has_past = nil
-  M.state.project_activity_feed = nil
   M.state.activity_commit_page = false
   M.state.activity_issue_page = false
   M.state.activity_issue_kind = "issues"
@@ -2256,6 +2267,10 @@ local function reset_to_initial_page()
   M.state.project_code = nil
   M.state.selected_code_entry = nil
   M.state.code_offset = 1
+  M.state.project_boards = nil
+  M.state.selected_board = nil
+  M.state.board_offset = 1
+  M.state.project_insights = nil
   M.state.saved_entries = nil
   M.state.saved_expanded_source = nil
   M.state.work_lists = nil
@@ -2295,10 +2310,7 @@ local function filter_type_set(scope)
   local types
   local categories
 
-  if scope.project then
-    types = project_activity_types_for(scope.project)
-    categories = project_activity_categories
-  elseif scope.global then
+  if scope.global then
     types = M.state.opts.activity_types
     categories = actions.event_types
   else
@@ -2412,11 +2424,7 @@ local prompt_move_project_to_directory =
 local function save_filter_type_set(scope, enabled)
   local types = {}
 
-  local categories = scope.project
-      and project_activity_categories
-    or actions.event_types
-
-  for _, category in ipairs(categories) do
+  for _, category in ipairs(actions.event_types) do
     local key = category.key or category
 
     if enabled[key] then
@@ -2424,18 +2432,7 @@ local function save_filter_type_set(scope, enabled)
     end
   end
 
-  if scope.project then
-    if scope.project.activity_types ~= nil then
-      for _, project in ipairs(M.state.opts.projects or {}) do
-        if project.repository == scope.project.repository then
-          project.activity_types = types
-          break
-        end
-      end
-    else
-      M.state.opts.project_activity_types = types
-    end
-  elseif scope.global then
+  if scope.global then
     M.state.opts.activity_types = types
   else
     M.state.opts.user_activity_types = M.state.opts.user_activity_types or {}
@@ -2452,16 +2449,11 @@ local function render_filters(scope, selected_type)
   M.state.filter_scope = scope
   M.state.line_targets = {}
 
-  local scope_name = scope.project
-      and project_title(scope.project)
-    or scope.global
+  local scope_name = scope.global
       and "All contributors"
     or ("@" .. scope.username)
 
-  local categories = scope.project
-      and project_activity_categories
-    or actions.event_types
-
+  local categories = actions.event_types
   local enabled = filter_type_set(scope)
 
   local lines = {
@@ -2544,11 +2536,7 @@ local function set_all_filter_types(value)
   local target = M.state.line_targets[line]
   local enabled = {}
 
-  local categories = M.state.filter_scope.project
-      and project_activity_categories
-    or actions.event_types
-
-  for _, category in ipairs(categories) do
+  for _, category in ipairs(actions.event_types) do
     enabled[category.key or category] = value
   end
 
@@ -2557,16 +2545,6 @@ local function set_all_filter_types(value)
 end
 
 local function reset_filter_types_to_default()
-  if M.state.view == "filters"
-    and M.state.filter_scope
-    and M.state.filter_scope.project
-  then
-    M.state.opts.project_activity_types = nil
-    persist_filter_config()
-    render_filters(M.state.filter_scope)
-    return
-  end
-
   if M.state.view ~= "contributors"
     and not (M.state.view == "filters" and M.state.filter_scope and M.state.filter_scope.global)
   then
@@ -2743,9 +2721,10 @@ local project_tabs = {
   { key = "code", label = "Code" },
   { key = "issues", label = "Issues" },
   { key = "pulls", label = "Pull requests", short = "PRs" },
-  { key = "discussions", label = "Discussions" },
-  { key = "activity", label = "Activity" },
+  { key = "discussions", label = "Discussions", short = "Discuss" },
+  { key = "boards", label = "Projects" },
   { key = "milestones", label = "Milestones" },
+  { key = "insights", label = "Insights" },
 }
 
 -- The project tab the current page belongs to, or nil outside a project.
@@ -2756,6 +2735,14 @@ local function current_project_tab()
 
   if M.state.view == "code" then
     return M.state.project_code and "code" or nil
+  end
+
+  if M.state.view == "boards" then
+    return M.state.project_boards and "boards" or nil
+  end
+
+  if M.state.view == "insights" then
+    return M.state.project_insights and "insights" or nil
   end
 
   if M.state.view ~= "activity" or not M.state.activity_project then
@@ -2770,7 +2757,7 @@ local function current_project_tab()
     return M.state.activity_issue_kind or "issues"
   end
 
-  return "activity"
+  return nil
 end
 
 -- The tab bar heading every project page, like the tabs on a forge's
@@ -3529,6 +3516,10 @@ local function render_shortcuts()
     subtitle = "Commands for Milestones"
   elseif from_view == "code" then
     subtitle = "Commands for Code"
+  elseif from_view == "boards" then
+    subtitle = "Commands for Projects"
+  elseif from_view == "insights" then
+    subtitle = "Commands for Insights"
   elseif from_view == "work" then
     subtitle = "Commands for My Work"
   elseif from_view == "filters" then
@@ -3717,6 +3708,29 @@ local function render_shortcuts()
 
     section("GENERAL", {
       { "? / " .. nav.left .. " / <Left>", "Return to code" },
+      { "q / <Esc> / <C-c>", "Close Oculus" },
+    })
+  elseif from_view == "boards" or from_view == "insights" then
+    local boards = from_view == "boards"
+
+    section("NAVIGATION", {
+      { nav_up, boards and "Select the previous project" or "Scroll up" },
+      { nav_down, boards and "Select the next project" or "Scroll down" },
+      { nav.left .. " / <Left>", "Return to the project list" },
+      { "<Tab> / <S-Tab>", "Show the next or previous project tab" },
+    })
+
+    section("ACTIONS", {
+      {
+        "b",
+        boards and "Open the selected project in a browser"
+          or "Open the repository's pulse in a browser",
+      },
+      { "r", boards and "Refresh projects" or "Refresh insights" },
+    })
+
+    section("GENERAL", {
+      { "? / " .. nav.left .. " / <Left>", boards and "Return to projects" or "Return to insights" },
       { "q / <Esc> / <C-c>", "Close Oculus" },
     })
   elseif from_view == "work" then
@@ -4050,7 +4064,6 @@ local activity = require("oculus.window.activity").setup(M, {
   render_activity = render_activity,
   render_error = render_error,
   render_loading = render_loading,
-  project_activity_types_for = project_activity_types_for,
   project_issue_filters_for = project_issue_filters_for,
   project_issue_filter_key = project_issue_filter_key,
   provider_name = provider_name,
@@ -4063,7 +4076,6 @@ local activity_dedupe_key = activity.dedupe_key
 local deduplicate_activity = activity.deduplicate
 local activity_page = activity.page
 local add_project_issue = activity.add_project_issue
-load_project_activity = activity.load_project_activity
 load_project_issues = activity.load_project_issues
 
 local view_internal = {
@@ -4103,6 +4115,8 @@ local view_internal = {
 
 require("oculus.window.milestones").setup(M, milestone_view, view_internal)
 require("oculus.window.code").setup(M, code_view, view_internal)
+require("oculus.window.boards").setup(M, board_view, view_internal)
+require("oculus.window.insights").setup(M, insights_view, view_internal)
 require("oculus.window.work").setup(M, work_view, view_internal)
 require("oculus.window.saved").setup(M, saved_view, view_internal)
 
@@ -4256,10 +4270,8 @@ local function next_activity_page()
         false,
         page
       )
-    elseif M.state.activity_issue_page then
-      load_project_issues(M.state.activity_project, false, page)
     else
-      load_project_activity(M.state.activity_project, false, page)
+      load_project_issues(M.state.activity_project, false, page)
     end
   else
     load_activity(M.state.contributor, false, page)
@@ -4312,10 +4324,8 @@ local function previous_activity_page()
         false,
         page
       )
-    elseif M.state.activity_issue_page then
-      load_project_issues(M.state.activity_project, false, page)
     else
-      load_project_activity(M.state.activity_project, false, page)
+      load_project_issues(M.state.activity_project, false, page)
     end
   else
     load_activity(M.state.contributor, false, page)
@@ -4330,6 +4340,16 @@ local function refresh_activity()
 
   if M.state.view == "code" and M.state.project_code then
     code_view.load(M.state.project_code.project, M.state.project_code.path, true)
+    return
+  end
+
+  if M.state.view == "boards" and M.state.project_boards then
+    board_view.load(M.state.project_boards.project, true)
+    return
+  end
+
+  if M.state.view == "insights" and M.state.project_insights then
+    insights_view.load(M.state.project_insights.project, true)
     return
   end
 
@@ -4356,10 +4376,8 @@ local function refresh_activity()
         true,
         page
       )
-    elseif M.state.activity_issue_page then
-      load_project_issues(M.state.activity_project, true, page)
     else
-      load_project_activity(M.state.activity_project, true, page)
+      load_project_issues(M.state.activity_project, true, page)
     end
   elseif M.state.contributor then
     load_activity(M.state.contributor, true, page)
@@ -5448,17 +5466,21 @@ local function select_current()
   end
 end
 
--- Show one of a project's tabs: its issues, pull requests, activity feed, or
--- milestones.
+-- Show one of a project's tabs: its code, issues, pull requests,
+-- discussions, project boards, milestones, or insights.
 open_project_tab = function(project, tab)
   M.state.activity_milestone = nil
   M.state.activity_return = nil
 
-  if tab == "activity" then
-    load_project_activity(project, false)
-  elseif tab == "milestones" then
+  if tab == "milestones" then
     M.state.activity_project = project
     milestone_view.load(project, false)
+  elseif tab == "boards" then
+    M.state.activity_project = project
+    board_view.load(project, false)
+  elseif tab == "insights" then
+    M.state.activity_project = project
+    insights_view.load(project, false)
   elseif tab == "code" then
     M.state.activity_project = project
     local listing = M.state.project_code
@@ -5486,6 +5508,8 @@ local function cycle_project_tab(direction)
   local project = M.state.view == "milestones"
       and M.state.project_milestones.project
     or M.state.view == "code" and M.state.project_code.project
+    or M.state.view == "boards" and M.state.project_boards.project
+    or M.state.view == "insights" and M.state.project_insights.project
     or M.state.activity_project
 
   for index, entry in ipairs(project_tabs) do
@@ -5507,23 +5531,12 @@ local function open_filters(global)
 
   if M.state.view == "contributors" then
     local target = target_on_cursor()
-
-    if type(target) == "table" and target.kind == "project" then
-      scope = { project = target.project }
-    else
-      scope = target
-    end
+    scope = type(target) == "table" and target.kind ~= "project" and target or nil
   elseif M.state.view == "activity" then
-    scope = M.state.activity_project or M.state.contributor
-
-    if M.state.activity_project then
-      scope = { project = M.state.activity_project }
-    end
+    scope = M.state.contributor
   end
 
-  if type(scope) == "table"
-    and (scope.project or scope.username)
-  then
+  if type(scope) == "table" and scope.username then
     render_filters(scope)
   end
 end
@@ -5545,6 +5558,26 @@ local function open_activity_in_browser()
 
     if type(target) == "table" and target.kind == "work" then
       open_url(work_view.web_url(target.entry))
+    end
+
+    return
+  end
+
+  if M.state.view == "boards" then
+    local target = target_on_cursor()
+
+    if type(target) == "table" and target.kind == "board" and target.board.html_url then
+      open_url(target.board.html_url)
+    end
+
+    return
+  end
+
+  if M.state.view == "insights" then
+    local url = insights_view.browser_url()
+
+    if url then
+      open_url(url)
     end
 
     return
@@ -6157,6 +6190,12 @@ local function active_list_key()
   elseif M.state.view == "milestones" and M.state.project_milestones then
     local project = M.state.project_milestones.project
     return "milestones:" .. (project.repository or project.name or "project")
+  elseif M.state.view == "boards" and M.state.project_boards then
+    local project = M.state.project_boards.project
+    return "boards:" .. (project.repository or project.name or "project")
+  elseif M.state.view == "insights" and M.state.project_insights then
+    local project = M.state.project_insights.project
+    return "insights:" .. (project.repository or project.name or "project")
   elseif M.state.view == "code" and M.state.project_code then
     local project = M.state.project_code.project
     return "code:" .. (project.repository or project.name or "project") .. ":" .. M.state.project_code.path
@@ -6481,6 +6520,10 @@ local function toggle_sidebar()
     milestone_view.render()
   elseif M.state.view == "code" then
     code_view.render()
+  elseif M.state.view == "boards" then
+    board_view.render()
+  elseif M.state.view == "insights" then
+    insights_view.render()
   elseif M.state.view == "work" then
     work_view.render()
   elseif M.state.view == "shortcuts" then
@@ -6497,9 +6540,15 @@ local function move_cursor(direction)
     and M.state.view ~= "activity"
     and M.state.view ~= "milestones"
     and M.state.view ~= "code"
+    and M.state.view ~= "boards"
     and M.state.view ~= "work"
   then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
+    return
+  end
+
+  if M.state.view == "boards" then
+    board_view.select_adjacent(direction)
     return
   end
 
@@ -6742,10 +6791,7 @@ local function go_back()
       elseif M.state.activity_work then
         work_view.load_items(M.state.activity_work, false)
       elseif M.state.activity_project then
-        open_project_tab(
-          M.state.activity_project,
-          M.state.activity_issue_page and M.state.activity_issue_kind or "activity"
-        )
+        open_project_tab(M.state.activity_project, M.state.activity_issue_kind or "issues")
       else
         load_activity(M.state.contributor, false)
       end
@@ -6757,6 +6803,10 @@ local function go_back()
       milestone_view.render()
     elseif return_state.view == "code" and M.state.project_code then
       code_view.render()
+    elseif return_state.view == "boards" and M.state.project_boards then
+      board_view.render()
+    elseif return_state.view == "insights" and M.state.project_insights then
+      insights_view.render()
     elseif return_state.view == "issue_filters"
       and M.state.activity_project
     then
@@ -6786,6 +6836,8 @@ local function go_back()
     M.state.view == "activity"
     or M.state.view == "milestones"
     or M.state.view == "code"
+    or M.state.view == "boards"
+    or M.state.view == "insights"
     or M.state.view == "filters"
     or M.state.view == "issue_filters"
     or M.state.view == "directory"
@@ -6834,6 +6886,8 @@ local function move_left()
   if M.state.view == "directory"
     or M.state.view == "milestones"
     or M.state.view == "code"
+    or M.state.view == "boards"
+    or M.state.view == "insights"
     or M.state.view == "work"
   then
     go_back()
@@ -6899,10 +6953,8 @@ local function move_right()
             false,
             page + 1
           )
-        elseif M.state.activity_issue_page then
-          load_project_issues(M.state.activity_project, false, page + 1)
         else
-          load_project_activity(M.state.activity_project, false, page + 1)
+          load_project_issues(M.state.activity_project, false, page + 1)
         end
       end
 
@@ -7156,6 +7208,8 @@ local function map_keys(buf)
     if M.state.view == "directory"
       or M.state.view == "milestones"
       or M.state.view == "code"
+      or M.state.view == "boards"
+      or M.state.view == "insights"
       or M.state.view == "work"
       or M.state.view == "shortcuts"
     then
@@ -7224,14 +7278,7 @@ local function map_keys(buf)
   map("b", open_activity_in_browser, "Open Oculus activity in browser")
 
   map("F", function()
-    if
-      (M.state.view == "contributors" and M.state.community_view == "projects")
-      or M.state.view == "directory"
-    then
-      open_filters(false)
-    else
-      open_filters(true)
-    end
+    open_filters(true)
   end, "Edit activity filters")
 
   map("a", function()
@@ -7600,6 +7647,10 @@ function M.open(opts)
     milestone_view.render()
   elseif M.state.view == "code" and M.state.project_code then
     code_view.render()
+  elseif M.state.view == "boards" and M.state.project_boards then
+    board_view.render()
+  elseif M.state.view == "insights" and M.state.project_insights then
+    insights_view.render()
   elseif M.state.view == "work" and M.state.work_lists then
     work_view.render()
   elseif M.state.view == "activity"
@@ -7721,6 +7772,10 @@ function M.open(opts)
           milestone_view.render()
         elseif M.state.view == "code" then
           code_view.render()
+        elseif M.state.view == "boards" then
+          board_view.render()
+        elseif M.state.view == "insights" then
+          insights_view.render()
         elseif M.state.view == "work" then
           work_view.render()
         elseif M.state.view == "shortcuts" then
@@ -7773,6 +7828,20 @@ function M.open(opts)
         if type(target) == "table" and target.kind == "milestone" then
           M.state.selected_milestone = target.milestone.id
           milestone_view.queue_preview(target.milestone)
+        end
+
+        update_contributor_selection()
+        return
+      end
+
+      if M.state.view == "boards" then
+        local target = M.state.line_targets[
+          vim.api.nvim_win_get_cursor(M.state.win)[1]
+        ]
+
+        if type(target) == "table" and target.kind == "board" then
+          M.state.selected_board = target.board.id
+          board_view.queue_preview(target.board)
         end
 
         update_contributor_selection()

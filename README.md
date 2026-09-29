@@ -6,8 +6,8 @@ https://github.com/user-attachments/assets/18e4cd77-701a-467d-ae3f-c3a7d82b4f19
 their changes without leaving Neovim.**
 
 Oculus is a dashboard for GitHub and Codeberg activity. Keep a
-tracked list of repositories and users, browse their pushes, merged pull
-requests, and issues, then inspect any pull request, issue, or commit. 
+tracked list of repositories and users, browse their code, issues, pull
+requests, and activity, then inspect any pull request, issue, or commit. 
 
 Oculus checks the change out in your local clone (or fetches just the changed
 files when you don't have one) and opens it as real, editable buffers with
@@ -48,10 +48,10 @@ Offline help is in `:h oculus`, generated from this README.
   your own open pull requests, and the issues and pull requests assigned to you
   or mentioning you, across every repository, on GitHub and Codeberg.
 
-- **Filterable activity feeds.** Each project has tabs for its code, issues,
-  pull requests, discussions, activity (pushes, merged pull requests, and
-  assigned issues), and milestones, and each user a feed of any public event
-  type. Filters persist between sessions.
+- **Projects and people at a glance.** Each project has tabs for its code,
+  issues, pull requests, discussions, project boards, milestones, and
+  insights, and each user a feed of any public event type. Filters persist
+  between sessions.
 
 - **Inspect anything by ID.** Paste a URL, or type `pr 123`, `neovim/neovim#123`,
   or a commit SHA. Oculus finds the matching local clone, or fetches only the
@@ -186,9 +186,8 @@ window with `a`, list them in `setup()`, or load them from a
 
 To track a GitHub subdirectory, set `path` to its path from the repository root,
 or paste a URL such as `https://github.com/owner/monorepo/tree/main/packages/editor`
-into the add dialog. Its activity feed shows commits that changed files under
-that directory, including matching recent commits from a local clone. The
-repository and its subdirectories can each have separate tracked entries.
+into the add dialog. Its Code tab starts at that directory. The repository and
+its subdirectories can each have separate tracked entries.
 
 > [!TIP]
 > Set `GITHUB_TOKEN` in your environment. Unauthenticated GitHub requests are
@@ -255,7 +254,7 @@ A project opens on its **Issues** tab, in a row of tabs like its page on
 GitHub or Codeberg:
 
 ```
-  Code   Issues   Pull requests   Discussions   Activity   Milestones
+  Code   Issues   Pull requests   Discussions   Projects   Milestones   Insights
 ```
 
 - **Code** lists the files in the default branch, directories first, with the
@@ -269,9 +268,17 @@ GitHub or Codeberg:
 - **Discussions** lists GitHub discussions, most recently active first, marked
   closed or answered. They come from GitHub's GraphQL API, so they need a
   token (see [Authentication](#authentication)). Codeberg has no discussions.
-- **Activity** is the project's feed of pushes, merged pull requests, and
-  assigned issues, chosen with `F`.
+- **Projects** lists the GitHub project boards linked to the repository, open
+  ones first, with each board's item count, owner, and description in the
+  preview. `b` opens the selected board. They need a token with the
+  `read:project` scope (with the GitHub CLI, `gh auth refresh -s read:project`);
+  Codeberg does not list its boards.
 - [**Milestones**](#milestones) lists its milestones.
+- **Insights** summarizes the repository: its stars, forks, watchers, and open
+  issues, the languages it is written in, a sparkline of commits per week over
+  the last year, and its top contributors (the last two on GitHub only). `b`
+  opens the forge's own pulse or activity page. GitHub counts commits on
+  demand, so the sparkline can take a refresh (`r`) to appear the first time.
 
 Press `<Tab>` and `<S-Tab>` to move between the tabs, and `h`/`←` to go back
 to the project list.
@@ -291,22 +298,9 @@ These keys work in every feed, including the project tabs.
 | `s`             | Save the item under the cursor, or remove it from saved items  |
 | `p`             | Load older activity                                            |
 | `r`             | Refresh                                                        |
-| `F`             | Choose activity types                                          |
+| `F`             | Choose the event types shown for users                         |
 | `<Space>` / `a` / `n` / `d` | Toggle one filter / enable all / disable all / reset to defaults |
 | `h` / `<Left>`  | Back to the list                                               |
-
-**Local commits**
-
-GitHub and Codeberg can take a while to report new pushes. When pushes are
-shown and a local clone of the project is found (the same search that
-inspection uses, but only clones with a remote pointing at the project count),
-a project feed also lists recent commits from the clone's `HEAD` and its
-remote-tracking branches that are newer than the forge's latest push. These
-read `committed to owner/repo · local`, or `· local, not pushed` when no
-remote-tracking branch contains the commit. When the forge reports the same
-commit, its entry replaces the local one. Inspecting a local commit shows
-`Source: Local clone, not yet listed by GitHub` (or `Local clone, not pushed`)
-in the overview.
 
 **Saved items**
 
@@ -518,7 +512,7 @@ Set `inspect_colorscheme = false` to turn this off.
 
 | Command                                  | Description                                            |
 | ---------------------------------------- | ------------------------------------------------------ |
-| `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's activity feed (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
+| `:OculusOpen [project\|@user]`           | Open the Oculus window, optionally on a project's tabs (`owner/repo` or `github:owner/repo`) or a user's (`@login` or `@codeberg:login`; `@me` is the signed-in account) |
 | `:OculusWork`                            | Open the Oculus window on [my work](#my-work)          |
 | `:OculusClose`                           | Close it                                               |
 | `:OculusToggle`                          | Toggle it                                              |
@@ -581,7 +575,6 @@ require("oculus").setup({
   push_detail_limit = 10,
   -- Event types shown for users. Empty means all
   user_activity_types = {},
-  project_activity_types = { "push", "merged_pull_request", "assigned_issue" },
   project_issue_filters = {},
   -- Seconds to cache API responses
   cache_ttl = 300,
@@ -800,7 +793,7 @@ oculus.open()
 oculus.close()
 oculus.toggle()
 
--- Open straight on a project's activity feed (untracked repositories work too)
+-- Open straight on a project's tabs (untracked repositories work too)
 local ok, err = oculus.open_project("github:neovim/neovim")
 
 -- Same for a user's activity feed (untracked users work too)
@@ -866,7 +859,7 @@ on their own beside them:
 | Module                  | What it holds                                                      |
 | ----------------------- | ------------------------------------------------------------------ |
 | `oculus/window.lua`     | The Oculus window: the list, the sidebar, the footer, the keys      |
-| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `code`, `milestones`, `work` and `saved` views |
+| `oculus/window/`        | `activity` (the feeds behind the lists), `preview` (the panel beside them), `directories` (project groups), `highlight` (the colours it takes from the code), and the `code`, `boards` (project boards), `insights`, `milestones`, `work` and `saved` views |
 | `oculus/inspect.lua`    | An inspection: its tabs, buffers, sidebar and chunk navigation      |
 | `oculus/inspect/`       | `prepare` and `git` (getting the change), `patch` (reading a diff), `target` (resolving what to inspect), `overview` (the summary and its agent flows), `review` and `review_ui` (pull request review threads), `oil`, `context` (treesitter-context) and `counters` |
 

@@ -534,23 +534,6 @@ end
 
 local github = require("oculus.github")
 
-local direct_commit = github._project_commit_event("folke/lazy.nvim", {
-  sha = "directcommit",
-  author = { login = "folke" },
-  commit = {
-    message = "fix: receive project updates",
-    author = {
-      name = "folke",
-      date = "2026-08-01T12:00:00Z",
-    },
-  },
-})
-
-assert(direct_commit.type == "PushEvent")
-assert(direct_commit.repo.name == "folke/lazy.nvim")
-assert(direct_commit.actor.login == "folke")
-assert(direct_commit.payload.commits[1].sha == "directcommit")
-
 assert(github._push_needs_enrichment({
   type = "PushEvent",
   payload = {
@@ -569,26 +552,6 @@ assert(not github._push_needs_enrichment({
   type = "PushEvent",
   payload = { size = 5, commits = { {}, {}, {}, {}, {} } },
 }))
-
-local direct_pull_request = github._project_pull_request_event(
-  "folke/lazy.nvim",
-  {
-    number = 123,
-    title = "Fix project updates",
-    user = { login = "contributor" },
-    merged_by = { login = "maintainer" },
-    merged_at = "2026-08-02T12:00:00Z",
-    html_url = "https://github.com/folke/lazy.nvim/pull/123",
-  }
-)
-
-assert(direct_pull_request.type == "PullRequestEvent")
-assert(direct_pull_request.payload.action == "merged")
-assert(direct_pull_request.payload.pull_request.number == 123)
-assert(direct_pull_request.actor.login == "maintainer")
-
-assert(direct_pull_request.payload.pull_request.merged_by.login
-  == "maintainer")
 
 do
   local enriched_pull_request = github.apply_pull_request({
@@ -751,61 +714,23 @@ do
   assert(#partial_push.payload.commits == 10)
   assert(not codeberg._push_needs_enrichment(partial_push))
 
-  local direct_codeberg_commit = codeberg._project_commit_event(
-    "ziglang/zig",
-    {
-      sha = "direct-codeberg-commit",
-      created = "2026-08-11T20:00:12+02:00",
-      html_url = "https://codeberg.org/ziglang/zig/commit/direct",
-      author = { login = "zig-author" },
-      commit = {
-        message = "Avoid scanning the broad activity feed",
-        author = {
-          name = "Zig Author",
-          date = "2026-08-10T12:00:00+02:00",
-        },
-      },
-    }
-  )
-
-  assert(direct_codeberg_commit.type == "PushEvent")
-  assert(direct_codeberg_commit.actor.login == "zig-author")
-
-  assert(direct_codeberg_commit.created_at
-    == "2026-08-11T20:00:12+02:00")
-
-  local direct_codeberg_pull = codeberg._project_pull_request_event(
-    "ziglang/zig",
-    {
-      number = 36462,
-      title = "Load past project items promptly",
-      user = { login = "pull-author" },
-      merged_by = { login = "zig-merger" },
-      merged_at = "2026-08-11T20:00:19+02:00",
-      html_url = "https://codeberg.org/ziglang/zig/pulls/36462",
-    }
-  )
-
-  assert(direct_codeberg_pull.type == "PullRequestEvent")
-  assert(direct_codeberg_pull.actor.login == "zig-merger")
-
-  assert(direct_codeberg_pull.payload.pull_request.user.login
-    == "pull-author")
-
-  local null_merger_pull = codeberg._project_pull_request_event(
-    "ziglang/zig",
-    {
+  -- Codeberg sends a JSON null merger for some merged pull requests.
+  local null_merger_pull = {
+    type = "PullRequestEvent",
+    repo = { name = "ziglang/zig" },
+    payload = {
+      action = "merged",
       number = 36441,
-      title = "Codeberg returns a JSON null merger",
-      user = { login = "Techatrix" },
-      merged_by = vim.NIL,
-      merged_at = "2026-08-13T02:03:28+02:00",
-      html_url = "https://codeberg.org/ziglang/zig/pulls/36441",
-    }
-  )
-
-  assert(null_merger_pull.actor == nil)
-  assert(null_merger_pull.payload.pull_request.merged_by == nil)
+      pull_request = {
+        number = 36441,
+        title = "Codeberg returns a JSON null merger",
+        user = { login = "Techatrix" },
+        merged = true,
+        merged_at = "2026-08-13T02:03:28+02:00",
+        html_url = "https://codeberg.org/ziglang/zig/pulls/36441",
+      },
+    },
+  }
 
   assert(codeberg._activity_pull_request_key(null_merger_pull)
     == "ziglang/zig#36441")
@@ -1747,155 +1672,11 @@ do
 end
 
 do
-  local original_repository_events = github.repository_events
-  local original_repository_updates = github.repository_updates
   local original_repository_issues = github.repository_issues
   local original_repository_pulls = github.repository_pulls
   local original_repository_discussions = github.repository_discussions
-  local repository_forces = {}
-  local repository_per_page
-  local repository_pages = {}
-  local repository_update_pages = {}
-  local project_pushes_enriched = false
-  local deferred_project_request
   local repository_issue_requests = {}
-
-  github.repository_events = function(repository, opts, callback)
-    assert(repository == "neovim/neovim")
-    repository_forces[#repository_forces + 1] = opts.force
-    repository_per_page = opts.per_page
-    repository_pages[#repository_pages + 1] = opts.page
-
-    if opts.page == 2 then
-      local events = {}
-
-      for index = 1, 4 do
-        events[#events + 1] = {
-          type = "PushEvent",
-          repo = { name = repository },
-          created_at = "2026-07-05T12:00:00Z",
-          payload = { size = 1 },
-        }
-      end
-
-      for index = 5, 100 do
-        events[#events + 1] = {
-          type = "CreateEvent",
-          repo = { name = repository },
-          created_at = "2026-07-05T12:00:00Z",
-          payload = { ref_type = "branch", ref = "ignored" },
-        }
-      end
-
-      callback(events, nil, false)
-      return
-    end
-
-    if opts.page == 3 then
-      local events = {}
-
-      for index = 1, 8 do
-        events[#events + 1] = {
-          id = "page-3-push-" .. index,
-          type = "PushEvent",
-          repo = { name = repository },
-          created_at = "2026-07-06T12:00:00Z",
-          payload = { size = 1 },
-        }
-      end
-
-      if deferred_project_request == true then
-        deferred_project_request = {
-          callback = callback,
-          events = events,
-        }
-
-        return
-      end
-
-      callback(events, nil, false)
-      return
-    end
-
-    if opts.page == 4 then
-      callback({}, nil, false)
-      return
-    end
-
-    local events = {
-      {
-        type = "PushEvent",
-        repo = { name = repository },
-        actor = { login = "project-author" },
-        created_at = "2026-07-01T12:00:00Z",
-        payload = { size = 2 },
-      },
-      {
-        type = "PullRequestEvent",
-        repo = { name = repository },
-        actor = { login = "merge-maintainer" },
-        created_at = "2026-07-02T12:00:00Z",
-        payload = {
-          action = "merged",
-          pull_request = {
-            number = 10,
-            title = "Improve startup",
-            user = { login = "pull-author" },
-          },
-        },
-      },
-      {
-        type = "PullRequestEvent",
-        repo = { name = repository },
-        actor = { login = "self-maintainer" },
-        created_at = "2026-07-02T13:00:00Z",
-        payload = {
-          action = "merged",
-          pull_request = {
-            number = 12,
-            title = "Refine defaults",
-            user = { login = "self-maintainer" },
-          },
-        },
-      },
-      {
-        type = "IssuesEvent",
-        repo = { name = repository },
-        created_at = "2026-07-03T12:00:00Z",
-        payload = {
-          action = "assigned",
-          issue = { number = 11, title = "Track startup" },
-        },
-      },
-      {
-        type = "CreateEvent",
-        repo = { name = repository },
-        created_at = "2026-07-04T12:00:00Z",
-        payload = { ref_type = "branch", ref = "ignored" },
-      },
-    }
-
-    -- GitHub's Neovim feed can return 99 rows for per_page=100 even though a
-    -- second page exists. Keep this fixture short by one row to guard against
-    -- treating that response as end-of-history.
-    for index = 5, 99 do
-      events[#events + 1] = {
-        id = "page-1-ignored-" .. index,
-        type = "CreateEvent",
-        repo = { name = repository },
-        created_at = "2026-07-04T12:00:00Z",
-        payload = { ref_type = "branch", ref = "ignored" },
-      }
-    end
-
-    callback(events, nil, false)
-  end
-
-  github.repository_updates = function(repository, opts, callback)
-    assert(repository == "neovim/neovim")
-    repository_update_pages[#repository_update_pages + 1] = opts.page
-    callback({}, nil, false)
-  end
+  local deferred_issue_request
 
   github.repository_issues = function(repository, opts, callback)
     if repository ~= "neovim/neovim" then
@@ -1941,6 +1722,11 @@ do
       }
     end
 
+    if deferred_issue_request == true then
+      deferred_issue_request = { callback = callback, events = events }
+      return
+    end
+
     callback(events, nil, false, true)
   end
 
@@ -1950,21 +1736,6 @@ do
 
   github.repository_discussions = function(_, _, callback)
     callback({}, nil, false, true)
-  end
-
-  github.enrich_pull_requests = function(events, _, callback)
-    callback(events)
-  end
-
-  github.enrich_pushes = function(events, _, callback)
-    project_pushes_enriched = true
-
-    events[1].payload.commits = {
-      { sha = "projectcommit1", message = "First project commit" },
-      { sha = "projectcommit2", message = "Second project commit" },
-    }
-
-    callback(events)
   end
 
   window.open({
@@ -2055,89 +1826,39 @@ do
   assert(project_line)
   vim.api.nvim_win_set_cursor(state.win, { project_line, 0 })
   vim.fn.maparg("l", "n", false, true).callback()
-  -- A project opens on its issues tab; the activity feed is three tabs along.
+  -- A project opens on its issues tab.
+  assert(state.view == "activity")
+  assert(state.activity_scope == "project")
   assert(state.activity_issue_page == true and state.activity_issue_kind == "issues")
+  assert(state.activity_project.repository == "neovim/neovim")
   local tab_line = vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1]
-  assert(tab_line:find("^  Code   Issues   P") and tab_line:find("   Milestones$"), tab_line)
-  assert(#repository_pages == 0)
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  assert(tab_line:find("^  Code  +Issues  +P") and tab_line:find("Insights$"), tab_line)
+  assert(not tab_line:find("Activity", 1, true), tab_line)
+  assert(#state.events == 8)
+  assert(repository_issue_requests[1].state == "open")
+  assert(repository_issue_requests[1].page == 1)
+  local next_tab_mapping = vim.fn.maparg("<Tab>", "n", false, true)
+  local previous_tab_mapping = vim.fn.maparg("<S-Tab>", "n", false, true)
+  assert(next_tab_mapping.desc == "Show the next Oculus project tab")
+  assert(previous_tab_mapping.desc == "Show the previous Oculus project tab")
+  next_tab_mapping.callback()
   assert(state.activity_issue_page == true and state.activity_issue_kind == "pulls")
 
   assert(table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
     :find("No pull requests match the filters.", 1, true))
 
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
+  next_tab_mapping.callback()
   assert(state.activity_issue_kind == "discussions")
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  assert(state.activity_issue_page == false)
-  assert(state.activity_scope == "project")
-  assert(state.activity_project.repository == "neovim/neovim")
-  assert(#state.events == 8)
-  local project_activity_items = 0
-
-  for line, title_line in pairs(state.activity_title_lines) do
-    if line == title_line then
-      project_activity_items = project_activity_items + 1
-    end
-  end
-
-  assert(project_activity_items == 8)
-  assert(#state.events[1].payload.commits == 2)
-  assert(project_pushes_enriched)
-  assert(repository_per_page == 100)
-  assert(vim.deep_equal(repository_pages, { 1, 2 }))
-
-  local project_activity_text = table.concat(
-    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
-    "\n"
-  )
-
-  assert(project_activity_text:find("  Code   Issues   ", 1, true), project_activity_text)
-  assert(project_activity_text:find("neovim/neovim", 1, true))
-  assert(project_activity_text:find("@project-author pushed", 1, true))
-
-  assert(project_activity_text:find(
-    "@merge%-maintainer merged pr #10"
-  ))
-
-  assert(project_activity_text:find(
-    "@self%-maintainer merged pr #12 in "
-  ))
-
-  assert(not project_activity_text:find("pr #12 from", 1, true))
-  assert(not project_activity_text:find("• Merged by", 1, true))
-  assert(project_activity_text:find("First project commit", 1, true))
-  assert(project_activity_text:find("Second project commit", 1, true))
-  local project_footer_text = table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
-  assert(project_footer_text:find("⇥ tabs", 1, true), project_footer_text)
-  window._toggle_shortcuts()
-
-  local proj_shortcuts = table.concat(
-    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
-    "\n"
-  )
-
-  assert(proj_shortcuts:find("Show the next or previous project tab", 1, true))
-  window._toggle_shortcuts()
-  local project_cursor = vim.api.nvim_win_get_cursor(state.win)
-  local previous_tab_mapping = vim.fn.maparg("<S-Tab>", "n", false, true)
-  assert(previous_tab_mapping.desc == "Show the previous Oculus project tab")
   previous_tab_mapping.callback()
   previous_tab_mapping.callback()
-  previous_tab_mapping.callback()
-  assert(state.view == "activity")
-  assert(state.activity_issue_page == true)
-  assert(state.activity_project.repository == "neovim/neovim")
-  assert(#state.events == 8)
-  assert(repository_issue_requests[1].state == "open")
-  assert(repository_issue_requests[1].page == 1)
+  assert(state.activity_issue_kind == "issues")
 
   local issue_activity_text = table.concat(
     vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
     "\n"
   )
 
-  assert(issue_activity_text:find("  Code   Issues   ", 1, true), issue_activity_text)
+  assert(issue_activity_text:find("neovim/neovim", 1, true))
 
   assert(
     issue_activity_text:find("Project issue 1", 1, true),
@@ -2145,8 +1866,8 @@ do
   )
 
   local issue_footer_text = table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
+  assert(issue_footer_text:find("⇥ tabs", 1, true), issue_footer_text)
   assert(issue_footer_text:find("f filters", 1, true), issue_footer_text)
-  assert(not issue_footer_text:find("u issues", 1, true), issue_footer_text)
   window._toggle_shortcuts()
 
   local issue_shortcuts = table.concat(
@@ -2154,6 +1875,7 @@ do
     "\n"
   )
 
+  assert(issue_shortcuts:find("Show the next or previous project tab", 1, true))
   assert(issue_shortcuts:find("Filter issues", 1, true))
   window._toggle_shortcuts()
   local queue_mapping = vim.fn.maparg("x", "n", false, true)
@@ -2299,51 +2021,12 @@ do
   assert(#state.events == 2)
   vim.fn.maparg("j", "n", false, true).callback()
   assert(state.activity_page == 1)
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  assert(state.view == "activity")
-  assert(state.activity_issue_page == false)
-  assert(#state.events == 8)
+  -- Refreshing keeps the page and marks it as loading until the forge answers.
+  deferred_issue_request = true
+  vim.fn.maparg("r", "n", false, true).callback()
+  assert(repository_issue_requests[#repository_issue_requests].force == true)
 
-  assert(vim.deep_equal(
-    vim.api.nvim_win_get_cursor(state.win),
-    project_cursor
-  ))
-
-  local project_past_mapping = vim.fn.maparg("p", "n", false, true)
-  local project_older_mapping = vim.fn.maparg("l", "n", false, true)
-
-  local project_older_arrow_mapping =
-    vim.fn.maparg("<Right>", "n", false, true)
-
-  project_older_mapping.callback()
-  assert(state.activity_commit_page == true)
-  vim.fn.maparg("j", "n", false, true).callback()
-  assert(state.activity_commit_page == false)
-  assert(state.activity_page == 1)
-  assert(vim.deep_equal(repository_pages, { 1, 2 }))
-  project_older_arrow_mapping.callback()
-  assert(state.activity_commit_page == true)
-  vim.fn.maparg("j", "n", false, true).callback()
-  assert(state.activity_commit_page == false)
-  assert(state.activity_page == 1)
-  assert(vim.deep_equal(repository_pages, { 1, 2 }))
-  deferred_project_request = true
-  project_past_mapping.callback()
-  assert(state.activity_page == 2)
-  assert(#state.events == 8)
-
-  local project_title_line = vim.api.nvim_buf_get_lines(
-    state.buf,
-    2,
-    3,
-    false
-  )[1]
-
-  assert(project_title_line:find("neovim/neovim", 1, true))
-
-  local project_loading_marks = vim.api.nvim_buf_get_extmarks(
+  local loading_marks = vim.api.nvim_buf_get_extmarks(
     state.buf,
     activity_page_loading_namespace,
     0,
@@ -2351,20 +2034,12 @@ do
     { details = true }
   )
 
-  assert(#project_loading_marks == 1)
-  assert(project_loading_marks[1][2] == 2)
-  assert(project_loading_marks[1][4].virt_text[1][1]:match("^ "))
-  local pending_project_request = deferred_project_request
-  deferred_project_request = nil
-
-  pending_project_request.callback(
-    pending_project_request.events,
-    nil,
-    false
-  )
-
-  assert(state.activity_has_past == true)
-  assert(vim.deep_equal(repository_pages, { 1, 2, 3 }))
+  assert(#loading_marks == 1)
+  assert(loading_marks[1][2] == 2)
+  assert(loading_marks[1][4].virt_text[1][1]:match("^ "))
+  local pending_issue_request = deferred_issue_request
+  deferred_issue_request = nil
+  pending_issue_request.callback(pending_issue_request.events, nil, false, true)
 
   assert(#vim.api.nvim_buf_get_extmarks(
     state.buf,
@@ -2374,219 +2049,41 @@ do
     {}
   ) == 0)
 
-  project_past_mapping.callback()
+  -- Reopening returns to the same page and view.
+  vim.fn.maparg("p", "n", false, true).callback()
   assert(state.activity_page == 2)
-  assert(state.activity_has_past == false)
-  assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
-  assert(vim.deep_equal(repository_update_pages, { 1 }))
-  vim.fn.maparg("<Left>", "n", false, true).callback()
-  assert(state.activity_page == 1)
-  assert(#state.events == 8)
-  assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
-  local ordinary_project_line
-
-  for line, title_line in pairs(state.activity_title_lines) do
-    if line == title_line and not state.activity_expansion_targets[line] then
-      ordinary_project_line = line
-      break
-    end
-  end
-
-  assert(ordinary_project_line)
-  vim.api.nvim_win_set_cursor(state.win, { ordinary_project_line, 0 })
-  project_older_mapping.callback()
-  assert(state.activity_page == 2)
-  assert(vim.deep_equal(repository_pages, { 1, 2, 3, 4 }))
-  local refresh_mapping = vim.fn.maparg("r", "n", false, true)
-
-  assert(refresh_mapping.desc
-    == "Rename selected Oculus item or refresh activity")
-
-  refresh_mapping.callback()
-  assert(repository_forces[#repository_forces] == true)
-  local preserved_project_line
+  local preserved_issue_line
 
   for line, title_line in pairs(state.activity_title_lines) do
     if line == title_line then
-      preserved_project_line = math.max(
-        preserved_project_line or line,
-        line
-      )
+      preserved_issue_line = math.max(preserved_issue_line or line, line)
     end
   end
 
-  assert(preserved_project_line)
+  vim.api.nvim_win_set_cursor(state.win, { preserved_issue_line, 0 })
 
-  vim.api.nvim_win_set_cursor(
-    state.win,
-    { preserved_project_line, 0 }
-  )
-
-  vim.api.nvim_win_call(state.win, function()
-    vim.fn.winrestview({
-      lnum = preserved_project_line,
-      col = 0,
-      topline = math.max(1, preserved_project_line - 3),
-    })
-  end)
-
-  local preserved_project_view = vim.api.nvim_win_call(
+  local preserved_issue_view = vim.api.nvim_win_call(
     state.win,
     vim.fn.winsaveview
   )
 
-  local preserved_project_opts = state.opts
+  local preserved_opts = state.opts
   window.close()
-  window.open(preserved_project_opts)
+  window.open(preserved_opts)
   state = window.state
   assert(state.view == "activity")
   assert(state.activity_project.repository == "neovim/neovim")
+  assert(state.activity_issue_page == true)
   assert(state.activity_page == 2)
 
-  local reopened_project_view = vim.api.nvim_win_call(
+  local reopened_issue_view = vim.api.nvim_win_call(
     state.win,
     vim.fn.winsaveview
   )
 
-  assert(reopened_project_view.lnum == preserved_project_view.lnum)
-  assert(reopened_project_view.col == preserved_project_view.col)
-  assert(reopened_project_view.topline == preserved_project_view.topline)
-  local activity_forward_mapping = vim.fn.maparg("f", "n", false, true)
-  activity_forward_mapping.callback()
-  assert(state.view == "activity")
-  assert(state.activity_page == 1)
-  vim.fn.maparg("j", "n", false, true).callback()
-  assert(state.view == "contributors")
-  vim.fn.maparg("F", "n", false, true).callback()
-  assert(state.view == "filters")
-  assert(state.filter_scope.project.repository == "neovim/neovim")
-
-  local project_filter_text = table.concat(
-    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
-    "\n"
-  )
-
-  assert(project_filter_text:find("Merged pull requests", 1, true))
-  vim.fn.maparg("j", "n", false, true).callback()
-  assert(state.view == "contributors")
-  window.close()
-  local lazy_repository_pages = {}
-  local lazy_update_pages = {}
-
-  github.repository_events = function(repository, opts, callback)
-    assert(repository == "folke/lazy.nvim")
-    lazy_repository_pages[#lazy_repository_pages + 1] = opts.page
-
-    if opts.page == 1 then
-      callback({
-        {
-          id = "lazy-watch",
-          type = "WatchEvent",
-          repo = { name = repository },
-          created_at = "2026-08-03T12:00:00Z",
-          payload = { action = "started" },
-        },
-      }, nil, false)
-    else
-      callback({}, nil, false)
-    end
-  end
-
-  github.repository_updates = function(repository, opts, callback)
-    assert(repository == "folke/lazy.nvim")
-
-    assert(vim.deep_equal(opts.activity_types, {
-      "assigned_issue",
-      "merged_pull_request",
-      "push",
-    }))
-
-    lazy_update_pages[#lazy_update_pages + 1] = opts.page
-    local events = {}
-
-    if opts.page == 1 then
-      for index = 1, 8 do
-        events[#events + 1] = {
-          id = "lazy-direct-" .. index,
-          type = "PushEvent",
-          actor = { login = "folke" },
-          repo = { name = repository },
-          created_at = ("2026-08-%02dT12:00:00Z"):format(9 - index),
-          payload = {
-            size = 1,
-            head = "lazycommit" .. index,
-            commits = {
-              {
-                sha = "lazycommit" .. index,
-                message = "Lazy update " .. index,
-              },
-            },
-          },
-        }
-      end
-    end
-
-    callback(events, nil, false)
-  end
-
-  github.enrich_pushes = function(events, _, callback)
-    callback(events)
-  end
-
-  window.open({
-    navigation = {
-      up = "i",
-      down = "k",
-      left = "j",
-      right = "l",
-      inspect = "h",
-      inspect_id = "H",
-    },
-    width = 0.8,
-    height = 0.8,
-    border = "rounded",
-    results_limit = 8,
-    projects = {
-      {
-        name = "lazy.nvim",
-        repository = "folke/lazy.nvim",
-        provider = "github",
-      },
-    },
-  })
-
-  state = window.state
-
-  for line, target in pairs(state.line_targets) do
-    if target.kind == "project" then
-      vim.api.nvim_win_set_cursor(state.win, { line, 0 })
-      break
-    end
-  end
-
-  vim.fn.maparg("l", "n", false, true).callback()
-  -- Projects open on their issues; the activity feed is three tabs along.
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  assert(state.activity_project.repository == "folke/lazy.nvim")
-  assert(#state.events == 8)
-  assert(vim.deep_equal(lazy_repository_pages, { 1 }))
-  assert(vim.deep_equal(lazy_update_pages, { 1 }))
-
-  local lazy_activity_text = table.concat(
-    vim.api.nvim_buf_get_lines(state.buf, 0, -1, false),
-    "\n"
-  )
-
-  assert(lazy_activity_text:find(
-    "@folke pushed commit",
-    1,
-    true
-  ))
-
-  assert(not lazy_activity_text:find("pushed 1 commit", 1, true))
-  assert(lazy_activity_text:find("Lazy update 1", 1, true))
+  assert(reopened_issue_view.lnum == preserved_issue_view.lnum)
+  assert(reopened_issue_view.topline == preserved_issue_view.topline)
+  -- A stale cursor limit from a longer page must not break cursor clamping.
   local stale_min_line = vim.api.nvim_buf_line_count(state.buf) + 3
   state.activity_cursor_min_line = stale_min_line
   state.activity_scroll_limit_line = stale_min_line + 4
@@ -2602,157 +2099,22 @@ do
 
   assert(cursor_moved_ok, cursor_moved_error)
   assert(vim.api.nvim_win_get_cursor(state.win)[1] == 1)
+  -- Left steps back a page, then leaves the project.
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.view == "activity" and state.activity_page == 1)
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.view == "contributors", state.view)
+  -- F edits the event types shown for users; projects have none.
+  vim.fn.maparg("F", "n", false, true).callback()
+  assert(state.view == "filters")
+  assert(state.filter_scope.global == true)
+  vim.fn.maparg("j", "n", false, true).callback()
+  assert(state.view == "contributors")
   window.close()
-  github.repository_events = original_repository_events
-  github.repository_updates = original_repository_updates
   github.repository_issues = original_repository_issues
   github.repository_pulls = original_repository_pulls
   github.repository_discussions = original_repository_discussions
 end
-
-do
-  local codeberg = require("oculus.codeberg")
-  local original_repository_events = codeberg.repository_events
-  local original_repository_updates = codeberg.repository_updates
-  local original_enrich_pull_requests = codeberg.enrich_pull_requests
-  local original_enrich_pushes = codeberg.enrich_pushes
-  local original_codeberg_issues = codeberg.repository_issues
-  local original_codeberg_pulls = codeberg.repository_pulls
-  local repository_event_requests = 0
-  local repository_update_pages = {}
-
-  codeberg.repository_issues = function(_, _, callback)
-    callback({}, nil, false, true)
-  end
-
-  codeberg.repository_pulls = codeberg.repository_issues
-
-  codeberg.repository_events = function()
-    repository_event_requests = repository_event_requests + 1
-    error("Codeberg project activity should use direct updates")
-  end
-
-  codeberg.repository_updates = function(repository, opts, callback)
-    assert(repository == "ziglang/zig")
-    assert(opts.per_page == 16)
-    repository_update_pages[#repository_update_pages + 1] = opts.page
-    local events = {}
-
-    for index = 1, 8 do
-      local event_index = (opts.page - 1) * 8 + index
-
-      events[#events + 1] = {
-        id = "zig-direct-" .. event_index,
-        type = "PushEvent",
-        actor = { login = "zig-author" },
-        repo = { name = repository },
-        created_at = ("2026-08-%02dT12:00:00Z"):format(
-          20 - event_index
-        ),
-        payload = {
-          size = 1,
-          head = "zigcommit" .. event_index,
-          commits = {
-            {
-              sha = "zigcommit" .. event_index,
-              message = "Zig update " .. event_index,
-            },
-          },
-        },
-      }
-    end
-
-    callback(events, nil, false)
-  end
-
-  codeberg.enrich_pull_requests = function(events, _, callback)
-    callback(events)
-  end
-
-  codeberg.enrich_pushes = function(events, _, callback)
-    callback(events)
-  end
-
-  state.view = "contributors"
-  state.activity_project = nil
-  state.contributor = nil
-  state.events = nil
-  state.activity_loaded = false
-  state.project_activity_feed = nil
-
-  window.open({
-    navigation = {
-      up = "i",
-      down = "k",
-      left = "j",
-      right = "l",
-      inspect = "h",
-      inspect_id = "H",
-    },
-    width = 0.8,
-    height = 0.8,
-    border = "rounded",
-    results_limit = 8,
-    projects = {
-      {
-        name = "Zig",
-        repository = "ziglang/zig",
-        provider = "codeberg",
-      },
-    },
-  })
-
-  state = window.state
-
-  for line, target in pairs(state.line_targets) do
-    if target.kind == "project" then
-      vim.api.nvim_win_set_cursor(state.win, { line, 0 })
-      break
-    end
-  end
-
-  vim.fn.maparg("l", "n", false, true).callback()
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  vim.fn.maparg("<Tab>", "n", false, true).callback()
-  assert(#state.events == 8)
-  assert(repository_event_requests == 0)
-
-  assert(
-    vim.deep_equal(repository_update_pages, { 1 }),
-    vim.inspect(repository_update_pages)
-  )
-
-  vim.fn.maparg("p", "n", false, true).callback()
-  assert(state.activity_page == 2)
-  assert(#state.events == 8)
-
-  assert(
-    vim.deep_equal(repository_update_pages, { 1, 2 }),
-    vim.inspect(repository_update_pages)
-  )
-
-  assert(#vim.api.nvim_buf_get_extmarks(
-    state.buf,
-    activity_page_loading_namespace,
-    0,
-    -1,
-    {}
-  ) == 0)
-
-  window.close()
-  codeberg.repository_events = original_repository_events
-  codeberg.repository_updates = original_repository_updates
-  codeberg.enrich_pull_requests = original_enrich_pull_requests
-  codeberg.enrich_pushes = original_enrich_pushes
-  codeberg.repository_issues = original_codeberg_issues
-  codeberg.repository_pulls = original_codeberg_pulls
-end
-
-github.events = original_events
-github.enrich_pull_requests = original_enrich_pull_requests
-github.enrich_pushes = original_enrich_pushes
-github.pull_request_commits = original_pull_request_commits
 
 do
   local event = {

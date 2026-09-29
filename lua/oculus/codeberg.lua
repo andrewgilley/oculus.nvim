@@ -1,7 +1,5 @@
 local M = {}
 local cache = {}
-local repository_cache = {}
-local repository_update_cache = {}
 local repository_issue_cache = {}
 local activity_pull_request_cache = {}
 local pull_request_commits_cache = {}
@@ -441,268 +439,6 @@ function M.events(username, opts, callback)
   end)
 end
 
-function M.repository_events(repository_name, opts, callback)
-  opts = opts or {}
-  local ttl = opts.cache_ttl or 300
-  local page = math.max(1, math.floor(opts.page or 1))
-  local cache_key = ("%s:%d"):format(repository_name, page)
-  local cached = repository_cache[cache_key]
-
-  local limit = math.min(
-    50,
-    math.max(1, math.floor(opts.per_page or 30))
-  )
-
-  if not opts.force
-    and cached
-    and os.time() - cached.fetched_at < ttl
-    and (
-      (cached.per_page or #cached.events) >= limit
-      or cached.complete
-    )
-  then
-    vim.schedule(function()
-      callback(cached.events, nil, true, nil, cached.complete)
-    end)
-
-    return
-  end
-
-  local url = (
-    "%s/api/v1/repos/%s/activities/feeds?limit=%d&page=%d"
-  ):format(base_url, repository_name, limit, page)
-
-  request_json(url, opts, function(activities, err)
-    if not activities then
-      callback(nil, err)
-      return
-    end
-
-    local events = {}
-
-    for _, activity in ipairs(activities) do
-      events[#events + 1] = M.normalize_activity(activity)
-    end
-
-    repository_cache[cache_key] = {
-      events = events,
-      fetched_at = os.time(),
-      per_page = limit,
-      complete = #activities < limit,
-    }
-
-    callback(events, nil, false, nil, #activities < limit)
-  end)
-end
-
-local function project_commit_event(repository_name, commit)
-  local details = type(commit.commit) == "table" and commit.commit or {}
-  local author = type(details.author) == "table" and details.author or {}
-
-  local committer = type(details.committer) == "table"
-      and details.committer
-    or {}
-
-  local account = type(commit.author) == "table" and commit.author or nil
-  local sha = commit.sha
-
-  if type(sha) ~= "string" or sha == "" then
-    return nil
-  end
-
-  return {
-    id = "project-commit:" .. sha,
-    type = "PushEvent",
-    actor = account or { name = author.name },
-    repo = { name = repository_name },
-    created_at = commit.created or committer.date or author.date,
-    url = commit.html_url,
-    payload = {
-      size = 1,
-      head = sha,
-      commits = {
-        {
-          sha = sha,
-          message = details.message,
-          author = account or { name = author.name },
-        },
-      },
-    },
-  }
-end
-
-local function project_pull_request_event(repository_name, pull_request)
-  local number = pull_request.number
-  local merged_at = pull_request.merged_at
-
-  if not number or type(merged_at) ~= "string" or merged_at == "" then
-    return nil
-  end
-
-  local merger = account(pull_request.merged_by)
-
-  return {
-    id = ("project-pr:%s:%s"):format(repository_name, number),
-    type = "PullRequestEvent",
-    actor = merger,
-    repo = { name = repository_name },
-    created_at = merged_at,
-    url = pull_request.html_url,
-    payload = {
-      action = "merged",
-      number = number,
-      pull_request = {
-        number = number,
-        title = pull_request.title,
-        user = account(pull_request.user),
-        merged = true,
-        merged_at = merged_at,
-        merged_by = merger,
-        html_url = pull_request.html_url,
-      },
-    },
-  }
-end
-
-function M.repository_updates(repository_name, opts, callback)
-  opts = opts or {}
-  local enabled = {}
-
-  for _, category in ipairs(opts.activity_types or {}) do
-    enabled[category] = true
-  end
-
-  local page = math.max(1, math.floor(opts.page or 1))
-
-  local per_page = math.min(
-    50,
-    math.max(1, math.floor(opts.per_page or 16))
-  )
-
-  local categories = {}
-
-  if enabled.push then
-    categories[#categories + 1] = "push"
-  end
-
-  if enabled.merged_pull_request then
-    categories[#categories + 1] = "merged_pull_request"
-  end
-
-  local cache_key = table.concat({
-    repository_name:lower(),
-    tostring(page),
-    tostring(per_page),
-    table.concat(categories, ","),
-  }, ":")
-
-  local cached = repository_update_cache[cache_key]
-  local ttl = opts.cache_ttl or 300
-
-  if cached
-    and not opts.force
-    and os.time() - cached.fetched_at < ttl
-  then
-    vim.schedule(function()
-      callback(vim.deepcopy(cached.events), nil, true)
-    end)
-
-    return
-  end
-
-  if #categories == 0 then
-    vim.schedule(function()
-      callback({}, nil, false)
-    end)
-
-    return
-  end
-
-  local pending = #categories
-  local events = {}
-  local errors = {}
-
-  local function complete()
-    pending = pending - 1
-
-    if pending > 0 then
-      return
-    end
-
-    table.sort(events, function(left, right)
-      return tostring(left.created_at or "")
-        > tostring(right.created_at or "")
-    end)
-
-    if #events == 0 and #errors == #categories then
-      callback(nil, table.concat(errors, "; "))
-      return
-    end
-
-    repository_update_cache[cache_key] = {
-      events = vim.deepcopy(events),
-      fetched_at = os.time(),
-    }
-
-    callback(
-      vim.deepcopy(events),
-      nil,
-      false,
-      #errors > 0 and table.concat(errors, "; ") or nil
-    )
-  end
-
-  if enabled.push then
-    local url = (
-      "%s/api/v1/repos/%s/commits?limit=%d&page=%d"
-    ):format(base_url, repository_name, per_page, page)
-
-    request_json(url, opts, function(commits, err)
-      if commits then
-        for _, commit in ipairs(commits) do
-          local normalized = project_commit_event(repository_name, commit)
-
-          if normalized then
-            events[#events + 1] = normalized
-          end
-        end
-      else
-        errors[#errors + 1] = err or "could not load project commits"
-      end
-
-      complete()
-    end)
-  end
-
-  if enabled.merged_pull_request then
-    local url = (
-      "%s/api/v1/repos/%s/pulls"
-        .. "?state=closed&sort=recentupdate&limit=%d&page=%d"
-    ):format(base_url, repository_name, per_page, page)
-
-    request_json(url, opts, function(pull_requests, err)
-      if pull_requests then
-        for _, pull_request in ipairs(pull_requests) do
-          local normalized = project_pull_request_event(
-            repository_name,
-            pull_request
-          )
-
-          if normalized then
-            events[#events + 1] = normalized
-          end
-        end
-      else
-        errors[#errors + 1] = err
-          or "could not load merged pull requests"
-      end
-
-      complete()
-    end)
-  end
-end
-
--- JSON null decodes to vim.NIL, which is truthy; treat it as absent.
 local function json_value(value)
   if value == vim.NIL then
     return nil
@@ -1790,6 +1526,16 @@ function M.repository_info(repository, opts, callback)
         or nil,
       name = payload.name,
       full_name = payload.full_name,
+      stars = json_value(payload.stars_count),
+      forks = json_value(payload.forks_count),
+      watchers = json_value(payload.watchers_count),
+      open_issues = json_value(payload.open_issues_count),
+      open_pull_requests = json_value(payload.open_pr_counter),
+      language = json_value(payload.language),
+      default_branch = json_value(payload.default_branch),
+      created_at = json_value(payload.created_at),
+      pushed_at = json_value(payload.updated_at),
+      archived = json_value(payload.archived) == true,
     }
 
     repository_info_cache[key] = {
@@ -1798,6 +1544,30 @@ function M.repository_info(repository, opts, callback)
     }
 
     callback(vim.deepcopy(info))
+  end)
+end
+
+-- Bytes of code per language, largest first.
+function M.repository_languages(repository, opts, callback)
+  request_json(("%s/api/v1/repos/%s/languages"):format(base_url, repository), opts or {}, function(payload, err)
+    if type(payload) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    local languages = {}
+
+    for name, bytes in pairs(payload) do
+      if type(bytes) == "number" then
+        languages[#languages + 1] = { name = name, bytes = bytes }
+      end
+    end
+
+    table.sort(languages, function(left, right)
+      return left.bytes > right.bytes
+    end)
+
+    callback(languages)
   end)
 end
 
@@ -1916,8 +1686,6 @@ function M.clear(username)
 end
 
 M._apply_push_comparison = apply_push_comparison
-M._project_commit_event = project_commit_event
-M._project_pull_request_event = project_pull_request_event
 M._activity_pull_request_key = activity_pull_request_key
 M._push_needs_enrichment = push_needs_enrichment
 return M

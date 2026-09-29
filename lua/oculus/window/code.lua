@@ -152,8 +152,11 @@ function M.setup(window, code_view, internal)
     elseif listing.error then
       lines[#lines + 1] = "  Could not load files"
       error_line = #lines
-      lines[#lines + 1] = "  " .. listing.error
-      comment_lines[#comment_lines + 1] = #lines
+
+      for _, line in ipairs(internal.wrapped_preview_text(listing.error, left_width - 4, 4)) do
+        lines[#lines + 1] = "  " .. line
+        comment_lines[#comment_lines + 1] = #lines
+      end
     elseif #entries == 0 then
       lines[#lines + 1] = "  This directory is empty."
       comment_lines[#comment_lines + 1] = #lines

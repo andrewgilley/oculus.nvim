@@ -74,8 +74,6 @@ for _, provider in ipairs({ github, codeberg }) do
   originals[provider] = {}
 
   for _, name in ipairs({
-    "repository_events",
-    "repository_updates",
     "repository_issues",
     "repository_pulls",
     "repository_discussions",
@@ -84,10 +82,6 @@ for _, provider in ipairs({ github, codeberg }) do
     "pull_request_commits",
   }) do
     originals[provider][name] = provider[name]
-  end
-
-  provider.repository_updates = function(_, _, callback)
-    callback({}, nil, false)
   end
 
   provider.repository_issues = function(_, _, callback)
@@ -111,88 +105,96 @@ for _, provider in ipairs({ github, codeberg }) do
   end
 end
 
-github.repository_events = function(repository, _, callback)
-  callback({
-    {
-      id = "gh-push",
-      type = "PushEvent",
-      repo = { name = repository },
-      actor = { login = "pusher" },
-      created_at = "2026-07-02T12:00:00Z",
-      payload = { size = 1, head = "abc123", before = "000111" },
-    },
-    {
-      id = "gh-pr",
-      type = "PullRequestEvent",
-      repo = { name = repository },
-      actor = { login = "maintainer" },
-      created_at = "2026-07-01T12:00:00Z",
-      payload = {
-        action = "merged",
-        number = 12,
-        pull_request = { number = 12, title = "Refine defaults", html_url = "https://github.com/neovim/neovim/pull/12" },
+local function project_issue(repository, number, title, url, pull_request)
+  return {
+    id = ("project-issue:%s:%d"):format(repository, number),
+    type = "IssuesEvent",
+    actor = { login = "reporter" },
+    repo = { name = repository },
+    created_at = ("2026-08-%02dT12:00:00Z"):format(number),
+    url = url,
+    payload = {
+      action = "opened",
+      issue = {
+        number = number,
+        title = title,
+        state = "open",
+        assignees = {},
+        html_url = url,
+        pull_request = pull_request,
       },
     },
-  }, nil, false)
+  }
 end
 
 github.repository_issues = function(repository, _, callback)
   callback({
+    project_issue(repository, 6, "Second issue", "https://github.com/neovim/neovim/issues/6"),
+    project_issue(repository, 5, "Saved issue", "https://github.com/neovim/neovim/issues/5"),
+  }, nil, false, true)
+end
+
+github.repository_pulls = function(repository, _, callback)
+  callback({
+    project_issue(repository, 12, "Refine defaults", "https://github.com/neovim/neovim/pull/12", { merged = false }),
+  }, nil, false, true)
+end
+
+github.repository_discussions = function(repository, _, callback)
+  callback({
     {
-      id = "project-issue:neovim/neovim:5",
-      type = "IssuesEvent",
-      actor = { login = "reporter" },
+      id = "project-discussion:neovim/neovim:3",
+      type = "DiscussionEvent",
+      actor = { login = "asker" },
       repo = { name = repository },
-      created_at = "2026-08-01T12:00:00Z",
-      url = "https://github.com/neovim/neovim/issues/5",
-      payload = {
-        action = "opened",
-        issue = {
-          number = 5,
-          title = "Saved issue",
-          state = "open",
-          assignees = {},
-          html_url = "https://github.com/neovim/neovim/issues/5",
-        },
-      },
+      created_at = "2026-08-03T12:00:00Z",
+      url = "https://github.com/neovim/neovim/discussions/3",
+      oculus_text = "@asker · discussion #3 in Q&A",
+      oculus_detail = "How do I start?",
+      payload = { action = "open", discussion = { number = 3 } },
     },
   }, nil, false, true)
 end
 
--- Codeberg project feeds come from repository_updates.
-codeberg.repository_updates = function(repository, _, callback)
+codeberg.repository_issues = function(repository, _, callback)
   callback({
-    {
-      id = "cb-pr",
-      type = "PullRequestEvent",
-      repo = { name = repository },
-      url = "https://codeberg.org/forgejo/forgejo/pulls/42",
-      actor = { login = "merger" },
-      created_at = "2026-07-03T12:00:00Z",
-      payload = {
-        action = "merged",
-        number = 42,
-        pull_request = { number = 42, title = "Codeberg change", html_url = "https://codeberg.org/forgejo/forgejo/pulls/42" },
-      },
-    },
-    {
-      id = "cb-push",
-      type = "PushEvent",
-      repo = { name = repository },
-      url = "https://codeberg.org/forgejo/forgejo/compare/abc...def456",
-      actor = { login = "pusher" },
-      created_at = "2026-07-02T12:00:00Z",
-      payload = {
-        size = 2,
-        head = "def456",
-        commits = {
-          { sha = "c0ffee1", message = "First" },
-          { sha = "c0ffee2", message = "Second" },
-        },
-      },
-    },
-  }, nil, false)
+    project_issue(repository, 1, "Codeberg issue", "https://codeberg.org/forgejo/forgejo/issues/1"),
+  }, nil, false, true)
 end
+
+-- Saved Codeberg pushes and pull requests keep their provider in the saved
+-- feed; these come from a user feed in practice.
+local codeberg_saved = {
+  {
+    id = "cb-pr",
+    type = "PullRequestEvent",
+    repo = { name = "forgejo/forgejo" },
+    url = "https://codeberg.org/forgejo/forgejo/pulls/42",
+    actor = { login = "merger" },
+    created_at = "2026-07-03T12:00:00Z",
+    payload = {
+      action = "merged",
+      number = 42,
+      pull_request = { number = 42, title = "Codeberg change", html_url = "https://codeberg.org/forgejo/forgejo/pulls/42" },
+    },
+  },
+  {
+    id = "cb-push",
+    type = "PushEvent",
+    repo = { name = "forgejo/forgejo" },
+    url = "https://codeberg.org/forgejo/forgejo/compare/abc...def456",
+    actor = { login = "pusher" },
+    created_at = "2026-07-02T12:00:00Z",
+    payload = {
+      size = 2,
+      head = "def456",
+      commits = {
+        { sha = "c0ffee1", message = "First" },
+        { sha = "c0ffee2", message = "Second" },
+      },
+    },
+  },
+}
 
 local commit_requests = {}
 
@@ -275,13 +277,10 @@ local function open_project(repository)
     end
   end
 
-  -- Projects open on their issues; the activity feed is three tabs along.
+  -- Projects open on their issues.
   press("l")
-  press("<Tab>")
-  press("<Tab>")
-  press("<Tab>")
   assert(state.activity_project.repository == repository)
-  assert(state.view == "activity" and not state.activity_issue_page)
+  assert(state.view == "activity" and state.activity_issue_kind == "issues")
 end
 
 vim.o.columns = 160
@@ -313,37 +312,49 @@ assert(shortcuts_text():find("Open saved activity items", 1, true))
 open_project("neovim/neovim")
 assert(shortcuts_text():find("Save activity item", 1, true))
 local lines = title_lines()
-vim.api.nvim_win_set_cursor(state.win, { lines[1], 0 })
+vim.api.nvim_win_set_cursor(state.win, { lines[2], 0 })
 press("s")
 assert(#store.items() == 1)
 assert(store.items()[1].source.kind == "project")
 assert(store.items()[1].source.repository == "neovim/neovim")
-assert(store.items()[1].event.id == "gh-push")
-assert(starred(lines[1]) and not starred(lines[2]))
-assert(read_state().saved_items[1].event.id == "gh-push")
+assert(store.items()[1].event.id == "project-issue:neovim/neovim:5")
+assert(starred(lines[2]) and not starred(lines[1]))
+assert(read_state().saved_items[1].event.id == "project-issue:neovim/neovim:5")
 -- Saving toggles.
 press("s")
-assert(#store.items() == 0 and not starred(lines[1]))
+assert(#store.items() == 0 and not starred(lines[2]))
 press("s")
-vim.api.nvim_win_set_cursor(state.win, { lines[2], 0 })
+vim.api.nvim_win_set_cursor(state.win, { lines[1], 0 })
 press("s")
-assert(#store.items() == 2 and store.items()[1].event.id == "gh-pr")
-press("<S-Tab>")
-press("<S-Tab>")
-press("<S-Tab>")
-assert(state.activity_issue_page and state.activity_issue_kind == "issues")
+assert(#store.items() == 2 and store.items()[1].event.id == "project-issue:neovim/neovim:6")
+-- Pull requests and discussions save from their tabs too.
+press("<Tab>")
+assert(state.activity_issue_kind == "pulls")
 vim.api.nvim_win_set_cursor(state.win, { title_lines()[1], 0 })
 press("s")
-assert(store.items()[1].event.id == "project-issue:neovim/neovim:5")
-open_project("forgejo/forgejo")
-local forgejo_lines = title_lines()
-vim.api.nvim_win_set_cursor(state.win, { forgejo_lines[1], 0 })
+assert(store.items()[1].event.id == "project-issue:neovim/neovim:12")
+press("<Tab>")
+assert(state.activity_issue_kind == "discussions")
+vim.api.nvim_win_set_cursor(state.win, { title_lines()[1], 0 })
 press("s")
-vim.api.nvim_win_set_cursor(state.win, { forgejo_lines[2], 0 })
+assert(store.items()[1].event.id == "project-discussion:neovim/neovim:3")
+assert(starred(title_lines()[1]))
+open_project("forgejo/forgejo")
+vim.api.nvim_win_set_cursor(state.win, { title_lines()[1], 0 })
 press("s")
 assert(#store.items() == 5)
 assert(store.items()[1].source.provider == "codeberg")
 assert(#read_state().saved_items == 5)
+
+for _, event in ipairs(codeberg_saved) do
+  store.add({
+    key = "codeberg:" .. event.id,
+    saved_at = "2026-08-04T12:00:00Z",
+    source = { kind = "project", provider = "codeberg", repository = "forgejo/forgejo" },
+    event = vim.deepcopy(event),
+  })
+end
+
 -- The start screen opens the saved feed.
 press("j")
 assert(state.view == "contributors")
@@ -351,7 +362,7 @@ press("s")
 assert(state.view == "activity" and state.activity_saved)
 local text = buffer_text()
 assert(text:find("  SAVED\n", 1, true), text)
-assert(text:find("5 saved items (1/3)", 1, true), text)
+assert(text:find("7 saved items (1/4)", 1, true), text)
 assert(#state.events == 2)
 assert(shortcuts_text():find("Unsave activity item", 1, true))
 
@@ -393,19 +404,23 @@ assert(state.activity_saved and not state.activity_commit_page)
 press("p")
 assert(state.activity_page == 2)
 text = buffer_text()
+assert(text:find("open issue #1 in forgejo/forgejo", 1, true), text)
+assert(text:find("@asker · discussion #3 in Q&A", 1, true), text)
+press("p")
+press("p")
+assert(state.activity_page == 4 and #state.events == 1)
+text = buffer_text()
 assert(text:find("open issue #5 in neovim/neovim", 1, true), text)
 press("p")
-assert(state.activity_page == 3 and #state.events == 1)
-press("p")
-assert(state.activity_page == 3)
+assert(state.activity_page == 4)
 press("j")
-assert(state.activity_page == 2)
+assert(state.activity_page == 3)
 -- Unsaving on the saved feed removes the item and redraws the page.
 vim.api.nvim_win_set_cursor(state.win, { title_lines()[1], 0 })
 press("s")
-assert(#store.items() == 4)
-assert(buffer_text():find("4 saved items (2/2)", 1, true), buffer_text())
-assert(#read_state().saved_items == 4)
+assert(#store.items() == 6)
+assert(buffer_text():find("6 saved items (3/3)", 1, true), buffer_text())
+assert(#read_state().saved_items == 6)
 -- Reloaded items keep the same keys.
 local reloaded = read_state().saved_items
 
@@ -417,7 +432,8 @@ end
 window.close()
 window.open(state.opts)
 state = window.state
-assert(state.view == "activity" and state.activity_saved)
+assert(state.view == "activity" and state.activity_saved and state.activity_page == 3)
+press("j")
 press("j")
 press("j")
 assert(state.view == "contributors", state.view)

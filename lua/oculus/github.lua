@@ -1,7 +1,5 @@
 local M = {}
 local cache = {}
-local repository_cache = {}
-local repository_update_cache = {}
 local repository_issue_cache = {}
 local push_cache = {}
 local pull_request_cache = {}
@@ -155,67 +153,6 @@ function M.events(username, opts, callback)
   end)
 end
 
-function M.repository_events(repository, opts, callback)
-  opts = opts or {}
-  local ttl = opts.cache_ttl or 300
-  local page = math.max(1, math.floor(opts.page or 1))
-  local cache_key = ("%s:%d"):format(repository, page)
-  local cached = repository_cache[cache_key]
-
-  local per_page = math.min(
-    100,
-    math.max(1, math.floor(opts.per_page or 30))
-  )
-
-  if not opts.force
-    and cached
-    and os.time() - cached.fetched_at < ttl
-    and (
-      (cached.per_page or #cached.events) >= per_page
-      or cached.complete
-    )
-  then
-    vim.schedule(function()
-      callback(
-        vim.deepcopy(cached.events),
-        nil,
-        true,
-        nil,
-        cached.complete
-      )
-    end)
-
-    return
-  end
-
-  local url = (
-    "https://api.github.com/repos/%s/events?per_page=%d&page=%d"
-  ):format(repository, per_page, page)
-
-  request_json(url, opts, function(events, err)
-    if not events then
-      callback(nil, err)
-      return
-    end
-
-    repository_cache[cache_key] = {
-      events = events,
-      fetched_at = os.time(),
-      per_page = per_page,
-      complete = #events < per_page,
-    }
-
-    callback(
-      vim.deepcopy(events),
-      nil,
-      false,
-      nil,
-      #events < per_page
-    )
-  end)
-end
-
--- JSON null decodes to vim.NIL, which is truthy; treat it as absent.
 local function json_value(value)
   if value == vim.NIL then
     return nil
@@ -770,209 +707,6 @@ function M.milestone_issues(repository, milestone_id, opts, callback)
 
     callback(events, nil, false, complete)
   end)
-end
-
-local function project_commit_event(repository, commit)
-  local details = type(commit.commit) == "table" and commit.commit or {}
-  local author = type(details.author) == "table" and details.author or {}
-  local account = type(commit.author) == "table" and commit.author or nil
-  local sha = commit.sha
-
-  if type(sha) ~= "string" or sha == "" then
-    return
-  end
-
-  return {
-    id = "project-commit:" .. sha,
-    type = "PushEvent",
-    actor = account or { name = author.name },
-    repo = { name = repository },
-    created_at = author.date,
-    payload = {
-      size = 1,
-      head = sha,
-      commits = {
-        {
-          sha = sha,
-          message = details.message,
-          author = account or { name = author.name },
-        },
-      },
-    },
-  }
-end
-
-local function project_pull_request_event(repository, pull_request)
-  local number = pull_request.number
-  local merged_at = pull_request.merged_at
-
-  if not number or type(merged_at) ~= "string" or merged_at == "" then
-    return
-  end
-
-  return {
-    id = ("project-pr:%s:%s"):format(repository, number),
-    type = "PullRequestEvent",
-    actor = pull_request.merged_by,
-    repo = { name = repository },
-    created_at = merged_at,
-    payload = {
-      action = "merged",
-      number = number,
-      pull_request = {
-        number = number,
-        title = pull_request.title,
-        user = pull_request.user,
-        merged = true,
-        merged_at = merged_at,
-        merged_by = pull_request.merged_by,
-        html_url = pull_request.html_url,
-      },
-    },
-  }
-end
-
-function M.repository_updates(repository, opts, callback)
-  opts = opts or {}
-  local enabled = {}
-
-  for _, category in ipairs(opts.activity_types or {}) do
-    enabled[category] = true
-  end
-
-  local page = math.max(1, math.floor(opts.page or 1))
-
-  local per_page = math.min(
-    100,
-    math.max(1, math.floor(opts.per_page or 100))
-  )
-
-  local categories = {}
-
-  if enabled.push then
-    categories[#categories + 1] = "push"
-  end
-
-  if enabled.merged_pull_request then
-    categories[#categories + 1] = "merged_pull_request"
-  end
-
-  local key = table.concat({
-    repository:lower(),
-    opts.path or "",
-    tostring(page),
-    table.concat(categories, ","),
-  }, ":")
-
-  local cached = repository_update_cache[key]
-  local ttl = opts.cache_ttl or 300
-
-  if cached
-    and not opts.force
-    and os.time() - cached.fetched_at < ttl
-  then
-    vim.schedule(function()
-      callback(vim.deepcopy(cached.events), nil, true)
-    end)
-
-    return
-  end
-
-  if #categories == 0 then
-    vim.schedule(function()
-      callback({}, nil, false)
-    end)
-
-    return
-  end
-
-  local pending = #categories
-  local events = {}
-  local errors = {}
-
-  local function complete()
-    pending = pending - 1
-
-    if pending > 0 then
-      return
-    end
-
-    table.sort(events, function(left, right)
-      return tostring(left.created_at or "") > tostring(right.created_at or "")
-    end)
-
-    if #events == 0 and #errors == #categories then
-      callback(nil, table.concat(errors, "; "))
-      return
-    end
-
-    repository_update_cache[key] = {
-      events = vim.deepcopy(events),
-      fetched_at = os.time(),
-    }
-
-    callback(
-      vim.deepcopy(events),
-      nil,
-      false,
-      #errors > 0 and table.concat(errors, "; ") or nil
-    )
-  end
-
-  if enabled.push then
-    local url = (
-      "https://api.github.com/repos/%s/commits?per_page=%d&page=%d"
-    ):format(repository, per_page, page)
-
-    if opts.path then
-      url = url .. "&path=" .. opts.path:gsub("([^%w%-._~])", function(char)
-        return ("%%%02X"):format(char:byte())
-      end)
-    end
-
-    request_json(url, opts, function(commits, err)
-      if commits then
-        for _, commit in ipairs(commits) do
-          local normalized = project_commit_event(repository, commit)
-
-          if normalized then
-            events[#events + 1] = normalized
-          end
-        end
-      else
-        errors[#errors + 1] = err or "could not load project commits"
-      end
-
-      complete()
-    end)
-  end
-
-  if enabled.merged_pull_request then
-    local url = (
-      "https://api.github.com/repos/%s/pulls"
-        .. "?state=closed&sort=updated&direction=desc"
-        .. "&per_page=%d&page=%d"
-    ):format(repository, per_page, page)
-
-    request_json(url, opts, function(pull_requests, err)
-      if pull_requests then
-        for _, pull_request in ipairs(pull_requests) do
-          local normalized = project_pull_request_event(
-            repository,
-            pull_request
-          )
-
-          if normalized then
-            events[#events + 1] = normalized
-          end
-        end
-      else
-        errors[#errors + 1] = err or "could not load merged pull requests"
-      end
-
-      complete()
-    end)
-  end
 end
 
 local function push_key(event)
@@ -1765,12 +1499,29 @@ function M.repository_info(repository, opts, callback)
       return
     end
 
+    local license = json_value(payload.license)
+
     local info = {
       description = type(payload.description) == "string"
           and payload.description
         or nil,
       name = payload.name,
       full_name = payload.full_name,
+      stars = json_value(payload.stargazers_count),
+      forks = json_value(payload.forks_count),
+      watchers = json_value(payload.subscribers_count),
+      -- GitHub counts open pull requests among the open issues.
+      open_issues = json_value(payload.open_issues_count),
+      language = json_value(payload.language),
+      -- GitHub marks licenses it cannot identify NOASSERTION.
+      license = type(license) == "table"
+          and json_value(license.spdx_id) ~= "NOASSERTION"
+          and json_value(license.spdx_id)
+        or nil,
+      default_branch = json_value(payload.default_branch),
+      created_at = json_value(payload.created_at),
+      pushed_at = json_value(payload.pushed_at),
+      archived = json_value(payload.archived) == true,
     }
 
     repository_info_cache[key] = {
@@ -1780,6 +1531,177 @@ function M.repository_info(repository, opts, callback)
 
     callback(vim.deepcopy(info))
   end)
+end
+
+-- Bytes of code per language, largest first.
+function M.repository_languages(repository, opts, callback)
+  request_json(("https://api.github.com/repos/%s/languages"):format(repository), opts or {}, function(payload, err)
+    if type(payload) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    local languages = {}
+
+    for name, bytes in pairs(payload) do
+      if type(bytes) == "number" then
+        languages[#languages + 1] = { name = name, bytes = bytes }
+      end
+    end
+
+    table.sort(languages, function(left, right)
+      return left.bytes > right.bytes
+    end)
+
+    callback(languages)
+  end)
+end
+
+-- The people with the most commits on the default branch.
+function M.repository_contributors(repository, opts, callback)
+  local url = ("https://api.github.com/repos/%s/contributors?per_page=%d"):format(
+    repository,
+    math.min(100, (opts or {}).per_page or 10)
+  )
+
+  request_json(url, opts or {}, function(payload, err)
+    if type(payload) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    local contributors = {}
+
+    for _, contributor in ipairs(payload) do
+      if type(contributor) == "table" and json_value(contributor.login) then
+        contributors[#contributors + 1] = {
+          login = contributor.login,
+          contributions = json_value(contributor.contributions) or 0,
+        }
+      end
+    end
+
+    callback(contributors)
+  end)
+end
+
+-- Commits per week over the last year, oldest first. GitHub computes these
+-- statistics on demand and answers 202 until they are ready, which reads as
+-- no data yet.
+function M.repository_commit_weeks(repository, opts, callback)
+  local url = ("https://api.github.com/repos/%s/stats/participation"):format(repository)
+
+  request_json(url, opts or {}, function(payload, err)
+    local weeks = type(payload) == "table" and json_value(payload.all) or nil
+
+    if type(weeks) ~= "table" then
+      callback(nil, err)
+      return
+    end
+
+    callback(weeks)
+  end)
+end
+
+local projects_query = [[
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    projectsV2(first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      nodes {
+        number
+        title
+        shortDescription
+        url
+        closed
+        updatedAt
+        items { totalCount }
+        owner {
+          ... on Organization { login }
+          ... on User { login }
+        }
+      }
+    }
+  }
+}
+]]
+
+-- The project boards linked to a repository, open ones first. Projects are
+-- only served by the GraphQL API, which needs a token.
+function M.repository_projects(repository, opts, callback)
+  opts = opts or {}
+
+  if not require("oculus.auth").github_token(opts) then
+    vim.schedule(function()
+      callback(nil, "projects need a GitHub token (set GITHUB_TOKEN)")
+    end)
+
+    return
+  end
+
+  local owner, name = repository:match("^([^/]+)/(.+)$")
+
+  request_json("https://api.github.com/graphql", opts, function(payload, err)
+    if not payload then
+      callback(nil, err)
+      return
+    end
+
+    local errors = json_value(payload.errors)
+
+    if type(errors) == "table" and errors[1] then
+      local message = tostring(errors[1].message or "GraphQL error")
+
+      if json_value(errors[1].type) == "INSUFFICIENT_SCOPES" or message:find("scopes", 1, true) then
+        message = "projects need a token with the read:project scope"
+          .. " (with the GitHub CLI: gh auth refresh -s read:project)"
+      end
+
+      callback(nil, "GitHub: " .. message)
+      return
+    end
+
+    local nodes = vim.tbl_get(payload, "data", "repository", "projectsV2", "nodes")
+
+    if type(nodes) ~= "table" then
+      callback(nil, "GitHub: repository not found")
+      return
+    end
+
+    local projects = {}
+
+    for _, node in ipairs(nodes) do
+      if type(node) == "table" and json_value(node.number) then
+        local items = json_value(node.items)
+        local board_owner = json_value(node.owner)
+
+        projects[#projects + 1] = {
+          id = node.number,
+          title = json_value(node.title) or "Untitled project",
+          description = json_value(node.shortDescription),
+          html_url = json_value(node.url),
+          state = json_value(node.closed) == true and "closed" or "open",
+          updated_at = json_value(node.updatedAt),
+          items = type(items) == "table" and json_value(items.totalCount) or 0,
+          owner = type(board_owner) == "table" and json_value(board_owner.login) or nil,
+        }
+      end
+    end
+
+    table.sort(projects, function(left, right)
+      if left.state ~= right.state then
+        return left.state == "open"
+      end
+
+      return tostring(left.updated_at or "") > tostring(right.updated_at or "")
+    end)
+
+    callback(projects)
+  end, {
+    body = {
+      query = projects_query,
+      variables = { owner = owner, name = name },
+    },
+  })
 end
 
 function M.viewer(opts, callback)
@@ -1892,8 +1814,6 @@ function M.clear(username)
   cache[username] = nil
 end
 
-M._project_commit_event = project_commit_event
-M._project_pull_request_event = project_pull_request_event
 M._pull_request_key = pull_request_key
 M._push_needs_enrichment = push_needs_enrichment
 return M

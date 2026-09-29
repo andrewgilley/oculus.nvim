@@ -312,6 +312,90 @@ do
 
   assert(#disabled.result == 0 and disabled.complete == true)
   assert(disabled.notice == "Discussions are turned off for this repository.")
+  -- Project boards come from GraphQL too, open ones first.
+  local boards
+
+  urls = with_fake_curl(vim.json.encode({
+    data = {
+      repository = {
+        projectsV2 = {
+          nodes = {
+            { number = 1, title = "Done", closed = true, url = "https://github.com/orgs/o/projects/1", updatedAt = "2026-09-01T00:00:00Z", items = { totalCount = 3 }, owner = { login = "o" } },
+            { number = 2, title = "Now", closed = false, shortDescription = vim.NIL, url = "https://github.com/orgs/o/projects/2", updatedAt = "2026-08-01T00:00:00Z", items = { totalCount = 5 }, owner = { login = "o" } },
+          },
+        },
+      },
+    },
+  }), function()
+    github.repository_projects("o/repo", { force = true, token = "test-token" }, function(result, err)
+      boards = result or err
+    end)
+
+    wait_for("github projects did not load", function()
+      return boards ~= nil
+    end)
+  end)
+
+  assert(urls[1] == "https://api.github.com/graphql", urls[1])
+  assert(type(boards) == "table" and #boards == 2, vim.inspect(boards))
+  assert(boards[1].title == "Now" and boards[1].state == "open" and boards[1].items == 5)
+  assert(boards[1].description == nil and boards[2].state == "closed")
+  -- Insights read the repository's counts, languages, contributors and weeks.
+  local info
+
+  with_fake_curl(vim.json.encode({
+    name = "repo",
+    full_name = "o/repo",
+    description = vim.NIL,
+    stargazers_count = 10,
+    forks_count = 2,
+    subscribers_count = 3,
+    open_issues_count = 4,
+    license = { spdx_id = "MIT" },
+    default_branch = "main",
+  }), function()
+    github.repository_info("o/repo", { force = true }, function(result)
+      info = result
+    end)
+
+    wait_for("github repository did not load", function()
+      return info ~= nil
+    end)
+  end)
+
+  assert(info.stars == 10 and info.forks == 2 and info.watchers == 3 and info.open_issues == 4)
+  assert(info.license == "MIT" and info.default_branch == "main" and info.description == nil)
+  local languages
+
+  urls = with_fake_curl(vim.json.encode({ Lua = 30, C = 70 }), function()
+    github.repository_languages("o/repo", {}, function(result)
+      languages = result
+    end)
+
+    wait_for("github languages did not load", function()
+      return languages ~= nil
+    end)
+  end)
+
+  assert(urls[1]:find("/repos/o/repo/languages", 1, true))
+  assert(languages[1].name == "C" and languages[2].name == "Lua")
+  local weeks
+
+  urls = with_fake_curl(vim.json.encode({ all = { 1, 2, 3 }, owner = { 0, 0, 0 } }), function()
+    github.repository_commit_weeks("o/repo", {}, function(result)
+      weeks = result
+    end)
+
+    wait_for("github commit weeks did not load", function()
+      return weeks ~= nil
+    end)
+  end)
+
+  assert(urls[1]:find("/repos/o/repo/stats/participation", 1, true))
+  assert(vim.deep_equal(weeks, { 1, 2, 3 }))
+  local insights = require("oculus.window.insights")
+  assert(insights.number(1234567) == "1,234,567" and insights.number(12) == "12")
+  assert(insights.sparkline({ 0, 4, 8 }) == "▁▅█", insights.sparkline({ 0, 4, 8 }))
 end
 
 local project = {
@@ -324,16 +408,17 @@ local project = {
 local originals = {}
 
 for _, name in ipairs({
-  "repository_events",
-  "repository_updates",
   "repository_issues",
   "repository_pulls",
   "repository_discussions",
   "repository_contents",
   "repository_milestones",
   "milestone_issues",
-  "enrich_pull_requests",
-  "enrich_pushes",
+  "repository_projects",
+  "repository_info",
+  "repository_languages",
+  "repository_contributors",
+  "repository_commit_weeks",
 }) do
   originals[name] = github[name]
 end
@@ -348,29 +433,74 @@ browser.open = function(url)
   return true
 end
 
-github.repository_events = function(repository, _, callback)
+local board_requests = {}
+
+github.repository_projects = function(repository, opts, callback)
+  board_requests[#board_requests + 1] = { repository = repository, force = opts.force }
+
   callback({
     {
-      id = "push-1",
-      type = "PushEvent",
-      repo = { name = repository },
-      actor = { login = "project-author" },
-      created_at = "2026-07-01T12:00:00Z",
-      payload = { size = 1 },
+      id = 4,
+      title = "Roadmap",
+      description = "What comes next.",
+      html_url = "https://github.com/orgs/neovim/projects/4",
+      state = "open",
+      updated_at = "2026-08-01T00:00:00Z",
+      items = 12,
+      owner = "neovim",
     },
-  }, nil, false)
+    {
+      id = 2,
+      title = "Old board",
+      html_url = "https://github.com/orgs/neovim/projects/2",
+      state = "closed",
+      items = 1,
+    },
+  })
 end
 
-github.repository_updates = function(_, _, callback)
-  callback({}, nil, false)
+local insight_requests = 0
+
+github.repository_info = function(_, _, callback)
+  insight_requests = insight_requests + 1
+
+  callback({
+    description = "Vim-fork focused on extensibility and usability.",
+    stars = 90123,
+    forks = 6321,
+    watchers = 1234,
+    open_issues = 1502,
+    language = "Vim Script",
+    license = "Apache-2.0",
+    default_branch = "master",
+    created_at = "2014-01-31T00:00:00Z",
+    pushed_at = "2026-09-29T00:00:00Z",
+  })
 end
 
-github.enrich_pull_requests = function(events, _, callback)
-  callback(events)
+github.repository_languages = function(_, _, callback)
+  callback({
+    { name = "Vim Script", bytes = 600 },
+    { name = "Lua", bytes = 300 },
+    { name = "C", bytes = 100 },
+  })
 end
 
-github.enrich_pushes = function(events, _, callback)
-  callback(events)
+github.repository_contributors = function(_, _, callback)
+  callback({
+    { login = "justinmk", contributions = 9812 },
+    { login = "zeertzjq", contributions = 1 },
+  })
+end
+
+github.repository_commit_weeks = function(_, _, callback)
+  local weeks = {}
+
+  for index = 1, 52 do
+    weeks[index] = index == 52 and 20 or (index % 4)
+  end
+
+  callback(weeks)
 end
 
 github.repository_issues = function(repository, _, callback)
@@ -631,7 +761,7 @@ local function active_tab()
   end
 end
 
-assert(tab_bar() == "  Code   Issues   Pull requests   Discussions   Activity   Milestones", tab_bar())
+assert(tab_bar() == "  Code   Issues   Pull requests   Discussions   Projects   Milestones   Insights", tab_bar())
 assert(active_tab() == "Issues", active_tab())
 assert(buffer_text():find("Project issue 1", 1, true))
 assert(footer_text():find("⇥ tabs", 1, true), footer_text())
@@ -675,11 +805,29 @@ assert(buffer_text():find("How do I configure this?", 1, true), buffer_text())
 assert(not footer_text():find("f filters", 1, true), footer_text())
 press("f")
 assert(state.view == "activity" and state.activity_issue_kind == "discussions")
--- Then the activity feed, then the milestones.
+-- Then the project boards, open ones first, each opening in the browser.
 press("<Tab>")
-assert(state.view == "activity" and not state.activity_issue_page)
-assert(active_tab() == "Activity", active_tab())
-assert(buffer_text():find("pushed", 1, true), buffer_text())
+assert(state.view == "boards", state.view)
+assert(active_tab() == "Projects", active_tab())
+assert(#board_requests == 1 and board_requests[1].repository == "neovim/neovim")
+local boards_text = buffer_text()
+assert(boards_text:find("  OPEN (1)", 1, true), boards_text)
+assert(boards_text:find("  Roadmap", 1, true), boards_text)
+assert(boards_text:find("  CLOSED (1)", 1, true), boards_text)
+assert(boards_text:find("back   ⇥ tabs   b browser   r refresh", 1, true), boards_text)
+assert(preview_text():find("12 items · @neovim", 1, true), preview_text())
+assert(preview_text():find("What comes next.", 1, true), preview_text())
+press("b")
+assert(opened_urls[#opened_urls] == "https://github.com/orgs/neovim/projects/4")
+press("k")
+assert(state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]].board.title == "Old board")
+press("r")
+assert(#board_requests == 2 and board_requests[2].force == true)
+press("?")
+assert(buffer_text():find("Commands for Projects", 1, true), buffer_text())
+press("?")
+assert(state.view == "boards")
+-- Then the milestones.
 press("<Tab>")
 assert(state.view == "milestones", state.view)
 assert(active_tab() == "Milestones", active_tab())
@@ -821,17 +969,36 @@ press("l")
 assert(state.project_code.path == "")
 press("j")
 assert(state.view == "contributors", state.view)
--- <S-Tab> wraps from the first tab to the last.
+-- <S-Tab> wraps from the first tab to the last: the insights.
 press("l")
 press("<S-Tab>")
 press("<S-Tab>")
-assert(state.view == "milestones")
+assert(state.view == "insights", state.view)
+assert(active_tab() == "Insights", active_tab())
+text = buffer_text()
+assert(text:find("  OVERVIEW", 1, true), text)
+assert(text:find("90,123 stars · 6,321 forks · 1,234 watchers · 1,502 open issues", 1, true), text)
+assert(text:find("Vim Script · Apache-2.0 · default branch master · created 2014-01-31", 1, true), text)
+assert(text:find("  LANGUAGES", 1, true), text)
+assert(text:find("Vim Script  ", 1, true) and text:find("60.0%", 1, true), text)
+assert(text:find("  COMMITS PER WEEK, LAST YEAR", 1, true), text)
+assert(text:find("█", 1, true), text)
+assert(text:find("98 commits in the last year · 26 in the last 4 weeks", 1, true), text)
+assert(text:find("@justinmk  9,812 commits", 1, true), text)
+assert(text:find("@zeertzjq      1 commit", 1, true), text)
+press("b")
+assert(opened_urls[#opened_urls] == "https://github.com/neovim/neovim/pulse")
+local insight_count = insight_requests
+press("r")
+assert(insight_requests == insight_count + 1)
 press("<S-Tab>")
-assert(state.view == "activity" and not state.activity_issue_page)
-press("<Tab>")
 assert(state.view == "milestones")
+press("<Tab>")
+assert(state.view == "insights")
 press("<Tab>")
 assert(state.view == "code")
+press("<S-Tab>")
+assert(state.view == "insights")
 press("<S-Tab>")
 assert(state.view == "milestones")
 -- Esc also leaves the milestone list.

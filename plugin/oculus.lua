@@ -26,7 +26,7 @@ vim.api.nvim_create_user_command("OculusOpen", function(opts)
   end
 end, {
   nargs = "?",
-  desc = "Open Oculus, optionally on a project's or @user's activity feed",
+  desc = "Open Oculus, optionally on a project's tabs or an @user's activity feed",
   complete = function(arglead)
     local matches = {}
 

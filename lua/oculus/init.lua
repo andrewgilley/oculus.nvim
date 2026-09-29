@@ -15,11 +15,6 @@ local defaults = {
   request_timeout = 15,
   activity_types = nil,
   user_activity_types = {},
-  project_activity_types = {
-    "push",
-    "merged_pull_request",
-    "assigned_issue",
-  },
   project_issue_filters = {},
   search_history = {},
   sidebar = false,
@@ -333,10 +328,6 @@ function M.setup(opts)
 
         if type(saved.user_activity_types) == "table" then
           M.config.user_activity_types = saved.user_activity_types
-        end
-
-        if type(saved.project_activity_types) == "table" then
-          M.config.project_activity_types = saved.project_activity_types
         end
 
         if type(saved.project_issue_filters) == "table" then

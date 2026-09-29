@@ -2561,15 +2561,7 @@ local function sidebar_overview_lines(overview, width)
     overview_date(overview.created_at or details.authored_at)
   )
 
-  if type(overview.local_commit) == "table" then
-    local forge = overview.local_commit.forge == "codeberg"
-        and "Codeberg"
-      or "GitHub"
-
-    field("Source", overview.local_commit.pushed == false
-      and "Local clone, not pushed"
-      or ("Local clone, not yet listed by %s"):format(forge))
-  elseif overview.remote then
+  if overview.remote then
     local context = tonumber(overview.remote_context)
 
     field("Source", is_issue and "Remote, no local clone"
@@ -6733,11 +6725,6 @@ function M.open(url, opts, context, lifecycle, inspection_window_options)
     end
   end
 
-  if type(context) == "table" and type(context.local_commit) == "table" then
-    info.local_commit = vim.deepcopy(context.local_commit)
-    context = nil
-  end
-
   local comment = context and (context.comment or context) or nil
 
   if comment then
@@ -6809,8 +6796,6 @@ function M.open(url, opts, context, lifecycle, inspection_window_options)
     local cached = M._preload_cache[url]
 
     local function open_prepared(inspections, prepared_info)
-      prepared_info.local_commit = info.local_commit
-
       open_tabs(
         inspections,
         loading,
