@@ -272,8 +272,11 @@ tabs like its page on GitHub or Codeberg:
 - [**Milestones**](#milestones) lists its milestones.
 - **Insights** summarizes the repository: its stars, forks, watchers, and open
   issues, the languages it is written in, a sparkline of commits per week over
-  the last year, and its top contributors (the last two on GitHub only). `b`
-  opens the forge's own pulse or activity page. GitHub counts commits on
+  the last year, and its top contributors (the last two on GitHub only). `j`/`k`
+  select a contributor and `l`/`→` opens their activity as a user feed (your
+  tracked entry for them, if you follow them); `h`/`←` there returns to the
+  insights. `b` opens the selected contributor's profile, or with none
+  selected the forge's own pulse or activity page. GitHub counts commits on
   demand, so the sparkline can take a refresh (`r`) to appear the first time.
 
 Press `<Tab>` and `<S-Tab>` to move between the tabs, and `h`/`←` to go back

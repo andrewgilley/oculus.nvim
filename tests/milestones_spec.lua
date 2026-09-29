@@ -384,6 +384,9 @@ for _, name in ipairs({
   "repository_languages",
   "repository_contributors",
   "repository_commit_weeks",
+  "events",
+  "enrich_pull_requests",
+  "enrich_pushes",
 }) do
   originals[name] = github[name]
 end
@@ -425,6 +428,30 @@ github.repository_projects = function(repository, opts, callback)
 end
 
 local insight_requests = 0
+local user_requests = {}
+
+github.events = function(username, _, callback)
+  user_requests[#user_requests + 1] = username
+
+  callback({
+    {
+      id = "user-push-" .. username,
+      type = "PushEvent",
+      actor = { login = username },
+      repo = { name = "neovim/neovim" },
+      created_at = "2026-08-05T12:00:00Z",
+      payload = { size = 1, head = "abc" },
+    },
+  }, nil, false)
+end
+
+github.enrich_pull_requests = function(events, _, callback)
+  callback(events)
+end
+
+github.enrich_pushes = function(events, _, callback)
+  callback(events)
+end
 
 github.repository_info = function(_, _, callback)
   insight_requests = insight_requests + 1
@@ -909,6 +936,33 @@ assert(opened_urls[#opened_urls] == "https://github.com/neovim/neovim/pulse")
 local insight_count = insight_requests
 press("r")
 assert(insight_requests == insight_count + 1)
+-- j and k step between the contributors, which open as user feeds.
+local function insight_user()
+  local target = state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
+  return target and target.username
+end
+
+press("k")
+assert(insight_user() == "justinmk", tostring(insight_user()))
+assert(buffer_text():find("→ user", 1, true), buffer_text())
+press("k")
+assert(insight_user() == "zeertzjq")
+press("k")
+assert(insight_user() == "justinmk", "the selection wraps")
+press("i")
+assert(insight_user() == "zeertzjq")
+press("b")
+assert(opened_urls[#opened_urls] == "https://github.com/zeertzjq")
+press("l")
+assert(state.view == "activity" and state.contributor.username == "zeertzjq")
+assert(state.contributor.provider == "github")
+assert(user_requests[#user_requests] == "zeertzjq")
+assert(buffer_text():find("@zeertzjq", 1, true), buffer_text())
+-- Back returns to the insights with the contributor still selected.
+press("j")
+assert(state.view == "insights", state.view)
+assert(insight_user() == "zeertzjq")
+assert(state.activity_project and state.activity_project.repository == "neovim/neovim")
 press("<S-Tab>")
 assert(state.view == "milestones")
 press("<Tab>")

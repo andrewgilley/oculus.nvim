@@ -46,8 +46,8 @@ function M.setup(window, insights_view, internal)
   local function sections(insights, width)
     local rows = {}
 
-    local function add(text, group)
-      rows[#rows + 1] = { text = text, group = group }
+    local function add(text, group, target)
+      rows[#rows + 1] = { text = text, group = group, target = target }
     end
 
     local function heading(text)
@@ -188,12 +188,17 @@ function M.setup(window, insights_view, internal)
       for _, contributor in ipairs(contributors) do
         local count = M.number(contributor.contributions)
 
+        -- Contributors can be selected to open their own activity.
         add(("  %s  %s%s commit%s"):format(
           internal.pad_cell("@" .. contributor.login, login_width),
           string.rep(" ", count_width - #count),
           count,
           contributor.contributions == 1 and "" or "s"
-        ))
+        ), nil, {
+          kind = "insight_user",
+          username = contributor.login,
+          provider = insights.project.provider == "codeberg" and "codeberg" or "github",
+        })
       end
     end
 
@@ -236,6 +241,7 @@ function M.setup(window, insights_view, internal)
       for _, row in ipairs(sections(insights, width)) do
         lines[#lines + 1] = internal.trim_to_width(row.text, width)
         groups[#lines] = row.group
+        window.state.line_targets[#lines] = row.target
       end
     end
 
@@ -249,6 +255,14 @@ function M.setup(window, insights_view, internal)
       internal.highlight(line, 2, -1, group)
     end
 
+    -- Keep the selected contributor selected as the page's parts arrive.
+    for line, target in pairs(window.state.line_targets) do
+      if target.username == window.state.selected_insight_user then
+        vim.api.nvim_win_set_cursor(window.state.win, { line, 0 })
+      end
+    end
+
+    internal.update_contributor_selection()
     internal.render_sidebar()
   end
 

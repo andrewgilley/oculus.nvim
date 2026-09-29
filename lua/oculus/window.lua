@@ -637,8 +637,9 @@ local function sidebar_sections_for_view(view)
       {
         title = "NAVIGATION",
         items = {
-          { nav_down, "Scroll down" },
-          { nav_up, "Scroll up" },
+          { nav_down, "Next user" },
+          { nav_up, "Prev user" },
+          { nav_right, "Open user" },
           { nav_left, "Back" },
           { "Tab", "Next tab" },
           { "S-Tab", "Prev tab" },
@@ -963,9 +964,14 @@ local function page_commands_text()
     return ("  %s/← back   ⇥ tabs   ⏎ open   b browser   r refresh   ?: help"):format(
       nav.left
     )
-  elseif M.state.view == "boards" or M.state.view == "insights" then
+  elseif M.state.view == "boards" then
     return ("  %s/← back   ⇥ tabs   b browser   r refresh   ?: help"):format(
       nav.left
+    )
+  elseif M.state.view == "insights" then
+    return ("  %s/← back   ⇥ tabs   %s/→ user   b browser   r refresh   ?: help"):format(
+      nav.left,
+      nav.right
     )
   elseif M.state.view == "work" then
     return ("  %s/← back   ⏎ open   b browser   r refresh   ?: help"):format(
@@ -1728,6 +1734,7 @@ local function update_contributor_selection()
       and M.state.view ~= "directory"
       and M.state.view ~= "milestones"
       and M.state.view ~= "boards"
+      and M.state.view ~= "insights"
       and M.state.view ~= "work"
     )
     or not is_valid_win(M.state.win)
@@ -2262,6 +2269,8 @@ local function reset_to_initial_page()
   M.state.selected_board = nil
   M.state.board_offset = 1
   M.state.project_insights = nil
+  M.state.selected_insight_user = nil
+  M.state.insights_return = nil
   M.state.saved_entries = nil
   M.state.saved_expanded_source = nil
   M.state.work_lists = nil
@@ -3692,18 +3701,27 @@ local function render_shortcuts()
   elseif from_view == "boards" or from_view == "insights" then
     local boards = from_view == "boards"
 
-    section("NAVIGATION", {
-      { nav_up, boards and "Select the previous project" or "Scroll up" },
-      { nav_down, boards and "Select the next project" or "Scroll down" },
+    local navigation_entries = {
+      { nav_up, boards and "Select the previous project" or "Select the previous contributor" },
+      { nav_down, boards and "Select the next project" or "Select the next contributor" },
       { nav.left .. " / <Left>", "Return to the project list" },
       { "<Tab> / <S-Tab>", "Show the next or previous project tab" },
-    })
+    }
+
+    if not boards then
+      table.insert(navigation_entries, 3, {
+        nav_right,
+        "Open the selected contributor's activity",
+      })
+    end
+
+    section("NAVIGATION", navigation_entries)
 
     section("ACTIONS", {
       {
         "b",
         boards and "Open the selected project in a browser"
-          or "Open the repository's pulse in a browser",
+          or "Open the contributor's profile, or the repository's pulse",
       },
       { "r", boards and "Refresh projects" or "Refresh insights" },
     })
@@ -5398,8 +5416,33 @@ local function select_current()
       M.state.selected_username = target.username
       M.state.selected_directory = nil
       M.state.directory_return = nil
+      M.state.insights_return = nil
       load_activity(target, false)
     end
+  elseif M.state.view == "insights"
+    and type(target) == "table"
+    and target.kind == "insight_user"
+  then
+    -- A contributor opens as a user feed, the tracked user's when they are
+    -- followed, and back returns to the insights.
+    M.state.selected_insight_user = target.username
+    M.state.insights_return = true
+    local contributor
+
+    for _, candidate in ipairs(M.state.contributors or {}) do
+      if type(candidate.username) == "string"
+        and candidate.username:lower() == target.username:lower()
+        and (candidate.provider or "github") == target.provider
+      then
+        contributor = candidate
+        break
+      end
+    end
+
+    load_activity(contributor or {
+      username = target.username,
+      provider = target.provider,
+    }, false)
   elseif M.state.view == "directory" and type(target) == "table" then
     if target.kind == "project" then
       M.state.selected_project = target.project
@@ -5529,7 +5572,12 @@ local function open_activity_in_browser()
   end
 
   if M.state.view == "insights" then
-    local url = insights_view.browser_url()
+    local target = target_on_cursor()
+
+    local url = type(target) == "table"
+        and target.kind == "insight_user"
+        and contributor_profile_url(target)
+      or insights_view.browser_url()
 
     if url then
       open_url(url)
@@ -6480,9 +6528,48 @@ local function move_cursor(direction)
     and M.state.view ~= "activity"
     and M.state.view ~= "milestones"
     and M.state.view ~= "boards"
+    and M.state.view ~= "insights"
     and M.state.view ~= "work"
   then
     vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
+    return
+  end
+
+  -- Insights step between its contributors, the rows that open something,
+  -- and scroll like a page when it has none.
+  if M.state.view == "insights" then
+    local rows = {}
+
+    for line, target in pairs(M.state.line_targets) do
+      if type(target) == "table" and target.kind == "insight_user" then
+        rows[#rows + 1] = line
+      end
+    end
+
+    if #rows == 0 then
+      vim.cmd.normal({ direction > 0 and "j" or "k", bang = true })
+      return
+    end
+
+    table.sort(rows)
+    local current = vim.api.nvim_win_get_cursor(M.state.win)[1]
+    local selected = direction > 0 and rows[1] or rows[#rows]
+
+    for index, line in ipairs(rows) do
+      if line == current then
+        selected = rows[(index - 1 + direction) % #rows + 1]
+        break
+      elseif direction > 0 and line > current then
+        selected = line
+        break
+      elseif direction < 0 and line < current then
+        selected = line
+      end
+    end
+
+    M.state.selected_insight_user = M.state.line_targets[selected].username
+    vim.api.nvim_win_set_cursor(M.state.win, { selected, 0 })
+    update_contributor_selection()
     return
   end
 
@@ -6634,6 +6721,20 @@ local function move_cursor(direction)
 end
 
 local function go_back()
+  if M.state.view == "activity"
+    and M.state.contributor
+    and M.state.insights_return
+    and M.state.project_insights
+    and not M.state.activity_commit_page
+  then
+    M.state.request_id = M.state.request_id + 1
+    M.state.insights_return = nil
+    M.state.contributor = nil
+    M.state.activity_project = M.state.project_insights.project
+    insights_view.render()
+    return
+  end
+
   if M.state.view == "activity"
     and M.state.activity_work
     and not M.state.activity_commit_page
@@ -7754,6 +7855,19 @@ function M.open(opts)
         return
       end
 
+      if M.state.view == "insights" then
+        local target = M.state.line_targets[
+          vim.api.nvim_win_get_cursor(M.state.win)[1]
+        ]
+
+        if type(target) == "table" and target.kind == "insight_user" then
+          M.state.selected_insight_user = target.username
+        end
+
+        update_contributor_selection()
+        return
+      end
+
       if M.state.view == "boards" then
         local target = M.state.line_targets[
           vim.api.nvim_win_get_cursor(M.state.win)[1]
@@ -8026,6 +8140,7 @@ function M.open_user(target, opts)
   }
 
   M.state.selected_username = contributor.username
+  M.state.insights_return = nil
   load_activity(contributor)
   return true
 end
