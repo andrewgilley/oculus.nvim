@@ -764,6 +764,18 @@ end
 
 assert(tab_bar() == "  Code   Issues   Pull requests   Discussions   Projects   Milestones   Insights", tab_bar())
 assert(active_tab() == "Issues", active_tab())
+-- The selected tab is bold but never underlined, even when Title is.
+local original_title = vim.api.nvim_get_hl(0, { name = "Title" })
+vim.api.nvim_set_hl(0, "Title", vim.tbl_extend("force", original_title, { underline = true }))
+window.refresh_window_highlights(state.win)
+
+local tab_active_hl = vim.api.nvim_get_hl(vim.api.nvim_get_hl_ns({ winid = state.win }), {
+  name = "OculusTabActive",
+})
+
+assert(tab_active_hl.bold == true and not tab_active_hl.underline, vim.inspect(tab_active_hl))
+vim.api.nvim_set_hl(0, "Title", original_title)
+window.refresh_window_highlights(state.win)
 assert(buffer_text():find("Project issue 1", 1, true))
 assert(footer_text():find("⇥ tabs", 1, true), footer_text())
 assert(footer_text():find("f filters", 1, true), footer_text())

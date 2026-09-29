@@ -208,11 +208,20 @@ function M.setup(window, internal)
     )
 
     vim.api.nvim_set_hl(0, "OculusSaved", { link = "DiagnosticWarn", default = true })
-    -- The selected project tab takes the title colour, underlined like the
-    -- selected tab on a forge's repository page.
+    -- The selected project tab takes the title colour in bold, and never an
+    -- underline, even when the colorscheme's Title has one.
     local tab_active = vim.deepcopy(source_highlight(source_win, "Title"))
     tab_active.bold = true
-    tab_active.underline = true
+    tab_active.underline = nil
+    tab_active.undercurl = nil
+    tab_active.underdouble = nil
+    tab_active.underdotted = nil
+    tab_active.underdashed = nil
+
+    if type(tab_active.cterm) == "table" then
+      tab_active.cterm.underline = nil
+    end
+
     vim.api.nvim_set_hl(window_highlight_ns, "OculusTabActive", tab_active)
 
     vim.api.nvim_set_hl(window_highlight_ns, "OculusActivityQueued", {
