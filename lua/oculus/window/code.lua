@@ -82,7 +82,7 @@ function M.setup(window, code_view, internal)
     end
 
     window.state.preview_key = key
-    internal.render_preview_panel(code_view.preview_items(entry), { offset = 2 })
+    internal.render_preview_panel(code_view.preview_items(entry), { offset = 3 })
   end
 
   -- The rows of the current listing: the parent directory when below the
@@ -137,11 +137,11 @@ function M.setup(window, code_view, internal)
 
     local lines = {
       "",
-      tab_text,
       internal.trim_to_width(("  %s · %s"):format(
         internal.project_title(project),
         listing.path == "" and internal.provider_name(project) or ("/" .. listing.path)
-      ), left_width - 1),
+      ), window_width - 2),
+      tab_text,
       listing.status and internal.trim_to_width("  " .. listing.status.text, left_width - 1) or "",
     }
 
@@ -213,8 +213,7 @@ function M.setup(window, code_view, internal)
     internal.set_lines(lines)
     internal.paint_footer(commands_line)
     vim.wo[window.state.win].cursorline = false
-    internal.paint_project_tabs(2, tab_ranges)
-    internal.highlight(3, 2, -1, "Comment")
+    internal.paint_project_header(lines[2], tab_ranges)
 
     if listing.status then
       internal.highlight(4, 2, -1, listing.status.group)
@@ -242,7 +241,7 @@ function M.setup(window, code_view, internal)
       vim.api.nvim_win_set_cursor(window.state.win, { selected_line, 0 })
       code_view.queue_preview(window.state.line_targets[selected_line].entry)
     else
-      internal.render_preview_panel({}, { offset = 2 })
+      internal.render_preview_panel({}, { offset = 3 })
     end
 
     internal.update_contributor_selection()

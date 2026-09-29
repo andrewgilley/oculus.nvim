@@ -240,7 +240,12 @@ local function draw_activity_page_loading()
     return
   end
 
-  local title_line = 3
+  -- Project pages carry their name on line 2, above the tabs.
+  local title_line = M.state.activity_project
+      and not M.state.activity_saved
+      and not M.state.activity_work
+      and 2
+    or 3
 
   if vim.api.nvim_buf_line_count(M.state.buf) < title_line then
     return
@@ -2718,13 +2723,13 @@ end
 
 -- A project's pages, in the order <Tab> cycles through them.
 local project_tabs = {
-  { key = "code", label = "Code" },
-  { key = "issues", label = "Issues" },
-  { key = "pulls", label = "Pull requests", short = "PRs" },
-  { key = "discussions", label = "Discussions", short = "Discuss" },
-  { key = "boards", label = "Projects" },
-  { key = "milestones", label = "Milestones" },
-  { key = "insights", label = "Insights" },
+  { key = "code", label = "code" },
+  { key = "issues", label = "issues" },
+  { key = "pulls", label = "pull requests", short = "prs" },
+  { key = "discussions", label = "discussions", short = "discuss" },
+  { key = "boards", label = "projects" },
+  { key = "milestones", label = "milestones" },
+  { key = "insights", label = "insights" },
 }
 
 -- The project tab the current page belongs to, or nil outside a project.
@@ -2803,6 +2808,20 @@ local function paint_project_tabs(line, ranges)
   end
 end
 
+-- Project pages open with the project's name on line 2, above its tabs on
+-- line 3. The name leads in the heading colour; what follows its first " · "
+-- is dimmed.
+local function paint_project_header(title, tab_ranges)
+  local split = title:find(" · ", 3, true)
+  highlight(2, 2, split and split - 1 or -1, "Function")
+
+  if split then
+    highlight(2, split - 1, -1, "Comment")
+  end
+
+  paint_project_tabs(3, tab_ranges)
+end
+
 local function render_loading(target)
   stop_activity_page_loading()
   close_activity_footer()
@@ -2836,12 +2855,12 @@ local function render_loading(target)
     or project
       and {
         "",
-        tab_text,
         "  " .. (
           target.milestone
               and (target.milestone.title .. " · " .. project_title(project))
             or project_title(project)
         ),
+        tab_text,
       }
     or {
       "",
@@ -2853,12 +2872,12 @@ local function render_loading(target)
   vim.wo[M.state.win].cursorline = true
 
   if tab_ranges then
-    paint_project_tabs(2, tab_ranges)
+    paint_project_header(lines[2], tab_ranges)
   else
     highlight(2, 2, -1, "Function")
+    highlight(3, 2, -1, "Comment")
   end
 
-  highlight(3, 2, -1, "Comment")
   start_activity_page_loading()
 end
 
@@ -2892,11 +2911,11 @@ local function render_error(message)
     or project
       and {
         "",
-        tab_text,
         "  " .. (
           milestone and (milestone.title .. " · " .. project_title(project))
             or project_title(project)
         ),
+        tab_text,
         "",
         "  Could not load activity",
         "  " .. message,
@@ -2915,12 +2934,12 @@ local function render_error(message)
   vim.wo[M.state.win].cursorline = true
 
   if tab_ranges then
-    paint_project_tabs(2, tab_ranges)
+    paint_project_header(lines[2], tab_ranges)
   else
     highlight(2, 2, -1, "Title")
+    highlight(3, 2, -1, "Comment")
   end
 
-  highlight(3, 2, -1, "Comment")
   highlight(5, 2, -1, "DiagnosticError")
   highlight(6, 2, -1, "Comment")
 end
@@ -3048,12 +3067,12 @@ local function render_activity(events, cached, notice, opts)
     or project
       and {
         "",
-        (project_tab_line(current_project_tab(), width - 2)),
         ("  %s · %s%s"):format(
           milestone and milestone.title or project_title(project),
           milestone and project_title(project) or provider_name(project),
           context_suffix
         ),
+        (project_tab_line(current_project_tab(), width - 2)),
       }
     or {
       "",
@@ -3248,12 +3267,11 @@ local function render_activity(events, cached, notice, opts)
   vim.wo[M.state.win].scrolloff = 3
 
   if project and not saved_page and not work then
-    paint_project_tabs(2, select(2, project_tab_line(current_project_tab(), width - 2)))
+    paint_project_header(lines[2], select(2, project_tab_line(current_project_tab(), width - 2)))
   else
     highlight(2, 2, -1, "Function")
+    highlight(3, 2, -1, "Comment")
   end
-
-  highlight(3, 2, -1, "Comment")
 
   if notice then
     highlight(4, 2, -1, "DiagnosticWarn")
@@ -4081,7 +4099,7 @@ load_project_issues = activity.load_project_issues
 local view_internal = {
   highlight = highlight,
   project_tab_line = project_tab_line,
-  paint_project_tabs = paint_project_tabs,
+  paint_project_header = paint_project_header,
   activity_page = activity_page,
   trim_to_width = trim_to_width,
   pad_cell = pad_cell,

@@ -217,8 +217,8 @@ function M.setup(window, insights_view, internal)
 
     local lines = {
       "",
-      tab_text,
       ("  %s · %s"):format(internal.project_title(project), internal.provider_name(project)),
+      tab_text,
       "",
     }
 
@@ -243,8 +243,7 @@ function M.setup(window, insights_view, internal)
     internal.set_lines(lines)
     internal.paint_footer(commands_line)
     vim.wo[window.state.win].cursorline = false
-    internal.paint_project_tabs(2, tab_ranges)
-    internal.highlight(3, 2, -1, "Comment")
+    internal.paint_project_header(lines[2], tab_ranges)
 
     for line, group in pairs(groups) do
       internal.highlight(line, 2, -1, group)

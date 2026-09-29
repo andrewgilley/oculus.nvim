@@ -1831,9 +1831,11 @@ do
   assert(state.activity_scope == "project")
   assert(state.activity_issue_page == true and state.activity_issue_kind == "issues")
   assert(state.activity_project.repository == "neovim/neovim")
-  local tab_line = vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1]
-  assert(tab_line:find("^  Code  +Issues  +P") and tab_line:find("Insights$"), tab_line)
-  assert(not tab_line:find("Activity", 1, true), tab_line)
+  local header = vim.api.nvim_buf_get_lines(state.buf, 1, 3, false)
+  assert(header[1] == "  neovim/neovim · GitHub", header[1])
+  local tab_line = header[2]
+  assert(tab_line:find("^  code  +issues  +p") and tab_line:find("insights$"), tab_line)
+  assert(not tab_line:find("activity", 1, true), tab_line)
   assert(#state.events == 8)
   assert(repository_issue_requests[1].state == "open")
   assert(repository_issue_requests[1].page == 1)
@@ -2034,8 +2036,9 @@ do
     { details = true }
   )
 
+  -- The spinner follows the project's name, on the line above its tabs.
   assert(#loading_marks == 1)
-  assert(loading_marks[1][2] == 2)
+  assert(loading_marks[1][2] == 1)
   assert(loading_marks[1][4].virt_text[1][1]:match("^ "))
   local pending_issue_request = deferred_issue_request
   deferred_issue_request = nil

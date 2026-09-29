@@ -106,7 +106,7 @@ function M.setup(window, milestone_view, internal)
     local window_width = vim.api.nvim_win_get_width(window.state.win)
     local left_width = internal.preview_left_width(window_width)
     local preview_width = math.max(15, window_width - left_width - 5)
-    internal.render_preview_panel(milestone_view.preview_items(milestone, preview_width), { offset = 2 })
+    internal.render_preview_panel(milestone_view.preview_items(milestone, preview_width), { offset = 3 })
   end
 
   function milestone_view.selected_index(milestones)
@@ -141,8 +141,8 @@ function M.setup(window, milestone_view, internal)
 
     local lines = {
       "",
-      tab_text,
       ("  %s · %s"):format(internal.project_title(project), internal.provider_name(project)),
+      tab_text,
       "",
     }
 
@@ -257,8 +257,7 @@ function M.setup(window, milestone_view, internal)
     internal.set_lines(lines)
     internal.paint_footer(commands_line)
     vim.wo[window.state.win].cursorline = false
-    internal.paint_project_tabs(2, tab_ranges)
-    internal.highlight(3, 2, -1, "Comment")
+    internal.paint_project_header(lines[2], tab_ranges)
 
     for _, line in ipairs(headings) do
       internal.highlight(line, 2, -1, "OculusSectionTitle")
@@ -286,7 +285,7 @@ function M.setup(window, milestone_view, internal)
       vim.api.nvim_win_set_cursor(window.state.win, { selected_line, 0 })
       milestone_view.queue_preview(window.state.line_targets[selected_line].milestone)
     else
-      internal.render_preview_panel({ [2] = { "MILESTONE", "Title" } }, { offset = 2 })
+      internal.render_preview_panel({ [2] = { "MILESTONE", "Title" } }, { offset = 3 })
     end
 
     internal.update_contributor_selection()

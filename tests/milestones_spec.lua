@@ -748,22 +748,24 @@ local function footer_text()
   return table.concat(vim.api.nvim_buf_get_lines(state.footer_buf, 0, -1, false), "\n")
 end
 
+-- Project pages carry the project's name on line 2, above the tabs on line 3.
 local function tab_bar()
-  return vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1]
+  return vim.api.nvim_buf_get_lines(state.buf, 2, 3, false)[1]
 end
 
 local function active_tab()
   local line = tab_bar()
 
-  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.buf, -1, { 1, 0 }, { 1, -1 }, { details = true })) do
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.buf, -1, { 2, 0 }, { 2, -1 }, { details = true })) do
     if mark[4].hl_group == "OculusTabActive" then
       return line:sub(mark[3] + 1, mark[4].end_col)
     end
   end
 end
 
-assert(tab_bar() == "  Code   Issues   Pull requests   Discussions   Projects   Milestones   Insights", tab_bar())
-assert(active_tab() == "Issues", active_tab())
+assert(tab_bar() == "  code   issues   pull requests   discussions   projects   milestones   insights", tab_bar())
+assert(vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1] == "  neovim/neovim · GitHub")
+assert(active_tab() == "issues", active_tab())
 -- The selected tab is bold but never underlined, even when Title is.
 local original_title = vim.api.nvim_get_hl(0, { name = "Title" })
 vim.api.nvim_set_hl(0, "Title", vim.tbl_extend("force", original_title, { underline = true }))
@@ -789,7 +791,7 @@ press("?")
 -- <Tab> moves to the pull requests, which filter apart from the issues.
 press("<Tab>")
 assert(state.view == "activity" and state.activity_issue_kind == "pulls")
-assert(active_tab() == "Pull requests", active_tab())
+assert(active_tab() == "pull requests", active_tab())
 assert(#pull_requests == 1 and pull_requests[1].state == "open")
 assert(buffer_text():find("@contributor · draft pull request #7", 1, true), buffer_text())
 press("f")
@@ -812,7 +814,7 @@ assert(pull_requests[#pull_requests].state == "closed")
 -- Then the discussions, which have no filters.
 press("<Tab>")
 assert(state.view == "activity" and state.activity_issue_kind == "discussions")
-assert(active_tab() == "Discussions", active_tab())
+assert(active_tab() == "discussions", active_tab())
 assert(buffer_text():find("@asker · discussion #5 in Q&A", 1, true), buffer_text())
 assert(buffer_text():find("How do I configure this?", 1, true), buffer_text())
 assert(not footer_text():find("f filters", 1, true), footer_text())
@@ -821,7 +823,7 @@ assert(state.view == "activity" and state.activity_issue_kind == "discussions")
 -- Then the project boards, open ones first, each opening in the browser.
 press("<Tab>")
 assert(state.view == "boards", state.view)
-assert(active_tab() == "Projects", active_tab())
+assert(active_tab() == "projects", active_tab())
 assert(#board_requests == 1 and board_requests[1].repository == "neovim/neovim")
 local boards_text = buffer_text()
 assert(boards_text:find("  OPEN (1)", 1, true), boards_text)
@@ -843,7 +845,7 @@ assert(state.view == "boards")
 -- Then the milestones.
 press("<Tab>")
 assert(state.view == "milestones", state.view)
-assert(active_tab() == "Milestones", active_tab())
+assert(active_tab() == "milestones", active_tab())
 assert(#milestone_requests == 1)
 assert(milestone_requests[1].repository == "neovim/neovim")
 local text = buffer_text()
@@ -920,7 +922,7 @@ assert(state.activity_milestone and state.activity_milestone.id == 48)
 assert(item_requests[1].milestone == 48)
 assert(#state.events == 3)
 text = buffer_text()
-assert(active_tab() == "Milestones", active_tab())
+assert(active_tab() == "milestones", active_tab())
 assert(text:find("  0.13 · neovim/neovim", 1, true), text)
 assert(text:find("@author-1 · open issue #1", 1, true), text)
 assert(text:find("@author-2 · open pull request #2", 1, true), text)
@@ -945,7 +947,7 @@ press("l")
 assert(state.activity_issue_kind == "issues")
 press("<S-Tab>")
 assert(state.view == "code", state.view)
-assert(active_tab() == "Code", active_tab())
+assert(active_tab() == "code", active_tab())
 assert(content_requests[#content_requests].path == "")
 text = buffer_text()
 assert(text:find("  src/", 1, true), text)
@@ -1096,7 +1098,7 @@ press("l")
 press("<S-Tab>")
 press("<S-Tab>")
 assert(state.view == "insights", state.view)
-assert(active_tab() == "Insights", active_tab())
+assert(active_tab() == "insights", active_tab())
 text = buffer_text()
 assert(text:find("  OVERVIEW", 1, true), text)
 assert(text:find("90,123 stars · 6,321 forks · 1,234 watchers · 1,502 open issues", 1, true), text)

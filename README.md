@@ -250,11 +250,12 @@ the previous row. Use `l` / `<Right>` to open the selected item and
 
 **Project tabs**
 
-A project opens on its **Issues** tab, in a row of tabs like its page on
-GitHub or Codeberg:
+A project opens on its **Issues** tab. Its name heads the page, above a row of
+tabs like its page on GitHub or Codeberg:
 
 ```
-  Code   Issues   Pull requests   Discussions   Projects   Milestones   Insights
+  neovim/neovim · GitHub
+  code   issues   pull requests   discussions   projects   milestones   insights
 ```
 
 - **Code** lists the files in the default branch, directories first, with the

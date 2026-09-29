@@ -324,7 +324,8 @@ function M.setup(window, internal)
   window._project_pull_request_title = project_pull_request_title
 
   -- opts.offset moves the items down that many lines and leaves the lines
-  -- above them uncovered, for pages whose tab bar spans the whole width.
+  -- above them uncovered, for pages whose name and tab bar span the whole
+  -- width.
   local function render_preview_panel(items, opts)
     local offset = opts and opts.offset or 0
 
