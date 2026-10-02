@@ -1690,7 +1690,9 @@ local preview = require("oculus.window.preview").setup(M, {
   left_pad_cell = left_pad_cell,
   project_title = project_title,
   project_key = project_key,
-  persist_projects = persist_projects,
+  persist_projects = function()
+    return persist_projects()
+  end,
   is_valid_win = is_valid_win,
   is_valid_buf = is_valid_buf,
   provider_name = provider_name,
