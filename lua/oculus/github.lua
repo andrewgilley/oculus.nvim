@@ -1159,6 +1159,36 @@ local function request_pages(url, per_page, max_pages, opts, callback)
   load_page()
 end
 
+-- General discussion comments are shared by issues and pull requests.
+function M.issue_comments(repo, number, opts, callback)
+  local url = ("https://api.github.com/repos/%s/issues/%s/comments"):format(
+    repo,
+    number
+  )
+
+  request_pages(url, 100, math.huge, opts or {}, function(items, err)
+    if not items then
+      callback(nil, err)
+      return
+    end
+
+    local comments = {}
+
+    for _, item in ipairs(items) do
+      local user = json_value(item.user)
+
+      comments[#comments + 1] = {
+        author = type(user) == "table" and json_value(user.login) or nil,
+        body = json_value(item.body),
+        created_at = json_value(item.created_at),
+        url = json_value(item.html_url),
+      }
+    end
+
+    callback(comments)
+  end)
+end
+
 local review_threads_query = [[
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {

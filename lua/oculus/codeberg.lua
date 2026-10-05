@@ -1352,6 +1352,44 @@ function M.pull_request_review(repo, number, head_sha, opts, callback)
   end
 end
 
+-- General discussion comments are shared by issues and pull requests.
+function M.issue_comments(repo, number, opts, callback)
+  local comments = {}
+  local page = 1
+
+  local function load_page()
+    local url = (
+      "%s/api/v1/repos/%s/issues/%s/comments?limit=50&page=%d"
+    ):format(base_url, repo, number, page)
+
+    request_json(url, opts or {}, function(items, err)
+      if not items then
+        callback(nil, err)
+        return
+      end
+
+      for _, item in ipairs(items) do
+        comments[#comments + 1] = {
+          author = account_login(json_value(item.user)),
+          body = json_value(item.body),
+          created_at = json_value(item.created_at),
+          url = json_value(item.html_url),
+        }
+      end
+
+      if #items == 50 then
+        page = page + 1
+        load_page()
+        return
+      end
+
+      callback(comments)
+    end)
+  end
+
+  load_page()
+end
+
 function M.issue(repo, number, opts, callback)
   opts = opts or {}
   local key = ("%s#%s"):format(repo, number)

@@ -2556,6 +2556,42 @@ local function sidebar_overview_lines(overview, width)
     end
   end
 
+  local comments = overview.comments
+
+  if type(comments) == "table" then
+    lines[#lines + 1] = "  Comments"
+
+    if comments.loading then
+      lines[#lines + 1] = "  Loading…"
+    elseif comments.error then
+      append_sidebar_text(
+        lines,
+        "Could not load: " .. comments.error,
+        width,
+        "  "
+      )
+    elseif #(comments.items or {}) == 0 then
+      lines[#lines + 1] = "  No comments yet."
+    else
+      for index, comment in ipairs(comments.items) do
+        if index > 1 then
+          lines[#lines + 1] = ""
+        end
+
+        local header = "@" .. (comment.author or "unknown")
+
+        if comment.created_at then
+          header = header .. " · " .. overview_date(comment.created_at)
+        end
+
+        append_sidebar_text(lines, header, width, "  ")
+        append_sidebar_text(lines, comment.body or "", width, "    ")
+      end
+    end
+
+    lines[#lines + 1] = ""
+  end
+
   field(
     "Date",
     overview_date(overview.created_at or details.authored_at)
@@ -6280,6 +6316,7 @@ local function open_tabs(
     end
 
     M._review.load(inspection_sessions, info, opts)
+    M._overview_ui.load_comments(inspection_sessions, info, opts)
   end)
 
   inspection_tabs_loading = false
@@ -6552,6 +6589,7 @@ local function open_issue_inspection(
     show_inspection_overview(group)
     page.overview_win = group.overview_win
     page.overview_buf = group.overview_buf
+    M._overview_ui.load_comments(group, resolved, opts)
   end)
 
   inspection_tabs_loading = false

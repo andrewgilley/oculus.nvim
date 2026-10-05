@@ -74,6 +74,7 @@ function M.setup(inspect, internal)
       Checks = true,
       Merge = true,
       ["Review threads"] = true,
+      Comments = true,
       Date = true,
       Source = true,
       ["Agent description"] = true,
@@ -249,6 +250,44 @@ function M.setup(inspect, internal)
     end
 
     return true
+  end
+
+  function inspect._overview_ui.load_comments(group, info, opts)
+    if not info
+      or (info.kind ~= "issue" and info.kind ~= "pull_request")
+    then
+      return
+    end
+
+    local provider = info.forge == "codeberg"
+        and require("oculus.codeberg")
+      or github
+
+    local state = { loading = true }
+    group.overview.comments = state
+
+    if internal.overview_window_is_open(group) then
+      inspect._overview_ui.render(group)
+    end
+
+    provider.issue_comments(
+      info.owner .. "/" .. info.repo,
+      info.number,
+      opts,
+      function(comments, err)
+        if group.discarded or group.overview.comments ~= state then
+          return
+        end
+
+        state.loading = nil
+        state.items = comments
+        state.error = not comments and tostring(err or "unknown error") or nil
+
+        if internal.overview_window_is_open(group) then
+          inspect._overview_ui.render(group)
+        end
+      end
+    )
   end
 
   function inspect._overview_ui.float_lines(overview, width)
@@ -825,6 +864,9 @@ function M.setup(inspect, internal)
       group.overview_content_width or 28
     )
 
+    local selected_model = group.overview_agent_model_lines
+      and group.overview_agent_model_lines[group.overview_agent_selected_line]
+
     group.overview_agent_model_lines = nil
     group.overview_agent_heading_line = nil
     group.overview_agent_location_lines = nil
@@ -845,6 +887,10 @@ function M.setup(inspect, internal)
           )
 
           targets[#lines] = model
+
+          if model == selected_model then
+            group.overview_agent_selected_line = #lines
+          end
         end
 
         group.overview_agent_model_lines = targets

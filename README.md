@@ -470,7 +470,10 @@ unresolved.
 ### Inspect overview
 
 The overview is a floating summary of the item being inspected: the title,
-metadata, and a description. Its footer shows these commands:
+metadata, and a description. Issues and pull requests also show their general
+discussion in a Comments section, with each comment's author, date, and full
+text. Comments load in the background on GitHub and Codeberg. Its footer shows
+these commands:
 
 | Key         | Action                                                            |
 | ----------- | ----------------------------------------------------------------- |
