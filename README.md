@@ -472,9 +472,7 @@ unresolved.
 The overview is a floating summary of the item being inspected: the title,
 metadata, and a description. Issues and pull requests also show their general
 discussion in a Comments section, with each comment's author, date, and full
-text. Descriptions use Neovim's built-in Markdown highlighting for headings,
-emphasis, links, lists, and code, preserving code blocks and indentation.
-Comments load in the background on GitHub and Codeberg. Its footer shows
+text. Comments load in the background on GitHub and Codeberg. Its footer shows
 these commands:
 
 | Key         | Action                                                            |

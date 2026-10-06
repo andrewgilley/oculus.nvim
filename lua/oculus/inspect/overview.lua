@@ -291,25 +291,17 @@ function M.setup(inspect, internal)
   end
 
   function inspect._overview_ui.float_lines(overview, width)
-    local lines, markdown_range = internal.sidebar_overview_lines(overview, width)
-    local removed = 0
+    local lines = internal.sidebar_overview_lines(overview, width)
 
     if lines[1] == "OVERVIEW" then
       table.remove(lines, 1)
-      removed = removed + 1
 
       if lines[1] == "" then
         table.remove(lines, 1)
-        removed = removed + 1
       end
     end
 
-    if markdown_range then
-      markdown_range.first = markdown_range.first - removed
-      markdown_range.last = markdown_range.last - removed
-    end
-
-    return lines, markdown_range
+    return lines
   end
 
   function inspect._overview_ui.close_footer(group)
@@ -871,7 +863,7 @@ function M.setup(inspect, internal)
       return
     end
 
-    local lines, markdown_range = inspect._overview_ui.float_lines(
+    local lines = inspect._overview_ui.float_lines(
       group.overview,
       group.overview_content_width or 28
     )
@@ -1046,7 +1038,6 @@ function M.setup(inspect, internal)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
-    require("oculus.inspect.markdown").highlight(buf, markdown_range)
     vim.api.nvim_buf_clear_namespace(buf, internal.sidebar_ns, 0, -1)
 
     vim.api.nvim_buf_clear_namespace(
@@ -1066,14 +1057,10 @@ function M.setup(inspect, internal)
     for index, line in ipairs(lines) do
       local label = line:match("^  (.-)%s*$")
 
-      local in_description = markdown_range
-        and index >= markdown_range.first
-        and index <= markdown_range.last
-
-      if not in_description and (inspect._overview_ui.section_labels[label]
+      if inspect._overview_ui.section_labels[label]
         or (label and label:match("^Agent description"))
         or (label and label:match("^Agent explanation"))
-        or (label and label:match("^Agent suggestion")))
+        or (label and label:match("^Agent suggestion"))
       then
         vim.api.nvim_buf_set_extmark(buf, internal.sidebar_ns, index - 1, 2, {
           end_col = #line,
