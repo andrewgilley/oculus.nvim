@@ -484,7 +484,7 @@ these commands:
 | `<CR>`      | Pick the highlighted model, or open patch locations               |
 | `r`         | _(pull requests)_ Load the [review threads](#review-threads) into the files, or put them away |
 | `b`         | Open in your browser                                              |
-| `v` / `s`   | Switch between the inline-counter and sidebar chunk modes         |
+| `v` / `s`   | _(commits/pull requests)_ Switch between the inline-counter and sidebar chunk modes |
 | `c` / `q`   | Close the overview and return to the files                        |
 | `e`         | Exit the inspection                                               |
 

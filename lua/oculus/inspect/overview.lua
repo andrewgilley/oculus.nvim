@@ -392,14 +392,15 @@ function M.setup(inspect, internal)
         .. (group.review_inline and "   r hide threads" or "   r threads")
     end
 
-    left_commands = left_commands
-      .. "   "
-      .. view_command_key
-      .. " "
-      .. view_command_label
-      .. "   e "
-      .. exit_command_label
+    if group.kind ~= "issue" and (group.overview or {}).kind ~= "issue" then
+      left_commands = left_commands
+        .. "   "
+        .. view_command_key
+        .. " "
+        .. view_command_label
+    end
 
+    left_commands = left_commands .. "   e " .. exit_command_label
     local right_commands = ""
 
     if #(group.overview_agent_locations or {}) > 0
@@ -606,9 +607,12 @@ function M.setup(inspect, internal)
       }
     end
 
-    local view_key = (group.chunk_view_mode == "sidebar") and "v" or "s"
-    local view_label = (group.chunk_view_mode == "sidebar") and "Switch to virtual counters" or "Switch to sidebar"
-    actions[#actions + 1] = { view_key, view_label }
+    if group.kind ~= "issue" and (group.overview or {}).kind ~= "issue" then
+      local view_key = (group.chunk_view_mode == "sidebar") and "v" or "s"
+      local view_label = (group.chunk_view_mode == "sidebar") and "Switch to virtual counters" or "Switch to sidebar"
+      actions[#actions + 1] = { view_key, view_label }
+    end
+
     actions[#actions + 1] = { "e", "Exit inspection workflow" }
     section("ACTIONS", actions)
 

@@ -2114,7 +2114,7 @@ assert(overview_footer_lines[1] == "  " .. string.rep(
   math.max(1, vim.api.nvim_win_get_width(overview_win) - 4)
 ))
 
-assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   v virtual   e exit", 1, true))
+assert(overview_footer_lines[2]:find("  b browser   d describe   p path   w worktree   e exit", 1, true))
 assert(overview_footer_lines[2]:sub(-#("c close   ?: help")) == "c close   ?: help")
 local overview_win_width = vim.api.nvim_win_get_width(overview_win)
 local overview_win_height = vim.api.nvim_win_get_height(overview_win)

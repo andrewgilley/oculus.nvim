@@ -2556,6 +2556,11 @@ local function sidebar_overview_lines(overview, width)
     end
   end
 
+  field(
+    "Date",
+    overview_date(overview.created_at or details.authored_at)
+  )
+
   local comments = overview.comments
 
   if type(comments) == "table" then
@@ -2591,11 +2596,6 @@ local function sidebar_overview_lines(overview, width)
 
     lines[#lines + 1] = ""
   end
-
-  field(
-    "Date",
-    overview_date(overview.created_at or details.authored_at)
-  )
 
   if overview.remote then
     local context = tonumber(overview.remote_context)
