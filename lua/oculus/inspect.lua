@@ -2467,13 +2467,25 @@ local function sidebar_overview_lines(overview, width)
     "",
   }
 
-  local function field(label, value)
+  local markdown_range
+
+  local function field(label, value, markdown)
     if value == nil or value == "" then
       return
     end
 
     lines[#lines + 1] = "  " .. label
-    append_sidebar_text(lines, value, width, "  ")
+
+    if markdown then
+      markdown_range = require("oculus.inspect.markdown").append(
+        lines,
+        value,
+        width
+      )
+    else
+      append_sidebar_text(lines, value, width, "  ")
+    end
+
     lines[#lines + 1] = ""
   end
 
@@ -2491,7 +2503,7 @@ local function sidebar_overview_lines(overview, width)
   field("Description", value_or(
     (is_pull_request or is_issue) and overview.body or details.body,
     "No description provided."
-  ))
+  ), is_pull_request or is_issue)
 
   local author
 
@@ -2611,7 +2623,7 @@ local function sidebar_overview_lines(overview, width)
     table.remove(lines)
   end
 
-  return lines
+  return lines, markdown_range
 end
 
 local function set_sidebar_buffer_lines(group, lines, mode)
