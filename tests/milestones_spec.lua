@@ -735,7 +735,7 @@ local function active_tab()
   end
 end
 
-assert(tab_bar() == "  issues   pull requests   discussions   projects   milestones   insights", tab_bar())
+assert(tab_bar() == "  issues   pull requests   discussions   projects   milestones   insights   saved", tab_bar())
 assert(vim.api.nvim_buf_get_lines(state.buf, 1, 2, false)[1] == "  neovim/neovim · GitHub")
 assert(active_tab() == "issues", active_tab())
 -- The selected tab is bold but never underlined, even when Title is.
@@ -914,9 +914,11 @@ assert(state.view == "milestones")
 assert(selected_title() == "0.13")
 press("j")
 assert(state.view == "contributors", state.view)
--- <S-Tab> wraps from the first tab, the issues, to the last: the insights.
+-- <S-Tab> wraps to saved items, then to insights.
 press("l")
 assert(state.activity_issue_kind == "issues")
+press("<S-Tab>")
+assert(state.activity_saved and active_tab() == "saved")
 press("<S-Tab>")
 assert(state.view == "insights", state.view)
 assert(active_tab() == "insights", active_tab())
@@ -936,6 +938,7 @@ assert(opened_urls[#opened_urls] == "https://github.com/neovim/neovim/pulse")
 local insight_count = insight_requests
 press("r")
 assert(insight_requests == insight_count + 1)
+
 -- j and k step between the contributors, which open as user feeds.
 local function insight_user()
   local target = state.line_targets[vim.api.nvim_win_get_cursor(state.win)[1]]
@@ -968,7 +971,11 @@ assert(state.view == "milestones")
 press("<Tab>")
 assert(state.view == "insights")
 press("<Tab>")
+assert(state.activity_saved and active_tab() == "saved")
+press("<Tab>")
 assert(state.view == "activity" and state.activity_issue_kind == "issues")
+press("<S-Tab>")
+assert(state.activity_saved and active_tab() == "saved")
 press("<S-Tab>")
 assert(state.view == "insights")
 press("<S-Tab>")

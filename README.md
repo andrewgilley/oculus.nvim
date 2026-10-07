@@ -235,6 +235,7 @@ the previous row. Use `l` / `<Right>` to open the selected item and
 | `p` / `u` / `v`       | Show Projects / show Users / switch between them           |
 | `w`                   | Open [my work](#my-work)                                   |
 | `s`                   | Open [saved items](#saved-items)                           |
+| `S`                   | Open saved items for the selected project or user          |
 | `a`                   | Add a project or user (handle or GitHub/Codeberg URL)      |
 | `f` / `K` / `D`       | Create a group in the current location                     |
 | `r`                   | Rename (display name, or the username for users)           |
@@ -309,6 +310,12 @@ marked with `★`, and pressing `s` again removes them. Press `s` on the start
 screen to open the saved feed: every saved item, newest save first, rendered
 like any other feed, so `i` inspects, `b` opens the browser, `x` queues, and
 `p`/`f` page. `s` there removes the item under the cursor.
+
+Each project has a **saved** tab. Press `S` in a project or user feed, or on a
+project or user in the lists, to open that source's saved items. Saves belong
+to the feed they were saved from: the same activity can be saved independently
+for a project and a user. Existing saves appear in their recorded source's
+list, and the global saved feed shows all collections.
 
 Items are stored as snapshots in `state_file`, so they survive restarts and
 stay available offline, but they don't refresh (an issue saved while open still

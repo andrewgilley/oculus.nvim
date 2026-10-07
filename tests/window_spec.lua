@@ -1834,7 +1834,7 @@ do
   local header = vim.api.nvim_buf_get_lines(state.buf, 1, 3, false)
   assert(header[1] == "  neovim/neovim · GitHub", header[1])
   local tab_line = header[2]
-  assert(tab_line:find("^  issues  +p") and tab_line:find("insights$"), tab_line)
+  assert(tab_line:find("^  issues  +p") and tab_line:find("saved$"), tab_line)
   assert(not tab_line:find("activity", 1, true), tab_line)
   assert(#state.events == 8)
   assert(repository_issue_requests[1].state == "open")

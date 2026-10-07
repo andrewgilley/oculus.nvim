@@ -1,4 +1,4 @@
--- Saved activity items: the star on an item, the list of everything saved,
+-- Saved activity items: the star on an item, global and source-specific lists,
 -- and where each saved item came from. The entries themselves are persisted by
 -- oculus.saved.
 local github = require("oculus.github")
@@ -36,6 +36,7 @@ function M.setup(window, saved_view, internal)
         provider = provider,
         repository = value.repository,
         name = value.name,
+        path = value.path,
       }
     end
 
@@ -67,6 +68,8 @@ function M.setup(window, saved_view, internal)
       if window.state.saved_expanded_source then
         return window.state.saved_expanded_source
       end
+
+      return window.state.saved_scope
     end
 
     return saved_view.source(window.state.activity_project or window.state.contributor)
@@ -112,7 +115,7 @@ function M.setup(window, saved_view, internal)
           and window.state.saved_entries
           and window.state.saved_entries[event]
 
-        if entry or store.index(saved_view.key(event)) then
+        if entry or store.index(saved_view.key(event), saved_view.source_for(event), true) then
           pcall(vim.api.nvim_buf_set_extmark, window.state.buf, saved_view.ns, line - 1, 0, {
             virt_text = { { "★", "OculusSaved" } },
             virt_text_pos = "overlay",
@@ -123,7 +126,7 @@ function M.setup(window, saved_view, internal)
     end
   end
 
-  function saved_view.open(page, cursor)
+  function saved_view.open(page, cursor, source)
     if not internal.is_valid_win(window.state.win) then
       return
     end
@@ -140,14 +143,23 @@ function M.setup(window, saved_view, internal)
     window.state.activity_saved = true
     window.state.activity_work = nil
     window.state.activity_scope = "saved"
-    window.state.activity_project = nil
-    window.state.contributor = nil
+    source = saved_view.source(source)
+    window.state.saved_scope = vim.deepcopy(source)
+    window.state.activity_project = source and source.kind == "project" and source or nil
+    window.state.contributor = source and source.kind == "user" and source or nil
+
+    if source then
+      window.state.community_view = source.kind == "project" and "projects" or "users"
+      window.state.selected_project = window.state.activity_project
+      window.state.selected_username = window.state.contributor and window.state.contributor.username
+    end
+
     window.state.activity_issue_page = false
     window.state.activity_milestone = nil
     window.state.activity_commit_page = false
     window.state.activity_return = nil
     window.state.saved_expanded_source = nil
-    local items = require("oculus.saved").items()
+    local items = require("oculus.saved").items(source)
 
     local size = math.max(
       1,
@@ -188,6 +200,36 @@ function M.setup(window, saved_view, internal)
     end
   end
 
+  function saved_view.open_scoped()
+    local source
+
+    if window.state.view == "contributors" or window.state.view == "directory" then
+      local target = internal.target_on_cursor()
+      source = saved_view.source(target and target.kind == "project" and target.project or target)
+    elseif window.state.view == "activity" then
+      if window.state.activity_saved then
+        local cursor = vim.api.nvim_win_get_cursor(window.state.win)
+        local event = window.state.activity_events and window.state.activity_events[cursor[1]]
+        source = window.state.saved_scope or saved_view.source_for(event)
+      else
+        source = saved_view.source(window.state.activity_project or window.state.contributor)
+      end
+    elseif window.state.view == "milestones" then
+      source = saved_view.source(window.state.project_milestones and window.state.project_milestones.project)
+    elseif window.state.view == "boards" then
+      source = saved_view.source(window.state.project_boards and window.state.project_boards.project)
+    elseif window.state.view == "insights" then
+      source = saved_view.source(window.state.project_insights and window.state.project_insights.project)
+    end
+
+    if not require("oculus.saved").scope_key(source) then
+      vim.notify("Oculus: select a project or user to open its saved items", vim.log.levels.WARN)
+      return
+    end
+
+    saved_view.open(nil, nil, source)
+  end
+
   function saved_view.toggle()
     if window.state.view ~= "activity" or not internal.is_valid_win(window.state.win) then
       return
@@ -208,12 +250,13 @@ function M.setup(window, saved_view, internal)
       and window.state.saved_entries[event]
 
     local key = entry and entry.key or saved_view.key(event)
+    local source = entry and entry.source or saved_view.source_for(event)
 
-    if not store.remove(key) then
+    if not store.remove(key, source, true) then
       store.add({
         key = key,
         saved_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        source = vim.deepcopy(saved_view.source_for(event)),
+        source = vim.deepcopy(source),
         event = vim.deepcopy(event),
       })
     end
@@ -221,7 +264,7 @@ function M.setup(window, saved_view, internal)
     saved_view.persist()
 
     if window.state.activity_saved and not window.state.activity_commit_page then
-      saved_view.open(window.state.activity_page, cursor)
+      saved_view.open(window.state.activity_page, cursor, window.state.saved_scope)
     else
       saved_view.mark()
     end

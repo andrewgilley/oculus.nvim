@@ -136,6 +136,7 @@ M.state = {
   milestone_items_feed = nil,
   activity_milestone = nil,
   activity_saved = false,
+  saved_scope = nil,
   saved_entries = nil,
   saved_expanded_source = nil,
   work_lists = nil,
@@ -524,6 +525,7 @@ local function sidebar_sections_for_view(view)
           { "w", "My work" },
           { "W", "Workspace" },
           { "s", "Saved" },
+          { "S", "User saved" },
           { "a", "Add" },
           { nav.inspect_id, "Inspect ID" },
           { "r", "Rename" },
@@ -537,6 +539,7 @@ local function sidebar_sections_for_view(view)
           { "w", "My work" },
           { "W", "Workspace" },
           { "s", "Saved" },
+          { "S", "Project saved" },
           { "a", "Add" },
           { "f", "Folder" },
           { "M", "Move Dir" },
@@ -573,6 +576,10 @@ local function sidebar_sections_for_view(view)
       "s",
       M.state.activity_saved and "Unsave" or "Save",
     }
+
+    if not M.state.activity_saved and (M.state.activity_project or M.state.contributor) then
+      actions[#actions + 1] = { "S", "Saved items" }
+    end
 
     actions[#actions + 1] = { "r", "Refresh" }
     actions[#actions + 1] = { "p", "Older" }
@@ -954,8 +961,8 @@ local function page_commands_text()
     local showing_users = M.state.community_view == "users"
 
     return showing_users
-        and "  p projects   w work   s saved   m move   ?: help"
-      or "  u users   w work   s saved   f folder   m move   ?: help"
+        and "  p projects   w work   s saved   S user saved   m move   ?: help"
+      or "  u users   w work   s saved   S project saved   f folder   m move   ?: help"
   elseif M.state.view == "directory" then
     return ("  %s/← back   a add   r rename   R remove   m move   ?: help"):format(
       nav.left
@@ -998,6 +1005,10 @@ local function page_commands_text()
 
   activity_commands = activity_commands
     .. (M.state.activity_saved and "   s unsave" or "   s save")
+
+  if not M.state.activity_saved and (M.state.activity_project or M.state.contributor) then
+    activity_commands = activity_commands .. "   S saved"
+  end
 
   return activity_commands
 end
@@ -2726,6 +2737,7 @@ local project_tabs = {
   { key = "boards", label = "projects" },
   { key = "milestones", label = "milestones" },
   { key = "insights", label = "insights" },
+  { key = "saved", label = "saved" },
 }
 
 -- The project tab the current page belongs to, or nil outside a project.
@@ -2744,6 +2756,10 @@ local function current_project_tab()
 
   if M.state.view ~= "activity" or not M.state.activity_project then
     return nil
+  end
+
+  if M.state.activity_saved then
+    return "saved"
   end
 
   if M.state.activity_milestone then
@@ -2939,7 +2955,9 @@ end
 local function set_activity_inspect_queue_scope()
   local scope
 
-  if M.state.activity_project then
+  if M.state.activity_saved then
+    scope = "saved:" .. (require("oculus.saved").scope_key(M.state.saved_scope) or "all")
+  elseif M.state.activity_project then
     local project = M.state.activity_project
 
     scope = table.concat({
@@ -2951,8 +2969,6 @@ local function set_activity_inspect_queue_scope()
         or M.state.activity_issue_page and M.state.activity_issue_kind
         or "activity",
     }, ":")
-  elseif M.state.activity_saved then
-    scope = "saved"
   elseif M.state.activity_work then
     scope = "work:" .. M.state.activity_work.key
   elseif M.state.contributor then
@@ -3039,17 +3055,26 @@ local function render_activity(events, cached, notice, opts)
   local saved_page = M.state.activity_saved == true
 
   local saved_count = saved_page
-      and #require("oculus.saved").items()
+      and #require("oculus.saved").items(M.state.saved_scope)
     or 0
 
   local work = M.state.activity_work
 
   local lines = work
       and work_view.header(work, context_suffix)
+    or saved_page and project
+      and {
+        "",
+        ("  %s · %s"):format(project_title(project), provider_name(project)),
+        (project_tab_line("saved", width - 2)),
+      }
     or saved_page
       and {
         "",
-        "  SAVED",
+        contributor and ("  SAVED · @%s · %s"):format(
+          contributor.username,
+          provider_name(contributor)
+        ) or "  SAVED",
         ("  %d saved item%s%s"):format(
           saved_count,
           saved_count == 1 and "" or "s",
@@ -3075,6 +3100,14 @@ local function render_activity(events, cached, notice, opts)
         context_suffix
       ),
     }
+
+  if saved_page and project then
+    lines[#lines + 1] = ("  %d saved item%s%s"):format(
+      saved_count,
+      saved_count == 1 and "" or "s",
+      context_suffix
+    )
+  end
 
   if notice then
     lines[#lines + 1] = "  " .. notice
@@ -3236,7 +3269,7 @@ local function render_activity(events, cached, notice, opts)
     lines[#lines + 1] = work
         and "  Nothing here right now."
       or saved_page
-        and "  No saved items. Press S on an activity item to save it."
+        and "  No saved items. Press s on an activity item to save it."
       or milestone
         and "  This milestone has no issues or pull requests."
       or project and M.state.activity_issue_kind == "discussions"
@@ -3258,7 +3291,7 @@ local function render_activity(events, cached, notice, opts)
   render_activity_footer()
   vim.wo[M.state.win].scrolloff = 3
 
-  if project and not saved_page and not work then
+  if project and not work then
     paint_project_header(lines[2], select(2, project_tab_line(current_project_tab(), width - 2)))
   else
     highlight(2, 2, -1, "Function")
@@ -3564,6 +3597,7 @@ local function render_shortcuts()
         { "p", "Switch to project list" },
         { "w", "Open your work: review requests, PRs, mentions" },
         { "s", "Open saved activity items" },
+        { "S", "Open saved items for the selected user" },
         { "m", "Move the selected user" },
         { "a", "Add a GitHub or Codeberg account" },
         { nav.inspect_id, "Inspect an issue, PR, or commit by ID" },
@@ -3591,6 +3625,7 @@ local function render_shortcuts()
         { "w", "Open your work: review requests, PRs, mentions" },
         { "W", "Select or switch project workspace" },
         { "s", "Open saved activity items" },
+        { "S", "Open saved items for the selected project" },
         { "f", "Create a project folder" },
         { "m", "Move the selected project or folder" },
         { "M", "Move project to folder" },
@@ -3620,6 +3655,7 @@ local function render_shortcuts()
     section("ACTIONS", {
       { "w", "Open your work: review requests, PRs, mentions" },
       { "s", "Open saved activity items" },
+      { "S", "Open saved items for the selected project" },
       { "a", "Add a GitHub or Codeberg project" },
       { "r", "Rename the selected project" },
       { "R", "Remove the selected project" },
@@ -3662,6 +3698,10 @@ local function render_shortcuts()
       { "r", "Refresh the current activity page" },
       { "p", "Load the next eight older activity items" },
     }
+
+    if ret and not ret.activity_saved and (ret.activity_project or M.state.contributor) then
+      actions[#actions + 1] = { "S", "Open saved items for this project or user" }
+    end
 
     if ret
       and ret.activity_issue_page
@@ -4105,6 +4145,7 @@ local view_internal = {
   render_activity = render_activity,
   update_activity_cursorline = update_activity_cursorline,
   activity_dedupe_key = activity_dedupe_key,
+  target_on_cursor = function() return target_on_cursor() end,
   add_project_issue = add_project_issue,
   deduplicate_activity = deduplicate_activity,
   render_error = render_error,
@@ -4240,7 +4281,7 @@ local function next_activity_page()
     and not M.state.activity_commit_page
   then
     if M.state.activity_has_past then
-      saved_view.open((M.state.activity_page or 1) + 1)
+      saved_view.open((M.state.activity_page or 1) + 1, nil, M.state.saved_scope)
     end
 
     return
@@ -4297,7 +4338,7 @@ local function previous_activity_page()
     and not M.state.activity_commit_page
   then
     if (M.state.activity_page or 1) > 1 then
-      saved_view.open((M.state.activity_page or 1) - 1)
+      saved_view.open((M.state.activity_page or 1) - 1, nil, M.state.saved_scope)
     end
 
     return
@@ -4358,7 +4399,7 @@ local function refresh_activity()
   local page = M.state.activity_page or 1
 
   if M.state.activity_saved then
-    saved_view.open(page, vim.api.nvim_win_get_cursor(M.state.win))
+    saved_view.open(page, vim.api.nvim_win_get_cursor(M.state.win), M.state.saved_scope)
   elseif M.state.activity_work then
     work_view.load_items(M.state.activity_work, true, page)
   elseif M.state.activity_project then
@@ -5480,7 +5521,7 @@ local function select_current()
 end
 
 -- Show one of a project's tabs: its code, issues, pull requests,
--- discussions, project boards, milestones, or insights.
+-- discussions, project boards, milestones, insights, or saved activity.
 open_project_tab = function(project, tab)
   M.state.activity_milestone = nil
   M.state.activity_return = nil
@@ -5494,6 +5535,8 @@ open_project_tab = function(project, tab)
   elseif tab == "insights" then
     M.state.activity_project = project
     insights_view.load(project, false)
+  elseif tab == "saved" then
+    saved_view.open(nil, nil, saved_view.source(project))
   else
     load_project_issues(project, false, nil, tab)
   end
@@ -6805,7 +6848,7 @@ local function go_back()
       and M.state.activity_saved
       and not M.state.activity_commit_page
     then
-      saved_view.open(M.state.activity_page)
+      saved_view.open(M.state.activity_page, nil, M.state.saved_scope)
     elseif return_state.view == "activity"
       and (
         M.state.contributor
@@ -7428,6 +7471,8 @@ local function map_keys(buf)
     end
   end, "Save or unsave an Oculus activity item, or open saved items")
 
+  map("S", saved_view.open_scoped, "Open saved activity for the current project or user")
+
   map("u", function()
     if M.state.view == "contributors" then
       if M.state.community_view ~= "users" then
@@ -7697,7 +7742,7 @@ function M.open(opts)
     and M.state.activity_saved
     and not M.state.activity_commit_page
   then
-    saved_view.open(M.state.activity_page)
+    saved_view.open(M.state.activity_page, nil, M.state.saved_scope)
 
     if M.state.restore_view_name == "activity" then
       restore_cursor()

@@ -439,7 +439,7 @@ press("j")
 assert(state.view == "contributors", state.view)
 store.load({})
 press("s")
-assert(buffer_text():find("No saved items. Press S on an activity item to save it.", 1, true))
+assert(buffer_text():find("No saved items. Press s on an activity item to save it.", 1, true))
 window.close()
 
 for provider, functions in pairs(originals) do
