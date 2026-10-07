@@ -5,7 +5,7 @@ local dir = vim.fn.tempname()
 vim.fn.mkdir(dir, 'p')
 local path = dir .. '/tracking.json'
 local function write(tree) vim.fn.writefile({vim.json.encode(tree)}, path) end
-write({version=1,projects={{name='Tools',children={{name='Nested',children={{repository='a/b',provider='github'}}}}}},users={{name='Friends',children={{username='alice',provider='github'}}}}})
+write({version=1,projects={{name='Tools',children={{name='Nested',children={{repository='a/b',provider='github'}}}}}},users={{name='Friends',children={{name='Team',children={{username='zoe',provider='github'}}},{username='alice',provider='github'}}}}})
 oculus.setup({tracking_file=path,state_file=dir..'/state.json'})
 window.open(oculus.config)
 assert(not vim.wo[window.state.win].cursorline, 'tracking lists must not enable cursorline on open')
@@ -77,7 +77,30 @@ local function assert_item_matches_preview(label)
     'selected item is white without an underline')
 end
 
+local function assert_folder_matches_preview(label)
+  local items = preview_at(label)
+  local line = vim.api.nvim_win_get_cursor(window.state.win)[1]
+  assert(items[4][2] == 'OculusDirectory', label .. ' preview highlight')
+  local matched = false
+
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    window.state.buf,
+    vim.api.nvim_get_namespaces().oculus,
+    line - 1,
+    line,
+    {details=true}
+  )) do
+    if mark[2] == line - 1 and mark[4].hl_group == items[4][2] then
+      matched = true
+      break
+    end
+  end
+
+  assert(matched, label .. ' list highlight matches preview')
+end
+
 assert(window.state.preview_items[4][1] == 'Nested'
+  and window.state.preview_items[4][2] == 'OculusDirectory'
   and not window.state.preview_items[5], 'initial group preview lists only direct children')
 
 local rows = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
@@ -92,7 +115,8 @@ local shortcuts_rows = table.concat(vim.api.nvim_buf_get_lines(window.state.buf,
 assert(shortcuts_rows:find('KEYBOARD SHORTCUTS', 1, true), 'shortcuts page opens from tracking view')
 window._toggle_shortcuts()
 assert(not table.concat(rows, '\n'):find('Tools/'), 'group rows have no trailing slash')
-local preview = preview_at('Tools')
+assert_folder_matches_preview('Tools')
+local preview = window.state.preview_items
 
 assert(preview[2][1] == 'GROUP' and preview[4][1] == 'Nested'
   and not preview[5], 'project group preview lists only direct children')
@@ -110,7 +134,7 @@ local user_preview = require('oculus.tracking_ui').preview_items({
   }}}}}},
 }, {tracking_index=1}, 10)
 
-assert(user_preview[4][1] == 'Team' and user_preview[4][2] == 'Directory'
+assert(user_preview[4][1] == 'Team' and user_preview[4][2] == 'OculusDirectory'
   and user_preview[5][1] == '@alice' and user_preview[5][2] == 'Identifier'
   and not user_preview[6], 'user group preview lists only direct children')
 
@@ -124,20 +148,21 @@ assert(window.state.tracking_paths.projects[1] == 1 and #window.state.tracking_p
 
 select_label('Nested'); key('<Left>')
 select_label('Tools'); key('u')
+assert_folder_matches_preview('Friends')
 select_label('Friends'); key('<Right>'); assert_item_matches_preview('alice')
 local function disk() return vim.json.decode(table.concat(vim.fn.readfile(path),'\n')) end
 local input = vim.ui.input
 vim.ui.input = function(_, callback) callback('Colleagues') end
 key('f')
 vim.ui.input = input
-assert(disk().users[1].children[2].name == 'Colleagues', 'group added in current user group')
+assert(disk().users[1].children[3].name == 'Colleagues', 'group added in current user group')
 select_label('Colleagues'); key('<Right>')
 assert(window._add_contributor({username='bob',provider='github'}))
-assert(disk().users[1].children[2].children[1].username == 'bob', 'UI user add persisted inside nested group')
+assert(disk().users[1].children[3].children[1].username == 'bob', 'UI user add persisted inside nested group')
 select_label('bob'); key('R'); key('y')
-assert(#disk().users[1].children[2].children == 0, 'UI removal persisted')
+assert(#disk().users[1].children[3].children == 0, 'UI removal persisted')
 key('<Left>'); select_label('Colleagues'); key('R'); key('y')
-assert(#disk().users[1].children == 1, 'UI group removal persisted')
+assert(#disk().users[1].children == 2, 'UI group removal persisted')
 key('p'); select_label('Tools'); key('<Right>'); select_label('Nested'); key('<Right>')
 assert(window._add_project({repository='c/d',provider='github'}))
 assert(disk().projects[1].children[1].children[2].repository == 'c/d')
@@ -170,7 +195,7 @@ key('u'); select_label('alice'); key('m'); key('<Left>')
 assert(disk().users[2].username == 'alice', 'users move to parent persisted')
 assert(window.state.line_targets[vim.api.nvim_win_get_cursor(window.state.win)[1]].username == 'alice', 'move to parent keeps the moved user selected')
 select_label('alice'); key('m'); select_label('Friends'); key('<Right>')
-assert(disk().users[1].children[1].username == 'alice', 'users move into group persisted')
+assert(disk().users[1].children[2].username == 'alice', 'users move into group persisted')
 local select = vim.ui.select
 
 vim.ui.select = function(items, _, callback)

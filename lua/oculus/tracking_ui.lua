@@ -58,7 +58,10 @@ function M.preview_items(state, target, max_visible)
   local shown = #nodes <= max_visible and #nodes or math.max(1, max_visible - 1)
 
   for index = 1, shown do
-    items[3 + index] = {label(nodes[index]), nodes[index].children and 'Directory' or 'Identifier'}
+    items[3 + index] = {
+      label(nodes[index]),
+      nodes[index].children and 'OculusDirectory' or 'Identifier',
+    }
   end
 
   if shown < #nodes then
