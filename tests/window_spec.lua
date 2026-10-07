@@ -3429,21 +3429,32 @@ do
   assert(window_mod.state.opts.project_directories[1] == second_before)
   assert(window_mod.state.opts.project_directories[2] == first_before)
   -- Test 13: Verify highlight group of directory item vs project item in startup list
+  local plugins_dir_line
+  local project_line
+
+  for line, target in pairs(window_mod.state.line_targets) do
+    if target.kind == "directory" and target.name == "Plugins" then
+      plugins_dir_line = line
+    elseif target.kind == "project" then
+      project_line = line
+    end
+  end
+
   local extmarks = vim.api.nvim_buf_get_extmarks(window_mod.state.buf, -1, 0, -1, { details = true })
-  local found_dir_hl = false
+  local directory_hl
   local found_proj_hl = false
 
   for _, em in ipairs(extmarks) do
     local details = em[4] or {}
 
-    if details.hl_group == "OculusDirectory" then
-      found_dir_hl = true
-    elseif details.hl_group == "Identifier" then
+    if em[2] == plugins_dir_line - 1 then
+      directory_hl = details.hl_group
+    elseif em[2] == project_line - 1 then
       found_proj_hl = true
     end
   end
 
-  assert(found_dir_hl, "expected OculusDirectory highlight on directory list item")
+  assert(directory_hl == "Identifier", "expected folder rows to use the child item highlight")
   assert(found_proj_hl, "expected Identifier highlight on project list item")
 
   -- Test 14: Select child project in directory screen -> activity -> back returns to directory screen

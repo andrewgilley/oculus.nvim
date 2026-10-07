@@ -836,7 +836,7 @@ colours when the colorscheme loads, and are left alone if you have set them.
 | ----------------------------- | ------------------------- | ----------------------------- |
 | `OculusNormal`                | derived from your window  | Window background             |
 | `OculusBorder`                | derived from your window  | Window border                 |
-| `OculusDirectory`             | links to `Directory`      | Groups in the lists           |
+| `OculusDirectory`             | links to `Directory`      | Current folder heading        |
 | `OculusAccounts`              | links to `DiagnosticOk`   | Signed-in accounts            |
 | `OculusActivityIcon`          | links to `WarningMsg`     | Event icons                   |
 | `OculusActivityPreview`       | links to `DiagnosticOk`   | Activity previews             |

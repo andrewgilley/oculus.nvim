@@ -80,7 +80,7 @@ end
 local function assert_folder_matches_preview(label)
   local items = preview_at(label)
   local line = vim.api.nvim_win_get_cursor(window.state.win)[1]
-  assert(items[4][2] == 'OculusDirectory', label .. ' preview highlight')
+  assert(items[4][2] == 'Identifier', label .. ' preview highlight')
   local matched = false
 
   for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
@@ -100,7 +100,7 @@ local function assert_folder_matches_preview(label)
 end
 
 assert(window.state.preview_items[4][1] == 'Nested'
-  and window.state.preview_items[4][2] == 'OculusDirectory'
+  and window.state.preview_items[4][2] == 'Identifier'
   and not window.state.preview_items[5], 'initial group preview lists only direct children')
 
 local rows = vim.api.nvim_buf_get_lines(window.state.buf, 0, -1, false)
@@ -134,7 +134,7 @@ local user_preview = require('oculus.tracking_ui').preview_items({
   }}}}}},
 }, {tracking_index=1}, 10)
 
-assert(user_preview[4][1] == 'Team' and user_preview[4][2] == 'OculusDirectory'
+assert(user_preview[4][1] == 'Team' and user_preview[4][2] == 'Identifier'
   and user_preview[5][1] == '@alice' and user_preview[5][2] == 'Identifier'
   and not user_preview[6], 'user group preview lists only direct children')
 

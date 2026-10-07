@@ -1945,7 +1945,7 @@ local function render_contributors()
     -- Give tracked items the same highlights as their preview entries.
     for line, target in pairs(M.state.line_targets) do
       if target.kind == "tracking_group" then
-        highlight(line, 2, -1, "OculusDirectory")
+        highlight(line, 2, -1, "Identifier")
       elseif target.kind == "project" or target.username then
         highlight(line, 2, -1, "Identifier")
       end
@@ -2125,7 +2125,7 @@ local function render_contributors()
     local target = M.state.line_targets[line]
 
     if target.kind == "directory" then
-      highlight(line, 2, -1, "OculusDirectory")
+      highlight(line, 2, -1, "Identifier")
     elseif target.kind == "directory_empty" then
       highlight(line, 4, -1, "Comment")
     elseif target.kind == "project" then

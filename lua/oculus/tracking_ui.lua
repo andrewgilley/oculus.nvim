@@ -60,7 +60,7 @@ function M.preview_items(state, target, max_visible)
   for index = 1, shown do
     items[3 + index] = {
       label(nodes[index]),
-      nodes[index].children and 'OculusDirectory' or 'Identifier',
+      'Identifier',
     }
   end
 
